@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+*.pdf
+
+# Map data files
+map_folders/
+layout_data/
+xml_data/
+
+# Match logs
+match_logs/*.parquet
+
+# Parquet files (layout exports, density maps, etc.)
+*.parquet
+
+# Analysis output
+output/
+
+# Minecraft region files
+*.mca
+
+# Minecraft level data
+level.dat
+
+# Generated JSON data (map_data.json, map_context.json, etc.)
+map_folders/*/map_data.json
+map_folders/*/island_analysis/
+
+# Misc
+nul
+*.log
+.DS_Store
+Thumbs.db

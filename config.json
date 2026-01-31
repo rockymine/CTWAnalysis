@@ -1,0 +1,40 @@
+{
+  "data_files": {
+    "map_name": "Tumbleweed",
+    "match_file": "2026-01-24_22-24-17_75.parquet"
+  },
+  "output": {
+    "folder": "output",
+    "dpi": 150,
+    "generate_pdf": true
+  },
+  "team_settings": {
+    "all_teams": true,
+    "red_team": true,
+    "blue_team": true
+  },
+  "role_settings": {
+    "wool_runner": true,
+    "skybridge_controller": true,
+    "attacker_stealth": true,
+    "rusher": true,
+    "attacker_aggressive": true,
+    "attacker_passive": false,
+    "camper": true,
+    "mid_controller": false,
+    "base_defender": false,
+    "defender": false,
+    "flanker": false,
+    "roamer": false
+  },
+  "data_settings": {
+    "kills": true,
+    "deaths": true,
+    "wool_touches": true,
+    "wool_captures": true,
+    "positions": true
+  },
+  "map_settings": {
+    "show_map": true
+  }
+}

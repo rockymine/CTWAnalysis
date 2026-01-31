@@ -1,0 +1,12 @@
+pandas
+matplotlib
+numpy
+seaborn
+pyarrow
+scikit-learn
+scikit-image
+scipy
+networkx
+reportlab
+anvil-parser
+shapely
