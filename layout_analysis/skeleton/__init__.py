@@ -22,6 +22,11 @@ from .skeletonize import compute_skeleton
 from .nodes import compute_pixel_degrees, extract_nodes
 from .edges import extract_edges
 from .pipeline import process_island, process_all_islands
+from .pathfinding import (
+    run_pathfinding_analysis,
+    analyze_island_paths,
+    load_skeleton_graph,
+)
 
 __all__ = [
     # Data types
@@ -42,4 +47,8 @@ __all__ = [
     "extract_edges",
     "process_island",
     "process_all_islands",
+    # Pathfinding
+    "run_pathfinding_analysis",
+    "analyze_island_paths",
+    "load_skeleton_graph",
 ]
