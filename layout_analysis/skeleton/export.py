@@ -5,6 +5,7 @@ All coordinate exports use world (x, z) coordinates.
 """
 
 import csv
+import json
 import os
 from pathlib import Path
 from typing import List, Dict
@@ -66,6 +67,24 @@ def export_island(result: IslandResult, output_dir: str) -> None:
         writer.writerow(['edge_id', 'src', 'dst'])
         for edge in result.graph.edges:
             writer.writerow([edge.edge_id, edge.src, edge.dst])
+
+    # --- edge pixel paths (world coords) ---
+    edge_pixels_path = os.path.join(output_dir, f"island_{iid}_edge_pixels.json")
+    edge_pixels = {}
+    for edge in result.graph.edges:
+        # Convert pixel path (r,c) -> canonical (x,z) -> world (x,z)
+        path_canonical = np.array([
+            raster.rc_to_canonical(r, c) for r, c in edge.pixel_path
+        ], dtype=float)
+        path_world = transform.to_original(path_canonical)
+        edge_pixels[str(edge.edge_id)] = {
+            'src': edge.src,
+            'dst': edge.dst,
+            'pixels': [[round(float(pt[0]), 1), round(float(pt[1]), 1)]
+                       for pt in path_world],
+        }
+    with open(edge_pixels_path, 'w', encoding='utf-8') as f:
+        json.dump(edge_pixels, f)
 
 
 def export_index(

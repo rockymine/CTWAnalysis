@@ -362,3 +362,101 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
         json.dump(results, f, indent=2)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Edge pixel path loading and chaining
+# ---------------------------------------------------------------------------
+
+def load_edge_pixels(exports_dir: str, island_id: int) -> Optional[Dict]:
+    """
+    Load edge pixel paths (world coords) from JSON export.
+
+    Returns:
+        Dict mapping (src, dst) frozenset -> list of [x, z] pixel coords,
+        or None if file not found.
+    """
+    path = os.path.join(exports_dir, f"island_{island_id}_edge_pixels.json")
+    if not os.path.exists(path):
+        return None
+
+    with open(path, 'r') as f:
+        raw = json.load(f)
+
+    # Index by (src, dst) as frozenset for undirected lookup
+    edge_pixels = {}
+    for edge_id_str, data in raw.items():
+        key = frozenset((data['src'], data['dst']))
+        edge_pixels[key] = data['pixels']
+
+    return edge_pixels
+
+
+def get_edge_detail(
+    edge_pixels: Dict,
+    src: int,
+    dst: int,
+) -> Optional[List[List[float]]]:
+    """
+    Get the dense pixel-level path between two adjacent nodes.
+
+    The returned path always runs src -> dst (reversed if needed).
+
+    Args:
+        edge_pixels: Dict from load_edge_pixels().
+        src: Source node ID.
+        dst: Destination node ID.
+
+    Returns:
+        List of [x, z] coordinates, or None if edge not found.
+    """
+    key = frozenset((src, dst))
+    pixels = edge_pixels.get(key)
+    if pixels is None:
+        return None
+
+    if len(pixels) < 2:
+        return pixels
+
+    # The stored path starts from the node with the lower ID in the edge CSV
+    # (edges are sorted src < dst). If the caller wants dst -> src, reverse.
+    first_key = min(src, dst)
+    if src != first_key:
+        return list(reversed(pixels))
+    return pixels
+
+
+def get_path_detail(
+    edge_pixels: Dict,
+    path_nodes: List[int],
+) -> Optional[List[List[float]]]:
+    """
+    Get the dense pixel-level path for a multi-hop node path.
+
+    Chains the pixel paths of consecutive edges, removing duplicate
+    junction points at seams.
+
+    Args:
+        edge_pixels: Dict from load_edge_pixels().
+        path_nodes: Ordered list of node IDs (e.g. from shortest_path).
+
+    Returns:
+        List of [x, z] world coordinates forming the dense path,
+        or None if any edge is missing.
+    """
+    if len(path_nodes) < 2:
+        return None
+
+    full_path = []
+    for i in range(len(path_nodes) - 1):
+        segment = get_edge_detail(edge_pixels, path_nodes[i], path_nodes[i + 1])
+        if segment is None:
+            print(f"  WARNING: No pixel data for edge {path_nodes[i]}->{path_nodes[i+1]}")
+            return None
+        if i == 0:
+            full_path.extend(segment)
+        else:
+            # Skip first point (duplicate of previous segment's last point)
+            full_path.extend(segment[1:])
+
+    return full_path

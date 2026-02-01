@@ -26,6 +26,9 @@ from .pathfinding import (
     run_pathfinding_analysis,
     analyze_island_paths,
     load_skeleton_graph,
+    load_edge_pixels,
+    get_edge_detail,
+    get_path_detail,
 )
 
 __all__ = [
@@ -51,4 +54,7 @@ __all__ = [
     "run_pathfinding_analysis",
     "analyze_island_paths",
     "load_skeleton_graph",
+    "load_edge_pixels",
+    "get_edge_detail",
+    "get_path_detail",
 ]

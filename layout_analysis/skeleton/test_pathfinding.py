@@ -1,7 +1,8 @@
 """
 Test script for skeleton pathfinding analysis.
 
-Runs pathfinding on all available maps and prints summary.
+Runs pathfinding on all available maps, prints summary, and generates
+path grid visualizations.
 
 Usage:
     python -m layout_analysis.skeleton.test_pathfinding
@@ -13,7 +14,12 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis
+from layout_analysis.skeleton.pathfinding import (
+    run_pathfinding_analysis,
+    load_edge_pixels,
+    get_path_detail,
+)
+from layout_analysis.skeleton.visualize import plot_path_grid
 
 
 def print_island_summary(result: dict) -> None:
@@ -60,8 +66,26 @@ def test_map(map_name: str, map_folder: str) -> None:
         print("  No islands with POIs found")
         return
 
+    exports_dir = os.path.join(map_folder, 'island_analysis', 'skeleton', 'exports')
+    pathfinding_dir = os.path.join(map_folder, 'island_analysis', 'pathfinding')
+
     for island_result in results['island_results']:
         print_island_summary(island_result)
+
+        iid = island_result['island_id']
+
+        # Test pixel path detail on first defender path (if any)
+        edge_px = load_edge_pixels(exports_dir, iid)
+        if edge_px and island_result.get('defender_paths'):
+            dp = island_result['defender_paths'][0]
+            detail = get_path_detail(edge_px, dp['path_nodes'])
+            if detail:
+                print(f"    - Pixel detail for first defender path: {len(detail)} points")
+
+        # Generate path grid visualization
+        if edge_px:
+            viz_path = os.path.join(pathfinding_dir, f"island_{iid}_paths.png")
+            plot_path_grid(island_result, edge_px, viz_path)
 
     skipped = results['islands_skipped']
     if skipped > 0:
@@ -71,7 +95,7 @@ def test_map(map_name: str, map_folder: str) -> None:
           f"{results['total_poi_endpoint_paths']} POI->endpoint paths, "
           f"{results['total_defender_paths']} defender paths")
 
-    output_path = os.path.join(map_folder, 'island_analysis', 'pathfinding', 'paths_analysis.json')
+    output_path = os.path.join(pathfinding_dir, 'paths_analysis.json')
     print(f"  Saved to: {output_path}")
 
 
