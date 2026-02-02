@@ -1,11 +1,10 @@
 """
 Map connectivity visualization.
 
-Renders an overview of all islands with skeleton graphs, endpoints,
-void links, and POI markers.
+Renders an overview of all islands with polygon boundaries, skeleton
+pixel paths, endpoints, void links, and POI markers.
 """
 
-import math
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -13,6 +12,14 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
+
+
+# Team colors for island boundaries
+_TEAM_COLORS = {
+    'blue': '#3b82f6',
+    'red': '#ef4444',
+}
+_NEUTRAL_COLOR = '#6b7280'
 
 
 def plot_map_connectivity(
@@ -23,10 +30,12 @@ def plot_map_connectivity(
     """
     Create map-level overview showing all islands and connections.
 
-    Islands are drawn as filled bounding-box rectangles (from map_context).
-    Skeleton edges are shown as thin lines (from map_graph_data).
-    Endpoints are blue circles. Void links are red dashed lines.
-    POIs are marked with stars (from map_context).
+    Layers (back to front):
+      1. Island polygon boundaries (from map_context simplified_polygon)
+      2. Skeleton edges with pixel-path detail (from map_graph_data)
+      3. Skeleton nodes and POIs
+      4. Void links (dashed red with distance labels)
+      5. Map-level endpoint nodes (small orange dots)
 
     Args:
         map_context: Full map_context dict (island geometry, POIs).
@@ -40,78 +49,125 @@ def plot_map_connectivity(
     map_name = map_context.get('map_name', 'Unknown')
     ax.set_title(f"{map_name} — Map Connectivity Graph", fontsize=14, fontweight='bold')
 
-    # Build skeleton lookup from map_graph_data islands
+    # Build lookups
     graph_islands_by_id = {
         ie['island_id']: ie for ie in map_graph_data.get('islands', [])
     }
+    context_islands_by_id = {
+        ie['id']: ie for ie in map_context.get('islands', [])
+    }
 
-    # Build node lookup from map_graph section
     graph_section = map_graph_data.get('map_graph', {})
     node_lookup = {}
     for node in graph_section.get('nodes', []):
         node_lookup[node['map_node_id']] = node
 
-    # Draw islands as filled rectangles with skeleton edges
+    # ── Layer 1: Island polygon boundaries ──────────────────────────
     for island in map_context.get('islands', []):
-        iid = island['id']
-        bbox = island.get('bounding_box')
-        if bbox is None:
+        poly = island.get('simplified_polygon')
+        if poly is None:
             continue
-        min_x, max_x, min_z, max_z = bbox
 
-        # Draw island fill
-        rect = plt.Rectangle(
-            (min_x - 0.5, min_z - 0.5),
-            max_x - min_x + 1,
-            max_z - min_z + 1,
-            facecolor='#d0d0d0',
-            edgecolor='#888888',
-            linewidth=0.8,
-            alpha=0.5,
+        team = island.get('team')
+        color = _TEAM_COLORS.get(team, _NEUTRAL_COLOR)
+
+        exterior = np.array(poly['exterior'])
+        if len(exterior) < 3:
+            continue
+
+        ax.plot(
+            exterior[:, 0], exterior[:, 1],
+            color=color,
+            linewidth=2,
+            alpha=0.9,
             zorder=1,
         )
-        ax.add_patch(rect)
+        for hole_coords in poly.get('holes', []):
+            hole = np.array(hole_coords)
+            if len(hole) >= 3:
+                ax.plot(
+                    hole[:, 0], hole[:, 1],
+                    color=color,
+                    linewidth=1.5,
+                    alpha=0.7,
+                    zorder=1,
+                )
 
-        # Draw skeleton edges as thin light blue lines (from map_graph_data)
+    # ── Layer 2: Skeleton edges with pixel detail ───────────────────
+    for island in map_context.get('islands', []):
+        iid = island['id']
         graph_island = graph_islands_by_id.get(iid, {})
         skeleton = graph_island.get('skeleton')
         if skeleton is None:
             continue
 
-        node_coords = {}
-        for node in skeleton['nodes']:
-            node_coords[node['node_id']] = (node['x'], node['z'])
-
-        for edge in skeleton['edges']:
-            src_c = node_coords.get(edge['src'])
-            dst_c = node_coords.get(edge['dst'])
-            if src_c and dst_c:
-                ax.plot(
-                    [src_c[0], dst_c[0]],
-                    [src_c[1], dst_c[1]],
-                    color='#7ec8e3',
-                    linewidth=1.0,
-                    alpha=0.6,
-                    zorder=2,
-                )
-
-    # Draw intra-island edges (thicker, behind void links)
-    for edge in graph_section.get('edges', []):
-        if edge['edge_type'] != 'intra':
-            continue
-        src_node = node_lookup.get(edge['src'])
-        dst_node = node_lookup.get(edge['dst'])
-        if src_node and dst_node:
+        edge_pixels = skeleton.get('edge_pixels', {})
+        for edge_key, ep_data in edge_pixels.items():
+            pixels = ep_data.get('pixels', [])
+            if len(pixels) < 2:
+                continue
+            px = np.array(pixels)
             ax.plot(
-                [src_node['coords'][0], dst_node['coords'][0]],
-                [src_node['coords'][1], dst_node['coords'][1]],
-                color='#4a90d9',
-                linewidth=1.8,
-                alpha=0.4,
-                zorder=3,
+                px[:, 0], px[:, 1],
+                color='lightblue',
+                linewidth=1,
+                alpha=0.8,
+                zorder=2,
             )
 
-    # Draw void links as red dashed lines (thicker for shorter gaps)
+    # ── Layer 3: Skeleton nodes and POIs ────────────────────────────
+    # Draw skeleton junction/endpoint nodes as small dots
+    for island in map_context.get('islands', []):
+        iid = island['id']
+        graph_island = graph_islands_by_id.get(iid, {})
+        skeleton = graph_island.get('skeleton')
+        if skeleton is None:
+            continue
+
+        for node in skeleton['nodes']:
+            if node['type'] == 'endpoint':
+                ax.scatter(
+                    node['x'], node['z'],
+                    s=30,
+                    c='#1d3557',
+                    edgecolors='white',
+                    linewidths=0.6,
+                    zorder=7,
+                )
+            else:
+                ax.scatter(
+                    node['x'], node['z'],
+                    s=12,
+                    c='#555555',
+                    alpha=0.5,
+                    zorder=3,
+                )
+
+    # Draw POIs
+    poi_assignments = map_context.get('poi_assignments', {})
+    for spawn in poi_assignments.get('spawns', []):
+        team_color = spawn.get('team_color', '')
+        color = '#3b82f6' if team_color == 'blue' else '#ef4444'
+        ax.scatter(
+            spawn['x'], spawn['z'],
+            marker='*', s=200,
+            c=color,
+            edgecolors='black',
+            linewidths=0.6,
+            zorder=8,
+        )
+
+    for wool in poi_assignments.get('wools', []):
+        ax.scatter(
+            wool['x'], wool['z'],
+            marker='*', s=150,
+            c='#f1c40f',
+            edgecolors='black',
+            linewidths=0.6,
+            zorder=8,
+        )
+
+    # ── Layer 4: Void links ─────────────────────────────────────────
     void_edges = [e for e in graph_section.get('edges', []) if e['edge_type'] == 'void_link']
     max_dist = max((e['distance'] for e in void_edges), default=1.0)
     for edge in void_edges:
@@ -142,59 +198,39 @@ def plot_map_connectivity(
             zorder=6,
         )
 
-    # Draw endpoint nodes
+    # ── Layer 5: Map-level endpoint nodes ───────────────────────────
     for node in graph_section.get('nodes', []):
         x, z = node['coords']
         ax.scatter(
             x, z,
-            s=50,
-            c='#1d3557',
-            edgecolors='white',
-            linewidths=0.8,
-            zorder=7,
-        )
-
-    # Draw POIs
-    poi_assignments = map_context.get('poi_assignments', {})
-    for spawn in poi_assignments.get('spawns', []):
-        color = '#2ecc71' if spawn.get('team_color') == 'blue' else '#e74c3c'
-        ax.scatter(
-            spawn['x'], spawn['z'],
-            marker='*', s=200,
-            c=color,
+            s=20,
+            c='orange',
             edgecolors='black',
-            linewidths=0.6,
-            zorder=8,
-            label=None,
+            linewidths=0.4,
+            zorder=9,
         )
 
-    for wool in poi_assignments.get('wools', []):
-        ax.scatter(
-            wool['x'], wool['z'],
-            marker='*', s=150,
-            c='#f1c40f',
-            edgecolors='black',
-            linewidths=0.6,
-            zorder=8,
-            label=None,
-        )
-
-    # Legend
+    # ── Legend ───────────────────────────────────────────────────────
     legend_handles = [
-        mpatches.Patch(facecolor='#d0d0d0', edgecolor='#888888', label='Island'),
-        plt.Line2D([0], [0], color='#7ec8e3', linewidth=1.0, label='Skeleton edge'),
-        plt.Line2D([0], [0], color='#4a90d9', linewidth=1.8, alpha=0.5, label='Intra-island path'),
+        plt.Line2D([0], [0], color=_TEAM_COLORS['blue'], linewidth=2, label='Blue team island'),
+        plt.Line2D([0], [0], color=_TEAM_COLORS['red'], linewidth=2, label='Red team island'),
+        plt.Line2D([0], [0], color=_NEUTRAL_COLOR, linewidth=2, label='Neutral island'),
+        plt.Line2D([0], [0], color='lightblue', linewidth=1, label='Skeleton path'),
         plt.Line2D([0], [0], color='#e63946', linestyle='--', linewidth=2.0, label='Void link'),
         plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#1d3557',
-                    markersize=8, label='Endpoint'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
-                    markersize=12, label='Spawn'),
+                    markersize=6, label='Endpoint'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange',
+                    markeredgecolor='black', markersize=5, label='Map node'),
+        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#3b82f6',
+                    markersize=12, label='Spawn (blue)'),
+        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#ef4444',
+                    markersize=12, label='Spawn (red)'),
         plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
                     markersize=12, label='Wool'),
     ]
     ax.legend(handles=legend_handles, loc='upper right', fontsize=9, framealpha=0.9)
 
-    # Summary text
+    # ── Summary text ────────────────────────────────────────────────
     n_nodes = len(graph_section.get('nodes', []))
     n_intra = sum(1 for e in graph_section.get('edges', []) if e['edge_type'] == 'intra')
     n_void = len(void_edges)
