@@ -25,12 +25,12 @@ DEFAULT_CONNECTIVITY_PARAMS = {
 }
 
 
-def build_map_graph(map_context: dict, params: dict = None) -> dict:
+def build_map_graph(map_graph_data: dict, params: dict = None) -> dict:
     """
     Build complete map-level connectivity graph.
 
     Args:
-        map_context: Full map_context dict (from map_context.json).
+        map_graph_data: Loaded map_graph.json dict (with islands[].skeleton).
         params: Override default connectivity parameters.
 
     Returns:
@@ -40,7 +40,7 @@ def build_map_graph(map_context: dict, params: dict = None) -> dict:
     if params:
         p.update(params)
 
-    islands = map_context.get('islands', [])
+    islands = map_graph_data.get('islands', [])
 
     # Step 1: Extract all endpoint nodes per island
     endpoints_by_island: Dict[int, List[dict]] = {}
@@ -50,9 +50,9 @@ def build_map_graph(map_context: dict, params: dict = None) -> dict:
     # Track mapping: (island_id, local_node_id) -> map_node_id
     local_to_global: Dict[Tuple[int, int], int] = {}
 
-    for island in islands:
-        iid = island['id']
-        skeleton = island.get('skeleton')
+    for island_entry in islands:
+        iid = island_entry['island_id']
+        skeleton = island_entry.get('skeleton')
         if skeleton is None:
             continue
 
@@ -80,9 +80,9 @@ def build_map_graph(map_context: dict, params: dict = None) -> dict:
     edges: List[dict] = []
     edge_id = 0
 
-    for island in islands:
-        iid = island['id']
-        skeleton = island.get('skeleton')
+    for island_entry in islands:
+        iid = island_entry['island_id']
+        skeleton = island_entry.get('skeleton')
         if skeleton is None or iid not in endpoints_by_island:
             continue
 

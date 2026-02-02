@@ -67,11 +67,11 @@ def test_map(map_name: str, map_folder: str) -> None:
         print("  No islands with POIs found")
         return
 
-    # Reload updated context for edge pixel data and visualization
-    context_path = os.path.join(map_folder, 'island_analysis', 'map_context.json')
-    with open(context_path, 'r') as f:
-        context = json.load(f)
-    islands_by_id = {i['id']: i for i in context.get('islands', [])}
+    # Reload map_graph.json for edge pixel data and visualization
+    graph_path = os.path.join(map_folder, 'map_graph.json')
+    with open(graph_path, 'r') as f:
+        graph_data = json.load(f)
+    islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
 
     pathfinding_dir = os.path.join(map_folder, 'island_analysis', 'pathfinding')
     os.makedirs(pathfinding_dir, exist_ok=True)
@@ -80,11 +80,11 @@ def test_map(map_name: str, map_folder: str) -> None:
         print_island_summary(island_result)
 
         iid = island_result['island_id']
-        island_ctx = islands_by_id.get(iid)
-        if not island_ctx:
+        island_entry = islands_by_id.get(iid)
+        if not island_entry:
             continue
 
-        edge_px = load_edge_pixels(island_ctx.get('skeleton'))
+        edge_px = load_edge_pixels(island_entry.get('skeleton'))
 
         # Test pixel path detail on first defender path (if any)
         if edge_px and island_result.get('defender_paths'):

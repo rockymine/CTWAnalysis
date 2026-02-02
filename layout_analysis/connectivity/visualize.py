@@ -17,19 +17,20 @@ import numpy as np
 
 def plot_map_connectivity(
     map_context: dict,
-    map_graph: dict,
+    map_graph_data: dict,
     output_path: Path,
 ) -> None:
     """
     Create map-level overview showing all islands and connections.
 
-    Islands are drawn as filled bounding-box rectangles. Skeleton edges
-    are shown as thin lines. Endpoints are blue circles. Void links are
-    red dashed lines. POIs are marked with stars.
+    Islands are drawn as filled bounding-box rectangles (from map_context).
+    Skeleton edges are shown as thin lines (from map_graph_data).
+    Endpoints are blue circles. Void links are red dashed lines.
+    POIs are marked with stars (from map_context).
 
     Args:
-        map_context: Full map_context dict.
-        map_graph: Map graph dict from build_map_graph().
+        map_context: Full map_context dict (island geometry, POIs).
+        map_graph_data: Full map_graph.json dict (skeleton, connectivity).
         output_path: Where to save the PNG.
     """
     output_path = Path(output_path)
@@ -39,9 +40,15 @@ def plot_map_connectivity(
     map_name = map_context.get('map_name', 'Unknown')
     ax.set_title(f"{map_name} — Map Connectivity Graph", fontsize=14, fontweight='bold')
 
-    # Build node lookup
+    # Build skeleton lookup from map_graph_data islands
+    graph_islands_by_id = {
+        ie['island_id']: ie for ie in map_graph_data.get('islands', [])
+    }
+
+    # Build node lookup from map_graph section
+    graph_section = map_graph_data.get('map_graph', {})
     node_lookup = {}
-    for node in map_graph.get('nodes', []):
+    for node in graph_section.get('nodes', []):
         node_lookup[node['map_node_id']] = node
 
     # Draw islands as filled rectangles with skeleton edges
@@ -65,8 +72,9 @@ def plot_map_connectivity(
         )
         ax.add_patch(rect)
 
-        # Draw skeleton edges as thin light blue lines
-        skeleton = island.get('skeleton')
+        # Draw skeleton edges as thin light blue lines (from map_graph_data)
+        graph_island = graph_islands_by_id.get(iid, {})
+        skeleton = graph_island.get('skeleton')
         if skeleton is None:
             continue
 
@@ -88,7 +96,7 @@ def plot_map_connectivity(
                 )
 
     # Draw intra-island edges (thicker, behind void links)
-    for edge in map_graph.get('edges', []):
+    for edge in graph_section.get('edges', []):
         if edge['edge_type'] != 'intra':
             continue
         src_node = node_lookup.get(edge['src'])
@@ -104,13 +112,9 @@ def plot_map_connectivity(
             )
 
     # Draw void links as red dashed lines (thicker for shorter gaps)
-    max_dist = max(
-        (e['distance'] for e in map_graph.get('edges', []) if e['edge_type'] == 'void_link'),
-        default=1.0,
-    )
-    for edge in map_graph.get('edges', []):
-        if edge['edge_type'] != 'void_link':
-            continue
+    void_edges = [e for e in graph_section.get('edges', []) if e['edge_type'] == 'void_link']
+    max_dist = max((e['distance'] for e in void_edges), default=1.0)
+    for edge in void_edges:
         src_c = edge.get('src_coords', node_lookup.get(edge['src'], {}).get('coords'))
         dst_c = edge.get('dst_coords', node_lookup.get(edge['dst'], {}).get('coords'))
         if src_c is None or dst_c is None:
@@ -139,7 +143,7 @@ def plot_map_connectivity(
         )
 
     # Draw endpoint nodes
-    for node in map_graph.get('nodes', []):
+    for node in graph_section.get('nodes', []):
         x, z = node['coords']
         ax.scatter(
             x, z,
@@ -191,9 +195,9 @@ def plot_map_connectivity(
     ax.legend(handles=legend_handles, loc='upper right', fontsize=9, framealpha=0.9)
 
     # Summary text
-    n_nodes = len(map_graph.get('nodes', []))
-    n_intra = sum(1 for e in map_graph.get('edges', []) if e['edge_type'] == 'intra')
-    n_void = sum(1 for e in map_graph.get('edges', []) if e['edge_type'] == 'void_link')
+    n_nodes = len(graph_section.get('nodes', []))
+    n_intra = sum(1 for e in graph_section.get('edges', []) if e['edge_type'] == 'intra')
+    n_void = len(void_edges)
     summary_text = f"Nodes: {n_nodes}  |  Intra edges: {n_intra}  |  Void links: {n_void}"
     ax.text(
         0.02, 0.02, summary_text,

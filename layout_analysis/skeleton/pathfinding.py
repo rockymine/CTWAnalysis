@@ -290,9 +290,9 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
     """
     Run pathfinding analysis for all islands of a map.
 
-    Loads map_context.json (with embedded skeleton data per island),
-    computes paths, and writes results back into map_context.json
-    under each island's 'pathfinding' key.
+    Loads skeleton data from map_graph.json, POI assignments from
+    map_context.json, computes paths, and writes results back into
+    map_graph.json under each island's 'pathfinding' key.
 
     Args:
         map_folder: Path to the map folder (e.g. map_folders/tumbleweed).
@@ -300,9 +300,17 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
     Returns:
         Full analysis results dict, or None on error.
     """
-    island_analysis_dir = os.path.join(map_folder, 'island_analysis')
-    context_path = os.path.join(island_analysis_dir, 'map_context.json')
+    # Load skeleton data from map_graph.json
+    graph_path = os.path.join(map_folder, 'map_graph.json')
+    if not os.path.exists(graph_path):
+        print(f"  ERROR: map_graph.json not found at {graph_path}")
+        return None
 
+    with open(graph_path, 'r') as f:
+        graph_data = json.load(f)
+
+    # Load POI assignments from map_context.json
+    context_path = os.path.join(map_folder, 'island_analysis', 'map_context.json')
     if not os.path.exists(context_path):
         print(f"  ERROR: map_context.json not found at {context_path}")
         return None
@@ -311,7 +319,6 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
         context = json.load(f)
 
     poi_assignments = context.get('poi_assignments', {})
-    islands = context.get('islands', [])
     map_name = context.get('map_name', os.path.basename(map_folder))
 
     results = {
@@ -323,28 +330,30 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
         'island_results': [],
     }
 
-    for island_data in islands:
-        iid = island_data['id']
-        skeleton_data = island_data.get('skeleton')
+    for island_entry in graph_data.get('islands', []):
+        iid = island_entry['island_id']
+        skeleton_data = island_entry.get('skeleton')
         G = load_skeleton_graph(skeleton_data)
         if G is None:
             continue
 
+        # Build minimal island_data dict for should_analyze_island()
+        island_data = {'id': iid, 'team': island_entry.get('team')}
         analysis = analyze_island_paths(iid, island_data, poi_assignments, G)
         if analysis is None:
             results['islands_skipped'] += 1
-            island_data['pathfinding'] = None
+            island_entry['pathfinding'] = None
             continue
 
         results['islands_analyzed'] += 1
         results['total_poi_endpoint_paths'] += len(analysis['poi_to_endpoint_paths'])
         results['total_defender_paths'] += len(analysis['defender_paths'] or [])
         results['island_results'].append(analysis)
-        island_data['pathfinding'] = analysis
+        island_entry['pathfinding'] = analysis
 
-    # Save updated map_context.json with embedded pathfinding
-    with open(context_path, 'w', encoding='utf-8') as f:
-        json.dump(context, f, indent=2)
+    # Save updated map_graph.json with embedded pathfinding
+    with open(graph_path, 'w', encoding='utf-8') as f:
+        json.dump(graph_data, f, indent=2)
 
     return results
 

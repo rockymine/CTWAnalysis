@@ -62,10 +62,10 @@ from layout_analysis.skeleton.poi_annotation import (
     compute_map_center,
     classify_island_center,
 )
-from layout_analysis.map_context import build_map_context
+from layout_analysis.map_context import build_map_context, build_skeleton_dicts
 from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
 from layout_analysis.skeleton.visualize import plot_path_grid
-from layout_analysis.connectivity import build_map_graph, save_map_graph, plot_map_connectivity
+from layout_analysis.connectivity import build_map_graph, save_map_graph, save_initial_map_graph, plot_map_connectivity
 
 
 def analyze_layout(map_folder: Path, force_rerun: bool = False):
@@ -356,7 +356,7 @@ def analyze_islands_step(
     else:
         print(f"  No map.xml found, skipping POI annotation")
 
-    # Build and save MapContext
+    # Build and save MapContext (metadata + island geometry, no skeleton)
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
         map_data=map_data_obj,
@@ -365,7 +365,11 @@ def analyze_islands_step(
     )
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
 
-    # Run pathfinding analysis (reads skeleton from map_context.json)
+    # Build skeleton dicts and save initial map_graph.json (skeleton data lives here)
+    island_skeletons = build_skeleton_dicts(islands, skeleton_results)
+    save_initial_map_graph(island_skeletons, map_ctx.map_name, map_folder)
+
+    # Run pathfinding analysis (reads skeleton from map_graph.json, POIs from map_context.json)
     print(f"  Running pathfinding analysis...")
     pathfinding_results = run_pathfinding_analysis(str(map_folder))
     if pathfinding_results and pathfinding_results['islands_analyzed'] > 0:
@@ -378,16 +382,16 @@ def analyze_islands_step(
         pathfinding_dir = island_output_dir / 'pathfinding'
         pathfinding_dir.mkdir(exist_ok=True)
 
-        # Reload updated context (now has pathfinding results embedded)
-        with open(str(island_output_dir / 'map_context.json'), 'r') as ctx_f:
-            updated_ctx = json.load(ctx_f)
-        islands_by_id = {i['id']: i for i in updated_ctx.get('islands', [])}
+        # Reload map_graph.json (now has pathfinding + skeleton)
+        with open(str(map_folder / 'map_graph.json'), 'r') as f:
+            graph_data = json.load(f)
+        islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
 
         for island_result in pathfinding_results['island_results']:
             iid = island_result['island_id']
-            island_ctx = islands_by_id.get(iid)
-            if island_ctx:
-                edge_px = load_edge_pixels(island_ctx.get('skeleton'))
+            island_entry = islands_by_id.get(iid)
+            if island_entry:
+                edge_px = load_edge_pixels(island_entry.get('skeleton'))
                 if edge_px:
                     plot_path_grid(
                         island_result, edge_px,
@@ -396,20 +400,26 @@ def analyze_islands_step(
 
     # Build inter-island connectivity graph
     print(f"  Building map connectivity graph...")
-    context_path_for_graph = island_output_dir / 'map_context.json'
-    if context_path_for_graph.exists():
-        with open(str(context_path_for_graph), 'r') as ctx_f:
-            graph_ctx = json.load(ctx_f)
-        map_graph = build_map_graph(graph_ctx)
-        save_map_graph(map_graph, map_folder)
+    graph_path = map_folder / 'map_graph.json'
+    if graph_path.exists():
+        with open(str(graph_path), 'r') as f:
+            graph_data = json.load(f)
+        map_graph_result = build_map_graph(graph_data)
+        save_map_graph(map_graph_result, map_folder)
 
-        n_nodes = len(map_graph['nodes'])
-        n_intra = sum(1 for e in map_graph['edges'] if e['edge_type'] == 'intra')
-        n_void = sum(1 for e in map_graph['edges'] if e['edge_type'] == 'void_link')
+        n_nodes = len(map_graph_result['nodes'])
+        n_intra = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'intra')
+        n_void = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'void_link')
         print(f"    Map Graph: {n_nodes} nodes, {n_intra} intra-island edges, {n_void} void links")
 
+        # Reload final map_graph.json for visualization
+        with open(str(graph_path), 'r') as f:
+            final_graph_data = json.load(f)
+        with open(str(island_output_dir / 'map_context.json'), 'r') as f:
+            ctx_for_viz = json.load(f)
+
         viz_path = island_output_dir / 'map_connectivity.png'
-        plot_map_connectivity(graph_ctx, map_graph, viz_path)
+        plot_map_connectivity(ctx_for_viz, final_graph_data, viz_path)
 
     # Cleanup legacy per-island CSV/JSON exports
     import shutil
