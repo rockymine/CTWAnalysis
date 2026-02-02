@@ -584,6 +584,8 @@ def plot_path_grid(
             ax.plot(xs, zs, color=color, linewidth=2.0, solid_capstyle='round')
 
         # Mark nodes along the path
+        if len(path_nodes) < 2:
+            continue
         for i, nid in enumerate(path_nodes):
             # Get coords from the pixel data edges
             # First node: start of first edge, last node: end of last edge

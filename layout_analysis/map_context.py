@@ -44,6 +44,9 @@ class MapContext:
     # POI summary
     poi_assignments: Dict = field(default_factory=dict)
 
+    # Build region
+    build_region: Optional[Dict] = None
+
     def to_dict(self) -> dict:
         """Serialize to a JSON-compatible dict."""
         return {
@@ -64,6 +67,7 @@ class MapContext:
                 'unique_canonical_shapes': self.unique_canonical_shapes,
             },
             'poi_assignments': self.poi_assignments,
+            'build_region': self.build_region,
         }
 
     def save_json(self, output_path: str) -> None:

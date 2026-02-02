@@ -363,6 +363,41 @@ def analyze_islands_step(
         map_center=map_center_pt,
         poi_assignments=poi_assignments,
     )
+
+    # Build region extraction
+    if map_data_obj is not None:
+        try:
+            from xml_analysis.build_regions import extract_build_region
+            from shapely.geometry import Polygon as ShapelyPolygon
+
+            island_shapely = []
+            for island in islands:
+                if island.simplified_polygon:
+                    ext = island.simplified_polygon['exterior']
+                    holes = island.simplified_polygon.get('holes', [])
+                    try:
+                        poly = ShapelyPolygon(ext, holes)
+                        if poly.is_valid:
+                            island_shapely.append(poly)
+                    except Exception:
+                        pass
+
+            y0_path = str(map_folder / 'layout_y0.parquet')
+            build_result = extract_build_region(
+                map_data=map_data_obj,
+                map_bounds=map_ctx.bounding_box,
+                y0_parquet_path=y0_path,
+                island_polygons=island_shapely,
+            )
+            if build_result:
+                map_ctx.build_region = build_result
+                print(f"    Build region: source={build_result['source']}, "
+                      f"void_area={build_result['buildable_void_area']}")
+            else:
+                print(f"    No build region detected")
+        except Exception as e:
+            print(f"    [!] Build region extraction failed: {e}")
+
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
 
     # Build skeleton dicts and save initial map_graph.json (skeleton data lives here)

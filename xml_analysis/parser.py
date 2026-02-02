@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
-    SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion, ComplementRegion
+    SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
+    ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
 )
 
 
@@ -44,6 +45,18 @@ class Wool:
 
 
 @dataclass
+class ApplyRule:
+    """An <apply> element that binds filters to regions."""
+    block_filter: str = ""
+    block_place_filter: str = ""
+    block_break_filter: str = ""
+    use_filter: str = ""
+    region_id: str = ""
+    inline_region: Optional[Region] = None
+    message: str = ""
+
+
+@dataclass
 class MapData:
     """Complete map data."""
     name: str = ""
@@ -53,6 +66,7 @@ class MapData:
     spawns: List[Spawn] = field(default_factory=list)
     wools: List[Wool] = field(default_factory=list)
     regions: Dict[str, Region] = field(default_factory=dict)
+    apply_rules: List[ApplyRule] = field(default_factory=list)
     max_build_height: Optional[int] = None
 
 
@@ -93,8 +107,8 @@ class MapXMLParser:
         # Parse wools
         data.wools = self._parse_wools()
 
-        # Parse regions
-        data.regions = self._parse_regions()
+        # Parse regions and apply rules
+        data.regions, data.apply_rules = self._parse_regions()
 
         # Parse max build height
         data.max_build_height = self._parse_max_build_height()
@@ -175,19 +189,23 @@ class MapXMLParser:
 
         return wools
 
-    def _parse_regions(self) -> Dict[str, Region]:
-        """Parse regions elements."""
+    def _parse_regions(self) -> Tuple[Dict[str, Region], List[ApplyRule]]:
+        """Parse regions and apply elements."""
         regions = {}
+        apply_rules = []
         regions_elem = self.root.find('regions')
         if regions_elem is None:
-            return regions
+            return regions, apply_rules
 
         for child in regions_elem:
-            region = self._parse_region_node(child)
-            if region and region.id:
-                regions[region.id] = region
+            if child.tag == 'apply':
+                apply_rules.append(self._parse_apply(child))
+            else:
+                region = self._parse_region_node(child)
+                if region and region.id:
+                    regions[region.id] = region
 
-        return regions
+        return regions, apply_rules
 
     def _parse_max_build_height(self) -> Optional[int]:
         """Parse max build height."""
@@ -227,6 +245,19 @@ class MapXMLParser:
             return self._parse_negative(elem, region_id)
         elif tag == 'complement':
             return self._parse_complement(elem, region_id)
+        elif tag == 'intersect':
+            return self._parse_intersect(elem, region_id)
+        elif tag == 'everywhere':
+            return EverywhereRegion(id=region_id)
+        elif tag == 'above':
+            return AboveRegion(id=region_id, y=float(elem.get('y', '0')))
+        elif tag == 'region':
+            # <region id="ref-id"/> — reference to a named region
+            ref_id = elem.get('id', '')
+            if ref_id and len(elem) == 0:
+                return RegionReference(ref_id=ref_id)
+            # If it has children, treat as a container (inline region)
+            return self._parse_region_element(elem)
 
         return None
 
@@ -379,6 +410,37 @@ class MapXMLParser:
             id=region_id,
             children=children
         )
+
+    def _parse_intersect(self, elem: ET.Element, region_id: str) -> IntersectRegion:
+        """Parse intersect region."""
+        children = []
+        for child in elem:
+            region = self._parse_region_node(child)
+            if region:
+                children.append(region)
+
+        return IntersectRegion(
+            id=region_id,
+            children=children
+        )
+
+    def _parse_apply(self, elem: ET.Element) -> ApplyRule:
+        """Parse an <apply> element."""
+        rule = ApplyRule(
+            block_filter=elem.get('block', ''),
+            block_place_filter=elem.get('block-place', ''),
+            block_break_filter=elem.get('block-break', ''),
+            use_filter=elem.get('use', ''),
+            region_id=elem.get('region', ''),
+            message=elem.get('message', ''),
+        )
+        # Check for inline region children
+        for child in elem:
+            region = self._parse_region_node(child)
+            if region:
+                rule.inline_region = region
+                break
+        return rule
 
     def identify_region_categories(self, data: MapData) -> Dict[str, List[str]]:
         """

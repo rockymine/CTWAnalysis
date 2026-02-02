@@ -7,10 +7,11 @@ Converts parsed map data to JSON-serializable format.
 import json
 from typing import Dict, Any, List
 
-from .parser import MapData, Team, Spawn, Wool
+from .parser import MapData, Team, Spawn, Wool, ApplyRule
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
-    SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion, ComplementRegion
+    SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
+    ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
 )
 
 
@@ -73,8 +74,17 @@ class MapDataEncoder:
         elif isinstance(region, (BlockRegion, PointRegion)):
             base['position'] = {'x': region.x, 'y': region.y, 'z': region.z}
 
-        elif isinstance(region, (UnionRegion, NegativeRegion, ComplementRegion)):
+        elif isinstance(region, (UnionRegion, NegativeRegion, ComplementRegion, IntersectRegion)):
             base['children'] = [MapDataEncoder.encode_region(child) for child in region.children]
+
+        elif isinstance(region, RegionReference):
+            base['ref_id'] = region.ref_id
+
+        elif isinstance(region, EverywhereRegion):
+            pass  # type field is sufficient
+
+        elif isinstance(region, AboveRegion):
+            base['y'] = region.y
 
         return base
 
@@ -145,11 +155,32 @@ class MapDataEncoder:
                 region_id: MapDataEncoder.encode_region(region)
                 for region_id, region in data.regions.items()
             },
+            'apply_rules': [MapDataEncoder.encode_apply_rule(r) for r in data.apply_rules],
         }
 
         if categories:
             result['region_categories'] = categories
 
+        return result
+
+    @staticmethod
+    def encode_apply_rule(rule: ApplyRule) -> Dict[str, Any]:
+        """Convert an apply rule to dictionary."""
+        result = {}
+        if rule.block_filter:
+            result['block'] = rule.block_filter
+        if rule.block_place_filter:
+            result['block_place'] = rule.block_place_filter
+        if rule.block_break_filter:
+            result['block_break'] = rule.block_break_filter
+        if rule.use_filter:
+            result['use'] = rule.use_filter
+        if rule.region_id:
+            result['region'] = rule.region_id
+        if rule.inline_region:
+            result['inline_region'] = MapDataEncoder.encode_region(rule.inline_region)
+        if rule.message:
+            result['message'] = rule.message
         return result
 
     @staticmethod

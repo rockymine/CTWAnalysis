@@ -62,6 +62,27 @@ def plot_map_connectivity(
     for node in graph_section.get('nodes', []):
         node_lookup[node['map_node_id']] = node
 
+    # ── Layer 0: Buildable void overlay ─────────────────────────────
+    build_region = map_context.get('build_region')
+    if build_region:
+        for poly_coords in build_region.get('buildable_void', []):
+            exterior = np.array(poly_coords['exterior'])
+            if len(exterior) >= 3:
+                ax.fill(
+                    exterior[:, 0], exterior[:, 1],
+                    facecolor='#22c55e', alpha=0.12,
+                    edgecolor='#16a34a', linewidth=0.5,
+                    zorder=0,
+                )
+                for hole in poly_coords.get('holes', []):
+                    h = np.array(hole)
+                    if len(h) >= 3:
+                        ax.fill(
+                            h[:, 0], h[:, 1],
+                            facecolor='white', alpha=1.0,
+                            zorder=0,
+                        )
+
     # ── Layer 1: Island polygon boundaries ──────────────────────────
     for island in map_context.get('islands', []):
         poly = island.get('simplified_polygon')
@@ -211,7 +232,12 @@ def plot_map_connectivity(
         )
 
     # ── Legend ───────────────────────────────────────────────────────
-    legend_handles = [
+    legend_handles = []
+    if build_region:
+        legend_handles.append(
+            mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void')
+        )
+    legend_handles += [
         plt.Line2D([0], [0], color=_TEAM_COLORS['blue'], linewidth=2, label='Blue team island'),
         plt.Line2D([0], [0], color=_TEAM_COLORS['red'], linewidth=2, label='Red team island'),
         plt.Line2D([0], [0], color=_NEUTRAL_COLOR, linewidth=2, label='Neutral island'),
