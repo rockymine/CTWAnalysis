@@ -73,10 +73,13 @@ def plot_islands(
                 label=f'Island {island.id}' if i < 10 else None
             )
 
-        # Plot convex hull
-        if show_hulls and island.hull_vertices is not None:
-            hull = np.vstack([island.hull_vertices, island.hull_vertices[0]])
-            ax.fill(hull[:, 0], hull[:, 1], color=color, alpha=alpha, edgecolor='black', linewidth=1)
+        # Plot simplified polygon outline
+        if show_hulls and island.simplified_polygon is not None:
+            exterior = np.array(island.simplified_polygon['exterior'])
+            ax.fill(exterior[:, 0], exterior[:, 1], color=color, alpha=alpha, edgecolor='black', linewidth=1)
+            for hole_coords in island.simplified_polygon.get('holes', []):
+                hole = np.array(hole_coords)
+                ax.fill(hole[:, 0], hole[:, 1], color='white', edgecolor='black', linewidth=1, alpha=0.9)
 
         # Plot triangles
         if show_triangles and island.triangles:
@@ -216,7 +219,7 @@ def plot_island_comparison(
 
     # 2. Convex hulls
     ax2 = fig.add_subplot(gs[0, 1])
-    plot_islands(islands, ax=ax2, title="2. Convex Hulls",
+    plot_islands(islands, ax=ax2, title="2. Simplified Polygons",
                 show_blocks=False, show_hulls=True, show_triangles=False,
                 show_labels=True, alpha=0.5)
 
@@ -233,11 +236,15 @@ def plot_island_comparison(
     for i, island in enumerate(islands):
         color = colors[i]
 
-        # Light hull background
-        if island.hull_vertices is not None:
-            hull = np.vstack([island.hull_vertices, island.hull_vertices[0]])
-            ax4.fill(hull[:, 0], hull[:, 1], color=color, alpha=0.2)
-            ax4.plot(hull[:, 0], hull[:, 1], color='black', linewidth=1, alpha=0.5)
+        # Light polygon background
+        if island.simplified_polygon is not None:
+            exterior = np.array(island.simplified_polygon['exterior'])
+            ax4.fill(exterior[:, 0], exterior[:, 1], color=color, alpha=0.2)
+            ax4.plot(exterior[:, 0], exterior[:, 1], color='black', linewidth=1, alpha=0.5)
+            for hole_coords in island.simplified_polygon.get('holes', []):
+                hole = np.array(hole_coords)
+                ax4.fill(hole[:, 0], hole[:, 1], color='white', alpha=0.9)
+                ax4.plot(hole[:, 0], hole[:, 1], color='black', linewidth=1, alpha=0.5)
 
         # Triangle edges
         if island.triangles:
@@ -253,7 +260,7 @@ def plot_island_comparison(
 
     ax4.set_xlabel('X Coordinate (blocks)')
     ax4.set_ylabel('Z Coordinate (blocks)')
-    ax4.set_title("4. Combined View (Hulls + Triangle Edges + Centers)")
+    ax4.set_title("4. Combined View (Polygons + Triangle Edges + Centers)")
     ax4.axis('equal')
     ax4.grid(True, alpha=0.3)
 
@@ -431,10 +438,13 @@ def plot_triangulation_detail(
                 )
                 ax.add_patch(triangle)
 
-        # Plot convex hull outline
-        if island.hull_vertices is not None:
-            hull = np.vstack([island.hull_vertices, island.hull_vertices[0]])
-            ax.plot(hull[:, 0], hull[:, 1], 'r--', linewidth=1, alpha=0.5, label='Convex Hull')
+        # Plot simplified polygon outline
+        if island.simplified_polygon is not None:
+            exterior = np.array(island.simplified_polygon['exterior'])
+            ax.plot(exterior[:, 0], exterior[:, 1], 'r--', linewidth=1, alpha=0.5, label='Simplified Polygon')
+            for hole_coords in island.simplified_polygon.get('holes', []):
+                hole = np.array(hole_coords)
+                ax.plot(hole[:, 0], hole[:, 1], 'r--', linewidth=1, alpha=0.5)
 
         ax.set_title(f'Island {island.id}\n{island.area:,} blocks, {len(island.triangles)} triangles')
         ax.axis('equal')

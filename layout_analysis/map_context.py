@@ -137,6 +137,7 @@ def build_map_context(
             'team': island.team,
             'triangle_count': len(island.triangles),
             'hole_count': len(island.holes),
+            'simplified_polygon': island.simplified_polygon,
         }
         ctx.islands.append(island_info)
 

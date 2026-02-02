@@ -60,6 +60,7 @@ def triangulate_island_union(
 
     if isinstance(polygon, Polygon) and not polygon.is_empty:
         island.hull_vertices = np.array(polygon.exterior.coords[:-1])
+        island.simplified_polygon = _extract_polygon_coords(polygon)
 
     island.triangles = triangles
     return triangles
@@ -129,8 +130,10 @@ def triangulate_islands_canonical(
         canonical_triangles = _triangulate_shapely_polygon(polygon)
 
         canonical_hull: Optional[np.ndarray] = None
+        canonical_poly_coords = None
         if isinstance(polygon, Polygon) and not polygon.is_empty:
             canonical_hull = np.array(polygon.exterior.coords[:-1])
+            canonical_poly_coords = _extract_polygon_coords(polygon)
 
         # Step 3: Transform back to world space for each island in the group
         for island, canonical in group:
@@ -140,6 +143,9 @@ def triangulate_islands_canonical(
             ]
             if canonical_hull is not None:
                 island.hull_vertices = transform.to_original(canonical_hull)
+            if canonical_poly_coords is not None:
+                island.simplified_polygon = _transform_polygon_coords(
+                    canonical_poly_coords, transform)
             total += len(island.triangles)
 
     return total
@@ -148,6 +154,40 @@ def triangulate_islands_canonical(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def _extract_polygon_coords(polygon) -> dict:
+    """
+    Extract exterior and hole coordinates from a Shapely Polygon.
+
+    Returns a dict with closed rings (first coord == last coord).
+    """
+    exterior = [
+        [round(float(x), 1), round(float(z), 1)]
+        for x, z in polygon.exterior.coords
+    ]
+    holes = [
+        [[round(float(x), 1), round(float(z), 1)] for x, z in ring.coords]
+        for ring in polygon.interiors
+    ]
+    return {'exterior': exterior, 'holes': holes}
+
+
+def _transform_polygon_coords(poly_coords: dict, transform) -> dict:
+    """Transform polygon coords from canonical to world space."""
+    ext_arr = np.array(poly_coords['exterior'])
+    world_ext = transform.to_original(ext_arr)
+    world_exterior = [
+        [round(float(p[0]), 1), round(float(p[1]), 1)] for p in world_ext
+    ]
+    world_holes = []
+    for hole_coords in poly_coords['holes']:
+        h_arr = np.array(hole_coords)
+        world_h = transform.to_original(h_arr)
+        world_holes.append(
+            [[round(float(p[0]), 1), round(float(p[1]), 1)] for p in world_h]
+        )
+    return {'exterior': world_exterior, 'holes': world_holes}
+
 
 def _build_union_polygon(
     blocks: np.ndarray,
