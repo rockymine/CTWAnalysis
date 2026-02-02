@@ -1,0 +1,2898 @@
+[
+  {
+    "file": "./analyze_islands.py",
+    "functions": [
+      {
+        "name": "analyze_map_islands",
+        "args": [
+          "bedrock_parquet",
+          "output_dir",
+          "map_name",
+          "connectivity",
+          "min_island_size",
+          "buffer_distance",
+          "simplify_tolerance",
+          "detect_holes"
+        ],
+        "returns": null
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./analyze_match.py",
+    "functions": [
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./classify_segments.py",
+    "functions": [
+      {
+        "name": "load_config",
+        "args": [
+          "config_path"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "generate_classification_report",
+        "args": [
+          "life_segments",
+          "classifications",
+          "map_chars",
+          "output_dir"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "export_classifications_csv",
+        "args": [
+          "life_segments",
+          "classifications",
+          "output_dir"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "print_classification_summary",
+        "args": [
+          "classifications"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./generate_path_networks.py",
+    "functions": [
+      {
+        "name": "load_config",
+        "args": [
+          "config_path"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "generate_path_networks",
+        "args": [
+          "match_file",
+          "map_name",
+          "bedrock_parquet",
+          "output_dir",
+          "resolution",
+          "cluster_radius",
+          "generate_team_networks"
+        ],
+        "returns": null
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./generate_plots.py",
+    "functions": [
+      {
+        "name": "load_config",
+        "args": [
+          "config_path"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "plot_match",
+        "args": [
+          "ax",
+          "map_data",
+          "life_segments",
+          "team_filter",
+          "segment_indices",
+          "show_map",
+          "show_positions",
+          "show_kills",
+          "show_deaths",
+          "show_wool_touches",
+          "show_wool_captures"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "generate_summary_report",
+        "args": [
+          "config",
+          "life_segments",
+          "player_stats",
+          "output_dir"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./run_analysis_workflow.py",
+    "functions": [
+      {
+        "name": "analyze_layout",
+        "args": [
+          "map_folder",
+          "force_rerun"
+        ],
+        "returns": null
+      },
+      {
+        "name": "analyze_islands_step",
+        "args": [
+          "map_folder",
+          "force_rerun",
+          "simplify_tolerance",
+          "buffer_distance",
+          "layout_type",
+          "canonical_triangulation"
+        ],
+        "returns": null
+      },
+      {
+        "name": "analyze_xml",
+        "args": [
+          "map_folder",
+          "force_rerun"
+        ],
+        "returns": null
+      },
+      {
+        "name": "parse_match_history",
+        "args": [
+          "match_history_file",
+          "map_name"
+        ],
+        "returns": null
+      },
+      {
+        "name": "analyze_single_match",
+        "args": [
+          "map_name",
+          "match_file",
+          "bedrock_parquet",
+          "output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "analyze_matches",
+        "args": [
+          "map_folder",
+          "match_history_file"
+        ],
+        "returns": null
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./run_layout_analysis.py",
+    "functions": [
+      {
+        "name": "save_csv_or_parquet",
+        "args": [
+          "df",
+          "base_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./run_xml_analysis.py",
+    "functions": [
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/extractors.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "Y0LayerExtractor",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "region_reader"
+            ],
+            "returns": null
+          },
+          {
+            "name": "extract",
+            "args": [
+              "self"
+            ],
+            "returns": "pd.DataFrame"
+          }
+        ]
+      },
+      {
+        "name": "TopSurfaceExtractor",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "region_reader"
+            ],
+            "returns": null
+          },
+          {
+            "name": "extract",
+            "args": [
+              "self"
+            ],
+            "returns": "pd.DataFrame"
+          }
+        ]
+      },
+      {
+        "name": "VerticalDensityExtractor",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "region_reader",
+              "threshold",
+              "mode"
+            ],
+            "returns": null
+          },
+          {
+            "name": "extract",
+            "args": [
+              "self"
+            ],
+            "returns": "pd.DataFrame"
+          },
+          {
+            "name": "_calculate_max_run",
+            "args": [
+              "self",
+              "column_blocks"
+            ],
+            "returns": "int"
+          },
+          {
+            "name": "_calculate_count",
+            "args": [
+              "self",
+              "column_blocks"
+            ],
+            "returns": "int"
+          }
+        ]
+      },
+      {
+        "name": "LowestBedrockExtractor",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "region_reader"
+            ],
+            "returns": null
+          },
+          {
+            "name": "extract",
+            "args": [
+              "self"
+            ],
+            "returns": "pd.DataFrame"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./layout_analysis/map_context.py",
+    "functions": [
+      {
+        "name": "build_map_context",
+        "args": [
+          "islands",
+          "skeleton_results",
+          "canonical_groups",
+          "layout_df",
+          "map_data",
+          "map_center",
+          "poi_assignments"
+        ],
+        "returns": "MapContext"
+      },
+      {
+        "name": "build_skeleton_dicts",
+        "args": [
+          "islands",
+          "skeleton_results"
+        ],
+        "returns": "List[dict]"
+      },
+      {
+        "name": "_build_skeleton_dict",
+        "args": [
+          "result"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "_json_default",
+        "args": [
+          "obj"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": [
+      {
+        "name": "MapContext",
+        "methods": [
+          {
+            "name": "to_dict",
+            "args": [
+              "self"
+            ],
+            "returns": "dict"
+          },
+          {
+            "name": "save_json",
+            "args": [
+              "self",
+              "output_path"
+            ],
+            "returns": "None"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./layout_analysis/plotting.py",
+    "functions": [
+      {
+        "name": "save_point_plot",
+        "args": [
+          "df",
+          "output_path",
+          "title",
+          "use_binned",
+          "bin_size"
+        ],
+        "returns": null
+      },
+      {
+        "name": "save_all_plots",
+        "args": [
+          "y0_df",
+          "top_surface_df",
+          "density_dfs",
+          "bedrock_df",
+          "output_dir"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/region_reader.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "RegionReader",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "region_dir"
+            ],
+            "returns": null
+          },
+          {
+            "name": "get_region_files",
+            "args": [
+              "self"
+            ],
+            "returns": "list"
+          },
+          {
+            "name": "iter_chunks",
+            "args": [
+              "self"
+            ],
+            "returns": "Iterator[Tuple[anvil.Chunk, int, int]]"
+          },
+          {
+            "name": "get_section",
+            "args": [
+              "self",
+              "chunk",
+              "section_y"
+            ],
+            "returns": "Optional[dict]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./layout_analysis/utils.py",
+    "functions": [
+      {
+        "name": "nibble",
+        "args": [
+          "arr",
+          "i"
+        ],
+        "returns": null
+      },
+      {
+        "name": "decode_block_id",
+        "args": [
+          "blocks_array",
+          "add_array",
+          "index"
+        ],
+        "returns": null
+      },
+      {
+        "name": "decode_block_data",
+        "args": [
+          "data_array",
+          "index"
+        ],
+        "returns": null
+      },
+      {
+        "name": "get_block_index",
+        "args": [
+          "x",
+          "y",
+          "z"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/connectivity/map_graph.py",
+    "functions": [
+      {
+        "name": "build_map_graph",
+        "args": [
+          "map_graph_data",
+          "params"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "find_void_links",
+        "args": [
+          "endpoints_by_island",
+          "params"
+        ],
+        "returns": "list"
+      },
+      {
+        "name": "compute_intra_island_distances",
+        "args": [
+          "island_skeleton"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "_build_connectivity_summary",
+        "args": [
+          "void_links",
+          "endpoints_by_island"
+        ],
+        "returns": "dict"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/connectivity/serialize.py",
+    "functions": [
+      {
+        "name": "_json_default",
+        "args": [
+          "obj"
+        ],
+        "returns": null
+      },
+      {
+        "name": "save_initial_map_graph",
+        "args": [
+          "island_skeletons",
+          "map_name",
+          "map_folder",
+          "params"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "save_map_graph",
+        "args": [
+          "map_graph_result",
+          "map_folder"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "load_map_graph",
+        "args": [
+          "map_folder"
+        ],
+        "returns": "dict"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/connectivity/visualize.py",
+    "functions": [
+      {
+        "name": "plot_map_connectivity",
+        "args": [
+          "map_context",
+          "map_graph_data",
+          "output_path"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/islands/datatypes.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "Island",
+        "methods": []
+      }
+    ]
+  },
+  {
+    "file": "./layout_analysis/islands/detection.py",
+    "functions": [
+      {
+        "name": "detect_islands",
+        "args": [
+          "block_data",
+          "x_col",
+          "z_col",
+          "ignore_y",
+          "connectivity",
+          "min_island_size"
+        ],
+        "returns": "List[Island]"
+      },
+      {
+        "name": "find_island_holes",
+        "args": [
+          "island",
+          "grid_resolution"
+        ],
+        "returns": "List[np.ndarray]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/islands/statistics.py",
+    "functions": [
+      {
+        "name": "compute_island_statistics",
+        "args": [
+          "islands"
+        ],
+        "returns": "Dict"
+      },
+      {
+        "name": "classify_islands",
+        "args": [
+          "islands",
+          "map_center"
+        ],
+        "returns": "Dict[str, List[Island]]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/islands/triangulation.py",
+    "functions": [
+      {
+        "name": "triangulate_island_union",
+        "args": [
+          "island",
+          "buffer_distance",
+          "simplify_tolerance",
+          "detect_holes"
+        ],
+        "returns": "List[np.ndarray]"
+      },
+      {
+        "name": "triangulate_islands_canonical",
+        "args": [
+          "islands",
+          "buffer_distance",
+          "simplify_tolerance",
+          "detect_holes",
+          "allow_mirror"
+        ],
+        "returns": "int"
+      },
+      {
+        "name": "_extract_polygon_coords",
+        "args": [
+          "polygon"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "_transform_polygon_coords",
+        "args": [
+          "poly_coords",
+          "transform"
+        ],
+        "returns": "dict"
+      },
+      {
+        "name": "_build_union_polygon",
+        "args": [
+          "blocks",
+          "buffer_distance",
+          "simplify_tolerance"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_triangulate_shapely_polygon",
+        "args": [
+          "polygon"
+        ],
+        "returns": "List[np.ndarray]"
+      },
+      {
+        "name": "_collect_polygon_triangles",
+        "args": [
+          "geometry",
+          "out",
+          "min_area"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "_ear_clip_triangulate",
+        "args": [
+          "vertices"
+        ],
+        "returns": "List[np.ndarray]"
+      },
+      {
+        "name": "_polygon_area",
+        "args": [
+          "vertices"
+        ],
+        "returns": "float"
+      },
+      {
+        "name": "_is_convex",
+        "args": [
+          "v_prev",
+          "v_curr",
+          "v_next"
+        ],
+        "returns": "bool"
+      },
+      {
+        "name": "_point_in_triangle",
+        "args": [
+          "p",
+          "v1",
+          "v2",
+          "v3"
+        ],
+        "returns": "bool"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/islands/visualization.py",
+    "functions": [
+      {
+        "name": "generate_distinct_colors",
+        "args": [
+          "n"
+        ],
+        "returns": "List[Tuple[float, float, float]]"
+      },
+      {
+        "name": "plot_islands",
+        "args": [
+          "islands",
+          "ax",
+          "title",
+          "show_blocks",
+          "show_hulls",
+          "show_triangles",
+          "show_labels",
+          "show_centers",
+          "alpha",
+          "figsize"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_island_triangulation",
+        "args": [
+          "islands",
+          "ax",
+          "title",
+          "show_blocks",
+          "show_holes",
+          "alpha",
+          "figsize"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_island_comparison",
+        "args": [
+          "islands",
+          "output_path",
+          "figsize"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_island_statistics",
+        "args": [
+          "islands",
+          "stats",
+          "output_path",
+          "figsize"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_triangulation_detail",
+        "args": [
+          "islands",
+          "output_path",
+          "figsize",
+          "cols"
+        ],
+        "returns": null
+      },
+      {
+        "name": "create_island_report",
+        "args": [
+          "islands",
+          "stats",
+          "output_dir",
+          "map_name"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/canonicalize.py",
+    "functions": [
+      {
+        "name": "_rotate_int",
+        "args": [
+          "points",
+          "degrees"
+        ],
+        "returns": "np.ndarray"
+      },
+      {
+        "name": "canonicalize_island",
+        "args": [
+          "island_id",
+          "blocks",
+          "allow_mirror"
+        ],
+        "returns": "CanonicalIsland"
+      },
+      {
+        "name": "_lex_compare",
+        "args": [
+          "a",
+          "b"
+        ],
+        "returns": "int"
+      },
+      {
+        "name": "_compute_canonical_key",
+        "args": [
+          "sorted_points"
+        ],
+        "returns": "str"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/datatypes.py",
+    "functions": [
+      {
+        "name": "_rotate_points",
+        "args": [
+          "points",
+          "degrees"
+        ],
+        "returns": "np.ndarray"
+      }
+    ],
+    "classes": [
+      {
+        "name": "CanonicalTransform",
+        "methods": [
+          {
+            "name": "to_canonical",
+            "args": [
+              "self",
+              "points"
+            ],
+            "returns": "np.ndarray"
+          },
+          {
+            "name": "to_original",
+            "args": [
+              "self",
+              "points"
+            ],
+            "returns": "np.ndarray"
+          }
+        ]
+      },
+      {
+        "name": "CanonicalIsland",
+        "methods": []
+      },
+      {
+        "name": "RasterMask",
+        "methods": [
+          {
+            "name": "rc_to_canonical",
+            "args": [
+              "self",
+              "r",
+              "c"
+            ],
+            "returns": "Tuple[int, int]"
+          },
+          {
+            "name": "canonical_to_rc",
+            "args": [
+              "self",
+              "x",
+              "z"
+            ],
+            "returns": "Tuple[int, int]"
+          }
+        ]
+      },
+      {
+        "name": "SkeletonPixels",
+        "methods": []
+      },
+      {
+        "name": "GraphNode",
+        "methods": []
+      },
+      {
+        "name": "GraphEdge",
+        "methods": []
+      },
+      {
+        "name": "SkeletonGraph",
+        "methods": []
+      },
+      {
+        "name": "IslandResult",
+        "methods": []
+      }
+    ]
+  },
+  {
+    "file": "./layout_analysis/skeleton/edges.py",
+    "functions": [
+      {
+        "name": "extract_edges",
+        "args": [
+          "skeleton",
+          "degree_map",
+          "nodes",
+          "connectivity"
+        ],
+        "returns": "List[GraphEdge]"
+      },
+      {
+        "name": "_walk_edge",
+        "args": [
+          "start_rc",
+          "first_step_rc",
+          "skeleton_set",
+          "node_positions",
+          "offsets",
+          "mask_shape"
+        ],
+        "returns": "Tuple[Optional[Tuple[int, int]], List[Tuple[int, int]]]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/merge.py",
+    "functions": [
+      {
+        "name": "merge_junction_blobs",
+        "args": [
+          "nodes",
+          "edges",
+          "connectivity"
+        ],
+        "returns": "Tuple[List[GraphNode], List[GraphEdge]]"
+      },
+      {
+        "name": "_cluster_junctions",
+        "args": [
+          "junctions",
+          "connectivity"
+        ],
+        "returns": "List[List[GraphNode]]"
+      },
+      {
+        "name": "_fix_path_endpoints",
+        "args": [
+          "pixel_path",
+          "src_id",
+          "dst_id",
+          "node_rc"
+        ],
+        "returns": "np.ndarray"
+      },
+      {
+        "name": "_pick_representative",
+        "args": [
+          "cluster"
+        ],
+        "returns": "Tuple[int, int]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/nodes.py",
+    "functions": [
+      {
+        "name": "compute_pixel_degrees",
+        "args": [
+          "skeleton",
+          "connectivity"
+        ],
+        "returns": "np.ndarray"
+      },
+      {
+        "name": "extract_nodes",
+        "args": [
+          "skeleton",
+          "degree_map"
+        ],
+        "returns": "List[GraphNode]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/pathfinding.py",
+    "functions": [
+      {
+        "name": "load_skeleton_graph",
+        "args": [
+          "island_skeleton"
+        ],
+        "returns": "Optional[nx.Graph]"
+      },
+      {
+        "name": "should_analyze_island",
+        "args": [
+          "island_data",
+          "poi_assignments"
+        ],
+        "returns": "bool"
+      },
+      {
+        "name": "get_endpoint_nodes",
+        "args": [
+          "G"
+        ],
+        "returns": "List[int]"
+      },
+      {
+        "name": "_get_island_pois",
+        "args": [
+          "island_id",
+          "poi_assignments"
+        ],
+        "returns": "Tuple[List[dict], List[dict]]"
+      },
+      {
+        "name": "_path_distance",
+        "args": [
+          "G",
+          "path"
+        ],
+        "returns": "float"
+      },
+      {
+        "name": "_path_coords",
+        "args": [
+          "G",
+          "path"
+        ],
+        "returns": "List[Tuple[float, float]]"
+      },
+      {
+        "name": "compute_poi_to_endpoint_paths",
+        "args": [
+          "G",
+          "poi_node",
+          "poi_type",
+          "poi_id"
+        ],
+        "returns": "List[dict]"
+      },
+      {
+        "name": "compute_defender_paths",
+        "args": [
+          "G",
+          "spawn_node",
+          "spawn_team",
+          "wool_nodes"
+        ],
+        "returns": "List[dict]"
+      },
+      {
+        "name": "analyze_island_paths",
+        "args": [
+          "island_id",
+          "island_data",
+          "poi_assignments",
+          "G"
+        ],
+        "returns": "Optional[dict]"
+      },
+      {
+        "name": "run_pathfinding_analysis",
+        "args": [
+          "map_folder"
+        ],
+        "returns": "Optional[dict]"
+      },
+      {
+        "name": "load_edge_pixels",
+        "args": [
+          "island_skeleton"
+        ],
+        "returns": "Optional[Dict]"
+      },
+      {
+        "name": "get_edge_detail",
+        "args": [
+          "edge_pixels",
+          "src",
+          "dst"
+        ],
+        "returns": "Optional[List[List[float]]]"
+      },
+      {
+        "name": "get_path_detail",
+        "args": [
+          "edge_pixels",
+          "path_nodes"
+        ],
+        "returns": "Optional[List[List[float]]]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/pipeline.py",
+    "functions": [
+      {
+        "name": "process_island",
+        "args": [
+          "island_id",
+          "blocks",
+          "skeleton_connectivity",
+          "skeleton_method",
+          "padding",
+          "enable_canonicalization",
+          "allow_mirror",
+          "prune_max_length",
+          "prune_min_graph_nodes"
+        ],
+        "returns": "IslandResult"
+      },
+      {
+        "name": "process_all_islands",
+        "args": [
+          "islands",
+          "skeleton_connectivity",
+          "skeleton_method",
+          "padding",
+          "enable_canonicalization",
+          "allow_mirror",
+          "min_island_size",
+          "prune_max_length",
+          "prune_min_graph_nodes"
+        ],
+        "returns": "Tuple[List[IslandResult], Dict[str, List[int]]]"
+      },
+      {
+        "name": "_identity_canonical",
+        "args": [
+          "island_id",
+          "blocks"
+        ],
+        "returns": "CanonicalIsland"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/poi_annotation.py",
+    "functions": [
+      {
+        "name": "extract_spawn_locations",
+        "args": [
+          "map_data"
+        ],
+        "returns": "List[Dict]"
+      },
+      {
+        "name": "extract_wool_locations",
+        "args": [
+          "map_data"
+        ],
+        "returns": "List[Dict]"
+      },
+      {
+        "name": "find_containing_island",
+        "args": [
+          "point_xz",
+          "islands",
+          "tolerance"
+        ],
+        "returns": "Optional[Island]"
+      },
+      {
+        "name": "find_nearest_node",
+        "args": [
+          "point_xz",
+          "island_result",
+          "node_type"
+        ],
+        "returns": "Optional[int]"
+      },
+      {
+        "name": "compute_map_center",
+        "args": [
+          "layout_df"
+        ],
+        "returns": "Tuple[float, float]"
+      },
+      {
+        "name": "classify_island_center",
+        "args": [
+          "islands",
+          "map_center"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "annotate_skeleton_pois",
+        "args": [
+          "islands",
+          "skeleton_results",
+          "map_data"
+        ],
+        "returns": "Dict[str, list]"
+      },
+      {
+        "name": "_get_region_center_xz",
+        "args": [
+          "region"
+        ],
+        "returns": "Tuple[Optional[float], Optional[float]]"
+      },
+      {
+        "name": "_extract_team_from_id",
+        "args": [
+          "region_id",
+          "teams"
+        ],
+        "returns": "str"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/prune.py",
+    "functions": [
+      {
+        "name": "prune_short_branches",
+        "args": [
+          "nodes",
+          "edges",
+          "max_length",
+          "min_graph_nodes"
+        ],
+        "returns": "Tuple[List[GraphNode], List[GraphEdge]]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/rasterize.py",
+    "functions": [
+      {
+        "name": "rasterize_island",
+        "args": [
+          "canonical_points",
+          "padding"
+        ],
+        "returns": "RasterMask"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/skeletonize.py",
+    "functions": [
+      {
+        "name": "compute_skeleton",
+        "args": [
+          "raster",
+          "method"
+        ],
+        "returns": "SkeletonPixels"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/test_pathfinding.py",
+    "functions": [
+      {
+        "name": "print_island_summary",
+        "args": [
+          "result"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "test_map",
+        "args": [
+          "map_name",
+          "map_folder"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/skeleton/visualize.py",
+    "functions": [
+      {
+        "name": "plot_island_debug",
+        "args": [
+          "result",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "plot_unique_islands",
+        "args": [
+          "results",
+          "canonical_groups",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "plot_world_overview",
+        "args": [
+          "results",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "generate_skeleton_report",
+        "args": [
+          "results",
+          "canonical_groups",
+          "output_path",
+          "map_name"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "_mc_color",
+        "args": [
+          "color_name",
+          "fallback"
+        ],
+        "returns": "str"
+      },
+      {
+        "name": "plot_island_poi_debug",
+        "args": [
+          "result",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "plot_path_grid",
+        "args": [
+          "island_result",
+          "edge_pixels",
+          "output_path",
+          "max_panels"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/tests/test_utils.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "TestNibble",
+        "methods": [
+          {
+            "name": "test_nibble_even_index",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_nibble_odd_index",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_nibble_all_zeros",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_nibble_all_ones",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestDecodeBlockId",
+        "methods": [
+          {
+            "name": "test_decode_without_add",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_decode_with_add",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_decode_air_block",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_decode_common_blocks",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestDecodeBlockData",
+        "methods": [
+          {
+            "name": "test_decode_data_various_values",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_decode_data_zeros",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestGetBlockIndex",
+        "methods": [
+          {
+            "name": "test_index_corners",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_index_formula",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_index_range",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./match_analysis/data_loader.py",
+    "functions": [
+      {
+        "name": "load_map_data",
+        "args": [
+          "map_name"
+        ],
+        "returns": "pd.DataFrame"
+      },
+      {
+        "name": "load_match_data",
+        "args": [
+          "match_file"
+        ],
+        "returns": "pd.DataFrame"
+      },
+      {
+        "name": "list_available_maps",
+        "args": [],
+        "returns": "List[str]"
+      },
+      {
+        "name": "list_available_matches",
+        "args": [],
+        "returns": "List[str]"
+      },
+      {
+        "name": "get_match_info",
+        "args": [
+          "match_file"
+        ],
+        "returns": "dict"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/map_renderer.py",
+    "functions": [
+      {
+        "name": "render_map_tiles",
+        "args": [
+          "ax",
+          "map_data",
+          "tile_size",
+          "color",
+          "alpha",
+          "edge_color",
+          "edge_width"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "setup_map_axes",
+        "args": [
+          "ax",
+          "map_data",
+          "padding",
+          "title"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/match_visualizer.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "MatchVisualizer",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "map_data",
+              "life_segments",
+              "show_kills",
+              "show_deaths",
+              "show_wool_events",
+              "color_by_team"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_get_segment_color",
+            "args": [
+              "self",
+              "segment"
+            ],
+            "returns": "str"
+          },
+          {
+            "name": "plot_life_segment",
+            "args": [
+              "self",
+              "ax",
+              "segment",
+              "show_positions"
+            ],
+            "returns": "None"
+          },
+          {
+            "name": "plot_all_teams",
+            "args": [
+              "self",
+              "ax",
+              "team_filter"
+            ],
+            "returns": "None"
+          },
+          {
+            "name": "create_static_view",
+            "args": [
+              "self",
+              "team_filter",
+              "title"
+            ],
+            "returns": "plt.Figure"
+          },
+          {
+            "name": "create_interactive_view",
+            "args": [
+              "self",
+              "title"
+            ],
+            "returns": "None"
+          },
+          {
+            "name": "export_team_views",
+            "args": [
+              "self",
+              "output_dir"
+            ],
+            "returns": "None"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./match_analysis/path_network.py",
+    "functions": [
+      {
+        "name": "create_density_heatmap",
+        "args": [
+          "life_segments",
+          "resolution",
+          "bounds"
+        ],
+        "returns": "Tuple[np.ndarray, Tuple[float, float, float, float]]"
+      },
+      {
+        "name": "extract_skeleton_network",
+        "args": [
+          "heatmap",
+          "bounds",
+          "resolution",
+          "sigma",
+          "threshold_percentile"
+        ],
+        "returns": "Tuple[np.ndarray, List[Tuple[float, float]]]"
+      },
+      {
+        "name": "extract_graph_network",
+        "args": [
+          "life_segments",
+          "cluster_radius",
+          "min_samples"
+        ],
+        "returns": "nx.Graph"
+      },
+      {
+        "name": "extract_corridors",
+        "args": [
+          "life_segments",
+          "resolution",
+          "sigma",
+          "min_corridor_density"
+        ],
+        "returns": "List[Dict]"
+      },
+      {
+        "name": "find_major_routes",
+        "args": [
+          "life_segments",
+          "start_region",
+          "end_region",
+          "num_routes"
+        ],
+        "returns": "List[List[Tuple[float, float]]]"
+      },
+      {
+        "name": "calculate_path_statistics",
+        "args": [
+          "life_segments"
+        ],
+        "returns": "Dict"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/path_network_viz.py",
+    "functions": [
+      {
+        "name": "plot_density_heatmap",
+        "args": [
+          "ax",
+          "heatmap",
+          "bounds",
+          "title",
+          "cmap"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_skeleton_network",
+        "args": [
+          "ax",
+          "skeleton_points",
+          "map_data",
+          "title",
+          "show_map"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_graph_network",
+        "args": [
+          "ax",
+          "graph",
+          "map_data",
+          "title",
+          "show_map",
+          "min_edge_weight"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_corridors",
+        "args": [
+          "ax",
+          "corridors",
+          "map_data",
+          "title",
+          "show_map",
+          "max_corridors"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_major_routes",
+        "args": [
+          "ax",
+          "routes",
+          "map_data",
+          "title",
+          "show_map"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_combined_network",
+        "args": [
+          "life_segments",
+          "map_data",
+          "output_path",
+          "resolution",
+          "cluster_radius"
+        ],
+        "returns": null
+      },
+      {
+        "name": "plot_team_networks",
+        "args": [
+          "life_segments",
+          "map_data",
+          "output_dir",
+          "resolution"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/pdf_report.py",
+    "functions": [
+      {
+        "name": "generate_classification_pdf",
+        "args": [
+          "life_segments",
+          "classifications",
+          "map_chars",
+          "config",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "generate_match_summary_pdf",
+        "args": [
+          "life_segments",
+          "player_stats",
+          "config",
+          "output_path"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": [
+      {
+        "name": "PDFReportGenerator",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "output_path"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_title",
+            "args": [
+              "self",
+              "title"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_section",
+            "args": [
+              "self",
+              "title"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_subsection",
+            "args": [
+              "self",
+              "title"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_text",
+            "args": [
+              "self",
+              "text"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_table",
+            "args": [
+              "self",
+              "data",
+              "col_widths",
+              "header_row"
+            ],
+            "returns": null
+          },
+          {
+            "name": "add_page_break",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "generate",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./match_analysis/preprocessing.py",
+    "functions": [
+      {
+        "name": "detect_life_segments",
+        "args": [
+          "match_data"
+        ],
+        "returns": "List[LifeSegment]"
+      },
+      {
+        "name": "cluster_spawn_points",
+        "args": [
+          "life_segments"
+        ],
+        "returns": "Dict"
+      },
+      {
+        "name": "assign_teams",
+        "args": [
+          "life_segments"
+        ],
+        "returns": "List[LifeSegment]"
+      }
+    ],
+    "classes": [
+      {
+        "name": "LifeSegment",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "player_id",
+              "segment_id"
+            ],
+            "returns": null
+          },
+          {
+            "name": "to_dict",
+            "args": [
+              "self"
+            ],
+            "returns": "dict"
+          },
+          {
+            "name": "__repr__",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./match_analysis/segment_classifier.py",
+    "functions": [
+      {
+        "name": "analyze_map_characteristics",
+        "args": [
+          "life_segments",
+          "match_data"
+        ],
+        "returns": "MapCharacteristics"
+      },
+      {
+        "name": "classify_segment",
+        "args": [
+          "segment",
+          "map_chars"
+        ],
+        "returns": "SegmentClassification"
+      },
+      {
+        "name": "classify_all_segments",
+        "args": [
+          "life_segments",
+          "map_chars"
+        ],
+        "returns": "List[SegmentClassification]"
+      }
+    ],
+    "classes": [
+      {
+        "name": "MapCharacteristics",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "midpoint_coord",
+              "midpoint_axis",
+              "red_side_positive",
+              "skybridge_height",
+              "ground_level",
+              "tunnel_threshold"
+            ],
+            "returns": null
+          },
+          {
+            "name": "is_on_own_side",
+            "args": [
+              "self",
+              "team",
+              "coord_value"
+            ],
+            "returns": "bool"
+          },
+          {
+            "name": "distance_from_midpoint",
+            "args": [
+              "self",
+              "coord_value"
+            ],
+            "returns": "float"
+          }
+        ]
+      },
+      {
+        "name": "SegmentClassification",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "to_dict",
+            "args": [
+              "self"
+            ],
+            "returns": "dict"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./match_analysis/utils.py",
+    "functions": [
+      {
+        "name": "get_map_bounds",
+        "args": [
+          "map_data"
+        ],
+        "returns": "Tuple[float, float, float, float]"
+      },
+      {
+        "name": "calculate_player_stats",
+        "args": [
+          "life_segments"
+        ],
+        "returns": "pd.DataFrame"
+      },
+      {
+        "name": "export_segments_to_csv",
+        "args": [
+          "life_segments",
+          "output_path"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "print_match_summary",
+        "args": [
+          "life_segments"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./xml_analysis/exporter.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "MapDataEncoder",
+        "methods": [
+          {
+            "name": "encode_region",
+            "args": [
+              "region"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
+            "name": "encode_team",
+            "args": [
+              "team"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
+            "name": "encode_spawn",
+            "args": [
+              "spawn"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
+            "name": "encode_wool",
+            "args": [
+              "wool"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
+            "name": "encode_map_data",
+            "args": [
+              "data",
+              "categories"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
+            "name": "to_json",
+            "args": [
+              "data",
+              "categories",
+              "indent"
+            ],
+            "returns": "str"
+          },
+          {
+            "name": "save_json",
+            "args": [
+              "data",
+              "output_path",
+              "categories"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/parser.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "Team",
+        "methods": []
+      },
+      {
+        "name": "Spawn",
+        "methods": []
+      },
+      {
+        "name": "Wool",
+        "methods": []
+      },
+      {
+        "name": "MapData",
+        "methods": []
+      },
+      {
+        "name": "MapXMLParser",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "xml_path"
+            ],
+            "returns": null
+          },
+          {
+            "name": "parse",
+            "args": [
+              "self"
+            ],
+            "returns": "MapData"
+          },
+          {
+            "name": "_get_text",
+            "args": [
+              "self",
+              "tag",
+              "default"
+            ],
+            "returns": "str"
+          },
+          {
+            "name": "_parse_teams",
+            "args": [
+              "self"
+            ],
+            "returns": "List[Team]"
+          },
+          {
+            "name": "_parse_spawns",
+            "args": [
+              "self"
+            ],
+            "returns": "List[Spawn]"
+          },
+          {
+            "name": "_parse_wools",
+            "args": [
+              "self"
+            ],
+            "returns": "List[Wool]"
+          },
+          {
+            "name": "_parse_regions",
+            "args": [
+              "self"
+            ],
+            "returns": "Dict[str, Region]"
+          },
+          {
+            "name": "_parse_max_build_height",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[int]"
+          },
+          {
+            "name": "_parse_region_element",
+            "args": [
+              "self",
+              "parent_elem"
+            ],
+            "returns": "Optional[Region]"
+          },
+          {
+            "name": "_parse_region_node",
+            "args": [
+              "self",
+              "elem"
+            ],
+            "returns": "Optional[Region]"
+          },
+          {
+            "name": "_parse_coords",
+            "args": [
+              "self",
+              "coord_str"
+            ],
+            "returns": "Tuple[float, float, float]"
+          },
+          {
+            "name": "_parse_coords_2d",
+            "args": [
+              "self",
+              "coord_str"
+            ],
+            "returns": "Tuple[float, float]"
+          },
+          {
+            "name": "_parse_rectangle",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "RectangleRegion"
+          },
+          {
+            "name": "_parse_cuboid",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "CuboidRegion"
+          },
+          {
+            "name": "_parse_cylinder",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "CylinderRegion"
+          },
+          {
+            "name": "_parse_circle",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "CircleRegion"
+          },
+          {
+            "name": "_parse_sphere",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "SphereRegion"
+          },
+          {
+            "name": "_parse_block",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "BlockRegion"
+          },
+          {
+            "name": "_parse_point",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "PointRegion"
+          },
+          {
+            "name": "_parse_union",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "UnionRegion"
+          },
+          {
+            "name": "_parse_negative",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "NegativeRegion"
+          },
+          {
+            "name": "_parse_complement",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "ComplementRegion"
+          },
+          {
+            "name": "identify_region_categories",
+            "args": [
+              "self",
+              "data"
+            ],
+            "returns": "Dict[str, List[str]]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/regions.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "Region",
+        "methods": [
+          {
+            "name": "parse_value",
+            "args": [
+              "value"
+            ],
+            "returns": "float"
+          },
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          }
+        ]
+      },
+      {
+        "name": "RectangleRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "CuboidRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "CylinderRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "CircleRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "SphereRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "BlockRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "PointRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          }
+        ]
+      },
+      {
+        "name": "UnionRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          }
+        ]
+      },
+      {
+        "name": "NegativeRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          }
+        ]
+      },
+      {
+        "name": "ComplementRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/visualizer.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "MapVisualizer",
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              "self",
+              "map_data"
+            ],
+            "returns": null
+          },
+          {
+            "name": "plot_all",
+            "args": [
+              "self",
+              "output_path",
+              "show_legend"
+            ],
+            "returns": null
+          },
+          {
+            "name": "plot_by_category",
+            "args": [
+              "self",
+              "output_dir",
+              "categories"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_plot_spawns",
+            "args": [
+              "self",
+              "ax",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_plot_wools",
+            "args": [
+              "self",
+              "ax",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_plot_named_regions",
+            "args": [
+              "self",
+              "ax"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_categorize_region",
+            "args": [
+              "self",
+              "region_id"
+            ],
+            "returns": "str"
+          },
+          {
+            "name": "_plot_region_recursive",
+            "args": [
+              "self",
+              "ax",
+              "region",
+              "category",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_plot_region",
+            "args": [
+              "self",
+              "ax",
+              "region",
+              "category",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_draw_rectangle",
+            "args": [
+              "self",
+              "ax",
+              "bounds",
+              "color",
+              "label",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_draw_circle",
+            "args": [
+              "self",
+              "ax",
+              "region",
+              "color",
+              "label",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_draw_point",
+            "args": [
+              "self",
+              "ax",
+              "region",
+              "color",
+              "label",
+              "alpha"
+            ],
+            "returns": null
+          },
+          {
+            "name": "print_summary",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/tests/test_exporter.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "TestJSONExport",
+        "methods": [
+          {
+            "name": "setUp",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "tearDown",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_is_valid",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_contains_all_fields",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_team_structure",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_spawn_structure",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_wool_structure",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_json_region_structure",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_save_json_file",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestRealMapJSON",
+        "methods": [
+          {
+            "name": "test_tumbleweed_json",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/tests/test_parser.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "TestRegionParsing",
+        "methods": [
+          {
+            "name": "test_parse_normal_value",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_infinity",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_variable",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestMapXMLParser",
+        "methods": [
+          {
+            "name": "setUp",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "tearDown",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_basic_info",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_teams",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_spawns",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_wools",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_rectangle_region",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_union_region",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_max_build_height",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_identify_region_categories",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestRealMapParsing",
+        "methods": [
+          {
+            "name": "setUp",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_parse_tumbleweed",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_tumbleweed_region_categories",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
+  }
+]
