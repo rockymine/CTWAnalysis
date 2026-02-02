@@ -65,6 +65,7 @@ from layout_analysis.skeleton.poi_annotation import (
 from layout_analysis.map_context import build_map_context
 from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
 from layout_analysis.skeleton.visualize import plot_path_grid
+from layout_analysis.connectivity import build_map_graph, save_map_graph, plot_map_connectivity
 
 
 def analyze_layout(map_folder: Path, force_rerun: bool = False):
@@ -392,6 +393,23 @@ def analyze_islands_step(
                         island_result, edge_px,
                         str(pathfinding_dir / f'island_{iid}_paths.png')
                     )
+
+    # Build inter-island connectivity graph
+    print(f"  Building map connectivity graph...")
+    context_path_for_graph = island_output_dir / 'map_context.json'
+    if context_path_for_graph.exists():
+        with open(str(context_path_for_graph), 'r') as ctx_f:
+            graph_ctx = json.load(ctx_f)
+        map_graph = build_map_graph(graph_ctx)
+        save_map_graph(map_graph, map_folder)
+
+        n_nodes = len(map_graph['nodes'])
+        n_intra = sum(1 for e in map_graph['edges'] if e['edge_type'] == 'intra')
+        n_void = sum(1 for e in map_graph['edges'] if e['edge_type'] == 'void_link')
+        print(f"    Map Graph: {n_nodes} nodes, {n_intra} intra-island edges, {n_void} void links")
+
+        viz_path = island_output_dir / 'map_connectivity.png'
+        plot_map_connectivity(graph_ctx, map_graph, viz_path)
 
     # Cleanup legacy per-island CSV/JSON exports
     import shutil
