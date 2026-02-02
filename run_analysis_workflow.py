@@ -63,7 +63,8 @@ from layout_analysis.skeleton.poi_annotation import (
     classify_island_center,
 )
 from layout_analysis.map_context import build_map_context
-from layout_analysis.skeleton.export import export_all
+from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
+from layout_analysis.skeleton.visualize import plot_path_grid
 
 
 def analyze_layout(map_folder: Path, force_rerun: bool = False):
@@ -213,6 +214,23 @@ def analyze_islands_step(
     )
     print(f"    Found {len(islands)} islands")
 
+    # Add island_id column to layout parquet
+    island_assignments = []
+    for island in islands:
+        for x, z in island.blocks:
+            island_assignments.append({
+                'world_x': int(round(x)),
+                'world_z': int(round(z)),
+                'island_id': island.id,
+            })
+    if island_assignments:
+        island_df = pd.DataFrame(island_assignments)
+        df = df.drop(columns=['island_id'], errors='ignore')
+        df = df.merge(island_df, on=['world_x', 'world_z'], how='left')
+        df['island_id'] = df['island_id'].fillna(0).astype(int)
+        df.to_parquet(layout_file, index=False)
+        print(f"    Updated {layout_file.name} with island_id column")
+
     if not islands:
         print("  [X] No islands detected!")
         return island_output_dir
@@ -301,12 +319,6 @@ def analyze_islands_step(
         map_name=map_folder.name
     )
 
-    # CSV exports
-    export_all(
-        skeleton_results, canonical_groups,
-        str(skeleton_output_dir / 'exports')
-    )
-
     # POI annotation and MapContext (requires XML)
     xml_file = map_folder / 'map.xml'
     map_data_obj = None
@@ -351,6 +363,46 @@ def analyze_islands_step(
         poi_assignments=poi_assignments,
     )
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
+
+    # Run pathfinding analysis (reads skeleton from map_context.json)
+    print(f"  Running pathfinding analysis...")
+    pathfinding_results = run_pathfinding_analysis(str(map_folder))
+    if pathfinding_results and pathfinding_results['islands_analyzed'] > 0:
+        n_analyzed = pathfinding_results['islands_analyzed']
+        n_paths = pathfinding_results['total_poi_endpoint_paths']
+        n_defender = pathfinding_results['total_defender_paths']
+        print(f"    Pathfinding: {n_analyzed} islands, {n_paths} POI paths, {n_defender} defender paths")
+
+        # Generate path grid visualizations
+        pathfinding_dir = island_output_dir / 'pathfinding'
+        pathfinding_dir.mkdir(exist_ok=True)
+
+        # Reload updated context (now has pathfinding results embedded)
+        with open(str(island_output_dir / 'map_context.json'), 'r') as ctx_f:
+            updated_ctx = json.load(ctx_f)
+        islands_by_id = {i['id']: i for i in updated_ctx.get('islands', [])}
+
+        for island_result in pathfinding_results['island_results']:
+            iid = island_result['island_id']
+            island_ctx = islands_by_id.get(iid)
+            if island_ctx:
+                edge_px = load_edge_pixels(island_ctx.get('skeleton'))
+                if edge_px:
+                    plot_path_grid(
+                        island_result, edge_px,
+                        str(pathfinding_dir / f'island_{iid}_paths.png')
+                    )
+
+    # Cleanup legacy per-island CSV/JSON exports
+    import shutil
+    legacy_exports = island_output_dir / 'skeleton' / 'exports'
+    if legacy_exports.exists():
+        shutil.rmtree(legacy_exports)
+        print(f"    Removed legacy exports directory")
+    legacy_paths = island_output_dir / 'pathfinding' / 'paths_analysis.json'
+    if legacy_paths.exists():
+        legacy_paths.unlink()
+        print(f"    Removed legacy paths_analysis.json")
 
     print(f"    [OK] Saved to: {island_output_dir.name}/")
 

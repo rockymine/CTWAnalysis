@@ -2,7 +2,7 @@
 Skeleton analysis sub-package.
 
 Provides island skeletonization and graph extraction with D4 symmetry
-canonicalization, deterministic edge walking, and per-island exports.
+canonicalization, deterministic edge walking, and intra-island pathfinding.
 """
 
 from .datatypes import (

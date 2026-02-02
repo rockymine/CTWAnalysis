@@ -122,8 +122,9 @@ def build_map_context(
     ctx.total_blocks = len(layout_df)
     ctx.map_center = map_center
 
-    # Islands
+    # Islands (with embedded skeleton data)
     ctx.island_count = len(islands)
+    result_by_id = {r.island_id: r for r in skeleton_results}
     for island in islands:
         island_info = {
             'id': island.id,
@@ -138,6 +139,9 @@ def build_map_context(
             'triangle_count': len(island.triangles),
             'hole_count': len(island.holes),
         }
+        skel_result = result_by_id.get(island.id)
+        island_info['skeleton'] = _build_skeleton_dict(skel_result) if skel_result else None
+        island_info['pathfinding'] = None
         ctx.islands.append(island_info)
 
     # Skeleton
@@ -158,6 +162,52 @@ def build_map_context(
         ctx.poi_assignments = poi_assignments
 
     return ctx
+
+
+def _build_skeleton_dict(result: IslandResult) -> dict:
+    """Convert IslandResult skeleton data to a JSON-serializable dict in world coords."""
+    transform = result.canonical.transform
+    raster = result.raster
+
+    nodes = []
+    for node in result.graph.nodes:
+        cx, cz = raster.rc_to_canonical(node.rc[0], node.rc[1])
+        canonical_pt = np.array([[cx, cz]], dtype=float)
+        world_pt = transform.to_original(canonical_pt)[0]
+        nodes.append({
+            'node_id': node.node_id,
+            'x': round(float(world_pt[0]), 1),
+            'z': round(float(world_pt[1]), 1),
+            'type': node.node_type,
+            'degree': node.degree,
+        })
+
+    edges = []
+    for edge in result.graph.edges:
+        edges.append({
+            'edge_id': edge.edge_id,
+            'src': edge.src,
+            'dst': edge.dst,
+        })
+
+    edge_pixels = {}
+    for edge in result.graph.edges:
+        path_canonical = np.array([
+            raster.rc_to_canonical(r, c) for r, c in edge.pixel_path
+        ], dtype=float)
+        path_world = transform.to_original(path_canonical)
+        edge_pixels[str(edge.edge_id)] = {
+            'src': edge.src,
+            'dst': edge.dst,
+            'pixels': [[round(float(pt[0]), 1), round(float(pt[1]), 1)]
+                        for pt in path_world],
+        }
+
+    return {
+        'nodes': nodes,
+        'edges': edges,
+        'edge_pixels': edge_pixels,
+    }
 
 
 def _json_default(obj):

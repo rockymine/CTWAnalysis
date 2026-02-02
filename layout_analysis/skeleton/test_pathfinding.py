@@ -8,6 +8,7 @@ Usage:
     python -m layout_analysis.skeleton.test_pathfinding
 """
 
+import json
 import os
 import sys
 
@@ -66,16 +67,26 @@ def test_map(map_name: str, map_folder: str) -> None:
         print("  No islands with POIs found")
         return
 
-    exports_dir = os.path.join(map_folder, 'island_analysis', 'skeleton', 'exports')
+    # Reload updated context for edge pixel data and visualization
+    context_path = os.path.join(map_folder, 'island_analysis', 'map_context.json')
+    with open(context_path, 'r') as f:
+        context = json.load(f)
+    islands_by_id = {i['id']: i for i in context.get('islands', [])}
+
     pathfinding_dir = os.path.join(map_folder, 'island_analysis', 'pathfinding')
+    os.makedirs(pathfinding_dir, exist_ok=True)
 
     for island_result in results['island_results']:
         print_island_summary(island_result)
 
         iid = island_result['island_id']
+        island_ctx = islands_by_id.get(iid)
+        if not island_ctx:
+            continue
+
+        edge_px = load_edge_pixels(island_ctx.get('skeleton'))
 
         # Test pixel path detail on first defender path (if any)
-        edge_px = load_edge_pixels(exports_dir, iid)
         if edge_px and island_result.get('defender_paths'):
             dp = island_result['defender_paths'][0]
             detail = get_path_detail(edge_px, dp['path_nodes'])
@@ -94,9 +105,6 @@ def test_map(map_name: str, map_folder: str) -> None:
     print(f"\n  Summary: {results['islands_analyzed']} islands analyzed, "
           f"{results['total_poi_endpoint_paths']} POI->endpoint paths, "
           f"{results['total_defender_paths']} defender paths")
-
-    output_path = os.path.join(pathfinding_dir, 'paths_analysis.json')
-    print(f"  Saved to: {output_path}")
 
 
 def main():

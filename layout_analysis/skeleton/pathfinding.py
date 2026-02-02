@@ -4,62 +4,47 @@ Intra-island pathfinding on skeleton graphs.
 Computes shortest paths between POIs (spawn/wool) and endpoints,
 plus defender paths (spawn->wool) when both are on the same island.
 
-Input data comes from skeleton CSV exports and map_context.json.
+All data is read from map_context.json (embedded skeleton per island).
 All coordinates are in world (x, z) space.
 """
 
-import csv
 import json
 import math
 import os
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 
 
-def load_skeleton_graph(exports_dir: str, island_id: int) -> Optional[nx.Graph]:
+def load_skeleton_graph(island_skeleton: dict) -> Optional[nx.Graph]:
     """
-    Load a skeleton graph from CSV exports into a networkx Graph.
-
-    Each node gets attributes: x, z, node_type, degree.
-    Each edge gets attribute: edge_id.
+    Build a networkx Graph from an island's embedded skeleton dict.
 
     Args:
-        exports_dir: Path to skeleton/exports directory.
-        island_id: Island ID to load.
+        island_skeleton: The 'skeleton' dict from an island in map_context.json,
+            containing 'nodes', 'edges', and 'edge_pixels' keys.
 
     Returns:
-        networkx.Graph or None if files not found.
+        networkx.Graph or None if skeleton data is missing.
     """
-    nodes_path = os.path.join(exports_dir, f"island_{island_id}_nodes.csv")
-    edges_path = os.path.join(exports_dir, f"island_{island_id}_edges.csv")
-
-    if not os.path.exists(nodes_path) or not os.path.exists(edges_path):
+    if island_skeleton is None:
         return None
 
     G = nx.Graph()
 
-    with open(nodes_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            nid = int(row['node_id'])
-            G.add_node(nid,
-                       x=float(row['x']),
-                       z=float(row['z']),
-                       node_type=row['type'],
-                       degree=int(row['degree']))
+    for node in island_skeleton['nodes']:
+        G.add_node(node['node_id'],
+                   x=float(node['x']),
+                   z=float(node['z']),
+                   node_type=node['type'],
+                   degree=int(node['degree']))
 
-    with open(edges_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            src = int(row['src'])
-            dst = int(row['dst'])
-            # Compute edge weight as euclidean distance between endpoints
-            sx, sz = G.nodes[src]['x'], G.nodes[src]['z']
-            dx, dz = G.nodes[dst]['x'], G.nodes[dst]['z']
-            weight = math.hypot(dx - sx, dz - sz)
-            G.add_edge(src, dst, edge_id=int(row['edge_id']), weight=weight)
+    for edge in island_skeleton['edges']:
+        src, dst = edge['src'], edge['dst']
+        sx, sz = G.nodes[src]['x'], G.nodes[src]['z']
+        dx, dz = G.nodes[dst]['x'], G.nodes[dst]['z']
+        weight = math.hypot(dx - sx, dz - sz)
+        G.add_edge(src, dst, edge_id=edge['edge_id'], weight=weight)
 
     return G
 
@@ -305,8 +290,9 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
     """
     Run pathfinding analysis for all islands of a map.
 
-    Loads map_context.json and skeleton CSVs, runs analysis,
-    saves results to island_analysis/pathfinding/paths_analysis.json.
+    Loads map_context.json (with embedded skeleton data per island),
+    computes paths, and writes results back into map_context.json
+    under each island's 'pathfinding' key.
 
     Args:
         map_folder: Path to the map folder (e.g. map_folders/tumbleweed).
@@ -316,7 +302,6 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
     """
     island_analysis_dir = os.path.join(map_folder, 'island_analysis')
     context_path = os.path.join(island_analysis_dir, 'map_context.json')
-    exports_dir = os.path.join(island_analysis_dir, 'skeleton', 'exports')
 
     if not os.path.exists(context_path):
         print(f"  ERROR: map_context.json not found at {context_path}")
@@ -340,26 +325,26 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
 
     for island_data in islands:
         iid = island_data['id']
-        G = load_skeleton_graph(exports_dir, iid)
+        skeleton_data = island_data.get('skeleton')
+        G = load_skeleton_graph(skeleton_data)
         if G is None:
             continue
 
         analysis = analyze_island_paths(iid, island_data, poi_assignments, G)
         if analysis is None:
             results['islands_skipped'] += 1
+            island_data['pathfinding'] = None
             continue
 
         results['islands_analyzed'] += 1
         results['total_poi_endpoint_paths'] += len(analysis['poi_to_endpoint_paths'])
         results['total_defender_paths'] += len(analysis['defender_paths'] or [])
         results['island_results'].append(analysis)
+        island_data['pathfinding'] = analysis
 
-    # Save results
-    output_dir = os.path.join(island_analysis_dir, 'pathfinding')
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, 'paths_analysis.json')
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2)
+    # Save updated map_context.json with embedded pathfinding
+    with open(context_path, 'w', encoding='utf-8') as f:
+        json.dump(context, f, indent=2)
 
     return results
 
@@ -368,24 +353,22 @@ def run_pathfinding_analysis(map_folder: str) -> Optional[dict]:
 # Edge pixel path loading and chaining
 # ---------------------------------------------------------------------------
 
-def load_edge_pixels(exports_dir: str, island_id: int) -> Optional[Dict]:
+def load_edge_pixels(island_skeleton: dict) -> Optional[Dict]:
     """
-    Load edge pixel paths (world coords) from JSON export.
+    Extract edge pixel paths from an island's embedded skeleton dict.
+
+    Args:
+        island_skeleton: The 'skeleton' dict from an island in map_context.json.
 
     Returns:
         Dict mapping (src, dst) frozenset -> list of [x, z] pixel coords,
-        or None if file not found.
+        or None if skeleton data is missing.
     """
-    path = os.path.join(exports_dir, f"island_{island_id}_edge_pixels.json")
-    if not os.path.exists(path):
+    if island_skeleton is None or 'edge_pixels' not in island_skeleton:
         return None
 
-    with open(path, 'r') as f:
-        raw = json.load(f)
-
-    # Index by (src, dst) as frozenset for undirected lookup
     edge_pixels = {}
-    for edge_id_str, data in raw.items():
+    for edge_id_str, data in island_skeleton['edge_pixels'].items():
         key = frozenset((data['src'], data['dst']))
         edge_pixels[key] = data['pixels']
 
@@ -418,7 +401,7 @@ def get_edge_detail(
     if len(pixels) < 2:
         return pixels
 
-    # The stored path starts from the node with the lower ID in the edge CSV
+    # The stored path starts from the node with the lower ID
     # (edges are sorted src < dst). If the caller wants dst -> src, reverse.
     first_key = min(src, dst)
     if src != first_key:

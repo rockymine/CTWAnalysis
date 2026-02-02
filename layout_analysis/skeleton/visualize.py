@@ -568,11 +568,12 @@ def plot_path_grid(
         cmap_name = category_cmap.get(path_info['category'], 'Greys')
         cmap = plt.cm.get_cmap(cmap_name)
 
+        from .pathfinding import get_edge_detail
+
         # Draw each edge segment with incrementing color
         n_segments = max(len(path_nodes) - 1, 1)
         for i in range(len(path_nodes) - 1):
             src_n, dst_n = path_nodes[i], path_nodes[i + 1]
-            from .pathfinding import get_edge_detail
             segment = get_edge_detail(edge_pixels, src_n, dst_n)
             if segment is None:
                 continue
@@ -583,7 +584,6 @@ def plot_path_grid(
             ax.plot(xs, zs, color=color, linewidth=2.0, solid_capstyle='round')
 
         # Mark nodes along the path
-        from .pathfinding import load_skeleton_graph
         for i, nid in enumerate(path_nodes):
             # Get coords from the pixel data edges
             # First node: start of first edge, last node: end of last edge
