@@ -18,13 +18,17 @@ Actions:
   process-all  Process all unprocessed matches
   list         List matches in the database
   stats        Show database statistics
+  reset        Reset processing state (clears trajectory files)
+  trace        Visualize player traces on map
 
 Examples:
   python ctw.py matches index
   python ctw.py matches list
   python ctw.py matches process 57
-  python ctw.py matches process-all
+  python ctw.py matches process-all --force
+  python ctw.py matches reset
   python ctw.py matches stats
+  python ctw.py matches trace --map Ingwaz --file match_logs/2026-01-26_17-31-42_57.parquet --player 0
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -39,12 +43,21 @@ Examples:
     # matches process
     p = matches_sub.add_parser('process', help='Process a specific match by ID')
     p.add_argument('match_id', type=int, help='Match ID to process')
+    p.add_argument('--force', action='store_true',
+                   help='Reprocess even if already processed')
     p.set_defaults(func=handle_process)
 
     # matches process-all
     p = matches_sub.add_parser('process-all', help='Process all unprocessed matches')
     p.add_argument('--map-name', help='Only process matches for this map')
+    p.add_argument('--force', action='store_true',
+                   help='Reprocess all matches, not just unprocessed ones')
     p.set_defaults(func=handle_process_all)
+
+    # matches reset
+    p = matches_sub.add_parser('reset', help='Reset processing state for all matches')
+    p.add_argument('--match-id', type=int, help='Reset only a specific match ID')
+    p.set_defaults(func=handle_reset)
 
     # matches list
     p = matches_sub.add_parser('list', help='List matches in the database')
@@ -56,6 +69,17 @@ Examples:
     # matches stats
     p = matches_sub.add_parser('stats', help='Show database statistics')
     p.set_defaults(func=handle_stats)
+
+    # matches trace
+    p = matches_sub.add_parser('trace', help='Visualize player traces on map')
+    p.add_argument('--map', required=True,
+                   help='Map name (e.g., Ingwaz) or path to map folder')
+    p.add_argument('--file', required=True,
+                   help='Path to match parquet file')
+    p.add_argument('--player', required=True, type=int,
+                   help='Player ID to visualize')
+    p.add_argument('--output', help='Output PNG path (default: auto-generated)')
+    p.set_defaults(func=handle_trace)
 
 
 def handle_index(args):
@@ -78,6 +102,16 @@ def handle_index(args):
 def handle_process(args):
     ensure_match_db()
     from match_analysis.trajectory_extractor import process_match
+
+    if getattr(args, 'force', False):
+        import duckdb
+        conn = duckdb.connect('match_analysis/metadata.db')
+        conn.execute(
+            "UPDATE matches SET processed = FALSE WHERE match_id = ?",
+            [args.match_id],
+        )
+        conn.close()
+
     process_match(args.match_id)
 
 
@@ -87,6 +121,15 @@ def handle_process_all(args):
     from match_analysis.trajectory_extractor import process_match
 
     conn = duckdb.connect('match_analysis/metadata.db')
+
+    if getattr(args, 'force', False):
+        reset_query = "UPDATE matches SET processed = FALSE"
+        reset_params = []
+        if args.map_name:
+            reset_query += " WHERE map_name = ?"
+            reset_params.append(args.map_name)
+        conn.execute(reset_query, reset_params)
+        print("Reset processing flags (--force).")
 
     query = "SELECT match_id FROM matches WHERE processed = FALSE"
     params = []
@@ -108,6 +151,68 @@ def handle_process_all(args):
     for i, (match_id,) in enumerate(results, 1):
         print(f"\n[{i}/{total}] Processing match {match_id}")
         process_match(match_id)
+
+
+def handle_reset(args):
+    ensure_match_db()
+    import duckdb
+    from pathlib import Path
+    import shutil
+
+    conn = duckdb.connect('match_analysis/metadata.db')
+
+    if args.match_id:
+        conn.execute(
+            "UPDATE matches SET processed = FALSE, processed_at = NULL, processing_time = NULL WHERE match_id = ?",
+            [args.match_id],
+        )
+        traj_file = Path(f'match_analysis/trajectories/{args.match_id}.parquet')
+        if traj_file.exists():
+            traj_file.unlink()
+            print(f"Deleted {traj_file}")
+        print(f"Reset match {args.match_id}.")
+    else:
+        conn.execute(
+            "UPDATE matches SET processed = FALSE, processed_at = NULL, processing_time = NULL"
+        )
+        traj_dir = Path('match_analysis/trajectories')
+        count = 0
+        for f in traj_dir.glob('*.parquet'):
+            f.unlink()
+            count += 1
+        print(f"Reset all matches. Deleted {count} trajectory files.")
+
+    conn.close()
+
+
+def handle_trace(args):
+    import json
+    from ctw.common import resolve_map_folder
+    from match_analysis.visualization import plot_player_traces
+
+    map_folder = resolve_map_folder(args.map)
+    context_path = map_folder / 'island_analysis' / 'map_context.json'
+
+    if not context_path.exists():
+        print(f"Error: map_context.json not found at {context_path}")
+        print("Run 'ctw islands --map ...' first to generate map context.")
+        return
+
+    with open(context_path) as f:
+        map_context = json.load(f)
+
+    match_file = Path(args.file)
+    if not match_file.exists():
+        print(f"Error: match file not found: {match_file}")
+        return
+
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_dir = map_folder / 'match_analysis'
+        output_path = output_dir / f"trace_player{args.player}_{match_file.stem}.png"
+
+    plot_player_traces(map_context, str(match_file), args.player, output_path)
 
 
 def handle_list(args):
