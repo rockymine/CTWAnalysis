@@ -79,6 +79,8 @@ Examples:
     p.add_argument('--player', required=True, type=int,
                    help='Player ID to visualize')
     p.add_argument('--output', help='Output PNG path (default: auto-generated)')
+    p.add_argument('--snap-skeleton', action='store_true',
+                   help='Snap on-island positions to skeleton paths for cleaner traces')
     p.set_defaults(func=handle_trace)
 
 
@@ -201,6 +203,16 @@ def handle_trace(args):
     with open(context_path) as f:
         map_context = json.load(f)
 
+    map_graph = None
+    if args.snap_skeleton:
+        graph_path = map_folder / 'map_graph.json'
+        if not graph_path.exists():
+            print(f"Error: map_graph.json not found at {graph_path}")
+            print("Run 'ctw islands --map ...' first to generate map graph.")
+            return
+        with open(graph_path) as f:
+            map_graph = json.load(f)
+
     match_file = Path(args.file)
     if not match_file.exists():
         print(f"Error: match file not found: {match_file}")
@@ -212,7 +224,11 @@ def handle_trace(args):
         output_dir = map_folder / 'match_analysis'
         output_path = output_dir / f"trace_player{args.player}_{match_file.stem}.png"
 
-    plot_player_traces(map_context, str(match_file), args.player, output_path)
+    plot_player_traces(
+        map_context, str(match_file), args.player, output_path,
+        map_graph=map_graph,
+        snap_skeleton=args.snap_skeleton,
+    )
 
 
 def handle_list(args):

@@ -42,6 +42,8 @@ def plot_player_traces(
     match_file: str,
     player_id: int,
     output_path: Path,
+    map_graph: dict = None,
+    snap_skeleton: bool = False,
 ) -> None:
     """Plot all life segments of a player on the map base layer.
 
@@ -50,9 +52,16 @@ def plot_player_traces(
         match_file: Path to the raw match parquet file.
         player_id: Player ID to visualize.
         output_path: Where to save the PNG.
+        map_graph: Parsed map_graph.json dict (required if snap_skeleton=True).
+        snap_skeleton: Snap on-island positions to skeleton paths.
     """
     output_path = Path(output_path)
     os.makedirs(output_path.parent, exist_ok=True)
+
+    classifier = None
+    if snap_skeleton and map_graph is not None:
+        from match_analysis.position_classifier import PositionClassifier
+        classifier = PositionClassifier(map_context, map_graph)
 
     # Load match data
     df = pd.read_parquet(match_file)
@@ -125,8 +134,17 @@ def plot_player_traces(
 
         # Build trace: spawn point + all events with coordinates (sorted by timestamp)
         trace = seg['trace_events']
-        xs = np.concatenate([[seg['spawn_x']], trace['x'].values])
-        zs = np.concatenate([[seg['spawn_z']], trace['z'].values])
+
+        if classifier is not None:
+            enriched = classifier.classify_dataframe(trace, snap_skeleton=True)
+            trace_xs = enriched['snap_x'].values
+            trace_zs = enriched['snap_z'].values
+        else:
+            trace_xs = trace['x'].values
+            trace_zs = trace['z'].values
+
+        xs = np.concatenate([[seg['spawn_x']], trace_xs])
+        zs = np.concatenate([[seg['spawn_z']], trace_zs])
 
         if len(xs) >= 2:
             ax.plot(xs, zs, color=color, linewidth=1.5, alpha=0.8, zorder=3,
