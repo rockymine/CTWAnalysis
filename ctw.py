@@ -70,10 +70,9 @@ def _collect_map_folders(args) -> list:
 
 def cmd_run(args):
     """Run the full analysis pipeline."""
-    from run_analysis_workflow import (
-        analyze_layout, analyze_islands_step, analyze_xml,
-        analyze_matches,
-    )
+    from layout_analysis.services import analyze_layout, analyze_islands_step
+    from xml_analysis.services import analyze_xml
+    from match_analysis.services import analyze_matches
 
     map_folders = _collect_map_folders(args)
     match_history_path = Path(args.match_history)
@@ -203,7 +202,7 @@ def cmd_layout(args):
         print(f"  Output saved to: {output_dir}")
     else:
         # Simple workflow mode: parquets into map folder
-        from run_analysis_workflow import analyze_layout
+        from layout_analysis.services import analyze_layout
         analyze_layout(map_folder, force_rerun=args.force)
 
 
@@ -234,7 +233,7 @@ def cmd_islands(args):
             detect_holes=not args.no_holes,
         )
     else:
-        from run_analysis_workflow import analyze_islands_step
+        from layout_analysis.services import analyze_islands_step
         analyze_islands_step(
             map_folder,
             force_rerun=args.force,
@@ -281,7 +280,7 @@ def cmd_xml(args):
 
         print(f"  Visualizations saved to: {output_dir}")
     else:
-        from run_analysis_workflow import analyze_xml
+        from xml_analysis.services import analyze_xml
         analyze_xml(map_folder, force_rerun=args.force)
 
 
@@ -307,7 +306,7 @@ def cmd_match(args):
     else:
         map_name = map_folder.name
 
-    from run_analysis_workflow import analyze_single_match
+    from match_analysis.services import analyze_single_match
     success = analyze_single_match(map_name, args.match, bedrock_path, output_dir)
 
     if not success:
