@@ -30,27 +30,72 @@ def handler(args):
     map_folder = resolve_map_folder(args.map)
 
     if args.basic:
-        from analyze_islands import analyze_map_islands
-
-        layout_map = {
-            'bedrock': 'layout_bedrock.parquet',
-            'y0': 'layout_y0.parquet',
-            'top': 'layout_top_surface.parquet',
-            'density': 'layout_vertical_density.parquet',
-        }
-        bedrock_path = str(map_folder / layout_map.get(args.layout, 'layout_bedrock.parquet'))
-        output_dir = str(map_folder / 'island_analysis')
-
-        analyze_map_islands(
-            bedrock_parquet=bedrock_path,
-            output_dir=output_dir,
-            map_name=map_folder.name,
-            connectivity=args.connectivity,
-            min_island_size=args.min_size,
-            buffer_distance=args.buffer,
-            simplify_tolerance=args.simplify,
-            detect_holes=not args.no_holes,
+        import os
+        import pandas as pd
+        from layout_analysis.islands import (
+            detect_islands,
+            triangulate_island_union,
+            compute_island_statistics,
+            classify_islands,
+            create_island_report,
         )
+        from layout_analysis.services.islands_service import LAYOUT_FILES
+
+        layout_filename = LAYOUT_FILES.get(args.layout, 'layout_bedrock.parquet')
+        layout_path = map_folder / layout_filename
+        output_dir = str(map_folder / 'island_analysis')
+        os.makedirs(output_dir, exist_ok=True)
+
+        print("=" * 70)
+        print("ISLAND DETECTION ANALYSIS")
+        print("=" * 70)
+
+        print(f"\n1. Loading bedrock data from: {layout_path}")
+        df = pd.read_parquet(layout_path)
+        print(f"   Loaded {len(df)} blocks")
+
+        print(f"\n2. Detecting islands (connectivity={args.connectivity}, min_size={args.min_size})...")
+        islands = detect_islands(
+            df, x_col='world_x', z_col='world_z',
+            connectivity=args.connectivity, min_island_size=args.min_size,
+        )
+        print(f"   Found {len(islands)} islands")
+        if not islands:
+            print("   No islands detected!")
+            return
+
+        for island in islands:
+            print(f"     Island {island.id}: {island.area:,} blocks at ({island.center[0]:.1f}, {island.center[1]:.1f})")
+
+        print(f"\n3. Triangulating islands (union mode, holes={not args.no_holes})...")
+        total_triangles = 0
+        for island in islands:
+            triangles = triangulate_island_union(
+                island, buffer_distance=args.buffer,
+                simplify_tolerance=args.simplify, detect_holes=not args.no_holes,
+            )
+            total_triangles += len(triangles)
+            print(f"     Island {island.id}: {len(triangles)} triangles, {len(island.holes)} holes")
+        print(f"   Total triangles: {total_triangles}")
+
+        print("\n4. Computing statistics...")
+        stats = compute_island_statistics(islands)
+        print(f"   Map center: ({stats['map_center'][0]:.1f}, {stats['map_center'][1]:.1f})")
+        print(f"   Avg distance from center: {stats['avg_distance_from_center']:.1f} blocks")
+
+        print("\n5. Classifying islands...")
+        classifications = classify_islands(islands)
+        for cls_name, cls_islands in classifications.items():
+            if cls_islands:
+                ids = [i.id for i in cls_islands]
+                print(f"   {cls_name}: {ids}")
+
+        print("\n6. Generating visualizations...")
+        create_island_report(islands, stats, output_dir, map_folder.name)
+
+        print("\n" + "=" * 70)
+        print("ISLAND DETECTION COMPLETE")
+        print("=" * 70)
     else:
         from layout_analysis.services import analyze_islands_step
         analyze_islands_step(
