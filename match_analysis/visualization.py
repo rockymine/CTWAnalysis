@@ -126,23 +126,18 @@ def plot_player_traces(
             end_time = player_df['timestamp'].iloc[-1]
             outcome = 'match_end'
 
-        positions = player_df[
+        # All events with coordinates in this life segment (for the trace line)
+        trace_events = player_df[
             (player_df['timestamp'] >= start_time)
             & (player_df['timestamp'] <= end_time)
-            & (player_df['event_type'] == 5)
+            & (player_df['event_type'].isin([3, 5, 6, 7]))
         ]
-        kills = player_df[
-            (player_df['timestamp'] >= start_time)
-            & (player_df['timestamp'] <= end_time)
-            & (player_df['event_type'] == 3)
-        ]
-        wool_events = player_df[
-            (player_df['timestamp'] >= start_time)
-            & (player_df['timestamp'] <= end_time)
-            & (player_df['event_type'].isin([6, 7]))
-        ]
+        kills = trace_events[trace_events['event_type'] == 3]
+        wool_events = trace_events[trace_events['event_type'].isin([6, 7])]
+        positions = trace_events[trace_events['event_type'] == 5]
 
         segments.append({
+            'trace_events': trace_events,
             'positions': positions,
             'kills': kills,
             'wool_events': wool_events,
@@ -174,9 +169,10 @@ def plot_player_traces(
         color = _SEGMENT_COLORS[i % len(_SEGMENT_COLORS)]
         positions = seg['positions']
 
-        # Build trace: spawn point + all position events
-        xs = np.concatenate([[seg['spawn_x']], positions['x'].values])
-        zs = np.concatenate([[seg['spawn_z']], positions['z'].values])
+        # Build trace: spawn point + all events with coordinates (sorted by timestamp)
+        trace = seg['trace_events']
+        xs = np.concatenate([[seg['spawn_x']], trace['x'].values])
+        zs = np.concatenate([[seg['spawn_z']], trace['z'].values])
 
         if len(xs) >= 2:
             ax.plot(xs, zs, color=color, linewidth=1.5, alpha=0.8, zorder=3,
