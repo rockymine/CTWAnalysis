@@ -30,7 +30,6 @@ def register(subparsers):
 def handler(args):
     from layout_analysis.services import analyze_layout, analyze_islands_step
     from xml_analysis.services import analyze_xml
-    from match_analysis.services import analyze_matches
 
     map_folders = collect_map_folders(args)
     match_history_path = Path(args.match_history)
@@ -68,12 +67,9 @@ def handler(args):
             print("\n[3/4] XML Analysis: SKIPPED")
 
         if not args.no_matches:
-            if match_history_path.exists():
-                analyze_matches(map_folder, match_history_path)
-            else:
-                print(f"\n[4/4] Match Analysis: SKIPPED (match history not found)")
+            print(f"\n[4/4] Match Analysis: Currently not supported")
         else:
-            print("\n[4/4] Match Analysis: SKIPPED")
+            print("\n[4/4] Match Analysis: Currently not supported")
 
     print(f"\n{'=' * 70}")
     print("WORKFLOW COMPLETE")
