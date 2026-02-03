@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from match_analysis import (
+from match_analysis_DEPRECATED import (
     load_map_data,
     load_match_data,
     detect_life_segments,
@@ -26,8 +26,8 @@ from match_analysis import (
     TEAM_COLORS,
     EVENT_MARKERS
 )
-from match_analysis.preprocessing import LifeSegment
-from match_analysis.pdf_report import generate_match_summary_pdf
+from match_analysis_DEPRECATED.preprocessing import LifeSegment
+from match_analysis_DEPRECATED.pdf_report import generate_match_summary_pdf
 
 
 def load_config(config_path: str = 'config.json') -> dict:

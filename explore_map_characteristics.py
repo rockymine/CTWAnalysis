@@ -4,7 +4,7 @@ Explore map characteristics to inform classification system.
 
 import pandas as pd
 import numpy as np
-from match_analysis import load_map_data, load_match_data, detect_life_segments, assign_teams
+from match_analysis_DEPRECATED import load_map_data, load_match_data, detect_life_segments, assign_teams
 
 # Load data
 print("Loading data...")

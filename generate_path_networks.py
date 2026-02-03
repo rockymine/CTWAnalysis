@@ -11,19 +11,19 @@ import json
 import pandas as pd
 from pathlib import Path
 
-from match_analysis import (
+from match_analysis_DEPRECATED import (
     load_match_data,
     detect_life_segments,
     assign_teams
 )
-from match_analysis.path_network import (
+from match_analysis_DEPRECATED.path_network import (
     create_density_heatmap,
     extract_skeleton_network,
     extract_graph_network,
     extract_corridors,
     calculate_path_statistics
 )
-from match_analysis.path_network_viz import (
+from match_analysis_DEPRECATED.path_network_viz import (
     plot_combined_network,
     plot_team_networks
 )
@@ -97,7 +97,7 @@ def generate_path_networks(
         print(f"   Loaded {len(map_data)} bedrock blocks")
     elif map_name:
         try:
-            from match_analysis import load_map_data
+            from match_analysis_DEPRECATED import load_map_data
             print(f"\n4. Loading map data: {map_name}")
             map_data = load_map_data(map_name)
         except:

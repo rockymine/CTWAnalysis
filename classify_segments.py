@@ -9,7 +9,7 @@ import os
 from collections import Counter, defaultdict
 import pandas as pd
 
-from match_analysis import (
+from match_analysis_DEPRECATED import (
     load_map_data,
     load_match_data,
     detect_life_segments,
@@ -18,7 +18,7 @@ from match_analysis import (
     classify_all_segments,
     calculate_player_stats
 )
-from match_analysis.pdf_report import generate_classification_pdf, generate_match_summary_pdf
+from match_analysis_DEPRECATED.pdf_report import generate_classification_pdf, generate_match_summary_pdf
 
 
 def load_config(config_path: str = 'config.json') -> dict:

@@ -69,7 +69,7 @@ def plot_skeleton_network(
     """
     if show_map and map_data is not None:
         # Render map as background
-        from match_analysis import render_map_tiles
+        from match_analysis_DEPRECATED import render_map_tiles
         render_map_tiles(ax, map_data, alpha=0.3)
 
     if skeleton_points:
@@ -112,7 +112,7 @@ def plot_graph_network(
         min_edge_weight: Minimum edge weight to display
     """
     if show_map and map_data is not None:
-        from match_analysis import render_map_tiles
+        from match_analysis_DEPRECATED import render_map_tiles
         render_map_tiles(ax, map_data, alpha=0.3)
 
     if graph.number_of_nodes() == 0:
@@ -201,7 +201,7 @@ def plot_corridors(
         max_corridors: Maximum number of corridors to display
     """
     if show_map and map_data is not None:
-        from match_analysis import render_map_tiles
+        from match_analysis_DEPRECATED import render_map_tiles
         render_map_tiles(ax, map_data, alpha=0.3)
 
     if not corridors:
@@ -264,7 +264,7 @@ def plot_major_routes(
         show_map: Whether to show map background
     """
     if show_map and map_data is not None:
-        from match_analysis import render_map_tiles
+        from match_analysis_DEPRECATED import render_map_tiles
         render_map_tiles(ax, map_data, alpha=0.3)
 
     if not routes:
@@ -321,7 +321,7 @@ def plot_combined_network(
         resolution: Grid resolution for heatmap
         cluster_radius: Clustering radius for graph extraction
     """
-    from match_analysis.path_network import (
+    from match_analysis_DEPRECATED.path_network import (
         create_density_heatmap,
         extract_skeleton_network,
         extract_graph_network,
@@ -400,7 +400,7 @@ def plot_team_networks(
         output_dir: Directory to save figures
         resolution: Grid resolution
     """
-    from match_analysis.path_network import (
+    from match_analysis_DEPRECATED.path_network import (
         create_density_heatmap,
         extract_skeleton_network,
         extract_graph_network

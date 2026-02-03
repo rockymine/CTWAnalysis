@@ -17,7 +17,7 @@ from datetime import datetime
 # Import analysis modules
 from layout_analysis import RegionReader, Y0LayerExtractor, TopSurfaceExtractor, VerticalDensityExtractor, LowestBedrockExtractor
 from xml_analysis import MapXMLParser, MapDataEncoder
-from match_analysis import (
+from match_analysis_DEPRECATED import (
     load_map_data,
     load_match_data,
     detect_life_segments,
@@ -31,16 +31,16 @@ from match_analysis import (
     TEAM_COLORS,
     EVENT_MARKERS
 )
-from match_analysis.preprocessing import LifeSegment
-from match_analysis.pdf_report import generate_match_summary_pdf, generate_classification_pdf
+from match_analysis_DEPRECATED.preprocessing import LifeSegment
+from match_analysis_DEPRECATED.pdf_report import generate_match_summary_pdf, generate_classification_pdf
 from classify_segments import generate_classification_report
-from match_analysis.path_network import (
+from match_analysis_DEPRECATED.path_network import (
     create_density_heatmap,
     extract_skeleton_network,
     extract_graph_network,
     extract_corridors
 )
-from match_analysis.path_network_viz import plot_combined_network, plot_team_networks
+from match_analysis_DEPRECATED.path_network_viz import plot_combined_network, plot_team_networks
 from layout_analysis.islands import (
     detect_islands,
     triangulate_island_union,

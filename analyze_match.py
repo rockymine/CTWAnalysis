@@ -4,7 +4,7 @@ CTW Match Analysis
 Main script for analyzing Capture the Wool matches with team-based visualization.
 """
 
-from match_analysis import (
+from match_analysis_DEPRECATED import (
     load_map_data,
     load_match_data,
     detect_life_segments,
