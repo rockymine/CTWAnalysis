@@ -4,22 +4,21 @@ Renders life segments (position traces) for a specific player on top
 of a simplified map showing build region, island outlines, and POI markers.
 """
 
-import json
 import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 
+from visualization import (
+    draw_map_base,
+    map_base_legend_handles,
+    BuildRegionStyle,
+    IslandOutlineStyle,
+    POIStyle,
+)
 
-# Team colors for island boundaries (same as connectivity viz)
-_TEAM_COLORS = {
-    'blue': '#3b82f6',
-    'red': '#ef4444',
-}
-_NEUTRAL_COLOR = '#6b7280'
 
 # Distinct colors for life segment traces
 _SEGMENT_COLORS = [
@@ -29,61 +28,13 @@ _SEGMENT_COLORS = [
     '#808000', '#ffd8b1', '#000075', '#a9a9a9',
 ]
 
-
-def _draw_map_base(ax, map_context):
-    """Draw the simplified map base: build region, island outlines, POIs."""
-
-    # Build region (buildable void)
-    build_region = map_context.get('build_region')
-    if build_region:
-        for poly_coords in build_region.get('buildable_void', []):
-            exterior = np.array(poly_coords['exterior'])
-            if len(exterior) >= 3:
-                ax.fill(
-                    exterior[:, 0], exterior[:, 1],
-                    facecolor='#22c55e', alpha=0.10,
-                    edgecolor='#16a34a', linewidth=0.5,
-                    zorder=0,
-                )
-                for hole in poly_coords.get('holes', []):
-                    h = np.array(hole)
-                    if len(h) >= 3:
-                        ax.fill(h[:, 0], h[:, 1],
-                                facecolor='white', alpha=1.0, zorder=0)
-
-    # Island polygon outlines
-    for island in map_context.get('islands', []):
-        poly = island.get('simplified_polygon')
-        if poly is None:
-            continue
-        team = island.get('team')
-        color = _TEAM_COLORS.get(team, _NEUTRAL_COLOR)
-
-        exterior = np.array(poly['exterior'])
-        if len(exterior) < 3:
-            continue
-        ax.plot(exterior[:, 0], exterior[:, 1],
-                color=color, linewidth=1.5, alpha=0.7, zorder=1)
-
-        for hole_coords in poly.get('holes', []):
-            hole = np.array(hole_coords)
-            if len(hole) >= 3:
-                ax.plot(hole[:, 0], hole[:, 1],
-                        color=color, linewidth=1.0, alpha=0.5, zorder=1)
-
-    # POI markers
-    poi_assignments = map_context.get('poi_assignments', {})
-    for spawn in poi_assignments.get('spawns', []):
-        team_color = spawn.get('team_color', '')
-        color = '#3b82f6' if team_color == 'blue' else '#ef4444'
-        ax.scatter(spawn['x'], spawn['z'],
-                   marker='*', s=200, c=color,
-                   edgecolors='black', linewidths=0.6, zorder=2)
-
-    for wool in poi_assignments.get('wools', []):
-        ax.scatter(wool['x'], wool['z'],
-                   marker='D', s=80, c='#f1c40f',
-                   edgecolors='black', linewidths=0.6, zorder=2)
+# Match trace uses slightly lighter/thinner styles than connectivity viz
+_BUILD_STYLE = BuildRegionStyle(fill_alpha=0.10)
+_ISLAND_STYLE = IslandOutlineStyle(
+    exterior_linewidth=1.5, exterior_alpha=0.7,
+    hole_linewidth=1.0, hole_alpha=0.5,
+)
+_POI_STYLE = POIStyle(wool_marker='D', wool_size=80, zorder=2)
 
 
 def plot_player_traces(
@@ -162,7 +113,10 @@ def plot_player_traces(
         fontsize=13, fontweight='bold',
     )
 
-    _draw_map_base(ax, map_context)
+    draw_map_base(ax, map_context,
+                  build_style=_BUILD_STYLE,
+                  island_style=_ISLAND_STYLE,
+                  poi_style=_POI_STYLE)
 
     # Draw each life segment
     for i, seg in enumerate(segments):
@@ -204,15 +158,12 @@ def plot_player_traces(
                        edgecolors=color, linewidths=1, zorder=4)
 
     # Legend
-    legend_handles = [
-        mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void'),
-        plt.Line2D([0], [0], color=_TEAM_COLORS['blue'], linewidth=1.5, label='Blue island'),
-        plt.Line2D([0], [0], color=_TEAM_COLORS['red'], linewidth=1.5, label='Red island'),
-        plt.Line2D([0], [0], color=_NEUTRAL_COLOR, linewidth=1.5, label='Neutral island'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#3b82f6',
-                   markersize=12, label='Spawn POI'),
-        plt.Line2D([0], [0], marker='D', color='w', markerfacecolor='#f1c40f',
-                   markeredgecolor='black', markersize=6, label='Wool POI'),
+    legend_handles = map_base_legend_handles(
+        has_build_region=True,
+        island_style=_ISLAND_STYLE,
+        poi_style=_POI_STYLE,
+    )
+    legend_handles += [
         plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='gray',
                    markeredgecolor='black', markersize=8, label='Spawn (player)'),
         plt.Line2D([0], [0], marker='x', color='black',

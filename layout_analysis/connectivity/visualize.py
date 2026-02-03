@@ -7,19 +7,16 @@ pixel paths, endpoints, void links, and POI markers.
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import numpy as np
 
-
-# Team colors for island boundaries
-_TEAM_COLORS = {
-    'blue': '#3b82f6',
-    'red': '#ef4444',
-}
-_NEUTRAL_COLOR = '#6b7280'
+from visualization import (
+    draw_build_region,
+    draw_island_outlines,
+    draw_pois,
+    map_base_legend_handles,
+)
 
 
 def plot_map_connectivity(
@@ -53,66 +50,15 @@ def plot_map_connectivity(
     graph_islands_by_id = {
         ie['island_id']: ie for ie in map_graph_data.get('islands', [])
     }
-    context_islands_by_id = {
-        ie['id']: ie for ie in map_context.get('islands', [])
-    }
 
     graph_section = map_graph_data.get('map_graph', {})
     node_lookup = {}
     for node in graph_section.get('nodes', []):
         node_lookup[node['map_node_id']] = node
 
-    # ── Layer 0: Buildable void overlay ─────────────────────────────
-    build_region = map_context.get('build_region')
-    if build_region:
-        for poly_coords in build_region.get('buildable_void', []):
-            exterior = np.array(poly_coords['exterior'])
-            if len(exterior) >= 3:
-                ax.fill(
-                    exterior[:, 0], exterior[:, 1],
-                    facecolor='#22c55e', alpha=0.12,
-                    edgecolor='#16a34a', linewidth=0.5,
-                    zorder=0,
-                )
-                for hole in poly_coords.get('holes', []):
-                    h = np.array(hole)
-                    if len(h) >= 3:
-                        ax.fill(
-                            h[:, 0], h[:, 1],
-                            facecolor='white', alpha=1.0,
-                            zorder=0,
-                        )
-
-    # ── Layer 1: Island polygon boundaries ──────────────────────────
-    for island in map_context.get('islands', []):
-        poly = island.get('simplified_polygon')
-        if poly is None:
-            continue
-
-        team = island.get('team')
-        color = _TEAM_COLORS.get(team, _NEUTRAL_COLOR)
-
-        exterior = np.array(poly['exterior'])
-        if len(exterior) < 3:
-            continue
-
-        ax.plot(
-            exterior[:, 0], exterior[:, 1],
-            color=color,
-            linewidth=2,
-            alpha=0.9,
-            zorder=1,
-        )
-        for hole_coords in poly.get('holes', []):
-            hole = np.array(hole_coords)
-            if len(hole) >= 3:
-                ax.plot(
-                    hole[:, 0], hole[:, 1],
-                    color=color,
-                    linewidth=1.5,
-                    alpha=0.7,
-                    zorder=1,
-                )
+    # ── Layers 0–1: Build region + island outlines (shared) ──────────
+    has_build = draw_build_region(ax, map_context)
+    draw_island_outlines(ax, map_context)
 
     # ── Layer 2: Skeleton edges with pixel detail ───────────────────
     for island in map_context.get('islands', []):
@@ -136,8 +82,7 @@ def plot_map_connectivity(
                 zorder=2,
             )
 
-    # ── Layer 3: Skeleton nodes and POIs ────────────────────────────
-    # Draw skeleton junction/endpoint nodes as small dots
+    # ── Layer 3: Skeleton nodes ──────────────────────────────────────
     for island in map_context.get('islands', []):
         iid = island['id']
         graph_island = graph_islands_by_id.get(iid, {})
@@ -164,29 +109,8 @@ def plot_map_connectivity(
                     zorder=3,
                 )
 
-    # Draw POIs
-    poi_assignments = map_context.get('poi_assignments', {})
-    for spawn in poi_assignments.get('spawns', []):
-        team_color = spawn.get('team_color', '')
-        color = '#3b82f6' if team_color == 'blue' else '#ef4444'
-        ax.scatter(
-            spawn['x'], spawn['z'],
-            marker='*', s=200,
-            c=color,
-            edgecolors='black',
-            linewidths=0.6,
-            zorder=8,
-        )
-
-    for wool in poi_assignments.get('wools', []):
-        ax.scatter(
-            wool['x'], wool['z'],
-            marker='*', s=150,
-            c='#f1c40f',
-            edgecolors='black',
-            linewidths=0.6,
-            zorder=8,
-        )
+    # ── Layer 3 continued: POIs (shared) ─────────────────────────────
+    draw_pois(ax, map_context)
 
     # ── Layer 4: Void links ─────────────────────────────────────────
     void_edges = [e for e in graph_section.get('edges', []) if e['edge_type'] == 'void_link']
@@ -232,27 +156,14 @@ def plot_map_connectivity(
         )
 
     # ── Legend ───────────────────────────────────────────────────────
-    legend_handles = []
-    if build_region:
-        legend_handles.append(
-            mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void')
-        )
+    legend_handles = map_base_legend_handles(has_build_region=has_build)
     legend_handles += [
-        plt.Line2D([0], [0], color=_TEAM_COLORS['blue'], linewidth=2, label='Blue team island'),
-        plt.Line2D([0], [0], color=_TEAM_COLORS['red'], linewidth=2, label='Red team island'),
-        plt.Line2D([0], [0], color=_NEUTRAL_COLOR, linewidth=2, label='Neutral island'),
         plt.Line2D([0], [0], color='lightblue', linewidth=1, label='Skeleton path'),
         plt.Line2D([0], [0], color='#e63946', linestyle='--', linewidth=2.0, label='Void link'),
         plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#1d3557',
                     markersize=6, label='Endpoint'),
         plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange',
                     markeredgecolor='black', markersize=5, label='Map node'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#3b82f6',
-                    markersize=12, label='Spawn (blue)'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#ef4444',
-                    markersize=12, label='Spawn (red)'),
-        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
-                    markersize=12, label='Wool'),
     ]
     ax.legend(handles=legend_handles, loc='upper right', fontsize=9, framealpha=0.9)
 
