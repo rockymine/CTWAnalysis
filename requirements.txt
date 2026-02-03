@@ -10,3 +10,4 @@ networkx
 reportlab
 anvil-parser
 shapely
+duckdb
