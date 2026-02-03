@@ -4,7 +4,7 @@ import argparse
 import os
 
 from ctw.common import PROJECT_ROOT
-from ctw.commands import run, layout, islands, xml, match, info, docs, matches
+from ctw.commands import run, layout, islands, xml, info, docs, matches
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,7 +33,6 @@ Examples:
   python ctw.py layout --map kanto
   python ctw.py islands --map segment --force
   python ctw.py xml --map aether --visualize
-  python ctw.py match --map tumbleweed --match 2026-01-24_22-24-17_75.parquet
   python ctw.py info --map segment
   python ctw.py info --map segment --json
 """,
@@ -49,7 +48,6 @@ Examples:
     layout.register(subparsers, map_parent)
     islands.register(subparsers, map_parent)
     xml.register(subparsers, map_parent)
-    match.register(subparsers, map_parent)
     info.register(subparsers, map_parent)
     docs.register(subparsers)
     matches.register(subparsers)
