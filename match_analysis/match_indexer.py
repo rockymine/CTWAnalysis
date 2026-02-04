@@ -2,7 +2,7 @@
 
 import duckdb
 import pandas as pd
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from datetime import datetime
 import re
 
@@ -90,6 +90,9 @@ def index_match_files(match_logs_dir: str = 'match_logs'):
             else:
                 match_duration = float(df['timestamp'].max() - df['timestamp'].min())
 
+            # Store as POSIX path (forward slashes) for cross-platform compat
+            match_file_posix = PurePosixPath(match_file).as_posix()
+
             conn.execute(
                 """
                 INSERT INTO matches (
@@ -99,7 +102,7 @@ def index_match_files(match_logs_dir: str = 'match_logs'):
                 VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)
                 """,
                 [
-                    match_id, str(match_file), map_name, match_start,
+                    match_id, match_file_posix, map_name, match_start,
                     match_duration, player_count, position_count,
                 ],
             )

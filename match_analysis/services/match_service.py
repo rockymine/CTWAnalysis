@@ -12,7 +12,8 @@ def get_match_file(match_id: int) -> tuple[str, str]:
     """Look up match file path and map name from the database.
 
     Returns:
-        (match_file, map_name) tuple.
+        (match_file, map_name) tuple.  The match_file path is normalized
+        to the current platform's separator convention.
 
     Raises:
         ValueError: If match_id not found in database.
@@ -29,7 +30,9 @@ def get_match_file(match_id: int) -> tuple[str, str]:
     if not result:
         raise ValueError(f"Match {match_id} not found in database")
 
-    return result[0], result[1]
+    # Normalize stored path to current platform (handles legacy backslash paths)
+    match_file = str(Path(result[0].replace('\\', '/')))
+    return match_file, result[1]
 
 
 def extract_player_life_segments(

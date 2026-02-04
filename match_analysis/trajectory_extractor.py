@@ -108,7 +108,9 @@ def process_match(match_id: int):
             print(f"Match {match_id} not found in database")
             return
 
-        match_file, map_name = result
+        match_file_raw, map_name = result
+        # Normalize stored path to current platform (handles legacy backslash paths)
+        match_file = str(Path(match_file_raw.replace('\\', '/')))
         print(f"\nProcessing match {match_id} ({map_name})")
         print(f"File: {match_file}")
 
