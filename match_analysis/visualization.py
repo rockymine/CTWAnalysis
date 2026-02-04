@@ -10,6 +10,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
+from matplotlib.path import Path as MplPath
 
 from visualization import (
     draw_map_base,
@@ -53,6 +54,36 @@ _LOCATION_COLORS = {
     'build_region': '#f39c12',
     'void': '#e74c3c',
 }
+
+
+# Custom marker: tombstone (death)
+# Rectangle body with arched top, traced as a single closed outline.
+_TOMBSTONE = MplPath(
+    [(-0.35, -0.5), (0.35, -0.5), (0.35, 0.15),      # base + right wall
+     (0.35, 0.55), (0.0, 0.55),                        # arch right half (quadratic)
+     (-0.35, 0.55), (-0.35, 0.15),                     # arch left half (quadratic)
+     (-0.35, -0.5)],                                    # close
+    [MplPath.MOVETO, MplPath.LINETO, MplPath.LINETO,
+     MplPath.CURVE3, MplPath.CURVE3,
+     MplPath.CURVE3, MplPath.CURVE3,
+     MplPath.CLOSEPOLY],
+)
+
+# Custom marker: sword (kill)
+# Pointed blade + crossguard + handle + pommel, single closed outline.
+_SWORD = MplPath(
+    [(0.0, 0.7),                                        # blade tip
+     (0.08, 0.6), (0.08, 0.05),                        # right blade edge
+     (0.35, 0.05), (0.35, -0.05),                      # crossguard right
+     (0.08, -0.05), (0.08, -0.35),                     # right handle
+     (0.12, -0.35), (0.12, -0.45),                     # pommel right
+     (-0.12, -0.45), (-0.12, -0.35),                   # pommel left
+     (-0.08, -0.35), (-0.08, -0.05),                   # left handle
+     (-0.35, -0.05), (-0.35, 0.05),                    # crossguard left
+     (-0.08, 0.05), (-0.08, 0.6),                      # left blade edge
+     (0.0, 0.7)],                                       # close
+    [MplPath.MOVETO] + [MplPath.LINETO] * 16 + [MplPath.CLOSEPOLY],
+)
 
 
 def _resolve_team_color(
@@ -235,17 +266,19 @@ def plot_player_traces(
                    marker='^', s=80, c=color,
                    edgecolors='black', linewidths=0.6, zorder=5)
 
-        # Death marker
+        # Death marker (tombstone)
         positions = seg['positions']
         if show_deaths and seg['outcome'] == 'death' and len(positions) > 0:
             last = positions.iloc[-1]
             ax.scatter(last['x'], last['z'],
-                       marker='x', s=80, c=color, linewidths=2, zorder=5)
+                       marker=_TOMBSTONE, s=120, c=color,
+                       edgecolors='black', linewidths=0.5, zorder=5)
 
-        # Kill markers
+        # Kill markers (sword)
         if show_kills and len(seg['kills']) > 0:
             ax.scatter(seg['kills']['x'].values, seg['kills']['z'].values,
-                       marker='+', s=100, c=color, linewidths=2, zorder=4)
+                       marker=_SWORD, s=140, c=color,
+                       edgecolors='black', linewidths=0.5, zorder=4)
 
         # Wool event markers
         if show_wool and len(seg['wool_events']) > 0:
@@ -266,12 +299,14 @@ def plot_player_traces(
                        markeredgecolor='black', markersize=8, label='Spawn'))
         if show_deaths:
             legend_handles.append(
-                plt.Line2D([0], [0], marker='x', color='black',
-                           markersize=8, label='Death'))
+                plt.Line2D([0], [0], marker=_TOMBSTONE, color='w',
+                           markerfacecolor='gray', markeredgecolor='black',
+                           markersize=10, label='Death'))
         if show_kills:
             legend_handles.append(
-                plt.Line2D([0], [0], marker='+', color='black',
-                           markersize=8, label='Kill'))
+                plt.Line2D([0], [0], marker=_SWORD, color='w',
+                           markerfacecolor='gray', markeredgecolor='black',
+                           markersize=10, label='Kill'))
         if show_wool:
             legend_handles.append(
                 plt.Line2D([0], [0], marker='D', color='w', markerfacecolor='gold',
