@@ -119,6 +119,8 @@ def plot_player_traces(
     show_legend: bool = True,
     show_stats: bool = True,
     color_mode: str = 'life',
+    map_base: str = 'outline',
+    map_folder: Path = None,
 ) -> None:
     """Plot life segments for one or more players on the map base layer.
 
@@ -138,6 +140,9 @@ def plot_player_traces(
         show_stats: Show the stats text box.
         color_mode: 'life' (per-segment), 'team' (by spawn team),
             or 'location' (by position type).
+        map_base: 'outline' for polygon outlines, 'blocks' for individual
+            block rendering from layout_bedrock.parquet.
+        map_folder: Path to the map folder (required when map_base='blocks').
     """
     output_path = Path(output_path)
     os.makedirs(output_path.parent, exist_ok=True)
@@ -191,7 +196,9 @@ def plot_player_traces(
     draw_map_base(ax, map_context,
                   build_style=_BUILD_STYLE,
                   island_style=_ISLAND_STYLE,
-                  poi_style=_POI_STYLE)
+                  poi_style=_POI_STYLE,
+                  map_base=map_base,
+                  map_folder=map_folder)
 
     # Visual density adjustments for multi-player
     trace_alpha = 0.4 if multi_player else 0.8

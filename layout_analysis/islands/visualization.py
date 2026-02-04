@@ -198,7 +198,9 @@ def plot_island_triangulation(
 def plot_island_comparison(
     islands: List,
     output_path: str = None,
-    figsize: Tuple[int, int] = (20, 15)
+    figsize: Tuple[int, int] = (20, 15),
+    map_folder=None,
+    map_context: dict = None,
 ):
     """
     Create a comprehensive comparison plot showing different island visualizations.
@@ -207,15 +209,35 @@ def plot_island_comparison(
         islands: List of Island objects
         output_path: Optional path to save figure
         figsize: Figure size
+        map_folder: Optional path to map folder (enables shared block renderer).
+        map_context: Parsed map_context.json (required with map_folder).
     """
     fig = plt.figure(figsize=figsize)
     gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.25)
 
     # 1. Raw blocks
     ax1 = fig.add_subplot(gs[0, 0])
-    plot_islands(islands, ax=ax1, title="1. Detected Islands (Blocks)",
-                show_blocks=True, show_hulls=False, show_triangles=False,
-                show_labels=True, alpha=0.7)
+    if map_folder is not None and map_context is not None:
+        from visualization import draw_block_base, BlockBaseStyle
+        draw_block_base(ax1, map_folder, map_context,
+                        style=BlockBaseStyle(point_size=3, alpha=0.5))
+        for i, island in enumerate(islands):
+            ax1.annotate(
+                f'{island.id}', island.center,
+                fontsize=12, fontweight='bold', ha='center', va='center',
+                color='white',
+                bbox=dict(boxstyle='circle',
+                          facecolor=generate_distinct_colors(len(islands))[i],
+                          edgecolor='black'))
+        ax1.set_xlabel('X Coordinate (blocks)')
+        ax1.set_ylabel('Z Coordinate (blocks)')
+        ax1.set_title("1. Detected Islands (Blocks)")
+        ax1.axis('equal')
+        ax1.grid(True, alpha=0.3)
+    else:
+        plot_islands(islands, ax=ax1, title="1. Detected Islands (Blocks)",
+                    show_blocks=True, show_hulls=False, show_triangles=False,
+                    show_labels=True, alpha=0.7)
 
     # 2. Convex hulls
     ax2 = fig.add_subplot(gs[0, 1])
@@ -471,7 +493,9 @@ def create_island_report(
     islands: List,
     stats: Dict,
     output_dir: str,
-    map_name: str = "Unknown"
+    map_name: str = "Unknown",
+    map_folder=None,
+    map_context: dict = None,
 ):
     """
     Generate complete island analysis report with multiple visualizations.
@@ -481,6 +505,8 @@ def create_island_report(
         stats: Statistics dictionary
         output_dir: Output directory
         map_name: Name of the map
+        map_folder: Optional path to map folder (for block-level rendering).
+        map_context: Parsed map_context.json (required with map_folder).
     """
     import os
     os.makedirs(output_dir, exist_ok=True)
@@ -488,7 +514,9 @@ def create_island_report(
     # Generate all visualizations
     plot_island_comparison(
         islands,
-        output_path=os.path.join(output_dir, 'island_comparison.png')
+        output_path=os.path.join(output_dir, 'island_comparison.png'),
+        map_folder=map_folder,
+        map_context=map_context,
     )
 
     plot_island_statistics(

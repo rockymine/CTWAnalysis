@@ -111,6 +111,10 @@ Examples:
                    default='life',
                    help='Color scheme: life (per-segment), team (by spawn team), '
                         'location (by position type)')
+    p.add_argument('--map-base', choices=['outline', 'blocks'],
+                   default='outline',
+                   help='Map base layer: outline (polygon outlines) or '
+                        'blocks (individual blocks from layout parquet)')
     p.set_defaults(func=handle_trace)
 
 
@@ -288,6 +292,8 @@ def handle_trace(args):
         show_legend=not args.no_legend,
         show_stats=not args.no_stats,
         color_mode=args.color_mode,
+        map_base=args.map_base,
+        map_folder=map_folder,
     )
 
 

@@ -8,11 +8,13 @@ callers can override individual values via style dataclasses.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
 
@@ -55,6 +57,21 @@ class POIStyle:
     zorder: int = 8
 
 
+@dataclass(frozen=True)
+class BlockBaseStyle:
+    """Style parameters for block-level base layer rendering."""
+    point_size: float = 3
+    alpha: float = 0.35
+    zorder: int = 0
+
+
+# Island-id → color mapping for block base layer.
+# Matches the team colors used elsewhere; neutral islands get gray tones.
+_ISLAND_BLOCK_COLORS = {
+    0: '#d1d5db',    # unassigned / background
+}
+
+
 # ── Drawing functions ────────────────────────────────────────────────
 
 
@@ -94,6 +111,49 @@ def draw_build_region(
                         zorder=style.zorder,
                     )
     return True
+
+
+def draw_block_base(
+    ax,
+    map_folder: Path,
+    map_context: dict,
+    style: Optional[BlockBaseStyle] = None,
+) -> None:
+    """Draw individual blocks from layout_bedrock.parquet, colored by island.
+
+    Blocks are colored using their island's team color (from map_context).
+    Unassigned blocks (island_id 0) are drawn in light gray.
+
+    Args:
+        ax: Matplotlib axes.
+        map_folder: Path to the map folder containing layout_bedrock.parquet.
+        map_context: Parsed map_context.json (used for island→team mapping).
+        style: Visual style overrides.
+    """
+    if style is None:
+        style = BlockBaseStyle()
+
+    parquet_path = Path(map_folder) / 'layout_bedrock.parquet'
+    if not parquet_path.exists():
+        return
+
+    df = pd.read_parquet(parquet_path, columns=['world_x', 'world_z', 'island_id'])
+
+    # Build island_id → color mapping from map_context team data
+    color_map = dict(_ISLAND_BLOCK_COLORS)
+    for island in map_context.get('islands', []):
+        iid = island['id']
+        team = island.get('team')
+        color_map[iid] = TEAM_COLORS.get(team, NEUTRAL_COLOR)
+
+    colors = [color_map.get(iid, NEUTRAL_COLOR) for iid in df['island_id']]
+
+    ax.scatter(
+        df['world_x'].values, df['world_z'].values,
+        c=colors, s=style.point_size,
+        alpha=style.alpha, zorder=style.zorder,
+        linewidths=0,
+    )
 
 
 def draw_island_outlines(
@@ -184,13 +244,27 @@ def draw_map_base(
     build_style: Optional[BuildRegionStyle] = None,
     island_style: Optional[IslandOutlineStyle] = None,
     poi_style: Optional[POIStyle] = None,
+    map_base: str = 'outline',
+    map_folder: Optional[Path] = None,
+    block_style: Optional[BlockBaseStyle] = None,
 ) -> bool:
-    """Convenience wrapper: draw all three map base layers.
+    """Convenience wrapper: draw all map base layers.
+
+    Args:
+        map_base: 'outline' for polygon outlines (default), or 'blocks'
+            for individual block rendering from layout_bedrock.parquet.
+        map_folder: Required when map_base='blocks'. Path to the map folder.
+        block_style: Style overrides for block rendering.
 
     Returns True if a build region was drawn (useful for legend construction).
     """
     has_build = draw_build_region(ax, map_context, style=build_style)
-    draw_island_outlines(ax, map_context, style=island_style)
+
+    if map_base == 'blocks' and map_folder is not None:
+        draw_block_base(ax, map_folder, map_context, style=block_style)
+    else:
+        draw_island_outlines(ax, map_context, style=island_style)
+
     draw_pois(ax, map_context, style=poi_style)
     return has_build
 
