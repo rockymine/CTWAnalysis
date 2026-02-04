@@ -2366,6 +2366,16 @@
         "returns": null
       },
       {
+        "name": "_expand_block_bounds",
+        "args": [
+          "min_x",
+          "min_z",
+          "max_x",
+          "max_z"
+        ],
+        "returns": null
+      },
+      {
         "name": "_shapely_empty",
         "args": [],
         "returns": null
@@ -3012,6 +3022,13 @@
           },
           {
             "name": "test_parse_rectangle_region",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_region_block_bounds_expand_to_unit_edges",
             "args": [
               "self"
             ],
