@@ -21,6 +21,17 @@ def _shapely_box(min_x, min_z, max_x, max_z):
                max(min_x, max_x), max(min_z, max_z))
 
 
+def _expand_block_bounds(min_x, min_z, max_x, max_z):
+    """Expand inclusive block bounds to unit-square extents.
+
+    Coordinate convention:
+      - Block (x, z) occupies [x, x+1] × [z, z+1]
+      - XML rectangular regions specify *included* blocks via min/max
+      - Convert to polygon extents by keeping min as-is and adding +1 to max
+    """
+    return (min_x, min_z, max_x + 1, max_z + 1)
+
+
 def _shapely_empty():
     from shapely.geometry import Polygon
     return Polygon()
@@ -105,10 +116,16 @@ class RectangleRegion(Region):
         actual_max_x = max(self.min_x, self.max_x)
         actual_min_z = min(self.min_z, self.max_z)
         actual_max_z = max(self.min_z, self.max_z)
-        return (actual_min_x, actual_min_z), (actual_max_x, actual_max_z)
+        min_x, min_z, max_x, max_z = _expand_block_bounds(
+            actual_min_x, actual_min_z, actual_max_x, actual_max_z
+        )
+        return (min_x, min_z), (max_x, max_z)
 
     def to_shapely_2d(self, bounds, registry=None):
-        return _shapely_box(self.min_x, self.min_z, self.max_x, self.max_z)
+        min_x, min_z, max_x, max_z = _expand_block_bounds(
+            self.min_x, self.min_z, self.max_x, self.max_z
+        )
+        return _shapely_box(min_x, min_z, max_x, max_z)
 
 
 @dataclass
@@ -127,10 +144,16 @@ class CuboidRegion(Region):
         actual_max_x = max(self.min_x, self.max_x)
         actual_min_z = min(self.min_z, self.max_z)
         actual_max_z = max(self.min_z, self.max_z)
-        return (actual_min_x, actual_min_z), (actual_max_x, actual_max_z)
+        min_x, min_z, max_x, max_z = _expand_block_bounds(
+            actual_min_x, actual_min_z, actual_max_x, actual_max_z
+        )
+        return (min_x, min_z), (max_x, max_z)
 
     def to_shapely_2d(self, bounds, registry=None):
-        return _shapely_box(self.min_x, self.min_z, self.max_x, self.max_z)
+        min_x, min_z, max_x, max_z = _expand_block_bounds(
+            self.min_x, self.min_z, self.max_x, self.max_z
+        )
+        return _shapely_box(min_x, min_z, max_x, max_z)
 
 
 @dataclass
@@ -208,7 +231,10 @@ class BlockRegion(Region):
         return (self.x, self.z), (self.x, self.z)
 
     def to_shapely_2d(self, bounds, registry=None):
-        return _shapely_box(self.x, self.z, self.x + 1, self.z + 1)
+        min_x, min_z, max_x, max_z = _expand_block_bounds(
+            self.x, self.z, self.x, self.z
+        )
+        return _shapely_box(min_x, min_z, max_x, max_z)
 
 
 @dataclass

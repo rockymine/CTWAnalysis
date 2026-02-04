@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from xml_analysis.parser import MapXMLParser
-from xml_analysis.regions import RectangleRegion, CuboidRegion, UnionRegion
+from xml_analysis.regions import RectangleRegion, CuboidRegion, UnionRegion, BlockRegion
 
 
 class TestRegionParsing(unittest.TestCase):
@@ -153,6 +153,16 @@ class TestMapXMLParser(unittest.TestCase):
         self.assertEqual(region.min_z, 0.0)
         self.assertEqual(region.max_x, 20.0)
         self.assertEqual(region.max_z, 20.0)
+
+    def test_region_block_bounds_expand_to_unit_edges(self):
+        """XML min/max block coords should expand to unit-square extents."""
+        rect = RectangleRegion(min_x=0, min_z=0, max_x=2, max_z=3)
+        rect_geom = rect.to_shapely_2d((0, 0, 0, 0))
+        self.assertEqual(rect_geom.bounds, (0.0, 0.0, 3.0, 4.0))
+
+        block = BlockRegion(x=5, z=7)
+        block_geom = block.to_shapely_2d((0, 0, 0, 0))
+        self.assertEqual(block_geom.bounds, (5.0, 7.0, 6.0, 8.0))
 
     def test_parse_union_region(self):
         """Test parsing union regions."""
