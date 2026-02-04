@@ -220,7 +220,7 @@ def plot_island_comparison(
     if map_folder is not None and map_context is not None:
         from visualization import draw_block_base, BlockBaseStyle
         draw_block_base(ax1, map_folder, map_context,
-                        style=BlockBaseStyle(point_size=3, alpha=0.5))
+                        style=BlockBaseStyle(fill_alpha=0.5, linewidth=0.2))
         for i, island in enumerate(islands):
             ax1.annotate(
                 f'{island.id}', island.center,

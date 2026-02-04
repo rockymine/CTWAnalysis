@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.collections import PolyCollection
 
 from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
 
@@ -60,8 +61,10 @@ class POIStyle:
 @dataclass(frozen=True)
 class BlockBaseStyle:
     """Style parameters for block-level base layer rendering."""
-    point_size: float = 3
-    alpha: float = 0.35
+    fill_alpha: float = 0.15
+    edge_alpha: float = 0.3
+    edgecolor: str = '#9ca3af'
+    linewidth: float = 0.3
     zorder: int = 0
 
 
@@ -146,14 +149,27 @@ def draw_block_base(
         team = island.get('team')
         color_map[iid] = TEAM_COLORS.get(team, NEUTRAL_COLOR)
 
-    colors = [color_map.get(iid, NEUTRAL_COLOR) for iid in df['island_id']]
+    # Build 1×1 unit square vertices for each block
+    xs = df['world_x'].values
+    zs = df['world_z'].values
+    squares = np.stack([
+        np.column_stack([xs,       zs]),
+        np.column_stack([xs + 1,   zs]),
+        np.column_stack([xs + 1,   zs + 1]),
+        np.column_stack([xs,       zs + 1]),
+    ], axis=1)  # shape (N, 4, 2)
 
-    ax.scatter(
-        df['world_x'].values, df['world_z'].values,
-        c=colors, s=style.point_size,
-        alpha=style.alpha, zorder=style.zorder,
-        linewidths=0,
+    facecolors = [color_map.get(iid, NEUTRAL_COLOR) for iid in df['island_id']]
+
+    pc = PolyCollection(
+        squares,
+        facecolors=facecolors,
+        edgecolors=style.edgecolor,
+        alpha=style.fill_alpha,
+        linewidths=style.linewidth,
+        zorder=style.zorder,
     )
+    ax.add_collection(pc)
 
 
 def draw_island_outlines(
