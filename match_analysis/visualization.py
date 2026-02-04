@@ -73,14 +73,14 @@ _TOMBSTONE = MplPath(
 # Pointed blade + crossguard + handle + pommel, single closed outline.
 _SWORD = MplPath(
     [(0.0, 0.7),                                        # blade tip
-     (0.08, 0.6), (0.08, 0.05),                        # right blade edge
+     (0.15, 0.6), (0.15, 0.05),                        # right blade edge (wider)
      (0.35, 0.05), (0.35, -0.05),                      # crossguard right
-     (0.08, -0.05), (0.08, -0.35),                     # right handle
-     (0.12, -0.35), (0.12, -0.45),                     # pommel right
-     (-0.12, -0.45), (-0.12, -0.35),                   # pommel left
-     (-0.08, -0.35), (-0.08, -0.05),                   # left handle
+     (0.12, -0.05), (0.12, -0.35),                     # right handle (thicker)
+     (0.16, -0.35), (0.16, -0.45),                     # pommel right (wider)
+     (-0.16, -0.45), (-0.16, -0.35),                   # pommel left
+     (-0.12, -0.35), (-0.12, -0.05),                   # left handle
      (-0.35, -0.05), (-0.35, 0.05),                    # crossguard left
-     (-0.08, 0.05), (-0.08, 0.6),                      # left blade edge
+     (-0.15, 0.05), (-0.15, 0.6),                      # left blade edge
      (0.0, 0.7)],                                       # close
     [MplPath.MOVETO] + [MplPath.LINETO] * 16 + [MplPath.CLOSEPOLY],
 )
