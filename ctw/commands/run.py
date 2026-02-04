@@ -24,6 +24,8 @@ def register(subparsers):
                    default='bedrock', help='Layout file for island analysis')
     p.add_argument('--canonical-triangulation', action='store_true',
                    help='Use canonical-consistent triangulation')
+    p.add_argument('--plots', action='store_true',
+                   help='Generate debug plots for layout and island analysis')
     p.set_defaults(func=handler)
 
 
@@ -57,6 +59,7 @@ def handler(args):
                 map_folder, force_rerun=args.force,
                 layout_type=args.island_layout,
                 canonical_triangulation=args.canonical_triangulation,
+                plots=args.plots,
             )
         else:
             print("\n[2/4] Island Analysis: SKIPPED")

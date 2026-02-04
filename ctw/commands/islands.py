@@ -23,6 +23,9 @@ def register(subparsers, map_parent):
                    help='Use canonical-consistent triangulation')
     p.add_argument('--basic', action='store_true',
                    help='Basic mode: detection + triangulation only (no skeleton/POI)')
+    p.add_argument('--output', help='Override output directory')
+    p.add_argument('--plots', action='store_true',
+                   help='Generate debug plots (per-island debug, POI, pathfinding)')
     p.set_defaults(func=handler)
 
 
@@ -105,4 +108,6 @@ def handler(args):
             buffer_distance=args.buffer,
             layout_type=args.layout,
             canonical_triangulation=args.canonical_triangulation,
+            output_dir=args.output,
+            plots=args.plots,
         )

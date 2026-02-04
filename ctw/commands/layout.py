@@ -14,7 +14,8 @@ def register(subparsers, map_parent):
     p.add_argument('--threshold', type=int, default=10,
                    help='Density threshold (default: 10)')
     p.add_argument('--density-mode', default='run,count',
-                   help='Comma-separated density modes: run, count')
+                   metavar='{run,count}',
+                   help='Comma-separated density modes (default: run,count)')
     p.add_argument('--skip-y0', action='store_true', help='Skip Y0 extraction')
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')

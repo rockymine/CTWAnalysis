@@ -166,9 +166,21 @@ def _generate_skeleton_visuals(
     canonical_groups: dict,
     island_output_dir: Path,
     map_name: str,
+    plots: bool = True,
 ):
-    """Write island reports, skeleton debug images, and overview plots."""
-    from layout_analysis.islands import create_island_report
+    """Write island reports, skeleton debug images, and overview plots.
+
+    Essential outputs (always generated):
+        - island_triangulation_detail.png
+        - unique_islands.png
+        - world_overview.png
+
+    Debug outputs (only when plots=True):
+        - island_comparison.png, island_statistics.png, island_report.txt
+        - island_{id}_debug.png (per canonical shape)
+        - skeleton_report.txt
+    """
+    from layout_analysis.islands.visualization import plot_triangulation_detail
     from layout_analysis.skeleton.visualize import (
         plot_island_debug,
         plot_unique_islands,
@@ -177,21 +189,33 @@ def _generate_skeleton_visuals(
     )
 
     print(f"  Generating visualizations...")
-    create_island_report(islands, stats, str(island_output_dir), map_name)
+
+    # Essential: triangulation detail
+    plot_triangulation_detail(
+        islands,
+        output_path=str(island_output_dir / 'island_triangulation_detail.png'),
+    )
+
+    if plots:
+        # Debug: full island report (comparison, statistics, text report)
+        from layout_analysis.islands import create_island_report
+        create_island_report(islands, stats, str(island_output_dir), map_name)
 
     skeleton_output_dir = island_output_dir / 'skeleton'
     skeleton_output_dir.mkdir(exist_ok=True)
 
-    # Per-island debug images (one per unique canonical shape)
-    result_by_id = {r.island_id: r for r in skeleton_results}
-    for key, ids in canonical_groups.items():
-        rep_id = min(ids)
-        if rep_id in result_by_id:
-            plot_island_debug(
-                result_by_id[rep_id],
-                str(skeleton_output_dir / f'island_{rep_id}_debug.png'),
-            )
+    if plots:
+        # Debug: per-island skeleton debug images (one per unique canonical shape)
+        result_by_id = {r.island_id: r for r in skeleton_results}
+        for key, ids in canonical_groups.items():
+            rep_id = min(ids)
+            if rep_id in result_by_id:
+                plot_island_debug(
+                    result_by_id[rep_id],
+                    str(skeleton_output_dir / f'island_{rep_id}_debug.png'),
+                )
 
+    # Essential: unique islands overview and world overview
     plot_unique_islands(
         skeleton_results, canonical_groups,
         str(skeleton_output_dir / 'unique_islands.png'),
@@ -202,11 +226,13 @@ def _generate_skeleton_visuals(
         str(skeleton_output_dir / 'world_overview.png'),
     )
 
-    generate_skeleton_report(
-        skeleton_results, canonical_groups,
-        str(skeleton_output_dir / 'skeleton_report.txt'),
-        map_name=map_name,
-    )
+    if plots:
+        # Debug: skeleton text report
+        generate_skeleton_report(
+            skeleton_results, canonical_groups,
+            str(skeleton_output_dir / 'skeleton_report.txt'),
+            map_name=map_name,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +245,7 @@ def _annotate_pois(
     df: pd.DataFrame,
     skeleton_results: list,
     skeleton_output_dir: Path,
+    plots: bool = True,
 ):
     """Parse XML and annotate skeleton POIs.
 
@@ -259,13 +286,14 @@ def _annotate_pois(
             )
             print(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
 
-            for result in skeleton_results:
-                has_poi = any(n.poi_type is not None for n in result.graph.nodes)
-                if has_poi:
-                    plot_island_poi_debug(
-                        result,
-                        str(skeleton_output_dir / f'island_{result.island_id}_poi.png'),
-                    )
+            if plots:
+                for result in skeleton_results:
+                    has_poi = any(n.poi_type is not None for n in result.graph.nodes)
+                    if has_poi:
+                        plot_island_poi_debug(
+                            result,
+                            str(skeleton_output_dir / f'island_{result.island_id}_poi.png'),
+                        )
         except Exception as e:
             print(f"    [!] POI annotation failed: {e}")
     else:
@@ -349,10 +377,9 @@ def _build_context(
 # Stage 7: Pathfinding
 # ---------------------------------------------------------------------------
 
-def _run_pathfinding(map_folder: Path, island_output_dir: Path):
+def _run_pathfinding(map_folder: Path, island_output_dir: Path, plots: bool = True):
     """Run pathfinding analysis and generate path grid visualizations."""
     from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
-    from layout_analysis.skeleton.visualize import plot_path_grid
 
     print(f"  Running pathfinding analysis...")
     pathfinding_results = run_pathfinding_analysis(str(map_folder))
@@ -364,23 +391,26 @@ def _run_pathfinding(map_folder: Path, island_output_dir: Path):
     n_defender = pathfinding_results['total_defender_paths']
     print(f"    Pathfinding: {n_analyzed} islands, {n_paths} POI paths, {n_defender} defender paths")
 
-    pathfinding_dir = island_output_dir / 'pathfinding'
-    pathfinding_dir.mkdir(exist_ok=True)
+    if plots:
+        from layout_analysis.skeleton.visualize import plot_path_grid
 
-    with open(str(map_folder / 'map_graph.json'), 'r') as f:
-        graph_data = json.load(f)
-    islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
+        pathfinding_dir = island_output_dir / 'pathfinding'
+        pathfinding_dir.mkdir(exist_ok=True)
 
-    for island_result in pathfinding_results['island_results']:
-        iid = island_result['island_id']
-        island_entry = islands_by_id.get(iid)
-        if island_entry:
-            edge_px = load_edge_pixels(island_entry.get('skeleton'))
-            if edge_px:
-                plot_path_grid(
-                    island_result, edge_px,
-                    str(pathfinding_dir / f'island_{iid}_paths.png'),
-                )
+        with open(str(map_folder / 'map_graph.json'), 'r') as f:
+            graph_data = json.load(f)
+        islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
+
+        for island_result in pathfinding_results['island_results']:
+            iid = island_result['island_id']
+            island_entry = islands_by_id.get(iid)
+            if island_entry:
+                edge_px = load_edge_pixels(island_entry.get('skeleton'))
+                if edge_px:
+                    plot_path_grid(
+                        island_result, edge_px,
+                        str(pathfinding_dir / f'island_{iid}_paths.png'),
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +476,8 @@ def analyze_islands_step(
     buffer_distance: float = 0.0,
     layout_type: str = 'bedrock',
     canonical_triangulation: bool = False,
+    output_dir: Optional[str] = None,
+    plots: bool = False,
 ):
     """
     Step 2: Detect and triangulate islands from layout data.
@@ -458,6 +490,8 @@ def analyze_islands_step(
         layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density')
         canonical_triangulation: If True, use canonical-consistent triangulation
             so that symmetrically identical islands share the same mesh
+        output_dir: Override output directory (default: map_folder/island_analysis)
+        plots: If True, generate debug plots (per-island debug, POI, pathfinding)
 
     Returns:
         Path: Path to island analysis output directory
@@ -473,7 +507,7 @@ def analyze_islands_step(
         return None
 
     # Check for cached results
-    island_output_dir = map_folder / 'island_analysis'
+    island_output_dir = Path(output_dir) if output_dir else map_folder / 'island_analysis'
     report_file = island_output_dir / 'island_report.txt'
     if report_file.exists() and not force_rerun:
         print(f"  Island analysis already exists. Skipping.")
@@ -507,13 +541,14 @@ def analyze_islands_step(
     # Stage 4: Skeleton & island visualizations
     _generate_skeleton_visuals(
         islands, stats, skeleton_results, canonical_groups,
-        island_output_dir, map_folder.name,
+        island_output_dir, map_folder.name, plots=plots,
     )
 
     # Stage 5: POI annotation
     skeleton_output_dir = island_output_dir / 'skeleton'
     map_data_obj, poi_assignments, map_center_pt = _annotate_pois(
         map_folder, islands, df, skeleton_results, skeleton_output_dir,
+        plots=plots,
     )
 
     # Stage 6: Build MapContext + initial map_graph.json
@@ -523,7 +558,7 @@ def analyze_islands_step(
     )
 
     # Stage 7: Pathfinding
-    _run_pathfinding(map_folder, island_output_dir)
+    _run_pathfinding(map_folder, island_output_dir, plots=plots)
 
     # Stage 8: Connectivity
     _build_connectivity(map_folder, island_output_dir)
