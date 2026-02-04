@@ -28,7 +28,7 @@ Examples:
   python ctw.py matches process-all --force
   python ctw.py matches reset
   python ctw.py matches stats
-  python ctw.py matches trace --map Ingwaz --file match_logs/2026-01-26_17-31-42_57.parquet --player 0
+  python ctw.py matches trace --map Ingwaz --match 57 --player 0
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -74,8 +74,8 @@ Examples:
     p = matches_sub.add_parser('trace', help='Visualize player traces on map')
     p.add_argument('--map', required=True,
                    help='Map name (e.g., Ingwaz) or path to map folder')
-    p.add_argument('--file', required=True,
-                   help='Path to match parquet file')
+    p.add_argument('--match', required=True, type=int,
+                   help='Match ID (from database)')
     p.add_argument('--player', required=True, type=int,
                    help='Player ID to visualize')
     p.add_argument('--output', help='Output PNG path (default: auto-generated)')
@@ -190,7 +190,22 @@ def handle_reset(args):
 def handle_trace(args):
     import json
     from ctw.common import resolve_map_folder
+    from match_analysis.services import get_match_file
     from match_analysis.visualization import plot_player_traces
+
+    ensure_match_db()
+
+    try:
+        match_file, _ = get_match_file(args.match)
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("Run 'ctw matches index' first to index match files.")
+        return
+
+    match_path = Path(match_file)
+    if not match_path.exists():
+        print(f"Error: match file not found: {match_file}")
+        return
 
     map_folder = resolve_map_folder(args.map)
     context_path = map_folder / 'island_analysis' / 'map_context.json'
@@ -213,16 +228,11 @@ def handle_trace(args):
         with open(graph_path) as f:
             map_graph = json.load(f)
 
-    match_file = Path(args.file)
-    if not match_file.exists():
-        print(f"Error: match file not found: {match_file}")
-        return
-
     if args.output:
         output_path = Path(args.output)
     else:
         output_dir = map_folder / 'match_analysis'
-        output_path = output_dir / f"trace_player{args.player}_{match_file.stem}.png"
+        output_path = output_dir / f"trace_player{args.player}_match{args.match}.png"
 
     plot_player_traces(
         map_context, str(match_file), args.player, output_path,

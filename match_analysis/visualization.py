@@ -9,7 +9,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 from visualization import (
     draw_map_base,
@@ -18,6 +17,7 @@ from visualization import (
     IslandOutlineStyle,
     POIStyle,
 )
+from match_analysis.services import extract_player_life_segments
 
 
 # Distinct colors for life segment traces
@@ -63,53 +63,11 @@ def plot_player_traces(
         from match_analysis.position_classifier import PositionClassifier
         classifier = PositionClassifier(map_context, map_graph)
 
-    # Load match data
-    df = pd.read_parquet(match_file)
-    player_df = df[df['player_id'] == player_id].sort_values('timestamp')
-
-    if len(player_df) == 0:
-        print(f"No events found for player {player_id} in {match_file}")
-        return
-
-    # Extract life segments: spawn -> death/match_end
-    spawns = player_df[player_df['event_type'] == 2]
-    deaths = player_df[player_df['event_type'] == 4]
-
-    segments = []
-    for spawn_row in spawns.itertuples():
-        start_time = spawn_row.timestamp
-        next_deaths = deaths[deaths['timestamp'] > start_time]
-        if len(next_deaths) > 0:
-            end_time = next_deaths.iloc[0]['timestamp']
-            outcome = 'death'
-        else:
-            end_time = player_df['timestamp'].iloc[-1]
-            outcome = 'match_end'
-
-        # All events with coordinates in this life segment (for the trace line)
-        trace_events = player_df[
-            (player_df['timestamp'] >= start_time)
-            & (player_df['timestamp'] <= end_time)
-            & (player_df['event_type'].isin([3, 5, 6, 7]))
-        ]
-        kills = trace_events[trace_events['event_type'] == 3]
-        wool_events = trace_events[trace_events['event_type'].isin([6, 7])]
-        positions = trace_events[trace_events['event_type'] == 5]
-
-        segments.append({
-            'trace_events': trace_events,
-            'positions': positions,
-            'kills': kills,
-            'wool_events': wool_events,
-            'spawn_x': spawn_row.x,
-            'spawn_z': spawn_row.z,
-            'outcome': outcome,
-            'start_time': start_time,
-            'end_time': end_time,
-        })
+    # Extract life segments via service
+    segments = extract_player_life_segments(match_file, player_id)
 
     if not segments:
-        print(f"No life segments found for player {player_id}")
+        print(f"No life segments found for player {player_id} in {match_file}")
         return
 
     # Plot
