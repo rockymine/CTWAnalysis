@@ -93,3 +93,9 @@ def extract_player_life_segments(
         })
 
     return segments
+
+
+def get_match_player_ids(match_file: str) -> list[int]:
+    """Return sorted list of unique player IDs in a match parquet file."""
+    df = pd.read_parquet(match_file, columns=['player_id'])
+    return sorted(int(pid) for pid in df['player_id'].dropna().unique())

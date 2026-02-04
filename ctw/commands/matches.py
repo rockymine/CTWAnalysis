@@ -6,6 +6,18 @@ from pathlib import Path
 from ctw.common import ensure_match_db
 
 
+def _player_arg(value: str):
+    """Accept an integer player ID or the literal 'ALL'."""
+    if value.upper() == 'ALL':
+        return 'ALL'
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"'{value}' is not a valid player ID or 'ALL'"
+        )
+
+
 def register(subparsers):
     matches_parser = subparsers.add_parser(
         'matches',
@@ -29,6 +41,8 @@ Examples:
   python ctw.py matches reset
   python ctw.py matches stats
   python ctw.py matches trace --map Ingwaz --match 57 --player 0
+  python ctw.py matches trace --map Ingwaz --match 57 --player ALL --color-mode team
+  python ctw.py matches trace --map Ingwaz --match 57 --player 0 --no-edges --color-mode location
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -76,11 +90,27 @@ Examples:
                    help='Map name (e.g., Ingwaz) or path to map folder')
     p.add_argument('--match', required=True, type=int,
                    help='Match ID (from database)')
-    p.add_argument('--player', required=True, type=int,
-                   help='Player ID to visualize')
+    p.add_argument('--player', required=True, type=_player_arg,
+                   help='Player ID to visualize, or ALL for every player')
     p.add_argument('--output', help='Output PNG path (default: auto-generated)')
     p.add_argument('--snap-skeleton', action='store_true',
-                   help='Snap on-island positions to skeleton paths for cleaner traces')
+                   help='Snap on-island positions to skeleton paths')
+    p.add_argument('--no-deaths', action='store_true',
+                   help='Hide death markers')
+    p.add_argument('--no-kills', action='store_true',
+                   help='Hide kill markers')
+    p.add_argument('--no-wool', action='store_true',
+                   help='Hide wool event markers')
+    p.add_argument('--no-edges', action='store_true',
+                   help='Show position dots instead of trace lines')
+    p.add_argument('--no-legend', action='store_true',
+                   help='Hide the legend')
+    p.add_argument('--no-stats', action='store_true',
+                   help='Hide the stats box')
+    p.add_argument('--color-mode', choices=['life', 'team', 'location'],
+                   default='life',
+                   help='Color scheme: life (per-segment), team (by spawn team), '
+                        'location (by position type)')
     p.set_defaults(func=handle_trace)
 
 
@@ -190,7 +220,7 @@ def handle_reset(args):
 def handle_trace(args):
     import json
     from ctw.common import resolve_map_folder
-    from match_analysis.services import get_match_file
+    from match_analysis.services import get_match_file, get_match_player_ids
     from match_analysis.visualization import plot_player_traces
 
     ensure_match_db()
@@ -218,8 +248,10 @@ def handle_trace(args):
     with open(context_path) as f:
         map_context = json.load(f)
 
+    # Load map_graph if needed for snap_skeleton or team/location color modes
+    needs_graph = args.snap_skeleton or args.color_mode in ('team', 'location')
     map_graph = None
-    if args.snap_skeleton:
+    if needs_graph:
         graph_path = map_folder / 'map_graph.json'
         if not graph_path.exists():
             print(f"Error: map_graph.json not found at {graph_path}")
@@ -228,16 +260,34 @@ def handle_trace(args):
         with open(graph_path) as f:
             map_graph = json.load(f)
 
+    # Resolve player IDs
+    if args.player == 'ALL':
+        player_ids = get_match_player_ids(str(match_file))
+        if not player_ids:
+            print("No players found in match file.")
+            return
+        print(f"Plotting traces for {len(player_ids)} players...")
+    else:
+        player_ids = [args.player]
+
     if args.output:
         output_path = Path(args.output)
     else:
         output_dir = map_folder / 'match_analysis'
-        output_path = output_dir / f"trace_player{args.player}_match{args.match}.png"
+        player_label = 'all' if args.player == 'ALL' else f'player{args.player}'
+        output_path = output_dir / f"trace_{player_label}_match{args.match}.png"
 
     plot_player_traces(
-        map_context, str(match_file), args.player, output_path,
+        map_context, str(match_file), player_ids, output_path,
         map_graph=map_graph,
         snap_skeleton=args.snap_skeleton,
+        show_deaths=not args.no_deaths,
+        show_kills=not args.no_kills,
+        show_wool=not args.no_wool,
+        show_edges=not args.no_edges,
+        show_legend=not args.no_legend,
+        show_stats=not args.no_stats,
+        color_mode=args.color_mode,
     )
 
 
