@@ -113,39 +113,28 @@ def triangulate_islands_canonical(
             groups[key] = []
         groups[key].append((island, canonical))
 
-    # Step 2: Triangulate each canonical shape once
+    # Step 2: Build polygon and triangulate per island in world space.
+    #
+    # The canonical grouping above identifies equivalent shapes, but the
+    # polygon / triangulation must be built from world-space blocks.
+    # Reason: to_original() correctly maps block INDEX coordinates but NOT
+    # polygon BOUNDARY coordinates.  Block (x,z) occupies [x, x+1]×[z, z+1];
+    # the "+1" extent direction is axis-aligned in world space but gets
+    # rotated if we build the polygon in canonical space and transform back.
     total = 0
     for key, group in groups.items():
-        canonical_points = group[0][1].canonical_points
-
-        # Build and triangulate polygon in canonical space
-        polygon = _build_union_polygon(
-            canonical_points, buffer_distance, simplify_tolerance
-        )
-        if polygon is None:
-            for island, _ in group:
-                island.triangles = []
-            continue
-
-        canonical_triangles = _triangulate_shapely_polygon(polygon)
-
-        canonical_hull: Optional[np.ndarray] = None
-        canonical_poly_coords = None
-        if isinstance(polygon, Polygon) and not polygon.is_empty:
-            canonical_hull = np.array(polygon.exterior.coords[:-1])
-            canonical_poly_coords = _extract_polygon_coords(polygon)
-
-        # Step 3: Transform back to world space for each island in the group
         for island, canonical in group:
-            transform = canonical.transform
-            island.triangles = [
-                transform.to_original(tri) for tri in canonical_triangles
-            ]
-            if canonical_hull is not None:
-                island.hull_vertices = transform.to_original(canonical_hull)
-            if canonical_poly_coords is not None:
-                island.simplified_polygon = _transform_polygon_coords(
-                    canonical_poly_coords, transform)
+            polygon = _build_union_polygon(
+                island.blocks, buffer_distance, simplify_tolerance
+            )
+            if polygon is None:
+                island.triangles = []
+                continue
+
+            island.triangles = _triangulate_shapely_polygon(polygon)
+            if isinstance(polygon, Polygon) and not polygon.is_empty:
+                island.hull_vertices = np.array(polygon.exterior.coords[:-1])
+                island.simplified_polygon = _extract_polygon_coords(polygon)
             total += len(island.triangles)
 
     return total
@@ -210,7 +199,7 @@ def _build_union_polygon(
 
     squares = []
     for x, z in blocks:
-        square = box(x - 0.5, z - 0.5, x + 0.5, z + 0.5)
+        square = box(x, z, x + 1, z + 1)
         squares.append(square)
 
     polygon = unary_union(squares)

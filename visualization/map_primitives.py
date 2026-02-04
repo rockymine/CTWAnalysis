@@ -36,9 +36,9 @@ class BuildRegionStyle:
 @dataclass(frozen=True)
 class IslandOutlineStyle:
     """Style parameters for island polygon outlines."""
-    exterior_linewidth: float = 2.0
+    exterior_linewidth: float = 0.5
     exterior_alpha: float = 0.9
-    hole_linewidth: float = 1.5
+    hole_linewidth: float = 0.5
     hole_alpha: float = 0.7
     zorder: int = 1
 

@@ -119,9 +119,9 @@ def build_map_context(
     z_col = 'world_z' if 'world_z' in layout_df.columns else 'z'
     ctx.bounding_box = (
         float(layout_df[x_col].min()),
-        float(layout_df[x_col].max()),
+        float(layout_df[x_col].max()) + 1,
         float(layout_df[z_col].min()),
-        float(layout_df[z_col].max()),
+        float(layout_df[z_col].max()) + 1,
     )
     ctx.total_blocks = len(layout_df)
     ctx.map_center = map_center
