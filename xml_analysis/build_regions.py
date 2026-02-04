@@ -178,7 +178,7 @@ def _extract_block36_region(y0_parquet_path: str):
     squares = []
     for _, row in block36.iterrows():
         x, z = float(row[x_col]), float(row[z_col])
-        squares.append(box(x - 0.5, z - 0.5, x + 0.5, z + 0.5))
+        squares.append(box(x, z, x + 1, z + 1))
 
     if not squares:
         return None

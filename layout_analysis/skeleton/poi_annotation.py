@@ -186,7 +186,7 @@ def compute_map_center(layout_df) -> Tuple[float, float]:
     min_z = layout_df[z_col].min()
     max_z = layout_df[z_col].max()
 
-    return ((min_x + max_x) / 2.0, (min_z + max_z) / 2.0)
+    return ((min_x + max_x + 1) / 2.0, (min_z + max_z + 1) / 2.0)
 
 
 def classify_island_center(

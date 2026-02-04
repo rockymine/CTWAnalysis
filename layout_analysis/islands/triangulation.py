@@ -210,7 +210,7 @@ def _build_union_polygon(
 
     squares = []
     for x, z in blocks:
-        square = box(x - 0.5, z - 0.5, x + 0.5, z + 0.5)
+        square = box(x, z, x + 1, z + 1)
         squares.append(square)
 
     polygon = unary_union(squares)

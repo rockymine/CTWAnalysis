@@ -155,10 +155,10 @@ class TestMapXMLParser(unittest.TestCase):
         self.assertEqual(region.max_z, 20.0)
 
     def test_region_block_bounds_expand_to_unit_edges(self):
-        """XML min/max block coords should expand to unit-square extents."""
+        """XML rectangle uses corner coords; block regions expand to unit-square extents."""
         rect = RectangleRegion(min_x=0, min_z=0, max_x=2, max_z=3)
         rect_geom = rect.to_shapely_2d((0, 0, 0, 0))
-        self.assertEqual(rect_geom.bounds, (0.0, 0.0, 3.0, 4.0))
+        self.assertEqual(rect_geom.bounds, (0.0, 0.0, 2.0, 3.0))
 
         block = BlockRegion(x=5, z=7)
         block_geom = block.to_shapely_2d((0, 0, 0, 0))

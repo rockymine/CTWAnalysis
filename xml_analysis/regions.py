@@ -112,20 +112,13 @@ class RectangleRegion(Region):
     region_type: str = "rectangle"
 
     def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
-        actual_min_x = min(self.min_x, self.max_x)
-        actual_max_x = max(self.min_x, self.max_x)
-        actual_min_z = min(self.min_z, self.max_z)
-        actual_max_z = max(self.min_z, self.max_z)
-        min_x, min_z, max_x, max_z = _expand_block_bounds(
-            actual_min_x, actual_min_z, actual_max_x, actual_max_z
+        return (
+            (min(self.min_x, self.max_x), min(self.min_z, self.max_z)),
+            (max(self.min_x, self.max_x), max(self.min_z, self.max_z)),
         )
-        return (min_x, min_z), (max_x, max_z)
 
     def to_shapely_2d(self, bounds, registry=None):
-        min_x, min_z, max_x, max_z = _expand_block_bounds(
-            self.min_x, self.min_z, self.max_x, self.max_z
-        )
-        return _shapely_box(min_x, min_z, max_x, max_z)
+        return _shapely_box(self.min_x, self.min_z, self.max_x, self.max_z)
 
 
 @dataclass
@@ -140,20 +133,13 @@ class CuboidRegion(Region):
     region_type: str = "cuboid"
 
     def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
-        actual_min_x = min(self.min_x, self.max_x)
-        actual_max_x = max(self.min_x, self.max_x)
-        actual_min_z = min(self.min_z, self.max_z)
-        actual_max_z = max(self.min_z, self.max_z)
-        min_x, min_z, max_x, max_z = _expand_block_bounds(
-            actual_min_x, actual_min_z, actual_max_x, actual_max_z
+        return (
+            (min(self.min_x, self.max_x), min(self.min_z, self.max_z)),
+            (max(self.min_x, self.max_x), max(self.min_z, self.max_z)),
         )
-        return (min_x, min_z), (max_x, max_z)
 
     def to_shapely_2d(self, bounds, registry=None):
-        min_x, min_z, max_x, max_z = _expand_block_bounds(
-            self.min_x, self.min_z, self.max_x, self.max_z
-        )
-        return _shapely_box(min_x, min_z, max_x, max_z)
+        return _shapely_box(self.min_x, self.min_z, self.max_x, self.max_z)
 
 
 @dataclass
