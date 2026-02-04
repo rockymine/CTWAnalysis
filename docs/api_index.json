@@ -1,31 +1,6 @@
 [
   {
-    "file": "./analyze_islands.py",
-    "functions": [
-      {
-        "name": "analyze_map_islands",
-        "args": [
-          "bedrock_parquet",
-          "output_dir",
-          "map_name",
-          "connectivity",
-          "min_island_size",
-          "buffer_distance",
-          "simplify_tolerance",
-          "detect_holes"
-        ],
-        "returns": null
-      },
-      {
-        "name": "main",
-        "args": [],
-        "returns": null
-      }
-    ],
-    "classes": []
-  },
-  {
-    "file": "./analyze_match.py",
+    "file": "./ctw.py",
     "functions": [
       {
         "name": "main",
@@ -36,40 +11,12 @@
     "classes": []
   },
   {
-    "file": "./classify_segments.py",
+    "file": "./ctw/cli.py",
     "functions": [
       {
-        "name": "load_config",
-        "args": [
-          "config_path"
-        ],
-        "returns": "dict"
-      },
-      {
-        "name": "generate_classification_report",
-        "args": [
-          "life_segments",
-          "classifications",
-          "map_chars",
-          "output_dir"
-        ],
-        "returns": "None"
-      },
-      {
-        "name": "export_classifications_csv",
-        "args": [
-          "life_segments",
-          "classifications",
-          "output_dir"
-        ],
-        "returns": "None"
-      },
-      {
-        "name": "print_classification_summary",
-        "args": [
-          "classifications"
-        ],
-        "returns": "None"
+        "name": "build_parser",
+        "args": [],
+        "returns": "argparse.ArgumentParser"
       },
       {
         "name": "main",
@@ -80,30 +27,24 @@
     "classes": []
   },
   {
-    "file": "./generate_path_networks.py",
+    "file": "./ctw/common.py",
     "functions": [
       {
-        "name": "load_config",
+        "name": "resolve_map_folder",
         "args": [
-          "config_path"
+          "map_arg"
         ],
-        "returns": "dict"
+        "returns": "Path"
       },
       {
-        "name": "generate_path_networks",
+        "name": "collect_map_folders",
         "args": [
-          "match_file",
-          "map_name",
-          "bedrock_parquet",
-          "output_dir",
-          "resolution",
-          "cluster_radius",
-          "generate_team_networks"
+          "args"
         ],
-        "returns": null
+        "returns": "list"
       },
       {
-        "name": "main",
+        "name": "ensure_match_db",
         "args": [],
         "returns": null
       }
@@ -111,140 +52,193 @@
     "classes": []
   },
   {
-    "file": "./generate_plots.py",
+    "file": "./ctw/commands/docs.py",
     "functions": [
       {
-        "name": "load_config",
+        "name": "register",
         "args": [
-          "config_path"
+          "subparsers"
         ],
-        "returns": "dict"
+        "returns": null
       },
       {
-        "name": "plot_match",
+        "name": "handler",
         "args": [
-          "ax",
-          "map_data",
-          "life_segments",
-          "team_filter",
-          "segment_indices",
-          "show_map",
-          "show_positions",
-          "show_kills",
-          "show_deaths",
-          "show_wool_touches",
-          "show_wool_captures"
+          "args"
         ],
-        "returns": "None"
-      },
-      {
-        "name": "generate_summary_report",
-        "args": [
-          "config",
-          "life_segments",
-          "player_stats",
-          "output_dir"
-        ],
-        "returns": "None"
-      },
-      {
-        "name": "main",
-        "args": [],
         "returns": null
       }
     ],
     "classes": []
   },
   {
-    "file": "./run_analysis_workflow.py",
+    "file": "./ctw/commands/info.py",
     "functions": [
       {
-        "name": "analyze_layout",
+        "name": "register",
         "args": [
-          "map_folder",
-          "force_rerun"
+          "subparsers",
+          "map_parent"
         ],
         "returns": null
       },
       {
-        "name": "analyze_islands_step",
+        "name": "handler",
         "args": [
-          "map_folder",
-          "force_rerun",
-          "simplify_tolerance",
-          "buffer_distance",
-          "layout_type",
-          "canonical_triangulation"
+          "args"
         ],
-        "returns": null
-      },
-      {
-        "name": "analyze_xml",
-        "args": [
-          "map_folder",
-          "force_rerun"
-        ],
-        "returns": null
-      },
-      {
-        "name": "parse_match_history",
-        "args": [
-          "match_history_file",
-          "map_name"
-        ],
-        "returns": null
-      },
-      {
-        "name": "analyze_single_match",
-        "args": [
-          "map_name",
-          "match_file",
-          "bedrock_parquet",
-          "output_dir"
-        ],
-        "returns": null
-      },
-      {
-        "name": "analyze_matches",
-        "args": [
-          "map_folder",
-          "match_history_file"
-        ],
-        "returns": null
-      },
-      {
-        "name": "main",
-        "args": [],
         "returns": null
       }
     ],
     "classes": []
   },
   {
-    "file": "./run_layout_analysis.py",
+    "file": "./ctw/commands/islands.py",
     "functions": [
       {
-        "name": "save_csv_or_parquet",
+        "name": "register",
         "args": [
-          "df",
-          "base_path"
+          "subparsers",
+          "map_parent"
         ],
         "returns": null
       },
       {
-        "name": "main",
-        "args": [],
+        "name": "handler",
+        "args": [
+          "args"
+        ],
         "returns": null
       }
     ],
     "classes": []
   },
   {
-    "file": "./run_xml_analysis.py",
+    "file": "./ctw/commands/layout.py",
     "functions": [
       {
-        "name": "main",
-        "args": [],
+        "name": "register",
+        "args": [
+          "subparsers",
+          "map_parent"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handler",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./ctw/commands/matches.py",
+    "functions": [
+      {
+        "name": "_player_arg",
+        "args": [
+          "value"
+        ],
+        "returns": null
+      },
+      {
+        "name": "register",
+        "args": [
+          "subparsers"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_index",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_process",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_process_all",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_reset",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_trace",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_list",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handle_stats",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./ctw/commands/run.py",
+    "functions": [
+      {
+        "name": "register",
+        "args": [
+          "subparsers"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handler",
+        "args": [
+          "args"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./ctw/commands/xml.py",
+    "functions": [
+      {
+        "name": "register",
+        "args": [
+          "subparsers",
+          "map_parent"
+        ],
+        "returns": null
+      },
+      {
+        "name": "handler",
+        "args": [
+          "args"
+        ],
         "returns": null
       }
     ],
@@ -817,7 +811,9 @@
         "args": [
           "islands",
           "output_path",
-          "figsize"
+          "figsize",
+          "map_folder",
+          "map_context"
         ],
         "returns": null
       },
@@ -847,7 +843,132 @@
           "islands",
           "stats",
           "output_dir",
+          "map_name",
+          "map_folder",
+          "map_context"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/services/islands_service.py",
+    "functions": [
+      {
+        "name": "_detect_and_label",
+        "args": [
+          "layout_file",
+          "df",
+          "connectivity",
+          "min_island_size"
+        ],
+        "returns": "Tuple[pd.DataFrame, list]"
+      },
+      {
+        "name": "_triangulate",
+        "args": [
+          "islands",
+          "canonical",
+          "buffer_distance",
+          "simplify_tolerance",
+          "detect_holes"
+        ],
+        "returns": "int"
+      },
+      {
+        "name": "_compute_skeletons",
+        "args": [
+          "islands",
+          "enable_canonicalization",
+          "skeleton_connectivity"
+        ],
+        "returns": "Tuple[list, dict]"
+      },
+      {
+        "name": "_generate_skeleton_visuals",
+        "args": [
+          "islands",
+          "stats",
+          "skeleton_results",
+          "canonical_groups",
+          "island_output_dir",
           "map_name"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_annotate_pois",
+        "args": [
+          "map_folder",
+          "islands",
+          "df",
+          "skeleton_results",
+          "skeleton_output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_build_context",
+        "args": [
+          "map_folder",
+          "islands",
+          "df",
+          "skeleton_results",
+          "canonical_groups",
+          "map_data_obj",
+          "map_center_pt",
+          "poi_assignments",
+          "island_output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_run_pathfinding",
+        "args": [
+          "map_folder",
+          "island_output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_build_connectivity",
+        "args": [
+          "map_folder",
+          "island_output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_cleanup_legacy",
+        "args": [
+          "island_output_dir"
+        ],
+        "returns": null
+      },
+      {
+        "name": "analyze_islands_step",
+        "args": [
+          "map_folder",
+          "force_rerun",
+          "simplify_tolerance",
+          "buffer_distance",
+          "layout_type",
+          "canonical_triangulation"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/services/layout_service.py",
+    "functions": [
+      {
+        "name": "analyze_layout",
+        "args": [
+          "map_folder",
+          "force_rerun"
         ],
         "returns": null
       }
@@ -1554,562 +1675,370 @@
     ]
   },
   {
-    "file": "./match_analysis/data_loader.py",
+    "file": "./match_analysis/match_indexer.py",
     "functions": [
       {
-        "name": "load_map_data",
+        "name": "extract_match_id_from_filename",
         "args": [
-          "map_name"
+          "filename"
         ],
-        "returns": "pd.DataFrame"
+        "returns": "int"
       },
       {
-        "name": "load_match_data",
-        "args": [
-          "match_file"
-        ],
-        "returns": "pd.DataFrame"
-      },
-      {
-        "name": "list_available_maps",
-        "args": [],
-        "returns": "List[str]"
-      },
-      {
-        "name": "list_available_matches",
-        "args": [],
-        "returns": "List[str]"
-      },
-      {
-        "name": "get_match_info",
+        "name": "get_map_name_from_match",
         "args": [
           "match_file"
         ],
-        "returns": "dict"
+        "returns": "str"
+      },
+      {
+        "name": "index_match_files",
+        "args": [
+          "match_logs_dir"
+        ],
+        "returns": null
       }
     ],
     "classes": []
   },
   {
-    "file": "./match_analysis/map_renderer.py",
-    "functions": [
-      {
-        "name": "render_map_tiles",
-        "args": [
-          "ax",
-          "map_data",
-          "tile_size",
-          "color",
-          "alpha",
-          "edge_color",
-          "edge_width"
-        ],
-        "returns": "None"
-      },
-      {
-        "name": "setup_map_axes",
-        "args": [
-          "ax",
-          "map_data",
-          "padding",
-          "title"
-        ],
-        "returns": "None"
-      }
-    ],
-    "classes": []
-  },
-  {
-    "file": "./match_analysis/match_visualizer.py",
+    "file": "./match_analysis/position_classifier.py",
     "functions": [],
     "classes": [
       {
-        "name": "MatchVisualizer",
+        "name": "PositionClassifier",
         "methods": [
           {
             "name": "__init__",
             "args": [
               "self",
-              "map_data",
-              "life_segments",
-              "show_kills",
-              "show_deaths",
-              "show_wool_events",
-              "color_by_team"
+              "map_context",
+              "map_graph"
             ],
             "returns": null
           },
           {
-            "name": "_get_segment_color",
+            "name": "_build_island_polygons",
             "args": [
               "self",
-              "segment"
-            ],
-            "returns": "str"
-          },
-          {
-            "name": "plot_life_segment",
-            "args": [
-              "self",
-              "ax",
-              "segment",
-              "show_positions"
+              "map_context"
             ],
             "returns": "None"
           },
           {
-            "name": "plot_all_teams",
+            "name": "_build_region_polygons",
             "args": [
               "self",
-              "ax",
-              "team_filter"
+              "map_context"
             ],
             "returns": "None"
           },
           {
-            "name": "create_static_view",
+            "name": "_build_node_index",
             "args": [
               "self",
-              "team_filter",
-              "title"
-            ],
-            "returns": "plt.Figure"
-          },
-          {
-            "name": "create_interactive_view",
-            "args": [
-              "self",
-              "title"
+              "map_graph"
             ],
             "returns": "None"
           },
           {
-            "name": "export_team_views",
+            "name": "_build_edge_pixel_index",
             "args": [
               "self",
-              "output_dir"
+              "map_graph"
             ],
             "returns": "None"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "file": "./match_analysis/path_network.py",
-    "functions": [
-      {
-        "name": "create_density_heatmap",
-        "args": [
-          "life_segments",
-          "resolution",
-          "bounds"
-        ],
-        "returns": "Tuple[np.ndarray, Tuple[float, float, float, float]]"
-      },
-      {
-        "name": "extract_skeleton_network",
-        "args": [
-          "heatmap",
-          "bounds",
-          "resolution",
-          "sigma",
-          "threshold_percentile"
-        ],
-        "returns": "Tuple[np.ndarray, List[Tuple[float, float]]]"
-      },
-      {
-        "name": "extract_graph_network",
-        "args": [
-          "life_segments",
-          "cluster_radius",
-          "min_samples"
-        ],
-        "returns": "nx.Graph"
-      },
-      {
-        "name": "extract_corridors",
-        "args": [
-          "life_segments",
-          "resolution",
-          "sigma",
-          "min_corridor_density"
-        ],
-        "returns": "List[Dict]"
-      },
-      {
-        "name": "find_major_routes",
-        "args": [
-          "life_segments",
-          "start_region",
-          "end_region",
-          "num_routes"
-        ],
-        "returns": "List[List[Tuple[float, float]]]"
-      },
-      {
-        "name": "calculate_path_statistics",
-        "args": [
-          "life_segments"
-        ],
-        "returns": "Dict"
-      }
-    ],
-    "classes": []
-  },
-  {
-    "file": "./match_analysis/path_network_viz.py",
-    "functions": [
-      {
-        "name": "plot_density_heatmap",
-        "args": [
-          "ax",
-          "heatmap",
-          "bounds",
-          "title",
-          "cmap"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_skeleton_network",
-        "args": [
-          "ax",
-          "skeleton_points",
-          "map_data",
-          "title",
-          "show_map"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_graph_network",
-        "args": [
-          "ax",
-          "graph",
-          "map_data",
-          "title",
-          "show_map",
-          "min_edge_weight"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_corridors",
-        "args": [
-          "ax",
-          "corridors",
-          "map_data",
-          "title",
-          "show_map",
-          "max_corridors"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_major_routes",
-        "args": [
-          "ax",
-          "routes",
-          "map_data",
-          "title",
-          "show_map"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_combined_network",
-        "args": [
-          "life_segments",
-          "map_data",
-          "output_path",
-          "resolution",
-          "cluster_radius"
-        ],
-        "returns": null
-      },
-      {
-        "name": "plot_team_networks",
-        "args": [
-          "life_segments",
-          "map_data",
-          "output_dir",
-          "resolution"
-        ],
-        "returns": null
-      }
-    ],
-    "classes": []
-  },
-  {
-    "file": "./match_analysis/pdf_report.py",
-    "functions": [
-      {
-        "name": "generate_classification_pdf",
-        "args": [
-          "life_segments",
-          "classifications",
-          "map_chars",
-          "config",
-          "output_path"
-        ],
-        "returns": "None"
-      },
-      {
-        "name": "generate_match_summary_pdf",
-        "args": [
-          "life_segments",
-          "player_stats",
-          "config",
-          "output_path"
-        ],
-        "returns": "None"
-      }
-    ],
-    "classes": [
-      {
-        "name": "PDFReportGenerator",
-        "methods": [
+          },
           {
-            "name": "__init__",
+            "name": "classify_position",
             "args": [
               "self",
-              "output_path"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_title",
-            "args": [
-              "self",
-              "title"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_section",
-            "args": [
-              "self",
-              "title"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_subsection",
-            "args": [
-              "self",
-              "title"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_text",
-            "args": [
-              "self",
-              "text"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_table",
-            "args": [
-              "self",
-              "data",
-              "col_widths",
-              "header_row"
-            ],
-            "returns": null
-          },
-          {
-            "name": "add_page_break",
-            "args": [
-              "self"
-            ],
-            "returns": null
-          },
-          {
-            "name": "generate",
-            "args": [
-              "self"
-            ],
-            "returns": null
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "file": "./match_analysis/preprocessing.py",
-    "functions": [
-      {
-        "name": "detect_life_segments",
-        "args": [
-          "match_data"
-        ],
-        "returns": "List[LifeSegment]"
-      },
-      {
-        "name": "cluster_spawn_points",
-        "args": [
-          "life_segments"
-        ],
-        "returns": "Dict"
-      },
-      {
-        "name": "assign_teams",
-        "args": [
-          "life_segments"
-        ],
-        "returns": "List[LifeSegment]"
-      }
-    ],
-    "classes": [
-      {
-        "name": "LifeSegment",
-        "methods": [
-          {
-            "name": "__init__",
-            "args": [
-              "self",
-              "player_id",
-              "segment_id"
-            ],
-            "returns": null
-          },
-          {
-            "name": "to_dict",
-            "args": [
-              "self"
+              "x",
+              "z"
             ],
             "returns": "dict"
           },
           {
-            "name": "__repr__",
+            "name": "snap_to_skeleton",
             "args": [
-              "self"
+              "self",
+              "x",
+              "z",
+              "island_id"
             ],
-            "returns": null
+            "returns": "Tuple[float, float]"
+          },
+          {
+            "name": "classify_dataframe",
+            "args": [
+              "self",
+              "df",
+              "snap_skeleton"
+            ],
+            "returns": "pd.DataFrame"
           }
         ]
       }
     ]
   },
   {
-    "file": "./match_analysis/segment_classifier.py",
+    "file": "./match_analysis/trajectory_extractor.py",
     "functions": [
       {
-        "name": "analyze_map_characteristics",
+        "name": "extract_life_segments_from_match",
         "args": [
-          "life_segments",
-          "match_data"
-        ],
-        "returns": "MapCharacteristics"
-      },
-      {
-        "name": "classify_segment",
-        "args": [
-          "segment",
-          "map_chars"
-        ],
-        "returns": "SegmentClassification"
-      },
-      {
-        "name": "classify_all_segments",
-        "args": [
-          "life_segments",
-          "map_chars"
-        ],
-        "returns": "List[SegmentClassification]"
-      }
-    ],
-    "classes": [
-      {
-        "name": "MapCharacteristics",
-        "methods": [
-          {
-            "name": "__init__",
-            "args": [
-              "self",
-              "midpoint_coord",
-              "midpoint_axis",
-              "red_side_positive",
-              "skybridge_height",
-              "ground_level",
-              "tunnel_threshold"
-            ],
-            "returns": null
-          },
-          {
-            "name": "is_on_own_side",
-            "args": [
-              "self",
-              "team",
-              "coord_value"
-            ],
-            "returns": "bool"
-          },
-          {
-            "name": "distance_from_midpoint",
-            "args": [
-              "self",
-              "coord_value"
-            ],
-            "returns": "float"
-          }
-        ]
-      },
-      {
-        "name": "SegmentClassification",
-        "methods": [
-          {
-            "name": "__init__",
-            "args": [
-              "self"
-            ],
-            "returns": null
-          },
-          {
-            "name": "to_dict",
-            "args": [
-              "self"
-            ],
-            "returns": "dict"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "file": "./match_analysis/utils.py",
-    "functions": [
-      {
-        "name": "get_map_bounds",
-        "args": [
-          "map_data"
-        ],
-        "returns": "Tuple[float, float, float, float]"
-      },
-      {
-        "name": "calculate_player_stats",
-        "args": [
-          "life_segments"
+          "match_file"
         ],
         "returns": "pd.DataFrame"
       },
       {
-        "name": "export_segments_to_csv",
+        "name": "process_match",
         "args": [
-          "life_segments",
-          "output_path"
+          "match_id"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/visualization.py",
+    "functions": [
+      {
+        "name": "_resolve_team_color",
+        "args": [
+          "spawn_x",
+          "spawn_z",
+          "classifier",
+          "map_context"
+        ],
+        "returns": "str"
+      },
+      {
+        "name": "plot_player_traces",
+        "args": [
+          "map_context",
+          "match_file",
+          "player_ids",
+          "output_path",
+          "map_graph",
+          "snap_skeleton",
+          "show_deaths",
+          "show_kills",
+          "show_wool",
+          "show_edges",
+          "show_legend",
+          "show_stats",
+          "color_mode",
+          "map_base",
+          "map_folder"
+        ],
+        "returns": "None"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./match_analysis/services/match_service.py",
+    "functions": [
+      {
+        "name": "get_match_file",
+        "args": [
+          "match_id"
+        ],
+        "returns": "tuple[str, str]"
+      },
+      {
+        "name": "extract_player_life_segments",
+        "args": [
+          "match_file",
+          "player_id"
+        ],
+        "returns": "list[dict]"
+      },
+      {
+        "name": "get_match_player_ids",
+        "args": [
+          "match_file"
+        ],
+        "returns": "list[int]"
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./scripts/initialize_analysis_db.py",
+    "functions": [
+      {
+        "name": "initialize_database",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./scripts/test_database_setup.py",
+    "functions": [
+      {
+        "name": "main",
+        "args": [],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./visualization/map_primitives.py",
+    "functions": [
+      {
+        "name": "draw_build_region",
+        "args": [
+          "ax",
+          "map_context",
+          "style"
+        ],
+        "returns": "bool"
+      },
+      {
+        "name": "draw_block_base",
+        "args": [
+          "ax",
+          "map_folder",
+          "map_context",
+          "style"
         ],
         "returns": "None"
       },
       {
-        "name": "print_match_summary",
+        "name": "draw_island_outlines",
         "args": [
-          "life_segments"
+          "ax",
+          "map_context",
+          "style",
+          "team_colors",
+          "neutral_color"
         ],
         "returns": "None"
+      },
+      {
+        "name": "draw_pois",
+        "args": [
+          "ax",
+          "map_context",
+          "style"
+        ],
+        "returns": "None"
+      },
+      {
+        "name": "draw_map_base",
+        "args": [
+          "ax",
+          "map_context",
+          "build_style",
+          "island_style",
+          "poi_style",
+          "map_base",
+          "map_folder",
+          "block_style"
+        ],
+        "returns": "bool"
+      },
+      {
+        "name": "map_base_legend_handles",
+        "args": [
+          "has_build_region",
+          "island_style",
+          "poi_style"
+        ],
+        "returns": "list"
+      }
+    ],
+    "classes": [
+      {
+        "name": "BuildRegionStyle",
+        "methods": []
+      },
+      {
+        "name": "IslandOutlineStyle",
+        "methods": []
+      },
+      {
+        "name": "POIStyle",
+        "methods": []
+      },
+      {
+        "name": "BlockBaseStyle",
+        "methods": []
+      }
+    ]
+  },
+  {
+    "file": "./xml_analysis/build_regions.py",
+    "functions": [
+      {
+        "name": "extract_build_region",
+        "args": [
+          "map_data",
+          "map_bounds",
+          "y0_parquet_path",
+          "island_polygons"
+        ],
+        "returns": "Optional[dict]"
+      },
+      {
+        "name": "_extract_from_xml",
+        "args": [
+          "map_data",
+          "shapely_bounds"
+        ],
+        "returns": "Optional"
+      },
+      {
+        "name": "_find_deny_void_regions",
+        "args": [
+          "apply_rules",
+          "regions_dict",
+          "shapely_bounds"
+        ],
+        "returns": "List"
+      },
+      {
+        "name": "_resolve_apply_region",
+        "args": [
+          "rule",
+          "regions_dict",
+          "shapely_bounds"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_extract_block36_region",
+        "args": [
+          "y0_parquet_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_safe_union",
+        "args": [
+          "geoms"
+        ],
+        "returns": "Polygon"
+      },
+      {
+        "name": "_ensure_valid",
+        "args": [
+          "geom"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_geometry_to_coords",
+        "args": [
+          "geom"
+        ],
+        "returns": "list"
       }
     ],
     "classes": []
@@ -2158,6 +2087,13 @@
             "returns": "Dict[str, Any]"
           },
           {
+            "name": "encode_apply_rule",
+            "args": [
+              "rule"
+            ],
+            "returns": "Dict[str, Any]"
+          },
+          {
             "name": "to_json",
             "args": [
               "data",
@@ -2193,6 +2129,10 @@
       },
       {
         "name": "Wool",
+        "methods": []
+      },
+      {
+        "name": "ApplyRule",
         "methods": []
       },
       {
@@ -2252,7 +2192,7 @@
             "args": [
               "self"
             ],
-            "returns": "Dict[str, Region]"
+            "returns": "Tuple[Dict[str, Region], List[ApplyRule]]"
           },
           {
             "name": "_parse_max_build_height",
@@ -2384,6 +2324,23 @@
             "returns": "ComplementRegion"
           },
           {
+            "name": "_parse_intersect",
+            "args": [
+              "self",
+              "elem",
+              "region_id"
+            ],
+            "returns": "IntersectRegion"
+          },
+          {
+            "name": "_parse_apply",
+            "args": [
+              "self",
+              "elem"
+            ],
+            "returns": "ApplyRule"
+          },
+          {
             "name": "identify_region_categories",
             "args": [
               "self",
@@ -2397,7 +2354,47 @@
   },
   {
     "file": "./xml_analysis/regions.py",
-    "functions": [],
+    "functions": [
+      {
+        "name": "_shapely_box",
+        "args": [
+          "min_x",
+          "min_z",
+          "max_x",
+          "max_z"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_shapely_empty",
+        "args": [],
+        "returns": null
+      },
+      {
+        "name": "_shapely_circle",
+        "args": [
+          "cx",
+          "cz",
+          "radius",
+          "resolution"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_shapely_union",
+        "args": [
+          "geoms"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_make_valid",
+        "args": [
+          "geom"
+        ],
+        "returns": null
+      }
+    ],
     "classes": [
       {
         "name": "Region",
@@ -2415,6 +2412,15 @@
               "self"
             ],
             "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2427,6 +2433,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2439,6 +2454,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2451,6 +2475,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2463,6 +2496,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2475,6 +2517,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2487,6 +2538,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2499,6 +2559,15 @@
               "self"
             ],
             "returns": "Tuple[Tuple[float, float], Tuple[float, float]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2511,6 +2580,15 @@
               "self"
             ],
             "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2523,6 +2601,15 @@
               "self"
             ],
             "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       },
@@ -2535,6 +2622,78 @@
               "self"
             ],
             "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "IntersectRegion",
+        "methods": [
+          {
+            "name": "get_bounds_2d",
+            "args": [
+              "self"
+            ],
+            "returns": "Optional[Tuple[Tuple[float, float], Tuple[float, float]]]"
+          },
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "RegionReference",
+        "methods": [
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "EverywhereRegion",
+        "methods": [
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "AboveRegion",
+        "methods": [
+          {
+            "name": "to_shapely_2d",
+            "args": [
+              "self",
+              "bounds",
+              "registry"
+            ],
+            "returns": null
           }
         ]
       }
@@ -2675,6 +2834,20 @@
         ]
       }
     ]
+  },
+  {
+    "file": "./xml_analysis/services/xml_service.py",
+    "functions": [
+      {
+        "name": "analyze_xml",
+        "args": [
+          "map_folder",
+          "force_rerun"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
   },
   {
     "file": "./xml_analysis/tests/test_exporter.py",
