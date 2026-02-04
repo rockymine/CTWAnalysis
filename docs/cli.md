@@ -4,10 +4,10 @@
 
 ```bash
 # Full pipeline for one map
-python ctw.py run --map tumbleweed --no-matches
+python ctw.py run --map tumbleweed
 
 # Full pipeline for all maps
-python ctw.py run --all --force --no-matches
+python ctw.py run --all --force
 
 # Check what's been analyzed
 python ctw.py info --map tumbleweed
@@ -16,6 +16,10 @@ python ctw.py info --map tumbleweed
 python ctw.py layout --map tumbleweed
 python ctw.py islands --map tumbleweed
 python ctw.py xml --map tumbleweed
+
+# Match analysis
+python ctw.py matches index
+python ctw.py matches trace --map Ingwaz --match 57 --player 0
 ```
 
 The `--map` flag accepts either a map name (resolved from `map_folders/`) or a
@@ -28,13 +32,13 @@ direct path to a map folder.
 ### `ctw run` — Full Analysis Pipeline
 
 Runs layout extraction, island analysis, XML parsing, and match analysis in
-sequence. Delegates to the same functions as `run_analysis_workflow.py`.
+sequence.
 
 ```
 python ctw.py run (--map NAME | --all) [--force]
     [--no-layout] [--no-islands] [--no-xml] [--no-matches]
     [--match-history PATH] [--island-layout bedrock|y0|top|density]
-    [--canonical-triangulation]
+    [--canonical-triangulation] [--plots]
 ```
 
 | Flag | Description |
@@ -49,6 +53,7 @@ python ctw.py run (--map NAME | --all) [--force]
 | `--match-history PATH` | Match history file (default: `match_logs/match_history.txt`) |
 | `--island-layout` | Layout file for islands: `bedrock`, `y0`, `top`, `density` |
 | `--canonical-triangulation` | Identical islands share the same mesh |
+| `--plots` | Generate debug plots for layout and island analysis |
 
 ---
 
@@ -88,6 +93,7 @@ python ctw.py islands --map NAME [--force]
     [--connectivity 4|8] [--min-size N] [--buffer F] [--simplify F]
     [--no-holes] [--layout bedrock|y0|top|density]
     [--canonical-triangulation] [--basic]
+    [--output DIR] [--plots]
 ```
 
 | Flag | Description |
@@ -100,10 +106,23 @@ python ctw.py islands --map NAME [--force]
 | `--layout` | Which layout file to use (default: `bedrock`) |
 | `--canonical-triangulation` | D4-symmetric islands share mesh |
 | `--basic` | Basic mode: detection + triangulation only, no skeleton/POI/connectivity |
+| `--output DIR` | Save to custom directory instead of `island_analysis/` |
+| `--plots` | Generate debug plots (per-island debug, POI, pathfinding) |
 
 Default runs the full pipeline (detection, triangulation, skeleton extraction,
-POI annotation, pathfinding, connectivity graph). Use `--basic` for quick
-detection without the full analysis stack.
+POI annotation, pathfinding, connectivity graph) and generates essential figures
+only. Add `--plots` to also generate per-island debug images, POI annotations,
+pathfinding grids, and the full island report. Use `--basic` for quick detection
+without the full analysis stack.
+
+**Essential figures** (always generated):
+`island_triangulation_detail.png`, `unique_islands.png`, `world_overview.png`,
+`map_connectivity.png`
+
+**Debug figures** (only with `--plots`):
+`island_comparison.png`, `island_statistics.png`, `island_report.txt`,
+`island_{id}_debug.png`, `skeleton_report.txt`, `island_{id}_poi.png`,
+`island_{id}_paths.png`
 
 ---
 
@@ -128,26 +147,121 @@ region layout plots.
 
 ---
 
-### `ctw match` — Single Match Analysis
+### `ctw matches` — Match Data Analysis
 
-Analyze a match replay with team visualization, classification, and path
-network extraction.
+Index, process, and visualize match data. Uses a DuckDB database
+(`match_analysis/metadata.db`) to track indexed matches.
+
+#### `matches index`
+
+Scan match parquet files and index them into the database.
 
 ```
-python ctw.py match --map NAME --match FILE [--output DIR]
-    [--no-team-networks] [--no-pdf] [--no-classification]
-    [--resolution F] [--cluster-radius F]
+python ctw.py matches index [--match-dir DIR]
 ```
 
 | Flag | Description |
 |---|---|
-| `--match FILE` | Match parquet filename (from `match_logs/`) |
-| `--output DIR` | Override output directory |
-| `--no-team-networks` | Skip team-specific path network plots |
-| `--no-pdf` | Skip PDF report generation |
-| `--no-classification` | Skip segment classification |
-| `--resolution F` | Grid resolution for path networks (default: 1.0) |
-| `--cluster-radius F` | Waypoint clustering radius (default: 5.0) |
+| `--match-dir DIR` | Directory containing match parquet files (default: `match_logs`) |
+
+#### `matches list`
+
+List matches in the database.
+
+```
+python ctw.py matches list [--map-name NAME] [--processed] [--unprocessed]
+```
+
+| Flag | Description |
+|---|---|
+| `--map-name NAME` | Filter by map name |
+| `--processed` | Show only processed matches |
+| `--unprocessed` | Show only unprocessed matches |
+
+#### `matches process`
+
+Process a specific match by ID (extracts trajectories).
+
+```
+python ctw.py matches process MATCH_ID [--force]
+```
+
+#### `matches process-all`
+
+Process all unprocessed matches.
+
+```
+python ctw.py matches process-all [--map-name NAME] [--force]
+```
+
+| Flag | Description |
+|---|---|
+| `--map-name NAME` | Only process matches for this map |
+| `--force` | Reprocess all matches, not just unprocessed ones |
+
+#### `matches reset`
+
+Reset processing state and delete trajectory files.
+
+```
+python ctw.py matches reset [--match-id ID]
+```
+
+| Flag | Description |
+|---|---|
+| `--match-id ID` | Reset only a specific match (default: reset all) |
+
+#### `matches stats`
+
+Show database statistics (total matches, processed counts, per-map breakdown).
+
+```
+python ctw.py matches stats
+```
+
+#### `matches trace`
+
+Visualize player movement traces on the map.
+
+```
+python ctw.py matches trace --map NAME --match ID --player (ID | ALL)
+    [--output PATH] [--snap-skeleton]
+    [--no-deaths] [--no-kills] [--no-wool] [--no-edges]
+    [--no-legend] [--no-stats]
+    [--color-mode life|team|location]
+    [--map-base outline|blocks]
+```
+
+| Flag | Description |
+|---|---|
+| `--map NAME` | Map name or path to map folder |
+| `--match ID` | Match ID (from database) |
+| `--player ID` | Player ID to visualize, or `ALL` for every player |
+| `--output PATH` | Output PNG path (default: auto-generated in `match_analysis/`) |
+| `--snap-skeleton` | Snap on-island positions to skeleton paths |
+| `--no-deaths` | Hide death markers |
+| `--no-kills` | Hide kill markers |
+| `--no-wool` | Hide wool event markers |
+| `--no-edges` | Show position dots instead of trace lines |
+| `--no-legend` | Hide the legend |
+| `--no-stats` | Hide the stats box |
+| `--color-mode` | Color scheme: `life` (per-segment, default), `team` (by spawn team), `location` (by position type) |
+| `--map-base` | Map base layer: `outline` (polygon outlines, default) or `blocks` (individual blocks) |
+
+Examples:
+```bash
+# Single player trace
+python ctw.py matches trace --map Ingwaz --match 57 --player 0
+
+# All players, colored by team
+python ctw.py matches trace --map Ingwaz --match 57 --player ALL --color-mode team
+
+# Dots only (no trace lines), colored by location type
+python ctw.py matches trace --map Ingwaz --match 57 --player 0 --no-edges --color-mode location
+
+# Block-level map base
+python ctw.py matches trace --map Ingwaz --match 57 --player 0 --map-base blocks
+```
 
 ---
 
@@ -189,24 +303,3 @@ Regenerate `docs/api_index.json` from source code.
 ```
 python ctw.py docs
 ```
-
----
-
-## Legacy Scripts
-
-The following standalone scripts remain available. They are not deprecated but
-`ctw.py` is the recommended entry point for new usage.
-
-| Legacy Script | CLI Equivalent |
-|---|---|
-| `run_analysis_workflow.py --map X` | `ctw.py run --map X` |
-| `run_layout_analysis.py --world X/region` | `ctw.py layout --map X --plots` |
-| `run_xml_analysis.py --xml X/map.xml` | `ctw.py xml --map X --visualize` |
-| `analyze_islands.py --bedrock X/layout_bedrock.parquet` | `ctw.py islands --map X --basic` |
-| `generate_path_networks.py --match F` | `ctw.py match --map X --match F` |
-
-Scripts with no CLI equivalent (config.json-driven or interactive):
-- `classify_segments.py` — detailed role classification with config.json
-- `generate_plots.py` — team/role-filtered static plots with config.json
-- `analyze_match.py` — interactive matplotlib visualization
-- `explore_map_characteristics.py` — exploratory analysis

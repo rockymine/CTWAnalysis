@@ -1,205 +1,169 @@
-# Layout Analysis Tool
+# Layout Analysis Package
 
-A specialized tool for analyzing Minecraft Java Edition 1.8.9 world layouts from Anvil format region files. Extracts and visualizes layout patterns for PvP map analysis.
+Extracts block data from Minecraft region files and builds a complete spatial
+model of CTW maps: islands, skeleton graphs, POI annotations, pathfinding,
+and inter-island connectivity.
 
-## Features
+## Pipeline Overview
 
-Provides four extraction modes:
+The full pipeline is orchestrated by `services/islands_service.py` and runs
+as step 2 of the CLI (`ctw islands` or `ctw run`). It builds on the layout
+parquets produced by step 1 (`ctw layout`).
 
-1. **Y0 Layer** - Extracts all non-air blocks at world y=0 (bedrock layer)
-2. **Top Surface** - Finds the highest non-air block in each vertical column
-3. **Vertical Density** - Filters columns by density metrics:
-   - `run` mode: Maximum consecutive run length of non-air blocks
-   - `count` mode: Total number of non-air blocks in the column
-4. **Lowest Bedrock** - Finds the lowest bedrock block (block_id=7) in each vertical column
-
-Each mode produces:
-- CSV data files (and Parquet if available)
-- 2D visualization plots (PNG format)
-
-## Installation
-
-Install the required dependency:
-
-```bash
-py -m pip install anvil-parser
+```
+Region files (.mca)
+  │
+  ▼
+Layout Extraction (extractors.py, region_reader.py)
+  │  Produces: layout_bedrock.parquet, layout_y0.parquet, etc.
+  │  Each row is a block at integer index (world_x, world_z).
+  │
+  ▼
+Island Detection (islands/detection.py)
+  │  Connected-component labeling (4 or 8-connectivity).
+  │  Writes island_id back into the layout parquet.
+  │
+  ▼
+Triangulation (islands/triangulation.py)
+  │  Builds Shapely polygons from block unit-squares, simplifies,
+  │  and triangulates via earcut. Two modes:
+  │    - Per-island union (default)
+  │    - Canonical grouping (--canonical-triangulation):
+  │      groups D4-equivalent islands, but builds polygons
+  │      from world-space blocks (not canonical space).
+  │
+  ▼
+Skeleton Extraction (skeleton/)
+  │  Per-island: rasterize → thin → extract nodes/edges →
+  │  merge junction blobs → prune short branches.
+  │  Canonicalization groups islands by D4 symmetry.
+  │
+  ▼
+POI Annotation (skeleton/poi_annotation.py)
+  │  Parses map.xml to find spawns and wools, assigns them
+  │  to nearest skeleton nodes. Classifies island teams.
+  │
+  ▼
+MapContext + Build Region (map_context.py, xml_analysis/build_regions.py)
+  │  Aggregates all results into map_context.json.
+  │  Extracts buildable void from XML build regions minus islands.
+  │
+  ▼
+Pathfinding (skeleton/pathfinding.py)
+  │  Computes shortest paths between POI nodes and endpoints
+  │  within each island's skeleton graph.
+  │
+  ▼
+Connectivity (connectivity/)
+     Builds inter-island graph: intra-island edges from skeleton,
+     void links between nearby island endpoints across buildable void.
+     Produces map_graph.json and map_connectivity.png.
 ```
 
-(Other dependencies like matplotlib, pandas, numpy are already in the main requirements.txt)
+## Coordinate Convention
 
-## Quick Start
+Block at integer index `(x, z)` occupies world space `[x, x+1] × [z, z+1]`
+with center at `(x+0.5, z+0.5)`.
 
-Run the analysis on a Minecraft world:
+- **Parquet files** store block positions as integer `(world_x, world_z)` —
+  these are block indices, not centers.
+- **Island bounding boxes** use `(min_x, max_x, min_z, max_z)` where max
+  values include +1 for world extent.
+- **Island centers** are computed as `mean(block_indices) + 0.5`.
+- **Polygons** are built with `box(x, z, x+1, z+1)` per block, then unioned
+  and simplified.
 
-```bash
-py run_layout_analysis.py --world map_folders/tumbleweed/region
-```
-
-This will:
-1. Scan all region files in the specified directory
-2. Extract data for all three modes
-3. Save CSV/Parquet data files to `output/`
-4. Generate PNG visualization plots in `output/`
-
-## Output Files
-
-All files are saved to the `output/` directory:
-
-### Data Files
-- `y0_layer_points.csv` - Non-air blocks at y=0 (world_x, world_z, block_id, block_data)
-- `top_surface_points.csv` - Highest blocks (world_x, world_z, y, block_id, block_data)
-- `density_run_N10_points.csv` - Density run mode results (world_x, world_z, metric)
-- `density_count_N10_points.csv` - Density count mode results (world_x, world_z, metric)
-- `lowest_bedrock_points.csv` - Lowest bedrock blocks (world_x, world_z, y, block_data)
-
-### Visualization Files
-- `y0_layer.png` - 2D scatter plot of Y0 layer
-- `top_surface.png` - 2D scatter plot of top surface
-- `density_run_N10.png` - Density plot (run mode)
-- `density_count_N10.png` - Density plot (count mode)
-- `lowest_bedrock.png` - 2D scatter plot of lowest bedrock
-
-## Command-Line Options
-
-```bash
-py run_layout_analysis.py [OPTIONS]
-```
-
-### Required Arguments
-
-- `--world PATH` - Path to Minecraft world region folder (e.g., `map_folders/tumbleweed/region`)
-
-### Optional Arguments
-
-- `--output DIR` - Output directory for plots and data (default: `output`)
-- `--threshold N` - Density threshold (default: `10`)
-- `--density-mode MODES` - Comma-separated density modes: `run`, `count` (default: `run,count`)
-- `--skip-y0` - Skip Y0 layer extraction
-- `--skip-surface` - Skip top surface extraction
-- `--skip-density` - Skip density extraction
-- `--skip-bedrock` - Skip lowest bedrock extraction
-
-### Examples
-
-Extract only Y0 layer and top surface:
-```bash
-py run_layout_analysis.py --world map_folders/tumbleweed/region --skip-density --skip-bedrock
-```
-
-Extract only bedrock:
-```bash
-py run_layout_analysis.py --world map_folders/tumbleweed/region --skip-y0 --skip-surface --skip-density
-```
-
-Use custom threshold and only run mode:
-```bash
-py run_layout_analysis.py --world map_folders/tumbleweed/region --threshold 15 --density-mode run
-```
-
-Save to custom output directory:
-```bash
-py run_layout_analysis.py --world map_folders/tumbleweed/region --output my_analysis
-```
-
-## Technical Details
-
-### Minecraft 1.8.9 Format
-
-The tool correctly handles Minecraft 1.8.9 Anvil format:
-- Numeric block IDs (pre-flattening)
-- Region files: `r.<rx>.<rz>.mca` containing 32x32 chunks
-- Chunk sections: 16x16x16 block volumes
-- NBT structure: `Level.Sections[]` with `Y`, `Blocks`, `Data`, `Add` fields
-
-### Block ID Decoding
-
-Block IDs are decoded using:
-- `Blocks` array: Low 8 bits of block ID
-- `Add` array (optional): High 4 bits for IDs > 255
-- Formula: `id = (Blocks[i] & 0xFF) | (nibble(Add, i) << 8)`
-
-### Index Mapping
-
-Block array indices use the formula: `index = (y * 16 + z) * 16 + x`
-
-Where x, y, z are local coordinates within a section (0-15).
-
-### Memory Efficiency
-
-The tool streams through chunks without loading the entire world into memory, making it suitable for analyzing large worlds.
-
-## Testing
-
-Run the unit tests:
-
-```bash
-py -m pytest layout_analysis/tests/
-```
-
-Or using unittest:
-
-```bash
-py -m unittest discover layout_analysis/tests/
-```
-
-Tests cover:
-- Nibble extraction
-- Block ID decoding with/without Add array
-- Block metadata decoding
-- Index mapping correctness
-
-## API Usage
-
-You can also use the extractors programmatically:
-
-```python
-from layout_analysis import RegionReader, Y0LayerExtractor, TopSurfaceExtractor, LowestBedrockExtractor
-
-# Initialize reader
-reader = RegionReader('map_folders/tumbleweed/region')
-
-# Extract Y0 layer
-extractor = Y0LayerExtractor(reader)
-df = extractor.extract()
-
-# Extract lowest bedrock
-bedrock_extractor = LowestBedrockExtractor(reader)
-bedrock_df = bedrock_extractor.extract()
-
-# Save results
-df.to_csv('y0_blocks.csv', index=False)
-bedrock_df.to_csv('bedrock_blocks.csv', index=False)
-```
-
-## Troubleshooting
-
-### "Region directory does not exist"
-- Ensure the path points to the `region/` folder inside your world directory
-- Check that region files (`*.mca`) exist in the directory
-
-### "No points to plot"
-- The world may be empty or only contain air blocks
-- Try different extraction modes or lower thresholds
-
-### "Failed to read region"
-- Region file may be corrupted
-- Ensure the world is from Minecraft Java Edition 1.8.9
-
-## Implementation Structure
+## Package Structure
 
 ```
 layout_analysis/
-├── __init__.py           # Package exports
-├── utils.py              # NBT decoding utilities (nibble, block ID, etc.)
-├── region_reader.py      # Anvil region file reader
-├── extractors.py         # Three extraction mode classes
-├── plotting.py           # Visualization functions
-├── tests/
-│   ├── __init__.py
-│   └── test_utils.py     # Unit tests for NBT decoding
-└── README.md             # This file
+├── __init__.py              # Package exports
+├── region_reader.py         # Anvil region file reader (MC 1.8.9)
+├── extractors.py            # Block extraction modes (Y0, surface, density, bedrock)
+├── utils.py                 # NBT decoding utilities (nibble, block ID)
+├── plotting.py              # Layout-level visualization (density, surface plots)
+├── map_context.py           # MapContext dataclass and builder
+│
+├── islands/                 # Island detection and geometry
+│   ├── datatypes.py         # Island dataclass
+│   ├── detection.py         # Connected-component island detection
+│   ├── triangulation.py     # Polygon construction and triangulation
+│   ├── statistics.py        # Island statistics and classification
+│   └── visualization.py     # Island comparison, triangulation detail plots
+│
+├── skeleton/                # Skeleton graph extraction
+│   ├── datatypes.py         # CanonicalTransform, IslandResult, SkeletonGraph
+│   ├── pipeline.py          # Full skeleton pipeline orchestrator
+│   ├── rasterize.py         # Island blocks → binary raster grid
+│   ├── skeletonize.py       # Morphological thinning (Zhang-Suen)
+│   ├── nodes.py             # Endpoint and junction extraction
+│   ├── edges.py             # Edge path walking
+│   ├── merge.py             # Junction blob merging
+│   ├── prune.py             # Short branch pruning
+│   ├── canonicalize.py      # D4 dihedral group canonicalization
+│   ├── poi_annotation.py    # Spawn/wool POI assignment, map center
+│   ├── pathfinding.py       # Intra-island shortest paths
+│   └── visualize.py         # Skeleton debug, POI, path grid plots
+│
+├── connectivity/            # Inter-island connectivity
+│   ├── map_graph.py         # Build connectivity graph (void links)
+│   ├── serialize.py         # map_graph.json I/O
+│   └── visualize.py         # Map connectivity visualization
+│
+├── services/                # CLI orchestration
+│   ├── layout_service.py    # Layout extraction orchestrator
+│   └── islands_service.py   # Island analysis orchestrator (8 stages)
+│
+└── tests/                   # Unit tests
 ```
 
-## License
+## Key Data Flow
 
-Part of the CTW Analysis Toolkit. For educational and analysis purposes.
+### Island → Skeleton → POI
+
+1. `detect_islands()` returns `List[Island]` with `.blocks` (Nx2 int array)
+2. `triangulate_island_union()` builds `.simplified_polygon` and `.triangles`
+3. `process_all_islands()` computes skeleton graphs, returns `List[IslandResult]`
+   and `canonical_groups` dict
+4. `annotate_skeleton_pois()` marks skeleton nodes as spawn/wool POIs
+5. `build_map_context()` aggregates everything into `MapContext`
+
+### Canonical Triangulation
+
+Islands related by D4 symmetry (rotation, reflection) are grouped by
+`canonicalize.py`. The canonical transform maps block indices to a normalized
+orientation. However, `to_original()` only correctly maps block INDEX
+coordinates, not polygon boundary coordinates — the "+1" block extent
+direction is axis-aligned in world space but rotates in canonical space.
+Therefore, `triangulate_islands_canonical()` groups by canonical key but
+builds polygons from world-space blocks.
+
+## Output Files
+
+| File | Description |
+|------|-------------|
+| `layout_bedrock.parquet` | Block positions with `island_id` column |
+| `island_analysis/map_context.json` | Aggregated map context |
+| `map_graph.json` | Inter-island connectivity graph |
+| `island_analysis/island_triangulation_detail.png` | Triangulation overview (essential) |
+| `island_analysis/skeleton/unique_islands.png` | Canonical shapes (essential) |
+| `island_analysis/skeleton/world_overview.png` | World skeleton overlay (essential) |
+| `island_analysis/map_connectivity.png` | Connectivity graph (essential) |
+
+Debug outputs (with `--plots`): per-island skeleton/POI images, pathfinding
+grids, island comparison/statistics, text reports.
+
+## Minecraft 1.8.9 Format
+
+The region reader handles Minecraft 1.8.9 Anvil format:
+- Region files: `r.<rx>.<rz>.mca` containing 32x32 chunks
+- Chunk sections: 16x16x16 block volumes
+- NBT structure: `Level.Sections[]` with `Y`, `Blocks`, `Data`, `Add` fields
+- Block IDs: `id = (Blocks[i] & 0xFF) | (nibble(Add, i) << 8)`
+- Block array index: `(y * 16 + z) * 16 + x`
+
+## Testing
+
+```bash
+python -m unittest discover layout_analysis/tests/
+```

@@ -7,8 +7,9 @@ A modular analysis toolkit for Capture the Wool (CTW) Minecraft maps and match d
 - **Layout Analysis**: Extract and analyze map block layouts from Minecraft region files
 - **XML Analysis**: Parse PGM map.xml files to extract spawns, wools, regions, and teams
 - **Island Detection**: Identify disconnected landmasses with skeleton graph extraction, D4 canonicalization, and POI annotation
-- **Match Analysis**: Process match event logs with life segment detection, team identification, and role classification
-- **Visualization**: Generate debug images, skeleton graphs, POI overlays, and match heatmaps
+- **Connectivity**: Build inter-island connectivity graphs with pathfinding analysis
+- **Match Analysis**: Index match logs, extract trajectories, and classify player positions
+- **Visualization**: Player trace plotting with multiple color modes, event filtering, and block-level map rendering
 
 ## Setup
 
@@ -42,79 +43,89 @@ match_logs/
   ...
 ```
 
-Each parquet file contains event data for a single match with columns: `timestamp`, `event_type`, `player_id`, `x`, `y`, `z`, `held_item`, `inventory_count`, `wool_id`.
+Each parquet file contains event data for a single match with columns: `timestamp`, `event_type`, `player_id`, `x`, `y`, `z`, `held_item`, `inventory_count`, `wool_id`, `victim_id`.
 
 ## Running the Analysis
 
-### Unified Workflow
+All commands go through the `ctw.py` CLI. See [docs/cli.md](docs/cli.md) for the full reference.
 
-The recommended way to run all analysis steps:
+### Full Pipeline
 
 ```bash
-python run_analysis_workflow.py --map your_map_name
+# Analyze a single map (layout + islands + XML)
+python ctw.py run --map your_map_name
+
+# Analyze all maps
+python ctw.py run --all --force
+
+# With debug plots enabled
+python ctw.py run --map your_map_name --plots
 ```
 
-This runs in order:
-1. **Layout Analysis** -- extracts block coordinates from region files into parquet files
-2. **Island Analysis** -- detects islands, computes skeleton graphs, annotates POIs from XML
-3. **XML Analysis** -- parses map.xml into structured JSON
-4. **Match Analysis** -- processes match logs with map context
+### Individual Steps
 
-Use flags to skip steps:
 ```bash
-python run_analysis_workflow.py --map your_map_name --no-layout    # skip layout extraction
-python run_analysis_workflow.py --map your_map_name --no-xml       # skip XML parsing
-python run_analysis_workflow.py --map your_map_name --no-matches   # skip match analysis
-python run_analysis_workflow.py --map your_map_name --force        # re-run even if outputs exist
+# Layout extraction (region files -> parquet)
+python ctw.py layout --map your_map_name
+
+# Island detection, skeleton, POI, connectivity
+python ctw.py islands --map your_map_name
+
+# XML parsing
+python ctw.py xml --map your_map_name
+
+# Check analysis status
+python ctw.py info --map your_map_name
 ```
 
-### Individual Scripts
+### Match Analysis
 
 ```bash
-python run_layout_analysis.py --map your_map_name    # layout extraction only
-python run_xml_analysis.py --map your_map_name        # XML parsing only
-python generate_plots.py                              # match visualization (uses config.json)
-python classify_segments.py                           # life segment classification
+# Index match files into database
+python ctw.py matches index
+
+# List and inspect matches
+python ctw.py matches list
+python ctw.py matches stats
+
+# Process trajectories
+python ctw.py matches process-all
+
+# Visualize player traces
+python ctw.py matches trace --map Ingwaz --match 57 --player 0
+python ctw.py matches trace --map Ingwaz --match 57 --player ALL --color-mode team
 ```
 
 ## Output Structure
 
-After running the workflow, each map folder will contain:
+After running the pipeline, each map folder will contain:
 
 ```
 map_folders/your_map_name/
   region/                          # (input) Minecraft region files
   map.xml                          # (input) PGM map definition
-  layout_bedrock.parquet           # extracted block coordinates
+  layout_bedrock.parquet           # extracted block coordinates with island_id
+  layout_y0.parquet                # Y=0 layer
   layout_top_surface.parquet       # top surface layer
   map_data.json                    # parsed XML data
+  map_graph.json                   # inter-island connectivity graph
   island_analysis/
-    map_context.json               # aggregated map context (islands, POIs, skeleton stats)
-    island_comparison.png          # island overview
-    island_statistics.png          # size/shape statistics
-    island_report.txt              # text report
+    map_context.json               # aggregated map context (islands, POIs, build region)
+    island_triangulation_detail.png  # triangulation overview (essential)
+    map_connectivity.png             # connectivity graph visualization (essential)
     skeleton/
-      world_overview.png           # skeleton graph on world layout
-      unique_islands.png           # canonical shape comparison
-      island_N_debug.png           # per-island skeleton debug
-      island_N_poi.png             # per-island POI annotation
-      exports/                     # JSON exports of skeleton graphs
-```
-
-## Configuration
-
-Edit `config.json` for match visualization settings:
-
-```json
-{
-  "data_files": {
-    "map_name": "Tumbleweed",
-    "match_file": "2026-01-24_22-24-17_75.parquet"
-  },
-  "output": { "folder": "output", "dpi": 150, "generate_pdf": true },
-  "team_settings": { "all_teams": true, "red_team": true, "blue_team": true },
-  "role_settings": { "wool_runner": true, "rusher": true, ... }
-}
+      unique_islands.png           # canonical shape comparison (essential)
+      world_overview.png           # skeleton graph on world layout (essential)
+      island_N_debug.png           # per-island skeleton debug (--plots)
+      island_N_poi.png             # per-island POI annotation (--plots)
+      skeleton_report.txt          # skeleton text report (--plots)
+    pathfinding/
+      island_N_paths.png           # pathfinding grids (--plots)
+    island_comparison.png          # island overview (--plots)
+    island_statistics.png          # size/shape statistics (--plots)
+    island_report.txt              # text report (--plots)
+  match_analysis/
+    trace_player0_match57.png      # player trace visualizations
 ```
 
 ## Data Format
@@ -131,37 +142,56 @@ Edit `config.json` for match visualization settings:
 | `inventory_count` | Inventory item count |
 | `wool_id` | Wool identifier (for wool events) |
 
+### Coordinate Convention
+
+Block at integer index `(x, z)` occupies world space `[x, x+1] x [z, z+1]` with center at `(x+0.5, z+0.5)`. Parquet files store block positions as integer indices. XML regions use corner coordinates (world-space boundaries).
+
 ## Project Structure
 
 ```
 CTWAnalysisWithClaudeCode/
-├── layout_analysis/              # Layout and island analysis package
-│   ├── islands/                  # Island detection, triangulation, statistics
-│   ├── skeleton/                 # Skeleton graph extraction and POI annotation
-│   │   ├── pipeline.py           # Full skeleton pipeline orchestrator
-│   │   ├── canonicalize.py       # D4 dihedral group canonicalization
-│   │   ├── skeletonize.py        # Morphological thinning
-│   │   ├── nodes.py              # Endpoint/junction extraction
-│   │   ├── edges.py              # Edge walking
-│   │   ├── merge.py              # Junction blob merging
-│   │   ├── prune.py              # Short branch pruning
-│   │   ├── poi_annotation.py     # Spawn/wool POI classification
-│   │   └── visualize.py          # Skeleton and POI visualization
-│   └── map_context.py            # MapContext aggregation
-├── xml_analysis/                 # PGM XML parsing
-│   ├── parser.py                 # Map XML parser
-│   ├── regions.py                # Region type hierarchy
-│   └── exporter.py               # JSON export
-├── match_analysis/               # Match event processing
-│   ├── preprocessing.py          # Life segments and team detection
-│   ├── segment_classifier.py     # Role classification
-│   ├── match_visualizer.py       # Visualization
-│   └── pdf_report.py             # PDF report generation
-├── map_folders/                  # Map data (not tracked in git)
-├── match_logs/                   # Match parquet files (not tracked in git)
-├── run_analysis_workflow.py      # Unified workflow script
-├── config.json                   # Match visualization config
-└── requirements.txt              # Python dependencies
+├── ctw.py                           # CLI entry point
+├── ctw/
+│   ├── common.py                    # Shared CLI utilities
+│   └── commands/                    # CLI command modules
+│       ├── run.py                   # Full pipeline
+│       ├── layout.py                # Layout extraction
+│       ├── islands.py               # Island analysis
+│       ├── xml.py                   # XML parsing
+│       ├── matches.py               # Match analysis
+│       ├── info.py                  # Map status
+│       └── docs.py                  # API docs generation
+├── layout_analysis/                 # Layout and island analysis package
+│   ├── islands/                     # Island detection, triangulation, visualization
+│   ├── skeleton/                    # Skeleton extraction, POI annotation, pathfinding
+│   │   ├── canonicalize.py          # D4 dihedral group canonicalization
+│   │   ├── skeletonize.py           # Morphological thinning
+│   │   ├── poi_annotation.py        # Spawn/wool POI classification
+│   │   ├── pathfinding.py           # Intra-island path analysis
+│   │   └── visualize.py             # Skeleton and POI visualization
+│   ├── connectivity/                # Inter-island connectivity graph
+│   ├── services/                    # Orchestration (layout_service, islands_service)
+│   └── map_context.py               # MapContext aggregation
+├── xml_analysis/                    # PGM XML parsing
+│   ├── parser.py                    # Map XML parser
+│   ├── regions.py                   # Region type hierarchy
+│   ├── build_regions.py             # Build region extraction
+│   └── exporter.py                  # JSON export
+├── match_analysis/                  # Match event processing
+│   ├── match_indexer.py             # Match file indexing (DuckDB)
+│   ├── trajectory_extractor.py      # Trajectory extraction
+│   ├── position_classifier.py       # Position classification
+│   ├── visualization.py             # Player trace plotting
+│   └── services/                    # Match service layer
+├── visualization/                   # Shared visualization utilities
+│   ├── map_primitives.py            # Map base layer rendering
+│   └── colors.py                    # Team/POI color definitions
+├── docs/                            # Documentation
+│   ├── cli.md                       # CLI reference
+│   └── api_index.json               # Auto-generated API docs
+├── map_folders/                     # Map data (not tracked in git)
+├── match_logs/                      # Match parquet files (not tracked in git)
+└── requirements.txt                 # Python dependencies
 ```
 
 ## License
