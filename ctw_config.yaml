@@ -1,0 +1,54 @@
+# CTW Analysis Configuration
+# ─────────────────────────────────────────────────────────────
+# Priority: CLI arguments  >  this file  >  internal defaults
+#
+# Uncomment and change values to override the built-in defaults.
+# Use  --config <path>  to point to a different file, or place
+# this file in the working directory as  ctw_config.yaml.
+# ─────────────────────────────────────────────────────────────
+
+# global:
+#   force: false
+#   plots: false
+#   output: "output/"
+
+# layout:
+#   threshold: 10
+#   density-mode: "run,count"
+#   skip-y0: false
+#   skip-surface: false
+#   skip-density: false
+#   skip-bedrock: false
+
+# islands:
+#   connectivity: 8
+#   min-size: 10
+#   buffer: 0.0
+#   simplify: 1.0
+#   no-holes: false
+#   layout: "bedrock"
+#   canonical-triangulation: false
+#   basic: false
+
+# xml:
+#   visualize: false
+#   category-plots: false
+#   no-summary: false
+#   no-json: false
+
+# run:
+#   no-layout: false
+#   no-islands: false
+#   no-xml: false
+#   no-matches: false
+#   island-layout: "bedrock"
+#   canonical-triangulation: false
+#   match-history: "match_logs/match_history.txt"
+#   # Pass-through to islands service (also reads from islands: section)
+#   simplify: 1.0
+#   buffer: 0.0
+
+# matches:
+#   color-mode: "life"
+#   map-base: "outline"
+#   match-dir: "match_logs"

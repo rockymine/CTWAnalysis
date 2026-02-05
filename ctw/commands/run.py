@@ -27,6 +27,10 @@ def register(subparsers):
                    help='Use canonical-consistent triangulation')
     p.add_argument('--plots', action='store_true',
                    help='Generate debug plots for layout and island analysis')
+    p.add_argument('--simplify', type=float, default=None,
+                   help='Simplification tolerance for islands (pass-through)')
+    p.add_argument('--buffer', type=float, default=None,
+                   help='Buffer distance for island smoothing (pass-through)')
     p.set_defaults(func=handler)
 
 
@@ -60,13 +64,18 @@ def handler(args):
             print("\n[1/4] Layout Analysis: SKIPPED")
 
         if not args.no_islands:
-            analyze_islands_step(
-                map_folder, force_rerun=args.force,
+            island_kwargs = dict(
+                force_rerun=args.force,
                 layout_type=args.island_layout,
                 canonical_triangulation=args.canonical_triangulation,
                 map_output_dir=map_output_dir,
                 plots=args.plots,
             )
+            if getattr(args, 'simplify', None) is not None:
+                island_kwargs['simplify_tolerance'] = args.simplify
+            if getattr(args, 'buffer', None) is not None:
+                island_kwargs['buffer_distance'] = args.buffer
+            analyze_islands_step(map_folder, **island_kwargs)
         else:
             print("\n[2/4] Island Analysis: SKIPPED")
 

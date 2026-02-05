@@ -11,4 +11,5 @@ reportlab
 anvil-parser
 shapely
 duckdb
+pyyaml
 pytest

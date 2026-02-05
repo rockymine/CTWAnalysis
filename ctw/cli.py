@@ -7,8 +7,13 @@ from ctw.common import PROJECT_ROOT
 from ctw.commands import run, layout, islands, xml, info, docs, matches
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser with all subcommands."""
+def build_parser() -> tuple[argparse.ArgumentParser, argparse.Action]:
+    """Build the argument parser with all subcommands.
+
+    Returns:
+        (parser, subparsers_action) — the subparsers action is exposed so
+        that the config system can set defaults before the final parse.
+    """
 
     # Shared parent for --map and --force
     map_parent = argparse.ArgumentParser(add_help=False)
@@ -37,6 +42,10 @@ Examples:
   python ctw.py info --map segment --json
 """,
     )
+    parser.add_argument(
+        '--config',
+        help='Path to YAML config file (default: ctw_config.yaml in working directory)',
+    )
     subparsers = parser.add_subparsers(
         dest='command', required=True, metavar='<command>',
     )
@@ -52,12 +61,21 @@ Examples:
     docs.register(subparsers)
     matches.register(subparsers)
 
-    return parser
+    return parser, subparsers
 
 
 def main():
     os.chdir(PROJECT_ROOT)
-    parser = build_parser()
+    parser, subparsers = build_parser()
+
+    # Load YAML config and inject values as parser defaults
+    # (before the real parse, so CLI arguments still take priority).
+    from ctw.config import find_config_arg, load_config, apply_config_to_parsers
+
+    config = load_config(find_config_arg())
+    if config:
+        apply_config_to_parsers(subparsers, config)
+
     args = parser.parse_args()
     if not hasattr(args, 'func'):
         # Subcommand given without action (e.g. "matches" with no action)
