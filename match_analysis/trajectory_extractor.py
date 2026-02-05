@@ -90,6 +90,26 @@ def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
     return pd.DataFrame(life_segments)
 
 
+def _build_segment_lookup(life_segments_df: pd.DataFrame):
+    """Build a lookup function that maps (player_id, timestamp) to segment_idx.
+
+    Returns a callable: find_segment_idx(player_id, timestamp) -> int | None
+    """
+    seg_lookup = {}
+    for row in life_segments_df.itertuples():
+        seg_lookup.setdefault(row.player_id, []).append(
+            (row.start_timestamp, row.end_timestamp, row.segment_idx)
+        )
+
+    def find_segment_idx(player_id, ts):
+        for start, end, idx in seg_lookup.get(player_id, []):
+            if start <= ts <= end:
+                return idx
+        return None
+
+    return find_segment_idx
+
+
 def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
     """Extract kill and death events, each assigned to a life segment.
 
@@ -110,19 +130,7 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
             'victim_id', 'x', 'y', 'z', 'segment_idx',
         ])
 
-    # Build segment lookup: for each player, list of (start, end, idx)
-    seg_lookup = {}
-    for row in life_segments_df.itertuples():
-        seg_lookup.setdefault(row.player_id, []).append(
-            (row.start_timestamp, row.end_timestamp, row.segment_idx)
-        )
-
-    def find_segment_idx(player_id, ts):
-        for start, end, idx in seg_lookup.get(player_id, []):
-            if start <= ts <= end:
-                return idx
-        return None
-
+    find_segment_idx = _build_segment_lookup(life_segments_df)
     combat['segment_idx'] = combat.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
@@ -151,19 +159,7 @@ def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> 
             'player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx',
         ])
 
-    # Build segment lookup: for each player, list of (start, end, idx)
-    seg_lookup = {}
-    for row in life_segments_df.itertuples():
-        seg_lookup.setdefault(row.player_id, []).append(
-            (row.start_timestamp, row.end_timestamp, row.segment_idx)
-        )
-
-    def find_segment_idx(player_id, ts):
-        for start, end, idx in seg_lookup.get(player_id, []):
-            if start <= ts <= end:
-                return idx
-        return None
-
+    find_segment_idx = _build_segment_lookup(life_segments_df)
     positions['segment_idx'] = positions.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
