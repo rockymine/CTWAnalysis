@@ -51,7 +51,27 @@ def initialize_database():
         )
     """)
 
-    # Table 3: Processing log
+    # Table 3: Combat events (kills + deaths)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_combat_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS combat_events (
+            combat_id INTEGER PRIMARY KEY DEFAULT nextval('seq_combat_id'),
+            match_id INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL,
+            event_type INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            victim_id INTEGER,
+            x INTEGER,
+            y INTEGER,
+            z INTEGER,
+            segment_idx INTEGER,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+    # Table 4: Processing log
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_log_id START 1
     """)

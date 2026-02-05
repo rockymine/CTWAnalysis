@@ -90,6 +90,49 @@ def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
     return pd.DataFrame(life_segments)
 
 
+def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract kill and death events, each assigned to a life segment.
+
+    Args:
+        match_file: Path to raw match parquet file.
+        life_segments_df: DataFrame from extract_life_segments_from_match().
+
+    Returns:
+        DataFrame with columns: player_id, timestamp, event_type,
+        victim_id, x, y, z, segment_idx.
+    """
+    df = pd.read_parquet(match_file)
+    combat = df[df['event_type'].isin([3, 4])].copy()
+
+    if len(combat) == 0:
+        return pd.DataFrame(columns=[
+            'player_id', 'timestamp', 'event_type',
+            'victim_id', 'x', 'y', 'z', 'segment_idx',
+        ])
+
+    # Build segment lookup: for each player, list of (start, end, idx)
+    seg_lookup = {}
+    for row in life_segments_df.itertuples():
+        seg_lookup.setdefault(row.player_id, []).append(
+            (row.start_timestamp, row.end_timestamp, row.segment_idx)
+        )
+
+    def find_segment_idx(player_id, ts):
+        for start, end, idx in seg_lookup.get(player_id, []):
+            if start <= ts <= end:
+                return idx
+        return None
+
+    combat['segment_idx'] = combat.apply(
+        lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
+    )
+    # Convert victim_id: replace NaN with None for clean DB insertion
+    combat['victim_id'] = combat['victim_id'].where(combat['victim_id'].notna(), other=None)
+
+    return combat[['player_id', 'timestamp', 'event_type',
+                    'victim_id', 'x', 'y', 'z', 'segment_idx']]
+
+
 def process_match(match_id: int):
     """Process a single match: extract life segments and save to parquet.
 
@@ -157,6 +200,27 @@ def process_match(match_id: int):
             )
 
         print(f"Inserted {len(life_segments_df)} life segments into database")
+
+        # Extract and insert combat events
+        combat_df = extract_combat_events(match_file, life_segments_df)
+        conn.execute(
+            "DELETE FROM combat_events WHERE match_id = ?", [match_id]
+        )
+        for row in combat_df.itertuples():
+            victim = int(row.victim_id) if pd.notna(row.victim_id) else None
+            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
+            conn.execute(
+                """
+                INSERT INTO combat_events
+                    (match_id, timestamp, event_type, player_id,
+                     victim_id, x, y, z, segment_idx)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [match_id, int(row.timestamp), int(row.event_type),
+                 int(row.player_id), victim,
+                 int(row.x), int(row.y), int(row.z), seg_idx],
+            )
+        print(f"Inserted {len(combat_df)} combat events into database")
 
         processing_time = time.time() - start_time
 
