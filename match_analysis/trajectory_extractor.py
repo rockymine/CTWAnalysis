@@ -133,6 +133,44 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
                     'victim_id', 'x', 'y', 'z', 'segment_idx']]
 
 
+def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract position events (type 5), each assigned to a life segment.
+
+    Args:
+        match_file: Path to raw match parquet file.
+        life_segments_df: DataFrame from extract_life_segments_from_match().
+
+    Returns:
+        DataFrame with columns: player_id, timestamp, x, y, z, segment_idx.
+    """
+    df = pd.read_parquet(match_file)
+    positions = df[df['event_type'] == 5].copy()
+
+    if len(positions) == 0:
+        return pd.DataFrame(columns=[
+            'player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx',
+        ])
+
+    # Build segment lookup: for each player, list of (start, end, idx)
+    seg_lookup = {}
+    for row in life_segments_df.itertuples():
+        seg_lookup.setdefault(row.player_id, []).append(
+            (row.start_timestamp, row.end_timestamp, row.segment_idx)
+        )
+
+    def find_segment_idx(player_id, ts):
+        for start, end, idx in seg_lookup.get(player_id, []):
+            if start <= ts <= end:
+                return idx
+        return None
+
+    positions['segment_idx'] = positions.apply(
+        lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
+    )
+
+    return positions[['player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx']]
+
+
 def process_match(match_id: int):
     """Process a single match: extract life segments and save to parquet.
 
@@ -221,6 +259,24 @@ def process_match(match_id: int):
                  int(row.x), int(row.y), int(row.z), seg_idx],
             )
         print(f"Inserted {len(combat_df)} combat events into database")
+
+        # Extract and insert position events
+        position_df = extract_position_events(match_file, life_segments_df)
+        conn.execute(
+            "DELETE FROM position_events WHERE match_id = ?", [match_id]
+        )
+        for row in position_df.itertuples():
+            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
+            conn.execute(
+                """
+                INSERT INTO position_events
+                    (match_id, timestamp, player_id, x, y, z, segment_idx)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [match_id, int(row.timestamp), int(row.player_id),
+                 int(row.x), int(row.y), int(row.z), seg_idx],
+            )
+        print(f"Inserted {len(position_df)} position events into database")
 
         processing_time = time.time() - start_time
 

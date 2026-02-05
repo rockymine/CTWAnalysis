@@ -71,7 +71,25 @@ def initialize_database():
         )
     """)
 
-    # Table 4: Processing log
+    # Table 4: Position events (type 5 only)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_position_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS position_events (
+            position_id INTEGER PRIMARY KEY DEFAULT nextval('seq_position_id'),
+            match_id INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            x INTEGER NOT NULL,
+            y INTEGER NOT NULL,
+            z INTEGER NOT NULL,
+            segment_idx INTEGER,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+    # Table 5: Processing log
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_log_id START 1
     """)
