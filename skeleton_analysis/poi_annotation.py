@@ -12,7 +12,7 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 
 from .datatypes import IslandResult
-from ..islands.datatypes import Island
+from island_analysis.datatypes import Island
 from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, UnionRegion,
     CuboidRegion, RectangleRegion,

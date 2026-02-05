@@ -5,7 +5,7 @@ Runs pathfinding on all available maps, prints summary, and generates
 path grid visualizations.
 
 Usage:
-    python -m layout_analysis.skeleton.test_pathfinding
+    python -m skeleton_analysis.test_pathfinding
 """
 
 import json
@@ -15,12 +15,12 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from layout_analysis.skeleton.pathfinding import (
+from skeleton_analysis.pathfinding import (
     run_pathfinding_analysis,
     load_edge_pixels,
     get_path_detail,
 )
-from layout_analysis.skeleton.visualize import plot_path_grid
+from skeleton_analysis.visualize import plot_path_grid
 
 
 def print_island_summary(result: dict) -> None:

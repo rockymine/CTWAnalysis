@@ -35,7 +35,7 @@ def handler(args):
     if args.basic:
         import os
         import pandas as pd
-        from layout_analysis.islands import (
+        from island_analysis import (
             detect_islands,
             triangulate_island_union,
             compute_island_statistics,

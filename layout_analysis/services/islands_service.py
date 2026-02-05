@@ -34,7 +34,7 @@ def _detect_and_label(
 
     Returns the updated DataFrame and the list of Island objects.
     """
-    from layout_analysis.islands import detect_islands
+    from island_analysis import detect_islands
 
     print(f"  Detecting islands ({connectivity}-connectivity, min_size={min_island_size})...")
     islands = detect_islands(
@@ -78,7 +78,7 @@ def _triangulate(
     detect_holes: bool = True,
 ) -> int:
     """Triangulate all islands.  Returns total triangle count."""
-    from layout_analysis.islands import (
+    from island_analysis import (
         triangulate_island_union,
         triangulate_islands_canonical,
     )
@@ -120,8 +120,8 @@ def _compute_skeletons(
 
     Returns (skeleton_results, canonical_groups).
     """
-    from layout_analysis.skeleton import process_all_islands
-    from layout_analysis.islands import compute_island_statistics, classify_islands
+    from skeleton_analysis import process_all_islands
+    from island_analysis import compute_island_statistics, classify_islands
 
     stats = compute_island_statistics(islands)
 
@@ -180,8 +180,8 @@ def _generate_skeleton_visuals(
         - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt
     """
-    from layout_analysis.islands.visualization import plot_triangulation_detail
-    from layout_analysis.skeleton.visualize import (
+    from island_analysis.visualization import plot_triangulation_detail
+    from skeleton_analysis.visualize import (
         plot_island_debug,
         plot_unique_islands,
         plot_world_overview,
@@ -198,7 +198,7 @@ def _generate_skeleton_visuals(
 
     if plots:
         # Debug: full island report (comparison, statistics, text report)
-        from layout_analysis.islands import create_island_report
+        from island_analysis import create_island_report
         create_island_report(islands, stats, str(island_output_dir), map_name)
 
     skeleton_output_dir = island_output_dir / 'skeleton'
@@ -252,12 +252,12 @@ def _annotate_pois(
     Returns (map_data_obj, poi_assignments, map_center_pt).
     map_data_obj and poi_assignments are None when XML is absent.
     """
-    from layout_analysis.skeleton.poi_annotation import (
+    from skeleton_analysis.poi_annotation import (
         annotate_skeleton_pois,
         compute_map_center,
         classify_island_center,
     )
-    from layout_analysis.skeleton.visualize import plot_island_poi_debug
+    from skeleton_analysis.visualize import plot_island_poi_debug
 
     map_center_pt = compute_map_center(df)
     classify_island_center(islands, map_center_pt)
@@ -323,7 +323,7 @@ def _build_context(
     Returns the MapContext instance.
     """
     from layout_analysis.map_context import build_map_context, build_skeleton_dicts
-    from layout_analysis.connectivity import save_initial_map_graph
+    from skeleton_analysis.connectivity import save_initial_map_graph
 
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
@@ -384,7 +384,7 @@ def _run_pathfinding(
     plots: bool = True,
 ):
     """Run pathfinding analysis and generate path grid visualizations."""
-    from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
+    from skeleton_analysis.pathfinding import run_pathfinding_analysis, load_edge_pixels
 
     print(f"  Running pathfinding analysis...")
     pathfinding_results = run_pathfinding_analysis(str(map_output_dir))
@@ -397,7 +397,7 @@ def _run_pathfinding(
     print(f"    Pathfinding: {n_analyzed} islands, {n_paths} POI paths, {n_defender} defender paths")
 
     if plots:
-        from layout_analysis.skeleton.visualize import plot_path_grid
+        from skeleton_analysis.visualize import plot_path_grid
 
         pathfinding_dir = island_output_dir / 'pathfinding'
         pathfinding_dir.mkdir(exist_ok=True)
@@ -424,7 +424,7 @@ def _run_pathfinding(
 
 def _build_connectivity(map_output_dir: Path, island_output_dir: Path):
     """Build inter-island connectivity graph and generate visualization."""
-    from layout_analysis.connectivity import (
+    from skeleton_analysis.connectivity import (
         build_map_graph,
         save_map_graph,
         plot_map_connectivity,

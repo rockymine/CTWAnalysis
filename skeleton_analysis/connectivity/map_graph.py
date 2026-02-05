@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 
-from ..skeleton.pathfinding import load_skeleton_graph, get_endpoint_nodes
+from ..pathfinding import load_skeleton_graph, get_endpoint_nodes
 
 
 DEFAULT_CONNECTIVITY_PARAMS = {

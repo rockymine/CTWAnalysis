@@ -667,7 +667,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/connectivity/map_graph.py",
+    "file": "./skeleton_analysis/connectivity/map_graph.py",
     "functions": [
       {
         "name": "build_map_graph",
@@ -704,7 +704,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/connectivity/serialize.py",
+    "file": "./skeleton_analysis/connectivity/serialize.py",
     "functions": [
       {
         "name": "_json_default",
@@ -742,7 +742,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/connectivity/visualize.py",
+    "file": "./skeleton_analysis/connectivity/visualize.py",
     "functions": [
       {
         "name": "plot_map_connectivity",
@@ -757,7 +757,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/islands/datatypes.py",
+    "file": "./island_analysis/datatypes.py",
     "functions": [],
     "classes": [
       {
@@ -767,7 +767,7 @@
     ]
   },
   {
-    "file": "./layout_analysis/islands/detection.py",
+    "file": "./island_analysis/detection.py",
     "functions": [
       {
         "name": "detect_islands",
@@ -793,7 +793,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/islands/statistics.py",
+    "file": "./island_analysis/statistics.py",
     "functions": [
       {
         "name": "compute_island_statistics",
@@ -814,7 +814,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/islands/triangulation.py",
+    "file": "./island_analysis/triangulation.py",
     "functions": [
       {
         "name": "triangulate_island_union",
@@ -914,7 +914,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/islands/visualization.py",
+    "file": "./island_analysis/visualization.py",
     "functions": [
       {
         "name": "generate_distinct_colors",
@@ -1130,7 +1130,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/canonicalize.py",
+    "file": "./skeleton_analysis/canonicalize.py",
     "functions": [
       {
         "name": "_rotate_int",
@@ -1168,7 +1168,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/datatypes.py",
+    "file": "./skeleton_analysis/datatypes.py",
     "functions": [
       {
         "name": "_rotate_points",
@@ -1251,7 +1251,7 @@
     ]
   },
   {
-    "file": "./layout_analysis/skeleton/edges.py",
+    "file": "./skeleton_analysis/edges.py",
     "functions": [
       {
         "name": "extract_edges",
@@ -1279,7 +1279,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/merge.py",
+    "file": "./skeleton_analysis/merge.py",
     "functions": [
       {
         "name": "merge_junction_blobs",
@@ -1319,7 +1319,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/nodes.py",
+    "file": "./skeleton_analysis/nodes.py",
     "functions": [
       {
         "name": "compute_pixel_degrees",
@@ -1341,7 +1341,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/pathfinding.py",
+    "file": "./skeleton_analysis/pathfinding.py",
     "functions": [
       {
         "name": "load_skeleton_graph",
@@ -1454,7 +1454,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/pipeline.py",
+    "file": "./skeleton_analysis/pipeline.py",
     "functions": [
       {
         "name": "process_island",
@@ -1498,7 +1498,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/poi_annotation.py",
+    "file": "./skeleton_analysis/poi_annotation.py",
     "functions": [
       {
         "name": "extract_spawn_locations",
@@ -1575,7 +1575,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/prune.py",
+    "file": "./skeleton_analysis/prune.py",
     "functions": [
       {
         "name": "prune_short_branches",
@@ -1591,7 +1591,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/rasterize.py",
+    "file": "./skeleton_analysis/rasterize.py",
     "functions": [
       {
         "name": "rasterize_island",
@@ -1605,7 +1605,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/skeletonize.py",
+    "file": "./skeleton_analysis/skeletonize.py",
     "functions": [
       {
         "name": "compute_skeleton",
@@ -1619,7 +1619,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/test_pathfinding.py",
+    "file": "./skeleton_analysis/test_pathfinding.py",
     "functions": [
       {
         "name": "print_island_summary",
@@ -1645,7 +1645,7 @@
     "classes": []
   },
   {
-    "file": "./layout_analysis/skeleton/visualize.py",
+    "file": "./skeleton_analysis/visualize.py",
     "functions": [
       {
         "name": "plot_island_debug",

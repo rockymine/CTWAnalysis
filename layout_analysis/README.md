@@ -1,118 +1,25 @@
 # Layout Analysis Package
 
-Extracts block data from Minecraft region files and builds a complete spatial
-model of CTW maps: islands, skeleton graphs, POI annotations, pathfinding,
-and inter-island connectivity.
+Extracts block data from Minecraft region files. This package handles
+the low-level region I/O, block extraction, and orchestration services.
 
-## Pipeline Overview
-
-The full pipeline is orchestrated by `services/islands_service.py` and runs
-as step 2 of the CLI (`ctw islands` or `ctw run`). It builds on the layout
-parquets produced by step 1 (`ctw layout`).
-
-```
-Region files (.mca)
-  │
-  ▼
-Layout Extraction (extractors.py, region_reader.py)
-  │  Produces: layout_bedrock.parquet, layout_y0.parquet, etc.
-  │  Each row is a block at integer index (world_x, world_z).
-  │
-  ▼
-Island Detection (islands/detection.py)
-  │  Connected-component labeling (4 or 8-connectivity).
-  │  Writes island_id back into the layout parquet.
-  │
-  ▼
-Triangulation (islands/triangulation.py)
-  │  Builds Shapely polygons from block unit-squares, simplifies,
-  │  and triangulates via earcut. Two modes:
-  │    - Per-island union (default)
-  │    - Canonical grouping (--canonical-triangulation):
-  │      groups D4-equivalent islands, but builds polygons
-  │      from world-space blocks (not canonical space).
-  │
-  ▼
-Skeleton Extraction (skeleton/)
-  │  Per-island: rasterize → thin → extract nodes/edges →
-  │  merge junction blobs → prune short branches.
-  │  Canonicalization groups islands by D4 symmetry.
-  │
-  ▼
-POI Annotation (skeleton/poi_annotation.py)
-  │  Parses map.xml to find spawns and wools, assigns them
-  │  to nearest skeleton nodes. Classifies island teams.
-  │
-  ▼
-MapContext + Build Region (map_context.py, xml_analysis/build_regions.py)
-  │  Aggregates all results into map_context.json.
-  │  Extracts buildable void from XML build regions minus islands.
-  │
-  ▼
-Pathfinding (skeleton/pathfinding.py)
-  │  Computes shortest paths between POI nodes and endpoints
-  │  within each island's skeleton graph.
-  │
-  ▼
-Connectivity (connectivity/)
-     Builds inter-island graph: intra-island edges from skeleton,
-     void links between nearby island endpoints across buildable void.
-     Produces map_graph.json and map_connectivity.png.
-```
-
-## Coordinate Convention
-
-Block at integer index `(x, z)` occupies world space `[x, x+1] × [z, z+1]`
-with center at `(x+0.5, z+0.5)`.
-
-- **Parquet files** store block positions as integer `(world_x, world_z)` —
-  these are block indices, not centers.
-- **Island bounding boxes** use `(min_x, max_x, min_z, max_z)` where max
-  values include +1 for world extent.
-- **Island centers** are computed as `mean(block_indices) + 0.5`.
-- **Polygons** are built with `box(x, z, x+1, z+1)` per block, then unioned
-  and simplified.
+Island detection and geometry live in `island_analysis/`.
+Skeleton extraction, pathfinding, and connectivity live in `skeleton_analysis/`.
 
 ## Package Structure
 
 ```
 layout_analysis/
-├── __init__.py              # Package exports
+├── __init__.py              # Package exports (extractors, reader, utils)
 ├── region_reader.py         # Anvil region file reader (MC 1.8.9)
 ├── extractors.py            # Block extraction modes (Y0, surface, density, bedrock)
 ├── utils.py                 # NBT decoding utilities (nibble, block ID)
 ├── plotting.py              # Layout-level visualization (density, surface plots)
 ├── map_context.py           # MapContext dataclass and builder
 │
-├── islands/                 # Island detection and geometry
-│   ├── datatypes.py         # Island dataclass
-│   ├── detection.py         # Connected-component island detection
-│   ├── triangulation.py     # Polygon construction and triangulation
-│   ├── statistics.py        # Island statistics and classification
-│   └── visualization.py     # Island comparison, triangulation detail plots
-│
-├── skeleton/                # Skeleton graph extraction
-│   ├── datatypes.py         # CanonicalTransform, IslandResult, SkeletonGraph
-│   ├── pipeline.py          # Full skeleton pipeline orchestrator
-│   ├── rasterize.py         # Island blocks → binary raster grid
-│   ├── skeletonize.py       # Morphological thinning (Zhang-Suen)
-│   ├── nodes.py             # Endpoint and junction extraction
-│   ├── edges.py             # Edge path walking
-│   ├── merge.py             # Junction blob merging
-│   ├── prune.py             # Short branch pruning
-│   ├── canonicalize.py      # D4 dihedral group canonicalization
-│   ├── poi_annotation.py    # Spawn/wool POI assignment, map center
-│   ├── pathfinding.py       # Intra-island shortest paths
-│   └── visualize.py         # Skeleton debug, POI, path grid plots
-│
-├── connectivity/            # Inter-island connectivity
-│   ├── map_graph.py         # Build connectivity graph (void links)
-│   ├── serialize.py         # map_graph.json I/O
-│   └── visualize.py         # Map connectivity visualization
-│
 ├── services/                # CLI orchestration
 │   ├── layout_service.py    # Layout extraction orchestrator
-│   └── islands_service.py   # Island analysis orchestrator (8 stages)
+│   └── islands_service.py   # Full analysis orchestrator (8 stages)
 │
 └── tests/                   # Unit tests
 ```

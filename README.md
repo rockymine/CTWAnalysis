@@ -161,17 +161,17 @@ CTWAnalysisWithClaudeCode/
 │       ├── matches.py               # Match analysis
 │       ├── info.py                  # Map status
 │       └── docs.py                  # API docs generation
-├── layout_analysis/                 # Layout and island analysis package
-│   ├── islands/                     # Island detection, triangulation, visualization
-│   ├── skeleton/                    # Skeleton extraction, POI annotation, pathfinding
-│   │   ├── canonicalize.py          # D4 dihedral group canonicalization
-│   │   ├── skeletonize.py           # Morphological thinning
-│   │   ├── poi_annotation.py        # Spawn/wool POI classification
-│   │   ├── pathfinding.py           # Intra-island path analysis
-│   │   └── visualize.py             # Skeleton and POI visualization
-│   ├── connectivity/                # Inter-island connectivity graph
+├── layout_analysis/                 # Layout extraction and orchestration
 │   ├── services/                    # Orchestration (layout_service, islands_service)
 │   └── map_context.py               # MapContext aggregation
+├── island_analysis/                 # Island detection, triangulation, visualization
+├── skeleton_analysis/               # Skeleton extraction, POI annotation, pathfinding
+│   ├── canonicalize.py              # D4 dihedral group canonicalization
+│   ├── skeletonize.py               # Morphological thinning
+│   ├── poi_annotation.py            # Spawn/wool POI classification
+│   ├── pathfinding.py               # Intra-island path analysis
+│   ├── visualize.py                 # Skeleton and POI visualization
+│   └── connectivity/               # Inter-island connectivity graph
 ├── xml_analysis/                    # PGM XML parsing
 │   ├── parser.py                    # Map XML parser
 │   ├── regions.py                   # Region type hierarchy

@@ -11,8 +11,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 
-from .islands.datatypes import Island
-from .skeleton.datatypes import IslandResult
+from island_analysis.datatypes import Island
+from skeleton_analysis.datatypes import IslandResult
 
 
 @dataclass
