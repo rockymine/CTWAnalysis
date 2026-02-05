@@ -18,6 +18,18 @@ def _player_arg(value: str):
         )
 
 
+def _match_arg(value: str):
+    """Accept an integer, comma-separated integers, or the literal 'ALL'."""
+    if value.upper() == 'ALL':
+        return 'ALL'
+    try:
+        return [int(x.strip()) for x in value.split(',')]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"'{value}' is not a valid match ID, comma-separated IDs, or 'ALL'"
+        )
+
+
 def register(subparsers):
     matches_parser = subparsers.add_parser(
         'matches',
@@ -42,9 +54,10 @@ Examples:
   python ctw.py matches process-all --force
   python ctw.py matches reset
   python ctw.py matches stats
-  python ctw.py matches trace --map Ingwaz --match 57 --player 0
-  python ctw.py matches trace --map Ingwaz --match 57 --player ALL --color-mode team
-  python ctw.py matches trace --map Ingwaz --match 57 --player 0 --no-edges --color-mode location
+  python ctw.py matches trace --map Ingwaz --match 1 --player 0
+  python ctw.py matches trace --map Ingwaz --match 1,2,3 --player ALL --color-mode team
+  python ctw.py matches trace --map Ingwaz --match ALL --player 0
+  python ctw.py matches trace --map Ingwaz --match 1 --player 0 --no-edges --color-mode location
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -98,8 +111,8 @@ Examples:
     p = matches_sub.add_parser('trace', help='Visualize player traces on map')
     p.add_argument('--map', required=True,
                    help='Map name (e.g., Ingwaz) or path to map folder')
-    p.add_argument('--match', required=True, type=int,
-                   help='Match ID (from database)')
+    p.add_argument('--match', required=True, type=_match_arg,
+                   help='Match ID, comma-separated IDs (1,2,3), or ALL')
     p.add_argument('--player', required=True, type=_player_arg,
                    help='Player ID to visualize, or ALL for every player')
     p.add_argument('--output', help='Output PNG path (default: auto-generated)')
@@ -259,27 +272,34 @@ def handle_reset(args):
 
 def handle_trace(args):
     import json
+    import duckdb
     from ctw.common import resolve_map_folder, resolve_output_dir
     from match_analysis.services import get_match_file, get_match_player_ids
     from match_analysis.visualization import plot_player_traces
 
     ensure_match_db()
 
-    try:
-        match_file, _ = get_match_file(args.match)
-    except ValueError as e:
-        print(f"Error: {e}")
-        print("Run 'ctw matches index' first to index match files.")
-        return
-
-    match_path = Path(match_file)
-    if not match_path.exists():
-        print(f"Error: match file not found: {match_file}")
-        return
-
     map_folder = resolve_map_folder(args.map)
+    map_name = map_folder.name
     map_output_dir = resolve_output_dir(map_folder, create=False)
 
+    # --- resolve match IDs ------------------------------------------------
+    if args.match == 'ALL':
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        rows = conn.execute(
+            "SELECT match_id FROM matches WHERE map_name = ? ORDER BY match_id",
+            [map_name],
+        ).fetchall()
+        conn.close()
+        match_ids = [r[0] for r in rows]
+        if not match_ids:
+            print(f"No matches found for map '{map_name}'.")
+            return
+        print(f"Found {len(match_ids)} matches for map '{map_name}'.")
+    else:
+        match_ids = args.match  # list[int] from _match_arg
+
+    # --- shared map setup (done once) -------------------------------------
     def _find_file(rel_path):
         """Check map_output_dir first, fall back to map_folder."""
         p = map_output_dir / rel_path
@@ -299,7 +319,6 @@ def handle_trace(args):
     with open(context_path) as f:
         map_context = json.load(f)
 
-    # Load map_graph if needed for snap_skeleton or team/location color modes
     needs_graph = args.snap_skeleton or args.color_mode in ('team', 'location')
     map_graph = None
     if needs_graph:
@@ -311,40 +330,64 @@ def handle_trace(args):
         with open(graph_path) as f:
             map_graph = json.load(f)
 
-    # Resolve player IDs
-    if args.player == 'ALL':
-        player_ids = get_match_player_ids(str(match_file))
-        if not player_ids:
-            print("No players found in match file.")
-            return
-        print(f"Plotting traces for {len(player_ids)} players...")
-    else:
-        player_ids = [args.player]
-
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        trace_dir = map_output_dir / 'match_analysis'
-        player_label = 'all' if args.player == 'ALL' else f'player{args.player}'
-        output_path = trace_dir / f"trace_{player_label}_match{args.match}.png"
-
-    # For map_base='blocks', pass the dir containing layout_bedrock.parquet
     layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
 
-    plot_player_traces(
-        map_context, str(match_file), player_ids, output_path,
-        map_graph=map_graph,
-        snap_skeleton=args.snap_skeleton,
-        show_deaths=not args.no_deaths,
-        show_kills=not args.no_kills,
-        show_wool=not args.no_wool,
-        show_edges=not args.no_edges,
-        show_legend=not args.no_legend,
-        show_stats=not args.no_stats,
-        color_mode=args.color_mode,
-        map_base=args.map_base,
-        map_folder=layout_dir,
-    )
+    # --- per-match loop ---------------------------------------------------
+    traced = 0
+    for match_id in match_ids:
+        try:
+            match_file, db_map_name = get_match_file(match_id)
+        except ValueError as e:
+            print(f"Error: {e}")
+            continue
+
+        if db_map_name != map_name:
+            print(f"Skipping match {match_id}: map is '{db_map_name}', not '{map_name}'")
+            continue
+
+        match_path = Path(match_file)
+        if not match_path.exists():
+            print(f"Error: match file not found: {match_file}")
+            continue
+
+        # Resolve player IDs
+        if args.player == 'ALL':
+            player_ids = get_match_player_ids(str(match_file))
+            if not player_ids:
+                print(f"No players found in match {match_id}.")
+                continue
+        else:
+            player_ids = [args.player]
+
+        # Determine output path
+        if args.output and len(match_ids) == 1:
+            output_path = Path(args.output)
+        else:
+            trace_dir = map_output_dir / 'match_analysis'
+            player_label = 'all' if args.player == 'ALL' else f'player{args.player}'
+            output_path = trace_dir / f"trace_{player_label}_match{match_id}.png"
+
+        if len(match_ids) > 1:
+            print(f"  Tracing match {match_id} ({len(player_ids)} players)...")
+
+        plot_player_traces(
+            map_context, str(match_file), player_ids, output_path,
+            map_graph=map_graph,
+            snap_skeleton=args.snap_skeleton,
+            show_deaths=not args.no_deaths,
+            show_kills=not args.no_kills,
+            show_wool=not args.no_wool,
+            show_edges=not args.no_edges,
+            show_legend=not args.no_legend,
+            show_stats=not args.no_stats,
+            color_mode=args.color_mode,
+            map_base=args.map_base,
+            map_folder=layout_dir,
+        )
+        traced += 1
+
+    if len(match_ids) > 1:
+        print(f"\nTraced {traced}/{len(match_ids)} matches.")
 
 
 def handle_list(args):
