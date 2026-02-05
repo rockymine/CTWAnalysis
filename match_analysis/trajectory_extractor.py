@@ -78,6 +78,8 @@ def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
                 'end_timestamp': int(end_time),
                 'duration': float(end_time - start_time),
                 'outcome': outcome,
+                'spawn_x': float(spawn_row.x),
+                'spawn_z': float(spawn_row.z),
                 'position_count': len(positions),
                 'kill_count': kill_count,
                 'wool_touches': wool_touches,
@@ -131,6 +133,30 @@ def process_match(match_id: int):
         metadata_df.to_parquet(output_file, index=False)
 
         print(f"Saved life segment metadata to {output_file}")
+
+        # Clear any previous segments for this match (supports reprocessing)
+        conn.execute(
+            "DELETE FROM life_segments WHERE match_id = ?", [match_id]
+        )
+
+        # Insert life segments into DuckDB
+        for row in life_segments_df.itertuples():
+            conn.execute(
+                """
+                INSERT INTO life_segments
+                    (match_id, player_id, segment_idx,
+                     start_timestamp, end_timestamp, duration, outcome,
+                     spawn_x, spawn_z,
+                     position_count, kill_count, wool_touches, wool_captures)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [match_id, row.player_id, row.segment_idx,
+                 row.start_timestamp, row.end_timestamp, row.duration, row.outcome,
+                 row.spawn_x, row.spawn_z,
+                 row.position_count, row.kill_count, row.wool_touches, row.wool_captures],
+            )
+
+        print(f"Inserted {len(life_segments_df)} life segments into database")
 
         processing_time = time.time() - start_time
 
