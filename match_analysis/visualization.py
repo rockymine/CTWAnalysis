@@ -118,6 +118,7 @@ def plot_player_traces(
     show_edges: bool = True,
     show_legend: bool = True,
     show_stats: bool = True,
+    show_title: bool = True,
     color_mode: str = 'life',
     map_base: str = 'outline',
     map_folder: Path = None,
@@ -138,6 +139,7 @@ def plot_player_traces(
         show_edges: Draw connecting lines (False = dots only).
         show_legend: Show the legend.
         show_stats: Show the stats text box.
+        show_title: Show the title.
         color_mode: 'life' (per-segment), 'team' (by spawn team),
             or 'location' (by position type).
         map_base: 'outline' for polygon outlines, 'blocks' for individual
@@ -178,20 +180,21 @@ def plot_player_traces(
     elif color_mode == 'location':
         mode_label = ' [Location View]'
 
-    if multi_player:
-        ax.set_title(
-            f"{map_name} — {len(player_ids)} Players "
-            f"({len(all_segments)} total lives){mode_label}\n"
-            f"Match: {match_name}",
-            fontsize=13, fontweight='bold',
-        )
-    else:
-        ax.set_title(
-            f"{map_name} — Player {player_ids[0]} Traces "
-            f"({len(all_segments)} lives){mode_label}\n"
-            f"Match: {match_name}",
-            fontsize=13, fontweight='bold',
-        )
+    if show_title:
+        if multi_player:
+            ax.set_title(
+                f"{map_name} — {len(player_ids)} Players "
+                f"({len(all_segments)} total lives){mode_label}\n"
+                f"Match: {match_name}",
+                fontsize=13, fontweight='bold',
+            )
+        else:
+            ax.set_title(
+                f"{map_name} — Player {player_ids[0]} Traces "
+                f"({len(all_segments)} lives){mode_label}\n"
+                f"Match: {match_name}",
+                fontsize=13, fontweight='bold',
+            )
 
     draw_map_base(ax, map_context,
                   build_style=_BUILD_STYLE,
@@ -357,10 +360,13 @@ def plot_player_traces(
             zorder=10,
         )
 
-    ax.set_xlabel('X (blocks)')
-    ax.set_ylabel('Z (blocks)')
     ax.set_aspect('equal')
-    ax.grid(True, alpha=0.2)
+    if show_title:
+        ax.set_xlabel('X (blocks)')
+        ax.set_ylabel('Z (blocks)')
+        ax.grid(True, alpha=0.2)
+    else:
+        ax.axis('off')
 
     fig.savefig(str(output_path), dpi=200, bbox_inches='tight')
     plt.close(fig)
