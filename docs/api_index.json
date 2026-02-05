@@ -44,6 +44,15 @@
         "returns": "list"
       },
       {
+        "name": "resolve_output_dir",
+        "args": [
+          "map_folder",
+          "output_root",
+          "create"
+        ],
+        "returns": "Path"
+      },
+      {
         "name": "ensure_match_db",
         "args": [],
         "returns": null
@@ -239,6 +248,143 @@
         "args": [
           "args"
         ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./docs/demo/generate_demo.py",
+    "functions": [
+      {
+        "name": "_new_figure",
+        "args": [
+          "figsize"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_save",
+        "args": [
+          "fig",
+          "path",
+          "dpi"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_set_bounds_from_context",
+        "args": [
+          "ax",
+          "map_context",
+          "padding"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_draw_skeleton_edges",
+        "args": [
+          "ax",
+          "map_context",
+          "map_graph"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_draw_skeleton_nodes",
+        "args": [
+          "ax",
+          "map_context",
+          "map_graph"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_draw_void_links",
+        "args": [
+          "ax",
+          "map_graph"
+        ],
+        "returns": null
+      },
+      {
+        "name": "_draw_map_nodes",
+        "args": [
+          "ax",
+          "map_graph"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_blocks",
+        "args": [
+          "map_folder",
+          "map_context",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_regions",
+        "args": [
+          "map_context",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_skeleton",
+        "args": [
+          "map_context",
+          "map_graph",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_outline",
+        "args": [
+          "map_context",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_connectivity",
+        "args": [
+          "map_context",
+          "map_graph",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_trace_single",
+        "args": [
+          "map_context",
+          "match_file",
+          "player_id",
+          "map_graph",
+          "map_folder",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "gen_trace_team",
+        "args": [
+          "map_context",
+          "match_file",
+          "player_ids",
+          "map_graph",
+          "map_folder",
+          "output_path"
+        ],
+        "returns": null
+      },
+      {
+        "name": "main",
+        "args": [],
         "returns": null
       }
     ],
@@ -572,7 +718,7 @@
         "args": [
           "island_skeletons",
           "map_name",
-          "map_folder",
+          "output_dir",
           "params"
         ],
         "returns": "None"
@@ -581,14 +727,14 @@
         "name": "save_map_graph",
         "args": [
           "map_graph_result",
-          "map_folder"
+          "output_dir"
         ],
         "returns": "None"
       },
       {
         "name": "load_map_graph",
         "args": [
-          "map_folder"
+          "output_dir"
         ],
         "returns": "dict"
       }
@@ -893,7 +1039,8 @@
           "skeleton_results",
           "canonical_groups",
           "island_output_dir",
-          "map_name"
+          "map_name",
+          "plots"
         ],
         "returns": null
       },
@@ -904,7 +1051,8 @@
           "islands",
           "df",
           "skeleton_results",
-          "skeleton_output_dir"
+          "skeleton_output_dir",
+          "plots"
         ],
         "returns": null
       },
@@ -919,22 +1067,24 @@
           "map_data_obj",
           "map_center_pt",
           "poi_assignments",
-          "island_output_dir"
+          "island_output_dir",
+          "map_output_dir"
         ],
         "returns": null
       },
       {
         "name": "_run_pathfinding",
         "args": [
-          "map_folder",
-          "island_output_dir"
+          "map_output_dir",
+          "island_output_dir",
+          "plots"
         ],
         "returns": null
       },
       {
         "name": "_build_connectivity",
         "args": [
-          "map_folder",
+          "map_output_dir",
           "island_output_dir"
         ],
         "returns": null
@@ -954,7 +1104,10 @@
           "simplify_tolerance",
           "buffer_distance",
           "layout_type",
-          "canonical_triangulation"
+          "canonical_triangulation",
+          "map_output_dir",
+          "output_dir",
+          "plots"
         ],
         "returns": null
       }
@@ -968,7 +1121,8 @@
         "name": "analyze_layout",
         "args": [
           "map_folder",
-          "force_rerun"
+          "force_rerun",
+          "output_dir"
         ],
         "returns": null
       }
@@ -1829,6 +1983,7 @@
           "show_edges",
           "show_legend",
           "show_stats",
+          "show_title",
           "color_mode",
           "map_base",
           "map_folder"
@@ -1865,6 +2020,87 @@
       }
     ],
     "classes": []
+  },
+  {
+    "file": "./match_analysis/tests/test_path_handling.py",
+    "functions": [],
+    "classes": [
+      {
+        "name": "TestMatchIndexerPathStorage",
+        "methods": [
+          {
+            "name": "setUp",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "tearDown",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "_create_dummy_parquet",
+            "args": [
+              "self",
+              "directory",
+              "filename"
+            ],
+            "returns": "Path"
+          },
+          {
+            "name": "test_stores_posix_path",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      },
+      {
+        "name": "TestMatchServicePathNormalization",
+        "methods": [
+          {
+            "name": "setUp",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "tearDown",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_normalizes_backslash_path",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_posix_path_unchanged",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          },
+          {
+            "name": "test_path_is_valid_pathlib",
+            "args": [
+              "self"
+            ],
+            "returns": null
+          }
+        ]
+      }
+    ]
   },
   {
     "file": "./scripts/initialize_analysis_db.py",
@@ -2852,7 +3088,8 @@
         "name": "analyze_xml",
         "args": [
           "map_folder",
-          "force_rerun"
+          "force_rerun",
+          "output_dir"
         ],
         "returns": null
       }

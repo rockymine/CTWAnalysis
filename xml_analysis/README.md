@@ -1,164 +1,125 @@
+# XML Analysis
 
+Parses Minecraft CTW map XML configuration files (`map.xml`) and extracts structured data about teams, spawns, wool objectives, regions, apply rules, and build restrictions.
 
-# XML Analysis Tool
+## Module Structure
 
-Analyzes Minecraft map XML configuration files and generates visualizations of map regions, spawns, wool objectives, and build restrictions.
-
-## Features
-
-- **Parse XML Configuration**: Extract teams, spawns, wools, regions, and max build height
-- **Region Support**: Handle all region types including:
-  - Basic: rectangle, cuboid, circle, cylinder, sphere, block, point
-  - Composite: union, negative, complement (with recursive nesting)
-- **Smart Categorization**: Automatically identify spawn, wool, and build-related regions using regex patterns
-- **Visualization**: Generate 2D plots showing:
-  - Team spawn areas (color-coded by team)
-  - Wool locations and monuments
-  - Wool room regions
-  - Build restriction zones
-- **Category Plots**: Optional separate plots for each region category
-
-## Installation
-
-No additional dependencies beyond the main project requirements (matplotlib, pandas, numpy).
-
-## Quick Start
-
-```bash
-py run_xml_analysis.py --xml map_folders/tumbleweed/map.xml
+```
+xml_analysis/
+├── __init__.py              # Public API: MapXMLParser, MapVisualizer, MapDataEncoder
+├── parser.py                # XML parsing and data extraction
+├── regions.py               # Region class hierarchy with Shapely integration
+├── build_regions.py         # Build region / void area extraction
+├── exporter.py              # JSON serialization (MapDataEncoder)
+├── visualizer.py            # Matplotlib region plots
+├── services/
+│   └── xml_service.py       # Pipeline step 3 orchestration
+└── tests/
+    ├── test_parser.py       # Parser and region tests
+    └── test_exporter.py     # JSON encoding tests
 ```
 
-This will:
-1. Parse the XML file
-2. Extract all map data (teams, spawns, wools, regions)
-3. Generate a comprehensive visualization
-4. Print a detailed summary
+## CLI Usage
 
-## Output Files
-
-Generated files are saved to `output/` by default:
-
-### JSON Data
-- `<mapname>_data.json` - Complete structured data in JSON format containing:
-  - Map metadata (name, version, objective, max build height)
-  - Teams with all attributes
-  - Spawns with regions
-  - Wools with locations and monuments
-  - All named regions with full geometry
-  - Region categories
-
-### Visualizations
-- `<mapname>_layout.png` - Main visualization showing all regions and objectives
-- `spawn_regions.png` - Spawn-specific regions (with `--category-plots`)
-- `wool_regions.png` - Wool-specific regions (with `--category-plots`)
-- `build_regions.png` - Build restriction regions (with `--category-plots`)
-
-## Command-Line Options
+The module is used via `ctw xml`:
 
 ```bash
-py run_xml_analysis.py [OPTIONS]
+# Simple mode — parse XML and write map_data.json to output dir
+ctw xml --map tumbleweed
+
+# With visualization plots
+ctw xml --map tumbleweed --visualize
+
+# Per-category region plots (spawn, wool, build, other)
+ctw xml --map tumbleweed --visualize --category-plots
+
+# Skip text summary or JSON output
+ctw xml --map tumbleweed --visualize --no-summary
+ctw xml --map tumbleweed --visualize --no-json
 ```
 
-### Required Arguments
+Output is written to `output/<map_name>/` by default. The map folder itself is read-only.
 
-- `--xml PATH` - Path to map XML file
+## Data Model
 
-### Optional Arguments
+The parser produces a `MapData` dataclass containing:
 
-- `--output DIR` - Output directory for plots and JSON (default: `output`)
-- `--category-plots` - Generate separate plots for each region category
-- `--no-summary` - Skip printing text summary
-- `--no-json` - Skip generating JSON output
-
-### Examples
-
-Basic analysis:
-```bash
-py run_xml_analysis.py --xml map_folders/tumbleweed/map.xml
-```
-
-With category plots:
-```bash
-py run_xml_analysis.py --xml map_folders/tumbleweed/map.xml --category-plots
-```
-
-Custom output directory:
-```bash
-py run_xml_analysis.py --xml map_folders/tumbleweed/map.xml --output xml_output
-```
-
-Only generate JSON without plots (for data extraction):
-```bash
-py run_xml_analysis.py --xml map_folders/tumbleweed/map.xml --no-summary
-# Then check output/tumbleweed_data.json
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Map display name |
+| `version` | `str` | Map version string |
+| `objective` | `str` | Game objective text |
+| `max_build_height` | `int` | Y-level build ceiling |
+| `teams` | `List[Team]` | Team definitions (id, color, max_players) |
+| `spawns` | `List[Spawn]` | Spawn points with team, kit, yaw, region |
+| `wools` | `List[Wool]` | Wool objectives with location and monument coords |
+| `regions` | `Dict[str, Region]` | Named regions by ID |
+| `apply_rules` | `List[ApplyRule]` | Block filter rules referencing regions |
 
 ## Region Types
 
-### Basic Regions
+### Primitives
 
-- **Rectangle**: 2D area defined by min/max X,Z coordinates
-- **Cuboid**: 3D volume defined by min/max X,Y,Z coordinates
-- **Circle**: 2D circular area with center and radius
-- **Cylinder**: 3D cylinder with base center, radius, and height
-- **Sphere**: 3D sphere with origin and radius
-- **Block**: Single block coordinate
-- **Point**: Single point coordinate
+| Class | Geometry | Key Attributes |
+|-------|----------|----------------|
+| `RectangleRegion` | 2D axis-aligned box | `min_x`, `min_z`, `max_x`, `max_z` |
+| `CuboidRegion` | 3D axis-aligned box | `min_x/y/z`, `max_x/y/z` |
+| `CircleRegion` | 2D circle | `center_x`, `center_z`, `radius` |
+| `CylinderRegion` | 3D cylinder | `base_x/y/z`, `radius`, `height` |
+| `SphereRegion` | 3D sphere | `origin_x/y/z`, `radius` |
+| `BlockRegion` | Single block (unit square) | `x`, `y`, `z` |
+| `PointRegion` | Single point | `x`, `y`, `z` |
 
-### Composite Regions
+### Composites
 
-- **Union**: Combination of multiple regions
-- **Negative**: Inverted region
-- **Complement**: Everything except the specified regions
+| Class | Semantics |
+|-------|-----------|
+| `UnionRegion` | Union of all children |
+| `IntersectRegion` | Intersection of all children |
+| `NegativeRegion` | Universe minus all children |
+| `ComplementRegion` | First child minus subsequent children |
 
-All composite regions support recursive nesting.
+### Special
+
+| Class | Purpose |
+|-------|---------|
+| `RegionReference` | Named reference resolved through registry |
+| `EverywhereRegion` | Represents the entire map |
+| `AboveRegion` | Everything above a Y level |
+
+All regions support `get_bounds_2d()` and `to_shapely_2d()` for geometric operations.
+
+### Coordinate Conventions
+
+- Rectangle/cuboid coords are corner coordinates (world-space boundaries) — **not** expanded
+- Block regions use block indices and are expanded by `+1` on max via `_expand_block_bounds()` to form unit squares
+- Special values: `oo` / `-oo` for infinity, `$var` placeholders treated as `0.0`
+
+## Build Regions
+
+`build_regions.py` extracts buildable void areas by analyzing `<apply>` rules:
+
+1. Finds `deny(void)` rules — regions where building over void is blocked
+2. Computes buildable area = map bounds minus denied regions
+3. Subtracts island polygons to get buildable void area
+4. Falls back to block 36 detection from `layout_y0.parquet` if no XML rules found
+
+Returns a dict with `source` (`'xml'` or `'block_36'`), `polygons`, `buildable_void`, and `buildable_void_area`.
 
 ## Region Categorization
 
-Regions are automatically categorized using regex patterns on their IDs:
+Regions are automatically categorized by ID pattern matching:
 
-- **Spawn**: IDs containing "spawn" (case-insensitive)
-- **Wool**: IDs containing "wool" (case-insensitive)
-- **Build**: IDs containing "build", "height", or "limit" (case-insensitive)
-- **Other**: All other regions
+| Category | Pattern |
+|----------|---------|
+| `spawn` | IDs containing "spawn" |
+| `wool` | IDs containing "wool" |
+| `build` | IDs containing "build", "height", or "limit" |
+| `other` | Everything else |
 
-## Coordinate Handling
+## JSON Output
 
-The parser correctly handles:
-- Standard numeric coordinates
-- Infinity values (`oo`, `-oo`)
-- Variable placeholders (treated as 0)
-
-## Testing
-
-Run unit tests:
-
-```bash
-py -m unittest discover xml_analysis/tests/ -v
-```
-
-Tests cover:
-- Region value parsing (numbers, infinity, variables)
-- Team parsing
-- Spawn parsing
-- Wool parsing
-- Region parsing (all types)
-- Region categorization
-- Real map parsing (Tumbleweed)
-
-## Visualization Legend
-
-The plots use color coding to distinguish different elements:
-
-- **Red areas**: Red team spawn/wool regions
-- **Blue areas**: Blue team spawn/wool regions
-- **Magenta stars**: Wool locations
-- **Cyan circles**: Wool monuments
-- **Gray areas**: Neutral/other regions
-
-## JSON Output Format
-
-The generated JSON includes complete structured data:
+`map_data.json` contains the full structured export:
 
 ```json
 {
@@ -167,106 +128,43 @@ The generated JSON includes complete structured data:
   "objective": "Capture the enemy's two wools!",
   "max_build_height": 29,
   "teams": [
-    {
-      "id": "red",
-      "name": "Red",
-      "color": "dark red",
-      "max_players": 35
-    }
+    { "id": "red", "name": "Red", "color": "dark red", "max_players": 35 }
   ],
   "spawns": [
-    {
-      "team": "blue",
-      "kit": "spawn-kit",
-      "yaw": 0.0,
-      "region": {
-        "type": "cuboid",
-        "min_x": -79.0,
-        "min_y": 9.0,
-        "min_z": -176.0,
-        "max_x": -80.0,
-        "max_y": 9.0,
-        "max_z": -177.0
-      }
-    }
+    { "team": "blue", "kit": "spawn-kit", "yaw": 0.0, "region": { "type": "cuboid", ... } }
   ],
-  "wools": [...],
-  "regions": {...},
-  "region_categories": {
-    "spawn": ["spawns"],
-    "wool": ["wool-rooms"]
-  }
+  "wools": [
+    { "team": "blue", "color": "lime", "location": [x, y, z], "monument": [x, y, z] }
+  ],
+  "regions": { "region-id": { "type": "rectangle", "bounds_2d": [...], ... } },
+  "region_categories": { "spawn": ["spawns"], "wool": ["wool-rooms"] }
 }
 ```
 
-This JSON can be used for:
-- Automated testing and validation
-- Integration with other tools
-- Data analysis and statistics
-- Creating expected results for test cases
-
-## API Usage
-
-You can also use the parser, visualizer, and exporter programmatically:
+## Python API
 
 ```python
 from xml_analysis import MapXMLParser, MapVisualizer, MapDataEncoder
 
-# Parse XML
+# Parse
 parser = MapXMLParser('map_folders/tumbleweed/map.xml')
 data = parser.parse()
-
-# Print info
-print(f"Map: {data.name}")
-print(f"Teams: {len(data.teams)}")
-print(f"Wools: {len(data.wools)}")
-print(f"Regions: {len(data.regions)}")
-
-# Categorize regions
 categories = parser.identify_region_categories(data)
 
-# Export to JSON
+# Export JSON
 MapDataEncoder.save_json(data, 'output/map_data.json', categories)
 
-# Or get JSON string
-json_str = MapDataEncoder.to_json(data, categories)
-
 # Visualize
-visualizer = MapVisualizer(data)
-visualizer.plot_all('output/map_layout.png')
-visualizer.plot_by_category('output/', categories)
+viz = MapVisualizer(data)
+viz.plot_all('output/layout.png')
+viz.plot_by_category('output/', categories)
+viz.print_summary()
 ```
 
-## Troubleshooting
+## Testing
 
-### "XML file does not exist"
-- Check the path to the XML file
-- Ensure you're running from the repository root
-
-### "Failed to parse XML"
-- Verify the XML file is valid
-- Check for malformed tags or attributes
-- Ensure the file follows Minecraft map XML schema
-
-### No regions plotted
-- Verify regions have valid coordinates
-- Check that region IDs are being parsed correctly
-- Use `--category-plots` to see regions by category
-
-## Implementation Structure
-
-```
-xml_analysis/
-├── __init__.py           # Package exports
-├── regions.py            # Region class definitions
-├── parser.py             # XML parsing logic
-├── visualizer.py         # Plotting and visualization
-├── tests/
-│   ├── __init__.py
-│   └── test_parser.py    # Unit tests
-└── README.md             # This file
+```bash
+python -m unittest discover xml_analysis/tests/ -v
 ```
 
-## License
-
-Part of the CTW Analysis Toolkit. For educational and analysis purposes.
+Tests cover region value parsing, team/spawn/wool/region extraction, composite region handling, block coordinate expansion, region categorization, JSON encoding structure, and full Tumbleweed map integration.
