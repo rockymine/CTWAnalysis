@@ -223,7 +223,7 @@ def handle_reset(args):
 
 def handle_trace(args):
     import json
-    from ctw.common import resolve_map_folder
+    from ctw.common import resolve_map_folder, resolve_output_dir
     from match_analysis.services import get_match_file, get_match_player_ids
     from match_analysis.visualization import plot_player_traces
 
@@ -242,10 +242,21 @@ def handle_trace(args):
         return
 
     map_folder = resolve_map_folder(args.map)
-    context_path = map_folder / 'island_analysis' / 'map_context.json'
+    map_output_dir = resolve_output_dir(map_folder, create=False)
 
-    if not context_path.exists():
-        print(f"Error: map_context.json not found at {context_path}")
+    def _find_file(rel_path):
+        """Check map_output_dir first, fall back to map_folder."""
+        p = map_output_dir / rel_path
+        if p.exists():
+            return p
+        p = map_folder / rel_path
+        if p.exists():
+            return p
+        return None
+
+    context_path = _find_file('island_analysis/map_context.json')
+    if context_path is None:
+        print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
         print("Run 'ctw islands --map ...' first to generate map context.")
         return
 
@@ -256,9 +267,9 @@ def handle_trace(args):
     needs_graph = args.snap_skeleton or args.color_mode in ('team', 'location')
     map_graph = None
     if needs_graph:
-        graph_path = map_folder / 'map_graph.json'
-        if not graph_path.exists():
-            print(f"Error: map_graph.json not found at {graph_path}")
+        graph_path = _find_file('map_graph.json')
+        if graph_path is None:
+            print(f"Error: map_graph.json not found in {map_output_dir} or {map_folder}")
             print("Run 'ctw islands --map ...' first to generate map graph.")
             return
         with open(graph_path) as f:
@@ -277,9 +288,12 @@ def handle_trace(args):
     if args.output:
         output_path = Path(args.output)
     else:
-        output_dir = map_folder / 'match_analysis'
+        trace_dir = map_output_dir / 'match_analysis'
         player_label = 'all' if args.player == 'ALL' else f'player{args.player}'
-        output_path = output_dir / f"trace_{player_label}_match{args.match}.png"
+        output_path = trace_dir / f"trace_{player_label}_match{args.match}.png"
+
+    # For map_base='blocks', pass the dir containing layout_bedrock.parquet
+    layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
 
     plot_player_traces(
         map_context, str(match_file), player_ids, output_path,
@@ -293,7 +307,7 @@ def handle_trace(args):
         show_stats=not args.no_stats,
         color_mode=args.color_mode,
         map_base=args.map_base,
-        map_folder=map_folder,
+        map_folder=layout_dir,
     )
 
 

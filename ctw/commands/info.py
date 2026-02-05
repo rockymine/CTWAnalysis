@@ -2,7 +2,7 @@
 
 import json
 
-from ctw.common import resolve_map_folder
+from ctw.common import resolve_map_folder, resolve_output_dir
 
 
 def register(subparsers, map_parent):
@@ -17,6 +17,17 @@ def register(subparsers, map_parent):
 
 def handler(args):
     map_folder = resolve_map_folder(args.map)
+    map_output_dir = resolve_output_dir(map_folder, create=False)
+
+    def _find_file(rel_path):
+        """Check map_output_dir first, fall back to map_folder."""
+        p = map_output_dir / rel_path
+        if p.exists():
+            return p
+        p = map_folder / rel_path
+        if p.exists():
+            return p
+        return None
 
     # Check output files
     files = {
@@ -31,9 +42,9 @@ def handler(args):
         'island_analysis/map_connectivity.png': 'Connectivity Plot',
     }
 
-    ctx_path = map_folder / 'island_analysis' / 'map_context.json'
+    ctx_path = _find_file('island_analysis/map_context.json')
     ctx = None
-    if ctx_path.exists():
+    if ctx_path:
         with open(ctx_path) as f:
             ctx = json.load(f)
 
@@ -46,20 +57,24 @@ def handler(args):
 
     print(f"Map: {map_folder.name}")
     print(f"Path: {map_folder}")
+    print(f"Output: {map_output_dir}")
     print()
 
     # File status
     print("Output files:")
     for rel_path, label in files.items():
-        full = map_folder / rel_path
-        status = "OK" if full.exists() else "--"
+        found = _find_file(rel_path)
+        status = "OK" if found else "--"
         print(f"  [{status:2s}] {label}")
 
     # Matches
-    matches_dir = map_folder / 'matches'
+    matches_dir = map_output_dir / 'match_analysis'
+    if not matches_dir.exists():
+        matches_dir = map_folder / 'matches'
     if matches_dir.exists():
-        match_dirs = [d for d in matches_dir.iterdir() if d.is_dir()]
-        print(f"\n  [{len(match_dirs):2d}] Match analyses")
+        match_files = list(matches_dir.glob('trace_*.png'))
+        if match_files:
+            print(f"\n  [{len(match_files):2d}] Match trace images")
     print()
 
     # Summary from map_context

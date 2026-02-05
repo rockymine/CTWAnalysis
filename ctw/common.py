@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / 'output'
 
 
 def resolve_map_folder(map_arg: str) -> Path:
@@ -36,6 +37,28 @@ def collect_map_folders(args) -> list:
         return [resolve_map_folder(args.map)]
     print("Error: Must specify either --map or --all", file=sys.stderr)
     sys.exit(1)
+
+
+def resolve_output_dir(
+    map_folder: Path,
+    output_root: str = None,
+    create: bool = False,
+) -> Path:
+    """Resolve the per-map output directory.
+
+    Args:
+        map_folder: Map input folder (used for slug = folder name).
+        output_root: Override output root (default: project_root/output).
+        create: If True, create the directory. False for read-only commands.
+
+    Returns:
+        Path: output_root / map_folder.name
+    """
+    root = Path(output_root) if output_root else DEFAULT_OUTPUT_ROOT
+    out = root / map_folder.name
+    if create:
+        out.mkdir(parents=True, exist_ok=True)
+    return out
 
 
 def ensure_match_db():

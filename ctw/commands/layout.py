@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from ctw.common import resolve_map_folder
+from ctw.common import resolve_map_folder, resolve_output_dir
 
 
 def register(subparsers, map_parent):
@@ -104,6 +104,8 @@ def handler(args):
 
         print(f"  Output saved to: {output_dir}")
     else:
-        # Simple workflow mode: parquets into map folder
+        # Simple workflow mode: parquets into output dir
         from layout_analysis.services import analyze_layout
-        analyze_layout(map_folder, force_rerun=args.force)
+        map_output_dir = resolve_output_dir(map_folder, create=True)
+        analyze_layout(map_folder, force_rerun=args.force,
+                       output_dir=map_output_dir)

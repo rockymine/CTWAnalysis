@@ -2,7 +2,7 @@
 
 import sys
 
-from ctw.common import resolve_map_folder
+from ctw.common import resolve_map_folder, resolve_output_dir
 
 
 def register(subparsers, map_parent):
@@ -30,7 +30,7 @@ def handler(args):
     if args.visualize or args.category_plots:
         from xml_analysis import MapXMLParser, MapVisualizer, MapDataEncoder
 
-        output_dir = map_folder
+        output_dir = resolve_output_dir(map_folder, create=True)
         parser = MapXMLParser(str(xml_path))
         map_data = parser.parse()
         categories = parser.identify_region_categories(map_data)
@@ -55,4 +55,6 @@ def handler(args):
         print(f"  Visualizations saved to: {output_dir}")
     else:
         from xml_analysis.services import analyze_xml
-        analyze_xml(map_folder, force_rerun=args.force)
+        map_output_dir = resolve_output_dir(map_folder, create=True)
+        analyze_xml(map_folder, force_rerun=args.force,
+                    output_dir=map_output_dir)

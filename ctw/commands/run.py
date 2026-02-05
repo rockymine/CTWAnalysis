@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from ctw.common import collect_map_folders
+from ctw.common import collect_map_folders, resolve_output_dir
 
 
 def register(subparsers):
@@ -14,6 +14,7 @@ def register(subparsers):
     p.add_argument('--map', help='Map name to analyze')
     p.add_argument('--all', action='store_true', help='Analyze all maps')
     p.add_argument('--force', action='store_true', help='Force regeneration')
+    p.add_argument('--output', help='Output root directory (default: output/)')
     p.add_argument('--no-layout', action='store_true', help='Skip layout analysis')
     p.add_argument('--no-islands', action='store_true', help='Skip island analysis')
     p.add_argument('--no-xml', action='store_true', help='Skip XML analysis')
@@ -45,12 +46,16 @@ def handler(args):
     print()
 
     for map_folder in map_folders:
+        map_output_dir = resolve_output_dir(map_folder, args.output, create=True)
+
         print(f"\n{'=' * 70}")
         print(f"Processing: {map_folder.name}")
+        print(f"Output: {map_output_dir}")
         print(f"{'=' * 70}")
 
         if not args.no_layout:
-            analyze_layout(map_folder, force_rerun=args.force)
+            analyze_layout(map_folder, force_rerun=args.force,
+                           output_dir=map_output_dir)
         else:
             print("\n[1/4] Layout Analysis: SKIPPED")
 
@@ -59,13 +64,15 @@ def handler(args):
                 map_folder, force_rerun=args.force,
                 layout_type=args.island_layout,
                 canonical_triangulation=args.canonical_triangulation,
+                map_output_dir=map_output_dir,
                 plots=args.plots,
             )
         else:
             print("\n[2/4] Island Analysis: SKIPPED")
 
         if not args.no_xml:
-            analyze_xml(map_folder, force_rerun=args.force)
+            analyze_xml(map_folder, force_rerun=args.force,
+                        output_dir=map_output_dir)
         else:
             print("\n[3/4] XML Analysis: SKIPPED")
 

@@ -316,6 +316,7 @@ def _build_context(
     map_center_pt,
     poi_assignments,
     island_output_dir: Path,
+    map_output_dir: Path,
 ):
     """Build and save MapContext (with build-region) and initial map_graph.json.
 
@@ -349,7 +350,7 @@ def _build_context(
                     except Exception:
                         pass
 
-            y0_path = str(map_folder / 'layout_y0.parquet')
+            y0_path = str(map_output_dir / 'layout_y0.parquet')
             build_result = extract_build_region(
                 map_data=map_data_obj,
                 map_bounds=map_ctx.bounding_box,
@@ -368,7 +369,7 @@ def _build_context(
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
 
     island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    save_initial_map_graph(island_skeletons, map_ctx.map_name, map_folder)
+    save_initial_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
 
     return map_ctx
 
@@ -377,12 +378,16 @@ def _build_context(
 # Stage 7: Pathfinding
 # ---------------------------------------------------------------------------
 
-def _run_pathfinding(map_folder: Path, island_output_dir: Path, plots: bool = True):
+def _run_pathfinding(
+    map_output_dir: Path,
+    island_output_dir: Path,
+    plots: bool = True,
+):
     """Run pathfinding analysis and generate path grid visualizations."""
     from layout_analysis.skeleton.pathfinding import run_pathfinding_analysis, load_edge_pixels
 
     print(f"  Running pathfinding analysis...")
-    pathfinding_results = run_pathfinding_analysis(str(map_folder))
+    pathfinding_results = run_pathfinding_analysis(str(map_output_dir))
     if not pathfinding_results or pathfinding_results['islands_analyzed'] == 0:
         return
 
@@ -397,7 +402,7 @@ def _run_pathfinding(map_folder: Path, island_output_dir: Path, plots: bool = Tr
         pathfinding_dir = island_output_dir / 'pathfinding'
         pathfinding_dir.mkdir(exist_ok=True)
 
-        with open(str(map_folder / 'map_graph.json'), 'r') as f:
+        with open(str(map_output_dir / 'map_graph.json'), 'r') as f:
             graph_data = json.load(f)
         islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
 
@@ -417,7 +422,7 @@ def _run_pathfinding(map_folder: Path, island_output_dir: Path, plots: bool = Tr
 # Stage 8: Inter-island connectivity
 # ---------------------------------------------------------------------------
 
-def _build_connectivity(map_folder: Path, island_output_dir: Path):
+def _build_connectivity(map_output_dir: Path, island_output_dir: Path):
     """Build inter-island connectivity graph and generate visualization."""
     from layout_analysis.connectivity import (
         build_map_graph,
@@ -426,14 +431,14 @@ def _build_connectivity(map_folder: Path, island_output_dir: Path):
     )
 
     print(f"  Building map connectivity graph...")
-    graph_path = map_folder / 'map_graph.json'
+    graph_path = map_output_dir / 'map_graph.json'
     if not graph_path.exists():
         return
 
     with open(str(graph_path), 'r') as f:
         graph_data = json.load(f)
     map_graph_result = build_map_graph(graph_data)
-    save_map_graph(map_graph_result, map_folder)
+    save_map_graph(map_graph_result, map_output_dir)
 
     n_nodes = len(map_graph_result['nodes'])
     n_intra = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'intra')
@@ -476,6 +481,7 @@ def analyze_islands_step(
     buffer_distance: float = 0.0,
     layout_type: str = 'bedrock',
     canonical_triangulation: bool = False,
+    map_output_dir: Optional[Path] = None,
     output_dir: Optional[str] = None,
     plots: bool = False,
 ):
@@ -483,15 +489,17 @@ def analyze_islands_step(
     Step 2: Detect and triangulate islands from layout data.
 
     Args:
-        map_folder: Path to map folder (e.g., map_folders/tumbleweed)
-        force_rerun: If True, regenerate even if output exists
-        simplify_tolerance: Simplification tolerance for union triangulation
-        buffer_distance: Buffer distance for smoothing
-        layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density')
+        map_folder: Path to map folder (read-only input).
+        force_rerun: If True, regenerate even if output exists.
+        simplify_tolerance: Simplification tolerance for union triangulation.
+        buffer_distance: Buffer distance for smoothing.
+        layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density').
         canonical_triangulation: If True, use canonical-consistent triangulation
-            so that symmetrically identical islands share the same mesh
-        output_dir: Override output directory (default: map_folder/island_analysis)
-        plots: If True, generate debug plots (per-island debug, POI, pathfinding)
+            so that symmetrically identical islands share the same mesh.
+        map_output_dir: Per-map output root (where layout parquets and
+            map_graph.json live). Defaults to map_folder for backward compat.
+        output_dir: Override island_analysis subdir specifically.
+        plots: If True, generate debug plots (per-island debug, POI, pathfinding).
 
     Returns:
         Path: Path to island analysis output directory
@@ -499,22 +507,26 @@ def analyze_islands_step(
     print(f"\n[2/4] Island Analysis: {map_folder.name}")
     print("=" * 70)
 
+    # Resolve directories
+    _map_output_dir = Path(map_output_dir) if map_output_dir else map_folder
+    layout_dir = _map_output_dir
+    island_output_dir = Path(output_dir) if output_dir else _map_output_dir / 'island_analysis'
+
     # Resolve layout file
     layout_filename = LAYOUT_FILES.get(layout_type, 'layout_bedrock.parquet')
-    layout_file = map_folder / layout_filename
+    layout_file = layout_dir / layout_filename
     if not layout_file.exists():
         print(f"  [X] Layout file not found: {layout_filename}. Run layout analysis first.")
         return None
 
     # Check for cached results
-    island_output_dir = Path(output_dir) if output_dir else map_folder / 'island_analysis'
     report_file = island_output_dir / 'island_report.txt'
     if report_file.exists() and not force_rerun:
         print(f"  Island analysis already exists. Skipping.")
         print(f"    [OK] {island_output_dir.name}/")
         return island_output_dir
 
-    island_output_dir.mkdir(exist_ok=True)
+    island_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage 1: Load and detect
     print(f"  Loading layout data: {layout_file.name}")
@@ -544,7 +556,7 @@ def analyze_islands_step(
         island_output_dir, map_folder.name, plots=plots,
     )
 
-    # Stage 5: POI annotation
+    # Stage 5: POI annotation (reads map.xml from map_folder)
     skeleton_output_dir = island_output_dir / 'skeleton'
     map_data_obj, poi_assignments, map_center_pt = _annotate_pois(
         map_folder, islands, df, skeleton_results, skeleton_output_dir,
@@ -555,13 +567,14 @@ def analyze_islands_step(
     _build_context(
         map_folder, islands, df, skeleton_results, canonical_groups,
         map_data_obj, map_center_pt, poi_assignments, island_output_dir,
+        map_output_dir=_map_output_dir,
     )
 
     # Stage 7: Pathfinding
-    _run_pathfinding(map_folder, island_output_dir, plots=plots)
+    _run_pathfinding(_map_output_dir, island_output_dir, plots=plots)
 
     # Stage 8: Connectivity
-    _build_connectivity(map_folder, island_output_dir)
+    _build_connectivity(_map_output_dir, island_output_dir)
 
     # Cleanup
     _cleanup_legacy(island_output_dir)

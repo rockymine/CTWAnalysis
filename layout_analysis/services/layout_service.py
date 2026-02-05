@@ -11,26 +11,34 @@ from layout_analysis import (
 )
 
 
-def analyze_layout(map_folder: Path, force_rerun: bool = False):
+def analyze_layout(
+    map_folder: Path,
+    force_rerun: bool = False,
+    output_dir: Path = None,
+):
     """
     Step 1: Extract layout data from world folder.
 
     Args:
-        map_folder: Path to map folder (e.g., map_folders/tumbleweed)
-        force_rerun: If True, regenerate even if parquet files exist
+        map_folder: Path to map folder (read-only input).
+        force_rerun: If True, regenerate even if parquet files exist.
+        output_dir: Where to write parquet files (default: map_folder).
 
     Returns:
         dict: Paths to generated parquet files
     """
+    out = Path(output_dir) if output_dir else map_folder
+    out.mkdir(parents=True, exist_ok=True)
+
     print(f"\n[1/4] Layout Analysis: {map_folder.name}")
     print("=" * 70)
 
     # Define output paths
     parquet_files = {
-        'y0_layer': map_folder / 'layout_y0.parquet',
-        'top_surface': map_folder / 'layout_top_surface.parquet',
-        'vertical_density': map_folder / 'layout_vertical_density.parquet',
-        'bedrock': map_folder / 'layout_bedrock.parquet',
+        'y0_layer': out / 'layout_y0.parquet',
+        'top_surface': out / 'layout_top_surface.parquet',
+        'vertical_density': out / 'layout_vertical_density.parquet',
+        'bedrock': out / 'layout_bedrock.parquet',
     }
 
     # Check if files already exist

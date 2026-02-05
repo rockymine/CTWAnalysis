@@ -25,7 +25,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ctw.common import resolve_map_folder, ensure_match_db
+from ctw.common import resolve_map_folder, resolve_output_dir, ensure_match_db
 from visualization.map_primitives import (
     draw_block_base,
     draw_build_region,
@@ -298,25 +298,36 @@ def main():
     # Resolve paths
     map_folder = resolve_map_folder(args.map)
     map_name = map_folder.name
+    map_output_dir = resolve_output_dir(map_folder, create=False)
     output_dir = Path(args.output) if args.output else (
         _SCRIPT_DIR / 'assets' / map_name
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    def _find(rel_path):
+        """Check map_output_dir first, fall back to map_folder."""
+        p = map_output_dir / rel_path
+        if p.exists():
+            return p
+        p = map_folder / rel_path
+        if p.exists():
+            return p
+        return None
+
     print(f"Generating demo images for {map_name}")
     print(f"Output: {output_dir}")
 
     # Load shared data
-    context_path = map_folder / 'island_analysis' / 'map_context.json'
-    if not context_path.exists():
-        print(f"Error: {context_path} not found. Run 'ctw islands --map {map_name}' first.")
+    context_path = _find('island_analysis/map_context.json')
+    if context_path is None:
+        print(f"Error: map_context.json not found. Run 'ctw islands --map {map_name}' first.")
         sys.exit(1)
     with open(context_path) as f:
         map_context = json.load(f)
 
-    graph_path = map_folder / 'map_graph.json'
-    if not graph_path.exists():
-        print(f"Error: {graph_path} not found. Run 'ctw islands --map {map_name}' first.")
+    graph_path = _find('map_graph.json')
+    if graph_path is None:
+        print(f"Error: map_graph.json not found. Run 'ctw islands --map {map_name}' first.")
         sys.exit(1)
     with open(graph_path) as f:
         map_graph = json.load(f)
@@ -338,12 +349,15 @@ def main():
     except ValueError:
         print(f"Warning: match {args.match} not in DB, skipping trace images")
 
+    # Resolve layout dir (where layout_bedrock.parquet lives)
+    layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
+
     # Generate images
     outputs = []
 
     print("\n[1/7] Block layout...")
     path = output_dir / STABLE_NAMES[0]
-    gen_blocks(map_folder, map_context, path)
+    gen_blocks(layout_dir, map_context, path)
     outputs.append(path)
 
     print("[2/7] XML regions...")
@@ -370,13 +384,13 @@ def main():
         print(f"[6/7] Single player trace (player {args.player}, match {args.match})...")
         path = output_dir / STABLE_NAMES[5]
         gen_trace_single(map_context, match_file, args.player, map_graph,
-                         map_folder, path)
+                         layout_dir, path)
         outputs.append(path)
 
         print(f"[7/7] Team trace ({len(all_player_ids)} players, match {args.match})...")
         path = output_dir / STABLE_NAMES[6]
         gen_trace_team(map_context, match_file, all_player_ids, map_graph,
-                       map_folder, path)
+                       layout_dir, path)
         outputs.append(path)
     else:
         print("[6/7] Skipped (no match data)")

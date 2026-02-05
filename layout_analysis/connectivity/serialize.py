@@ -28,7 +28,7 @@ def _json_default(obj):
 def save_initial_map_graph(
     island_skeletons: List[dict],
     map_name: str,
-    map_folder: Path,
+    output_dir: Path,
     params: dict = None,
 ) -> None:
     """
@@ -40,10 +40,10 @@ def save_initial_map_graph(
     Args:
         island_skeletons: Per-island dicts from build_skeleton_dicts().
         map_name: Name of the map.
-        map_folder: Path to the map folder.
+        output_dir: Directory to write map_graph.json into.
         params: Optional connectivity parameter overrides.
     """
-    map_folder = Path(map_folder)
+    output_dir = Path(output_dir)
     p = dict(DEFAULT_CONNECTIVITY_PARAMS)
     if params:
         p.update(params)
@@ -56,14 +56,14 @@ def save_initial_map_graph(
         'connectivity_summary': {},
     }
 
-    output_path = map_folder / 'map_graph.json'
-    os.makedirs(map_folder, exist_ok=True)
+    output_path = output_dir / 'map_graph.json'
+    os.makedirs(output_dir, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, default=_json_default)
     print(f"  Initial map graph saved to: {output_path}")
 
 
-def save_map_graph(map_graph_result: dict, map_folder: Path) -> None:
+def save_map_graph(map_graph_result: dict, output_dir: Path) -> None:
     """
     Merge connectivity graph results into existing map_graph.json.
 
@@ -75,10 +75,10 @@ def save_map_graph(map_graph_result: dict, map_folder: Path) -> None:
     Args:
         map_graph_result: Dict from build_map_graph() with params, nodes,
             edges, connectivity_summary.
-        map_folder: Path to the map folder.
+        output_dir: Directory containing map_graph.json.
     """
-    map_folder = Path(map_folder)
-    output_path = map_folder / 'map_graph.json'
+    output_dir = Path(output_dir)
+    output_path = output_dir / 'map_graph.json'
 
     # Load existing (has islands with skeleton + pathfinding)
     existing = {}
@@ -98,7 +98,7 @@ def save_map_graph(map_graph_result: dict, map_folder: Path) -> None:
     print(f"  Map graph saved to: {output_path}")
 
     # Update map_context.json metadata
-    context_path = map_folder / 'island_analysis' / 'map_context.json'
+    context_path = output_dir / 'island_analysis' / 'map_context.json'
     if context_path.exists():
         with open(context_path, 'r', encoding='utf-8') as f:
             context = json.load(f)
@@ -108,12 +108,12 @@ def save_map_graph(map_graph_result: dict, map_folder: Path) -> None:
             json.dump(context, f, indent=2)
 
 
-def load_map_graph(map_folder: Path) -> dict:
+def load_map_graph(output_dir: Path) -> dict:
     """
     Load map graph from map_graph.json.
 
     Args:
-        map_folder: Path to the map folder.
+        output_dir: Directory containing map_graph.json.
 
     Returns:
         Map graph dict.
@@ -121,6 +121,6 @@ def load_map_graph(map_folder: Path) -> dict:
     Raises:
         FileNotFoundError: If map_graph.json does not exist.
     """
-    path = Path(map_folder) / 'map_graph.json'
+    path = Path(output_dir) / 'map_graph.json'
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)

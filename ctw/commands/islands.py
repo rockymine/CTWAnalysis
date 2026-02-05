@@ -1,6 +1,6 @@
 """'islands' subcommand — detect islands and compute skeleton graphs."""
 
-from ctw.common import resolve_map_folder
+from ctw.common import resolve_map_folder, resolve_output_dir
 
 
 def register(subparsers, map_parent):
@@ -45,8 +45,11 @@ def handler(args):
         from layout_analysis.services.islands_service import LAYOUT_FILES
 
         layout_filename = LAYOUT_FILES.get(args.layout, 'layout_bedrock.parquet')
-        layout_path = map_folder / layout_filename
-        output_dir = str(map_folder / 'island_analysis')
+        map_output_dir = resolve_output_dir(map_folder, create=True)
+        layout_path = map_output_dir / layout_filename
+        if not layout_path.exists():
+            layout_path = map_folder / layout_filename
+        output_dir = str(map_output_dir / 'island_analysis')
         os.makedirs(output_dir, exist_ok=True)
 
         print("=" * 70)
@@ -101,6 +104,7 @@ def handler(args):
         print("=" * 70)
     else:
         from layout_analysis.services import analyze_islands_step
+        map_output_dir = resolve_output_dir(map_folder, create=True)
         analyze_islands_step(
             map_folder,
             force_rerun=args.force,
@@ -108,6 +112,7 @@ def handler(args):
             buffer_distance=args.buffer,
             layout_type=args.layout,
             canonical_triangulation=args.canonical_triangulation,
+            map_output_dir=map_output_dir,
             output_dir=args.output,
             plots=args.plots,
         )

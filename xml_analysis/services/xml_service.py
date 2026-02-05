@@ -5,23 +5,26 @@ from pathlib import Path
 from xml_analysis import MapXMLParser, MapDataEncoder
 
 
-def analyze_xml(map_folder: Path, force_rerun: bool = False):
+def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = None):
     """
     Step 3: Parse XML configuration and extract map data.
 
     Args:
-        map_folder: Path to map folder (e.g., map_folders/tumbleweed)
-        force_rerun: If True, regenerate even if JSON file exists
+        map_folder: Path to map folder (read-only input).
+        force_rerun: If True, regenerate even if JSON file exists.
+        output_dir: Where to write map_data.json (default: map_folder).
 
     Returns:
         Path: Path to generated JSON file
     """
+    out = Path(output_dir) if output_dir else map_folder
+
     print(f"\n[3/4] XML Analysis: {map_folder.name}")
     print("=" * 70)
 
     # Define paths
     xml_file = map_folder / 'map.xml'
-    json_file = map_folder / 'map_data.json'
+    json_file = out / 'map_data.json'
 
     # Check if JSON already exists
     if json_file.exists() and not force_rerun:
