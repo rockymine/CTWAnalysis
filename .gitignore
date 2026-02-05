@@ -33,7 +33,7 @@ layout_data/
 xml_data/
 
 # Match logs
-match_logs/*.parquet
+match_logs/
 
 # Parquet files (layout exports, density maps, etc.)
 *.parquet

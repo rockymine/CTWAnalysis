@@ -15,7 +15,7 @@ def initialize_database():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             match_id INTEGER PRIMARY KEY,
-            match_file TEXT NOT NULL,
+            match_file TEXT NOT NULL UNIQUE,
             map_name TEXT NOT NULL,
             match_start TIMESTAMP,
             match_duration FLOAT,

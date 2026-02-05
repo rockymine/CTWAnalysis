@@ -25,6 +25,7 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Actions:
+  parse        Parse a structured match log file into a history CSV
   index        Index all match parquet files into the database
   process      Process a specific match by ID
   process-all  Process all unprocessed matches
@@ -34,7 +35,8 @@ Actions:
   trace        Visualize player traces on map
 
 Examples:
-  python ctw.py matches index
+  python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
+  python ctw.py matches index --match-dir match_logs/ --history match_logs/match_history.csv
   python ctw.py matches list
   python ctw.py matches process 57
   python ctw.py matches process-all --force
@@ -49,9 +51,17 @@ Examples:
         dest='matches_action', metavar='<action>',
     )
 
+    # matches parse
+    p = matches_sub.add_parser('parse', help='Parse a structured match log file into a history CSV')
+    p.add_argument('--input', required=True, help='Path to the structured text log file')
+    p.add_argument('--match-dir', help='Directory for default output (writes match_history.csv there)')
+    p.add_argument('--output', help='Output CSV path (overrides --match-dir default)')
+    p.set_defaults(func=handle_parse)
+
     # matches index
     p = matches_sub.add_parser('index', help='Index all match files')
     p.add_argument('--match-dir', help='Directory containing match parquet files (default: match_logs)')
+    p.add_argument('--history', help='Path to history CSV (parquet_file,map_name) to set map names')
     p.set_defaults(func=handle_index)
 
     # matches process
@@ -118,15 +128,41 @@ Examples:
     p.set_defaults(func=handle_trace)
 
 
+def handle_parse(args):
+    from match_analysis.match_log_parser import parse_match_log, write_csv
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: input file not found: {input_path}")
+        return
+
+    rows = parse_match_log(input_path)
+
+    if not rows:
+        print("No parquet/map pairs found.")
+        return
+
+    if args.output:
+        output_path = Path(args.output)
+    elif args.match_dir:
+        output_path = Path(args.match_dir) / 'match_history.csv'
+    else:
+        output_path = Path('match_history.csv')
+
+    write_csv(rows, output_path)
+    print(f"Wrote {len(rows)} rows to {output_path}")
+
+
 def handle_index(args):
     ensure_match_db()
     from match_analysis.match_indexer import index_match_files
 
     match_dir = args.match_dir or 'match_logs'
-    indexed, skipped = index_match_files(match_dir)
+    history_csv = getattr(args, 'history', None)
+    indexed, skipped = index_match_files(match_dir, history_csv=history_csv)
 
     import duckdb
-    conn = duckdb.connect('match_analysis/metadata.db')
+    conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
     result = conn.execute(
         "SELECT COUNT(*) as total, COUNT(DISTINCT map_name) as maps FROM matches"
     ).fetchone()
