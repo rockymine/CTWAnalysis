@@ -163,6 +163,84 @@ class PositionClassifier:
         nearest_idx = np.argmin(dists)
         return (float(pixels[nearest_idx, 0]), float(pixels[nearest_idx, 1]))
 
+    def classify_bulk(
+        self, xs: np.ndarray, zs: np.ndarray,
+    ) -> dict[str, np.ndarray]:
+        """Classify many positions at once (vectorized).
+
+        Args:
+            xs: 1-D array of x coordinates.
+            zs: 1-D array of z coordinates.
+
+        Returns:
+            Dict of arrays, each length N:
+                location_type (object), island_id (object),
+                nearest_node_1/2 (object), nearest_island_1/2 (object).
+            None values are used for missing data.
+        """
+        from shapely.prepared import prep
+
+        n = len(xs)
+        location_type = np.full(n, 'void', dtype=object)
+        island_id = np.full(n, None, dtype=object)
+
+        # Polygon containment — prepared geometries for speed
+        remaining = np.ones(n, dtype=bool)
+        for iid, polygon in self._island_polygons:
+            if not remaining.any():
+                break
+            prepped = prep(polygon)
+            for i in np.where(remaining)[0]:
+                if prepped.contains(Point(xs[i], zs[i])):
+                    location_type[i] = 'island'
+                    island_id[i] = iid
+                    remaining[i] = False
+
+        # Build region check on remaining void positions
+        for polygon in self._build_polygons:
+            if not remaining.any():
+                break
+            prepped = prep(polygon)
+            for i in np.where(remaining)[0]:
+                if prepped.contains(Point(xs[i], zs[i])):
+                    location_type[i] = 'build_region'
+                    remaining[i] = False
+
+        # Nearest nodes — fully vectorized
+        nearest_node_1 = np.full(n, None, dtype=object)
+        nearest_node_2 = np.full(n, None, dtype=object)
+        nearest_island_1 = np.full(n, None, dtype=object)
+        nearest_island_2 = np.full(n, None, dtype=object)
+
+        if len(self._node_list) >= 2:
+            # shape (n_nodes, n_points)
+            dx = self._node_coords[:, 0, np.newaxis] - xs[np.newaxis, :]
+            dz = self._node_coords[:, 1, np.newaxis] - zs[np.newaxis, :]
+            dists = np.hypot(dx, dz)
+            # top-2 per column
+            idx = np.argpartition(dists, 2, axis=0)[:2]
+            for j in range(n):
+                i0, i1 = idx[0, j], idx[1, j]
+                # ensure i0 is actually closer
+                if dists[i0, j] > dists[i1, j]:
+                    i0, i1 = i1, i0
+                nearest_node_1[j] = self._node_list[i0]['map_node_id']
+                nearest_island_1[j] = self._node_list[i0]['island_id']
+                nearest_node_2[j] = self._node_list[i1]['map_node_id']
+                nearest_island_2[j] = self._node_list[i1]['island_id']
+        elif len(self._node_list) == 1:
+            nearest_node_1[:] = self._node_list[0]['map_node_id']
+            nearest_island_1[:] = self._node_list[0]['island_id']
+
+        return {
+            'location_type': location_type,
+            'island_id': island_id,
+            'nearest_node_1': nearest_node_1,
+            'nearest_node_2': nearest_node_2,
+            'nearest_island_1': nearest_island_1,
+            'nearest_island_2': nearest_island_2,
+        }
+
     def classify_dataframe(
         self, df: pd.DataFrame, snap_skeleton: bool = False,
     ) -> pd.DataFrame:
