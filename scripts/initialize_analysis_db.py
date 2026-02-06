@@ -106,6 +106,24 @@ def initialize_database():
         )
     """)
 
+    # Table 6: Player team segments (team membership over time)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_team_segments (
+            team_segment_id INTEGER PRIMARY KEY DEFAULT nextval('seq_team_segment_id'),
+            match_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            team TEXT NOT NULL,
+            start_timestamp BIGINT NOT NULL,
+            end_timestamp BIGINT,
+            spawn_x FLOAT,
+            spawn_z FLOAT,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
     conn.close()
     print(f"Database initialized at {db_path}")
 

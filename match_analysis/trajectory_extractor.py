@@ -267,6 +267,68 @@ def process_match(match_id: int):
         """)
         print(f"Inserted {len(position_df)} position events into database")
 
+        # Extract and insert team segments
+        from match_analysis.team_extractor import (
+            load_team_spawn_centers, extract_team_segments,
+        )
+
+        map_data_path = f'output/{map_name}/map_data.json'
+        spawn_centers = load_team_spawn_centers(map_data_path)
+
+        if not spawn_centers:
+            print(f"Warning: No team spawn centers found in {map_data_path}")
+            print("  Team segments will be marked 'unknown'")
+
+        team_df = extract_team_segments(match_file, spawn_centers)
+
+        # Auto-create table for existing databases (migration)
+        conn.execute(
+            "CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_team_segments (
+                team_segment_id INTEGER PRIMARY KEY
+                    DEFAULT nextval('seq_team_segment_id'),
+                match_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                team TEXT NOT NULL,
+                start_timestamp BIGINT NOT NULL,
+                end_timestamp BIGINT,
+                spawn_x FLOAT,
+                spawn_z FLOAT,
+                FOREIGN KEY (match_id) REFERENCES matches(match_id)
+            )
+        """)
+
+        conn.execute(
+            "DELETE FROM player_team_segments WHERE match_id = ?", [match_id]
+        )
+
+        if len(team_df) > 0:
+            team_df['match_id'] = match_id
+            team_df['end_timestamp'] = team_df['end_timestamp'].astype('Int64')
+            conn.execute("""
+                INSERT INTO player_team_segments
+                    (match_id, player_id, team,
+                     start_timestamp, end_timestamp,
+                     spawn_x, spawn_z)
+                SELECT match_id, player_id, team,
+                       start_timestamp, end_timestamp,
+                       spawn_x, spawn_z
+                FROM team_df
+            """)
+
+        print(f"Inserted {len(team_df)} team segments into database")
+
+        team_time = time.time() - start_time
+        conn.execute(
+            """
+            INSERT INTO processing_log (match_id, step, status, duration)
+            VALUES (?, 'team_assignment', 'success', ?)
+            """,
+            [match_id, team_time],
+        )
+
         processing_time = time.time() - start_time
 
         conn.execute(
