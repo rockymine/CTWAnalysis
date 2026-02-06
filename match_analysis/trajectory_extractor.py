@@ -272,11 +272,11 @@ def process_match(match_id: int):
             load_team_spawn_centers, extract_team_segments,
         )
 
-        map_data_path = f'output/{map_name}/map_data.json'
-        spawn_centers = load_team_spawn_centers(map_data_path)
+        map_context_path = f'output/{map_name}/island_analysis/map_context.json'
+        spawn_centers = load_team_spawn_centers(map_context_path)
 
         if not spawn_centers:
-            print(f"Warning: No team spawn centers found in {map_data_path}")
+            print(f"Warning: No team spawn centers found in {map_context_path}")
             print("  Team segments will be marked 'unknown'")
 
         team_df = extract_team_segments(match_file, spawn_centers)

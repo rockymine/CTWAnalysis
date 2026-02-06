@@ -1,7 +1,8 @@
 """Infer player team membership from spawn positions and map spawn regions.
 
-Loads team spawn centers from preprocessed map_data.json and assigns each
-player's SPAWN events to a team by nearest-center Euclidean distance.
+Loads team spawn centers from preprocessed map_context.json (poi_assignments)
+and assigns each player's SPAWN events to a team.  Primary check uses
+bounds_2d containment; fallback uses nearest-center Euclidean distance.
 Consecutive spawns on the same team are merged into a single time segment.
 """
 
@@ -12,52 +13,58 @@ from pathlib import Path
 import pandas as pd
 
 
-def load_team_spawn_centers(map_data_path: str) -> list[dict]:
-    """Load team spawn center coordinates from map_data.json.
+def load_team_spawn_centers(map_context_path: str) -> list[dict]:
+    """Load team spawn center coordinates from map_context.json.
+
+    Reads the poi_assignments.spawns section which contains post-processed
+    spawn locations with team assignments, center coordinates, and bounds.
 
     Args:
-        map_data_path: Path to the preprocessed map_data.json file.
+        map_context_path: Path to the map_context.json file
+            (typically output/<map>/island_analysis/map_context.json).
 
     Returns:
-        List of dicts with keys: team (str), x (float), z (float).
+        List of dicts with keys: team (str), x (float), z (float),
+        bounds_2d (dict with min/max, or None).
         Empty list if file not found or has no spawns.
     """
-    path = Path(map_data_path)
+    path = Path(map_context_path)
     if not path.exists():
         return []
 
     with open(path) as f:
         data = json.load(f)
 
+    poi = data.get('poi_assignments', {})
     centers = []
-    for spawn in data.get('spawns', []):
+
+    for spawn in poi.get('spawns', []):
         team_raw = spawn.get('team', '')
         if not team_raw:
             continue
 
-        region = spawn.get('region')
-        if region is None:
+        x = spawn.get('x')
+        z = spawn.get('z')
+        if x is None or z is None:
             continue
-
-        bounds = region.get('bounds_2d')
-        if bounds is None:
-            continue
-
-        mn = bounds.get('min', {})
-        mx = bounds.get('max', {})
-        x = (mn.get('x', 0) + mx.get('x', 0)) / 2
-        z = (mn.get('z', 0) + mx.get('z', 0)) / 2
 
         # Normalize: "red-team" -> "red"
         team = team_raw.removesuffix('-team')
 
-        centers.append({'team': team, 'x': x, 'z': z})
+        bounds = spawn.get('bounds_2d')
+
+        centers.append({'team': team, 'x': float(x), 'z': float(z),
+                        'bounds_2d': bounds})
 
     return centers
 
 
 def infer_team(spawn_x: float, spawn_z: float, spawn_centers: list[dict]) -> str:
-    """Determine team by nearest spawn center (Euclidean distance in X/Z).
+    """Determine team from a spawn position.
+
+    Primary: check if (spawn_x, spawn_z) falls inside a spawn region's
+    bounds_2d rectangle.
+    Fallback: nearest spawn center by Euclidean distance in X/Z.
 
     Returns:
         Team string (e.g. "red", "blue") or "unknown" if no centers available.
@@ -65,6 +72,21 @@ def infer_team(spawn_x: float, spawn_z: float, spawn_centers: list[dict]) -> str
     if not spawn_centers:
         return 'unknown'
 
+    # Primary: bounds containment
+    for center in spawn_centers:
+        bounds = center.get('bounds_2d')
+        if bounds is None:
+            continue
+        mn = bounds.get('min', {})
+        mx = bounds.get('max', {})
+        min_x = mn.get('x', 0)
+        min_z = mn.get('z', 0)
+        max_x = mx.get('x', 0)
+        max_z = mx.get('z', 0)
+        if min_x <= spawn_x <= max_x and min_z <= spawn_z <= max_z:
+            return center['team']
+
+    # Fallback: nearest center
     best_team = 'unknown'
     best_dist = math.inf
 
