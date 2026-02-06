@@ -85,6 +85,12 @@ def initialize_database():
             y INTEGER NOT NULL,
             z INTEGER NOT NULL,
             segment_idx INTEGER,
+            location_type TEXT,
+            island_id INTEGER,
+            nearest_node_1 INTEGER,
+            nearest_node_2 INTEGER,
+            nearest_island_1 INTEGER,
+            nearest_island_2 INTEGER,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
     """)
