@@ -27,6 +27,14 @@ env/
 *.svg
 *.pdf
 
+!01_blocks.png
+!02_regions.png
+!03_skeleton.png
+!04_outline.png
+!05_connectivity.png
+!06_trace_single.png
+!07_trace_team.png
+
 # Map data files
 map_folders/
 layout_data/
