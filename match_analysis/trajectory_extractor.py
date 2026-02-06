@@ -134,8 +134,9 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
     combat['segment_idx'] = combat.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
-    # Convert victim_id: replace NaN with None for clean DB insertion
-    combat['victim_id'] = combat['victim_id'].where(combat['victim_id'].notna(), other=None)
+    # Ensure victim_id column exists (some parquet schemas omit it)
+    if 'victim_id' not in combat.columns:
+        combat['victim_id'] = None
 
     return combat[['player_id', 'timestamp', 'event_type',
                     'victim_id', 'x', 'y', 'z', 'segment_idx']]
@@ -216,44 +217,39 @@ def process_match(match_id: int):
             "DELETE FROM life_segments WHERE match_id = ?", [match_id]
         )
 
-        # Insert life segments into DuckDB
-        for row in life_segments_df.itertuples():
-            conn.execute(
-                """
-                INSERT INTO life_segments
-                    (match_id, player_id, segment_idx,
-                     start_timestamp, end_timestamp, duration, outcome,
-                     spawn_x, spawn_z,
-                     position_count, kill_count, wool_touches, wool_captures)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, row.player_id, row.segment_idx,
-                 row.start_timestamp, row.end_timestamp, row.duration, row.outcome,
-                 row.spawn_x, row.spawn_z,
-                 row.position_count, row.kill_count, row.wool_touches, row.wool_captures],
-            )
+        # Bulk insert life segments into DuckDB
+        metadata_df['match_id'] = match_id
+        conn.execute("""
+            INSERT INTO life_segments
+                (match_id, player_id, segment_idx,
+                 start_timestamp, end_timestamp, duration, outcome,
+                 spawn_x, spawn_z,
+                 position_count, kill_count, wool_touches, wool_captures)
+            SELECT match_id, player_id, segment_idx,
+                   start_timestamp, end_timestamp, duration, outcome,
+                   spawn_x, spawn_z,
+                   position_count, kill_count, wool_touches, wool_captures
+            FROM metadata_df
+        """)
 
-        print(f"Inserted {len(life_segments_df)} life segments into database")
+        print(f"Inserted {len(metadata_df)} life segments into database")
 
         # Extract and insert combat events
         combat_df = extract_combat_events(match_file, life_segments_df)
         conn.execute(
             "DELETE FROM combat_events WHERE match_id = ?", [match_id]
         )
-        for row in combat_df.itertuples():
-            victim = int(row.victim_id) if pd.notna(row.victim_id) else None
-            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
-            conn.execute(
-                """
-                INSERT INTO combat_events
-                    (match_id, timestamp, event_type, player_id,
-                     victim_id, x, y, z, segment_idx)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, int(row.timestamp), int(row.event_type),
-                 int(row.player_id), victim,
-                 int(row.x), int(row.y), int(row.z), seg_idx],
-            )
+        combat_df['match_id'] = match_id
+        combat_df['segment_idx'] = combat_df['segment_idx'].astype('Int64')
+        combat_df['victim_id'] = combat_df['victim_id'].astype('Int64')
+        conn.execute("""
+            INSERT INTO combat_events
+                (match_id, timestamp, event_type, player_id,
+                 victim_id, x, y, z, segment_idx)
+            SELECT match_id, timestamp, event_type, player_id,
+                   victim_id, x, y, z, segment_idx
+            FROM combat_df
+        """)
         print(f"Inserted {len(combat_df)} combat events into database")
 
         # Extract and insert position events
@@ -261,17 +257,14 @@ def process_match(match_id: int):
         conn.execute(
             "DELETE FROM position_events WHERE match_id = ?", [match_id]
         )
-        for row in position_df.itertuples():
-            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
-            conn.execute(
-                """
-                INSERT INTO position_events
-                    (match_id, timestamp, player_id, x, y, z, segment_idx)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, int(row.timestamp), int(row.player_id),
-                 int(row.x), int(row.y), int(row.z), seg_idx],
-            )
+        position_df['match_id'] = match_id
+        position_df['segment_idx'] = position_df['segment_idx'].astype('Int64')
+        conn.execute("""
+            INSERT INTO position_events
+                (match_id, timestamp, player_id, x, y, z, segment_idx)
+            SELECT match_id, timestamp, player_id, x, y, z, segment_idx
+            FROM position_df
+        """)
         print(f"Inserted {len(position_df)} position events into database")
 
         processing_time = time.time() - start_time
