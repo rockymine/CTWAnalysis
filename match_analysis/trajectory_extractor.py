@@ -1,5 +1,6 @@
 """Extract life segments from raw match parquet files."""
 
+import json
 import pandas as pd
 import duckdb
 from pathlib import Path
@@ -16,6 +17,46 @@ EVENT_TYPES = {
     6: "WOOL_TOUCH",
     7: "WOOL_CAPTURE",
 }
+
+_SPATIAL_COLUMNS = [
+    'location_type', 'island_id',
+    'nearest_node_1', 'nearest_node_2',
+    'nearest_island_1', 'nearest_island_2',
+]
+
+
+def _get_classifier(map_name: str):
+    """Build a PositionClassifier for the given map, or None if data missing."""
+    context_path = Path(f'output/{map_name}/island_analysis/map_context.json')
+    graph_path = Path(f'output/{map_name}/map_graph.json')
+    if not context_path.exists() or not graph_path.exists():
+        return None
+
+    from match_analysis.position_classifier import PositionClassifier
+
+    with open(context_path) as f:
+        map_context = json.load(f)
+    with open(graph_path) as f:
+        map_graph = json.load(f)
+
+    return PositionClassifier(map_context, map_graph)
+
+
+def _migrate_position_events_columns(conn):
+    """Add spatial columns to position_events if they don't exist yet."""
+    existing = {
+        row[0] for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'position_events'"
+        ).fetchall()
+    }
+    type_map = {'location_type': 'TEXT'}
+    for col in _SPATIAL_COLUMNS:
+        if col not in existing:
+            col_type = type_map.get(col, 'INTEGER')
+            conn.execute(
+                f"ALTER TABLE position_events ADD COLUMN {col} {col_type}"
+            )
 
 
 def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
@@ -254,15 +295,50 @@ def process_match(match_id: int):
 
         # Extract and insert position events
         position_df = extract_position_events(match_file, life_segments_df)
+
+        # Inline migration: add spatial columns to existing databases
+        _migrate_position_events_columns(conn)
+
         conn.execute(
             "DELETE FROM position_events WHERE match_id = ?", [match_id]
         )
         position_df['match_id'] = match_id
         position_df['segment_idx'] = position_df['segment_idx'].astype('Int64')
+
+        # Spatial annotation via PositionClassifier
+        spatial_cols = ['location_type', 'island_id',
+                        'nearest_node_1', 'nearest_node_2',
+                        'nearest_island_1', 'nearest_island_2']
+        classifier = _get_classifier(map_name)
+        if classifier is not None and len(position_df) > 0:
+            import numpy as np
+            xs = position_df['x'].values.astype(float)
+            zs = position_df['z'].values.astype(float)
+            bulk = classifier.classify_bulk(xs, zs)
+            for col in spatial_cols:
+                position_df[col] = bulk[col]
+            # Cast nullable int columns
+            for col in spatial_cols[1:]:
+                position_df[col] = position_df[col].astype('Int64')
+            n_island = (bulk['location_type'] == 'island').sum()
+            n_build = (bulk['location_type'] == 'build_region').sum()
+            n_void = (bulk['location_type'] == 'void').sum()
+            print(f"Spatial annotation: {n_island} island, "
+                  f"{n_build} build, {n_void} void")
+        else:
+            for col in spatial_cols:
+                position_df[col] = None
+
         conn.execute("""
             INSERT INTO position_events
-                (match_id, timestamp, player_id, x, y, z, segment_idx)
-            SELECT match_id, timestamp, player_id, x, y, z, segment_idx
+                (match_id, timestamp, player_id, x, y, z, segment_idx,
+                 location_type, island_id,
+                 nearest_node_1, nearest_node_2,
+                 nearest_island_1, nearest_island_2)
+            SELECT match_id, timestamp, player_id, x, y, z, segment_idx,
+                   location_type, island_id,
+                   nearest_node_1, nearest_node_2,
+                   nearest_island_1, nearest_island_2
             FROM position_df
         """)
         print(f"Inserted {len(position_df)} position events into database")
