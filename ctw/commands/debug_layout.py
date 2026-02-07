@@ -1,6 +1,7 @@
 """'debug-layout' subcommand — scan parquet files across all map output folders."""
 
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -16,6 +17,8 @@ def register(subparsers):
                    help='Root directory containing per-map folders (default: output)')
     p.add_argument('--csv', default=None, dest='csv_path',
                    help='Write results to CSV file (default: print to stdout)')
+    p.add_argument('--water', action='store_true',
+                   help='Analyze water blocks (8/9) and check overlap with XML build regions')
     p.set_defaults(func=handler)
 
 
@@ -30,6 +33,15 @@ def handler(args):
     filename = args.parquet
     if not filename.endswith('.parquet'):
         filename += '.parquet'
+
+    if args.water:
+        _handle_water(root, filename)
+    else:
+        _handle_block_scan(root, filename, args.csv_path)
+
+
+def _handle_block_scan(root: Path, filename: str, csv_path: str | None):
+    import pandas as pd
 
     rows = []
     for map_dir in sorted(root.iterdir()):
@@ -53,8 +65,8 @@ def handler(args):
         print(f"No {filename} files found under {root}/*/")
         return
 
-    if args.csv_path:
-        out_path = Path(args.csv_path)
+    if csv_path:
+        out_path = Path(csv_path)
         with open(out_path, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['map_name', 'blocks'])
@@ -68,3 +80,131 @@ def handler(args):
         for name, ids in rows:
             print(f"{name:<{max_name}}  {ids}")
         print(f"\n{len(rows)} maps scanned")
+
+
+def _handle_water(root: Path, filename: str):
+    """Analyze water blocks and check overlap with XML build regions."""
+    import pandas as pd
+    from shapely.geometry import box, Polygon, MultiPolygon
+    from shapely.ops import unary_union
+
+    maps_with_water = 0
+
+    for map_dir in sorted(root.iterdir()):
+        if not map_dir.is_dir():
+            continue
+        parquet_path = map_dir / filename
+        if not parquet_path.exists():
+            continue
+        try:
+            df = pd.read_parquet(parquet_path)
+        except Exception:
+            continue
+        if df.empty or 'block_id' not in df.columns:
+            continue
+
+        water = df[df['block_id'].isin([8, 9])]
+        if water.empty:
+            continue
+
+        maps_with_water += 1
+        n_water = len(water)
+        print(f"\n{'=' * 60}")
+        print(f"{map_dir.name}: {n_water} water blocks")
+        print(f"{'=' * 60}")
+
+        # Build water polygons (exact, no simplification)
+        squares = [
+            box(x, z, x + 1, z + 1)
+            for x, z in zip(water['world_x'], water['world_z'])
+        ]
+        water_geom = unary_union(squares)
+
+        if isinstance(water_geom, Polygon):
+            water_polys = [water_geom]
+        elif isinstance(water_geom, MultiPolygon):
+            water_polys = list(water_geom.geoms)
+        else:
+            print(f"  Unexpected geometry type: {type(water_geom).__name__}")
+            continue
+
+        print(f"  Water polygons: {len(water_polys)}")
+        for i, wp in enumerate(sorted(water_polys, key=lambda p: p.area, reverse=True)):
+            bounds = wp.bounds  # (minx, miny, maxx, maxy) = (minx, minz, maxx, maxz)
+            print(f"    [{i}] area={wp.area:.0f}  "
+                  f"bounds=({bounds[0]:.0f}, {bounds[1]:.0f})"
+                  f"..({bounds[2]:.0f}, {bounds[3]:.0f})  "
+                  f"holes={len(list(wp.interiors))}")
+
+        # Load map_context.json
+        ctx_path = map_dir / 'island_analysis' / 'map_context.json'
+        if not ctx_path.exists():
+            print(f"  map_context.json: NOT FOUND")
+            continue
+
+        try:
+            with open(ctx_path, 'r') as f:
+                ctx = json.load(f)
+        except Exception as e:
+            print(f"  map_context.json: failed to load ({e})")
+            continue
+
+        build_region = ctx.get('build_region')
+        if not build_region:
+            print(f"  build_region: NONE")
+            continue
+
+        source = build_region.get('source', '?')
+        print(f"  build_region: source={source}")
+
+        # Reconstruct build-region polygon from stored coords
+        br_polys = _coords_to_polygons(build_region.get('polygons', []))
+        if not br_polys:
+            print(f"  build_region polygons: could not reconstruct")
+            continue
+
+        br_geom = unary_union(br_polys)
+        print(f"  build_region area: {br_geom.area:.0f}")
+
+        # Check overlap
+        water_union = unary_union(water_polys)
+        intersection = water_union.intersection(br_geom)
+        overlap_area = intersection.area
+
+        water_only = water_union.difference(br_geom)
+        water_only_area = water_only.area
+
+        print(f"  water total area:       {water_union.area:.0f}")
+        print(f"  overlap with build_rgn: {overlap_area:.0f}")
+        print(f"  water outside build_rgn:{water_only_area:.0f}")
+
+        if water_union.area > 0:
+            pct = overlap_area / water_union.area * 100
+            print(f"  overlap %:              {pct:.1f}%")
+
+        if water_only_area > 0:
+            print(f"  ** Water extends BEYOND xml build region **")
+
+    if maps_with_water == 0:
+        print(f"No maps with water blocks found in {root}/*/")
+    else:
+        print(f"\n{maps_with_water} maps with water blocks analyzed")
+
+
+def _coords_to_polygons(coord_list: list) -> list:
+    """Reconstruct Shapely polygons from map_context coordinate dicts."""
+    from shapely.geometry import Polygon
+
+    polys = []
+    for entry in coord_list:
+        ext = entry.get('exterior', [])
+        if len(ext) < 4:  # need at least 3 points + closing
+            continue
+        holes = [h for h in entry.get('holes', []) if len(h) >= 4]
+        try:
+            p = Polygon(ext, holes)
+            if p.is_valid and not p.is_empty:
+                polys.append(p)
+        except Exception:
+            continue
+    return polys
