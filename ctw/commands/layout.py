@@ -107,5 +107,14 @@ def handler(args):
         # Simple workflow mode: parquets into output dir
         from layout_analysis.services import analyze_layout
         map_output_dir = resolve_output_dir(map_folder, create=True)
-        analyze_layout(map_folder, force_rerun=args.force,
-                       output_dir=map_output_dir)
+        analyze_layout(
+            map_folder,
+            force_rerun=args.force,
+            output_dir=map_output_dir,
+            skip_y0=args.skip_y0,
+            skip_surface=args.skip_surface,
+            skip_density=args.skip_density,
+            skip_bedrock=args.skip_bedrock,
+            threshold=args.threshold,
+            density_mode=args.density_mode,
+        )

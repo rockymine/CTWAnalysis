@@ -21,16 +21,33 @@ def register(subparsers):
     p.add_argument('--no-matches', action='store_true', help='Skip match analysis')
     p.add_argument('--match-history', default='match_logs/match_history.txt',
                    help='Path to match history file')
+    p.add_argument('--plots', action='store_true',
+                   help='Generate debug plots for layout and island analysis')
+
+    # Layout settings (also settable via layout: section in config)
+    p.add_argument('--skip-y0', action='store_true', help='Skip Y0 extraction')
+    p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
+    p.add_argument('--skip-density', action='store_true', help='Skip density')
+    p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--threshold', type=int, default=10,
+                   help='Density threshold (default: 10)')
+    p.add_argument('--density-mode', default='run', metavar='{run,count}',
+                   help='Density mode (default: run)')
+
+    # Island settings (also settable via islands: section in config)
     p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density'],
                    default='bedrock', help='Layout file for island analysis')
     p.add_argument('--canonical-triangulation', action='store_true',
                    help='Use canonical-consistent triangulation')
-    p.add_argument('--plots', action='store_true',
-                   help='Generate debug plots for layout and island analysis')
-    p.add_argument('--simplify', type=float, default=None,
-                   help='Simplification tolerance for islands (pass-through)')
-    p.add_argument('--buffer', type=float, default=None,
-                   help='Buffer distance for island smoothing (pass-through)')
+    p.add_argument('--simplify', type=float, default=1.0,
+                   help='Simplification tolerance for islands (default: 1.0)')
+    p.add_argument('--buffer', type=float, default=0.0,
+                   help='Buffer distance for island smoothing (default: 0.0)')
+    p.add_argument('--connectivity', type=int, default=8, choices=[4, 8],
+                   help='Island connectivity (default: 8)')
+    p.add_argument('--min-size', type=int, default=10,
+                   help='Minimum island block count (default: 10)')
+    p.add_argument('--no-holes', action='store_true', help='Disable hole detection')
     p.set_defaults(func=handler)
 
 
@@ -58,24 +75,34 @@ def handler(args):
         print(f"{'=' * 70}")
 
         if not args.no_layout:
-            analyze_layout(map_folder, force_rerun=args.force,
-                           output_dir=map_output_dir)
+            analyze_layout(
+                map_folder,
+                force_rerun=args.force,
+                output_dir=map_output_dir,
+                skip_y0=args.skip_y0,
+                skip_surface=args.skip_surface,
+                skip_density=args.skip_density,
+                skip_bedrock=args.skip_bedrock,
+                threshold=args.threshold,
+                density_mode=args.density_mode,
+            )
         else:
             print("\n[1/4] Layout Analysis: SKIPPED")
 
         if not args.no_islands:
-            island_kwargs = dict(
+            analyze_islands_step(
+                map_folder,
                 force_rerun=args.force,
                 layout_type=args.island_layout,
                 canonical_triangulation=args.canonical_triangulation,
+                simplify_tolerance=args.simplify,
+                buffer_distance=args.buffer,
+                connectivity=args.connectivity,
+                min_size=args.min_size,
+                detect_holes=not args.no_holes,
                 map_output_dir=map_output_dir,
                 plots=args.plots,
             )
-            if getattr(args, 'simplify', None) is not None:
-                island_kwargs['simplify_tolerance'] = args.simplify
-            if getattr(args, 'buffer', None) is not None:
-                island_kwargs['buffer_distance'] = args.buffer
-            analyze_islands_step(map_folder, **island_kwargs)
         else:
             print("\n[2/4] Island Analysis: SKIPPED")
 
