@@ -481,6 +481,9 @@ def analyze_islands_step(
     buffer_distance: float = 0.0,
     layout_type: str = 'bedrock',
     canonical_triangulation: bool = False,
+    connectivity: int = 8,
+    min_size: int = 10,
+    detect_holes: bool = True,
     map_output_dir: Optional[Path] = None,
     output_dir: Optional[str] = None,
     plots: bool = False,
@@ -496,6 +499,9 @@ def analyze_islands_step(
         layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density').
         canonical_triangulation: If True, use canonical-consistent triangulation
             so that symmetrically identical islands share the same mesh.
+        connectivity: Island detection connectivity (4 or 8).
+        min_size: Minimum island block count.
+        detect_holes: If True, detect holes in islands during triangulation.
         map_output_dir: Per-map output root (where layout parquets and
             map_graph.json live). Defaults to map_folder for backward compat.
         output_dir: Override island_analysis subdir specifically.
@@ -533,7 +539,9 @@ def analyze_islands_step(
     df = pd.read_parquet(layout_file)
     print(f"    Loaded {len(df)} blocks")
 
-    df, islands = _detect_and_label(layout_file, df)
+    df, islands = _detect_and_label(
+        layout_file, df, connectivity=connectivity, min_island_size=min_size,
+    )
 
     if not islands:
         print("  [X] No islands detected!")
@@ -545,6 +553,7 @@ def analyze_islands_step(
         canonical=canonical_triangulation,
         buffer_distance=buffer_distance,
         simplify_tolerance=simplify_tolerance,
+        detect_holes=detect_holes,
     )
 
     # Stage 3: Skeleton computation

@@ -34,7 +34,8 @@ def collect_map_folders(args) -> list:
             sys.exit(1)
         return sorted(f for f in mf_dir.iterdir() if f.is_dir())
     if getattr(args, 'map', None):
-        return [resolve_map_folder(args.map)]
+        names = [n.strip() for n in args.map.split(',') if n.strip()]
+        return [resolve_map_folder(n) for n in names]
     print("Error: Must specify either --map or --all", file=sys.stderr)
     sys.exit(1)
 
