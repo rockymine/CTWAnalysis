@@ -332,6 +332,27 @@ def _build_context(
         poi_assignments=poi_assignments,
     )
 
+    # Y0 layer diagnostics
+    y0_path = map_output_dir / 'layout_y0.parquet'
+    if y0_path.exists():
+        y0_df = pd.read_parquet(y0_path)
+        block_counts = y0_df['block_id'].value_counts()
+        n_block36 = int(block_counts.get(36, 0))
+        total = len(y0_df)
+        if n_block36 > 0:
+            other = total - n_block36
+            if other == 0:
+                print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
+            else:
+                other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
+                print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
+                      f"{other} other (ids: {other_ids})")
+        else:
+            ids = sorted(block_counts.index.tolist())
+            print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
+    else:
+        print(f"    Y0 layer: not found (skipped or not yet extracted)")
+
     # Build region extraction
     if map_data_obj is not None:
         try:
@@ -349,12 +370,10 @@ def _build_context(
                             island_shapely.append(poly)
                     except Exception:
                         pass
-
-            y0_path = str(map_output_dir / 'layout_y0.parquet')
             build_result = extract_build_region(
                 map_data=map_data_obj,
                 map_bounds=map_ctx.bounding_box,
-                y0_parquet_path=y0_path,
+                y0_parquet_path=str(y0_path),
                 island_polygons=island_shapely,
             )
             if build_result:
