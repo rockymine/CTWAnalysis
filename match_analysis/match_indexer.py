@@ -24,30 +24,48 @@ def get_map_name_from_match(match_file: Path) -> str:
     Current implementation: All files in match_logs are for Ingwaz.
     """
     # TODO: Extract from file metadata or filename when available
-    return "Ingwaz"
+    return "ingwaz"
 
 
-def _apply_history_mapping(conn, history_csv: str):
+def _apply_history_mapping(conn, history_csv: str, match_logs_dir: str = None):
     """Update map_name for indexed matches using a history CSV.
 
     The CSV must have columns: parquet_file, map_name.
-    Matches are linked by comparing the parquet filename (basename only).
+    The parquet_file value can be a basename (``file.parquet``) or a
+    relative path (``MapName/file.parquet``).  Matching is tried against
+    the relative path from *match_logs_dir* first, then the basename.
     """
     with open(history_csv, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        history = {row['parquet_file']: row['map_name'] for row in reader}
+        history = {row['parquet_file']: row['map_name'].lower() for row in reader}
 
     rows = conn.execute("SELECT match_id, match_file FROM matches").fetchall()
 
     matched = 0
     unmatched = 0
+    # Use Path (not PurePosixPath) so relative_to is case-insensitive on Windows
+    logs_dir_resolved = (
+        Path(match_logs_dir).resolve() if match_logs_dir else None
+    )
 
     for match_id, match_file in rows:
-        filename = PurePosixPath(match_file).name
-        if filename in history:
+        # Try relative path from match_logs_dir first
+        map_name = None
+        if logs_dir_resolved is not None:
+            try:
+                rel = Path(match_file).relative_to(logs_dir_resolved)
+                map_name = history.get(rel.as_posix())
+            except ValueError:
+                pass
+
+        # Fallback: basename
+        if map_name is None:
+            map_name = history.get(PurePosixPath(match_file).name)
+
+        if map_name is not None:
             conn.execute(
                 "UPDATE matches SET map_name = ? WHERE match_id = ?",
-                [history[filename], match_id],
+                [map_name, match_id],
             )
             matched += 1
         else:
@@ -69,7 +87,9 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
             If provided, map_name is updated for matching rows after indexing.
     """
     conn = duckdb.connect('match_analysis/metadata.db')
-    match_files = sorted(Path(match_logs_dir).glob('*.parquet'))
+    logs_path = Path(match_logs_dir)
+    # Recursive glob to support nested <map>/<files>.parquet layout
+    match_files = sorted(logs_path.rglob('*.parquet'))
 
     print(f"Found {len(match_files)} match files")
 
@@ -148,7 +168,7 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
 
     # Apply history mapping if provided
     if history_csv:
-        _apply_history_mapping(conn, history_csv)
+        _apply_history_mapping(conn, history_csv, match_logs_dir)
 
     conn.close()
     print(f"\nIndexed {indexed} new matches, skipped {skipped} existing")
