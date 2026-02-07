@@ -7,48 +7,48 @@
 # this file in the working directory as  ctw_config.yaml.
 # ─────────────────────────────────────────────────────────────
 
-# global:
-#   force: false
-#   plots: false
-#   output: "output/"
+global:
+  force: true
+  plots: false
+  output: "output/"
 
-# layout:
-#   threshold: 10
-#   density-mode: "run,count"
-#   skip-y0: false
-#   skip-surface: false
-#   skip-density: false
-#   skip-bedrock: false
+layout:
+  threshold: 10
+  density-mode: "run"
+  skip-y0: false
+  skip-surface: false
+  skip-density: true
+  skip-bedrock: false
 
-# islands:
-#   connectivity: 8
-#   min-size: 10
-#   buffer: 0.0
-#   simplify: 1.0
-#   no-holes: false
-#   layout: "bedrock"
-#   canonical-triangulation: false
-#   basic: false
+islands:
+  connectivity: 8
+  min-size: 10
+  buffer: 0.0
+  simplify: 0.0
+  no-holes: false
+  layout: "bedrock"
+  canonical-triangulation: true
+  basic: false
 
-# xml:
-#   visualize: false
-#   category-plots: false
-#   no-summary: false
-#   no-json: false
+xml:
+  visualize: false
+  category-plots: false
+  no-summary: false
+  no-json: false
 
-# run:
-#   no-layout: false
-#   no-islands: false
-#   no-xml: false
-#   no-matches: false
-#   island-layout: "bedrock"
-#   canonical-triangulation: false
-#   match-history: "match_logs/match_history.txt"
-#   # Pass-through to islands service (also reads from islands: section)
-#   simplify: 1.0
-#   buffer: 0.0
+run:
+  no-layout: false
+  no-islands: false
+  no-xml: false
+  no-matches: true
+  island-layout: "bedrock"
+  canonical-triangulation: true
+  match-history: "C:/Users/Michael/source/repos/PGMLoggerResults/match_history.csv"
+  # Pass-through to islands service (also reads from islands: section)
+  simplify: 0.0
+  buffer: 0.0
 
-# matches:
-#   color-mode: "life"
-#   map-base: "outline"
-#   match-dir: "match_logs"
+matches:
+  color-mode: "life"
+  map-base: "outline"
+  match-dir: "C:/Users/Michael/source/repos/PGMLoggerResults/logs/"

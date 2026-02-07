@@ -43,12 +43,20 @@ def extract_spawn_locations(map_data) -> List[Dict]:
             x, z = _get_region_center_xz(spawn_obj.region)
             if x is not None:
                 team_color = team_colors.get(spawn_obj.team, '')
-                spawns.append({
+                entry = {
                     'x': x, 'z': z,
                     'team': spawn_obj.team,
                     'team_color': team_color,
                     'region_id': f'{spawn_obj.team}-spawn (inline)',
-                })
+                }
+                bounds = spawn_obj.region.get_bounds_2d()
+                if bounds is not None:
+                    (min_x, min_z), (max_x, max_z) = bounds
+                    entry['bounds_2d'] = {
+                        'min': {'x': min_x, 'z': min_z},
+                        'max': {'x': max_x, 'z': max_z},
+                    }
+                spawns.append(entry)
 
     # If inline regions yielded results, use those
     if spawns:
@@ -74,12 +82,20 @@ def extract_spawn_locations(map_data) -> List[Dict]:
         team = _extract_team_from_id(region_id, map_data.teams)
         team_color = team_colors.get(team, '')
 
-        spawns.append({
+        entry = {
             'x': x, 'z': z,
             'team': team,
             'team_color': team_color,
             'region_id': region_id,
-        })
+        }
+        bounds = region.get_bounds_2d()
+        if bounds is not None:
+            (min_x, min_z), (max_x, max_z) = bounds
+            entry['bounds_2d'] = {
+                'min': {'x': min_x, 'z': min_z},
+                'max': {'x': max_x, 'z': max_z},
+            }
+        spawns.append(entry)
 
     return spawns
 

@@ -38,6 +38,7 @@ def register(subparsers):
         epilog="""
 Actions:
   parse        Parse a structured match log file into a history CSV
+  scan         Scan a <map>/<files>.parquet folder tree into a history CSV
   index        Index all match parquet files into the database
   process      Process a specific match by ID
   process-all  Process all unprocessed matches
@@ -48,7 +49,8 @@ Actions:
 
 Examples:
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
-  python ctw.py matches index --match-dir match_logs/ --history match_logs/match_history.csv
+  python ctw.py matches scan --folder data/ --output data/match_history.csv
+  python ctw.py matches index --match-dir data --history data/match_history.csv
   python ctw.py matches list
   python ctw.py matches process 57
   python ctw.py matches process-all --force
@@ -70,6 +72,16 @@ Examples:
     p.add_argument('--match-dir', help='Directory for default output (writes match_history.csv there)')
     p.add_argument('--output', help='Output CSV path (overrides --match-dir default)')
     p.set_defaults(func=handle_parse)
+
+    # matches scan
+    p = matches_sub.add_parser(
+        'scan',
+        help='Scan a <map>/<files>.parquet folder tree into a history CSV',
+    )
+    p.add_argument('--folder', required=True,
+                   help='Root folder containing per-map subdirectories of parquet files')
+    p.add_argument('--output', help='Output CSV path (default: <folder>/match_history.csv)')
+    p.set_defaults(func=handle_scan)
 
     # matches index
     p = matches_sub.add_parser('index', help='Index all match files')
@@ -164,6 +176,31 @@ def handle_parse(args):
 
     write_csv(rows, output_path)
     print(f"Wrote {len(rows)} rows to {output_path}")
+
+
+def handle_scan(args):
+    from match_analysis.match_log_parser import scan_match_folder, write_csv
+
+    folder = Path(args.folder)
+    if not folder.is_dir():
+        print(f"Error: folder not found: {folder}")
+        return
+
+    rows = scan_match_folder(folder)
+
+    if not rows:
+        print(f"No <map>/<file>.parquet entries found in {folder}")
+        return
+
+    maps = sorted(set(r['map_name'] for r in rows))
+    print(f"Found {len(rows)} parquet files across {len(maps)} maps:")
+    for m in maps:
+        count = sum(1 for r in rows if r['map_name'] == m)
+        print(f"  {m}: {count}")
+
+    output_path = Path(args.output) if args.output else folder / 'match_history.csv'
+    write_csv(rows, output_path)
+    print(f"\nWrote {len(rows)} rows to {output_path}")
 
 
 def handle_index(args):

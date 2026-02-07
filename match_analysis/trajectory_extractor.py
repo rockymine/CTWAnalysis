@@ -1,5 +1,6 @@
 """Extract life segments from raw match parquet files."""
 
+import json
 import pandas as pd
 import duckdb
 from pathlib import Path
@@ -16,6 +17,46 @@ EVENT_TYPES = {
     6: "WOOL_TOUCH",
     7: "WOOL_CAPTURE",
 }
+
+_SPATIAL_COLUMNS = [
+    'location_type', 'island_id',
+    'nearest_node_1', 'nearest_node_2',
+    'nearest_island_1', 'nearest_island_2',
+]
+
+
+def _get_classifier(map_name: str):
+    """Build a PositionClassifier for the given map, or None if data missing."""
+    context_path = Path(f'output/{map_name}/island_analysis/map_context.json')
+    graph_path = Path(f'output/{map_name}/map_graph.json')
+    if not context_path.exists() or not graph_path.exists():
+        return None
+
+    from match_analysis.position_classifier import PositionClassifier
+
+    with open(context_path) as f:
+        map_context = json.load(f)
+    with open(graph_path) as f:
+        map_graph = json.load(f)
+
+    return PositionClassifier(map_context, map_graph)
+
+
+def _migrate_position_events_columns(conn):
+    """Add spatial columns to position_events if they don't exist yet."""
+    existing = {
+        row[0] for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'position_events'"
+        ).fetchall()
+    }
+    type_map = {'location_type': 'TEXT'}
+    for col in _SPATIAL_COLUMNS:
+        if col not in existing:
+            col_type = type_map.get(col, 'INTEGER')
+            conn.execute(
+                f"ALTER TABLE position_events ADD COLUMN {col} {col_type}"
+            )
 
 
 def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
@@ -134,8 +175,9 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
     combat['segment_idx'] = combat.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
-    # Convert victim_id: replace NaN with None for clean DB insertion
-    combat['victim_id'] = combat['victim_id'].where(combat['victim_id'].notna(), other=None)
+    # Ensure victim_id column exists (some parquet schemas omit it)
+    if 'victim_id' not in combat.columns:
+        combat['victim_id'] = None
 
     return combat[['player_id', 'timestamp', 'event_type',
                     'victim_id', 'x', 'y', 'z', 'segment_idx']]
@@ -216,63 +258,152 @@ def process_match(match_id: int):
             "DELETE FROM life_segments WHERE match_id = ?", [match_id]
         )
 
-        # Insert life segments into DuckDB
-        for row in life_segments_df.itertuples():
-            conn.execute(
-                """
-                INSERT INTO life_segments
-                    (match_id, player_id, segment_idx,
-                     start_timestamp, end_timestamp, duration, outcome,
-                     spawn_x, spawn_z,
-                     position_count, kill_count, wool_touches, wool_captures)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, row.player_id, row.segment_idx,
-                 row.start_timestamp, row.end_timestamp, row.duration, row.outcome,
-                 row.spawn_x, row.spawn_z,
-                 row.position_count, row.kill_count, row.wool_touches, row.wool_captures],
-            )
+        # Bulk insert life segments into DuckDB
+        metadata_df['match_id'] = match_id
+        conn.execute("""
+            INSERT INTO life_segments
+                (match_id, player_id, segment_idx,
+                 start_timestamp, end_timestamp, duration, outcome,
+                 spawn_x, spawn_z,
+                 position_count, kill_count, wool_touches, wool_captures)
+            SELECT match_id, player_id, segment_idx,
+                   start_timestamp, end_timestamp, duration, outcome,
+                   spawn_x, spawn_z,
+                   position_count, kill_count, wool_touches, wool_captures
+            FROM metadata_df
+        """)
 
-        print(f"Inserted {len(life_segments_df)} life segments into database")
+        print(f"Inserted {len(metadata_df)} life segments into database")
 
         # Extract and insert combat events
         combat_df = extract_combat_events(match_file, life_segments_df)
         conn.execute(
             "DELETE FROM combat_events WHERE match_id = ?", [match_id]
         )
-        for row in combat_df.itertuples():
-            victim = int(row.victim_id) if pd.notna(row.victim_id) else None
-            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
-            conn.execute(
-                """
-                INSERT INTO combat_events
-                    (match_id, timestamp, event_type, player_id,
-                     victim_id, x, y, z, segment_idx)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, int(row.timestamp), int(row.event_type),
-                 int(row.player_id), victim,
-                 int(row.x), int(row.y), int(row.z), seg_idx],
-            )
+        combat_df['match_id'] = match_id
+        combat_df['segment_idx'] = combat_df['segment_idx'].astype('Int64')
+        combat_df['victim_id'] = combat_df['victim_id'].astype('Int64')
+        conn.execute("""
+            INSERT INTO combat_events
+                (match_id, timestamp, event_type, player_id,
+                 victim_id, x, y, z, segment_idx)
+            SELECT match_id, timestamp, event_type, player_id,
+                   victim_id, x, y, z, segment_idx
+            FROM combat_df
+        """)
         print(f"Inserted {len(combat_df)} combat events into database")
 
         # Extract and insert position events
         position_df = extract_position_events(match_file, life_segments_df)
+
+        # Inline migration: add spatial columns to existing databases
+        _migrate_position_events_columns(conn)
+
         conn.execute(
             "DELETE FROM position_events WHERE match_id = ?", [match_id]
         )
-        for row in position_df.itertuples():
-            seg_idx = int(row.segment_idx) if pd.notna(row.segment_idx) else None
-            conn.execute(
-                """
-                INSERT INTO position_events
-                    (match_id, timestamp, player_id, x, y, z, segment_idx)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [match_id, int(row.timestamp), int(row.player_id),
-                 int(row.x), int(row.y), int(row.z), seg_idx],
-            )
+        position_df['match_id'] = match_id
+        position_df['segment_idx'] = position_df['segment_idx'].astype('Int64')
+
+        # Spatial annotation via PositionClassifier
+        spatial_cols = ['location_type', 'island_id',
+                        'nearest_node_1', 'nearest_node_2',
+                        'nearest_island_1', 'nearest_island_2']
+        classifier = _get_classifier(map_name)
+        if classifier is not None and len(position_df) > 0:
+            import numpy as np
+            xs = position_df['x'].values.astype(float)
+            zs = position_df['z'].values.astype(float)
+            bulk = classifier.classify_bulk(xs, zs)
+            for col in spatial_cols:
+                position_df[col] = bulk[col]
+            # Cast nullable int columns
+            for col in spatial_cols[1:]:
+                position_df[col] = position_df[col].astype('Int64')
+            n_island = (bulk['location_type'] == 'island').sum()
+            n_build = (bulk['location_type'] == 'build_region').sum()
+            n_void = (bulk['location_type'] == 'void').sum()
+            print(f"Spatial annotation: {n_island} island, "
+                  f"{n_build} build, {n_void} void")
+        else:
+            for col in spatial_cols:
+                position_df[col] = None
+
+        conn.execute("""
+            INSERT INTO position_events
+                (match_id, timestamp, player_id, x, y, z, segment_idx,
+                 location_type, island_id,
+                 nearest_node_1, nearest_node_2,
+                 nearest_island_1, nearest_island_2)
+            SELECT match_id, timestamp, player_id, x, y, z, segment_idx,
+                   location_type, island_id,
+                   nearest_node_1, nearest_node_2,
+                   nearest_island_1, nearest_island_2
+            FROM position_df
+        """)
         print(f"Inserted {len(position_df)} position events into database")
+
+        # Extract and insert team segments
+        from match_analysis.team_extractor import (
+            load_team_spawn_centers, extract_team_segments,
+        )
+
+        map_context_path = f'output/{map_name}/island_analysis/map_context.json'
+        spawn_centers = load_team_spawn_centers(map_context_path)
+
+        if not spawn_centers:
+            print(f"Warning: No team spawn centers found in {map_context_path}")
+            print("  Team segments will be marked 'unknown'")
+
+        team_df = extract_team_segments(match_file, spawn_centers)
+
+        # Auto-create table for existing databases (migration)
+        conn.execute(
+            "CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_team_segments (
+                team_segment_id INTEGER PRIMARY KEY
+                    DEFAULT nextval('seq_team_segment_id'),
+                match_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                team TEXT NOT NULL,
+                start_timestamp BIGINT NOT NULL,
+                end_timestamp BIGINT,
+                spawn_x FLOAT,
+                spawn_z FLOAT,
+                FOREIGN KEY (match_id) REFERENCES matches(match_id)
+            )
+        """)
+
+        conn.execute(
+            "DELETE FROM player_team_segments WHERE match_id = ?", [match_id]
+        )
+
+        if len(team_df) > 0:
+            team_df['match_id'] = match_id
+            team_df['end_timestamp'] = team_df['end_timestamp'].astype('Int64')
+            conn.execute("""
+                INSERT INTO player_team_segments
+                    (match_id, player_id, team,
+                     start_timestamp, end_timestamp,
+                     spawn_x, spawn_z)
+                SELECT match_id, player_id, team,
+                       start_timestamp, end_timestamp,
+                       spawn_x, spawn_z
+                FROM team_df
+            """)
+
+        print(f"Inserted {len(team_df)} team segments into database")
+
+        team_time = time.time() - start_time
+        conn.execute(
+            """
+            INSERT INTO processing_log (match_id, step, status, duration)
+            VALUES (?, 'team_assignment', 'success', ?)
+            """,
+            [match_id, team_time],
+        )
 
         processing_time = time.time() - start_time
 

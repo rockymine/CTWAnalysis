@@ -39,7 +39,7 @@ def parse_match_log(input_path: Path) -> list[dict]:
 
         header_match = HEADER_RE.match(line)
         if header_match:
-            pending_map = header_match.group("map").strip()
+            pending_map = header_match.group("map").strip().lower()
             continue
 
         parquet_match = PARQUET_RE.search(line)
@@ -49,6 +49,47 @@ def parse_match_log(input_path: Path) -> list[dict]:
                 "map_name": pending_map,
             })
             pending_map = None
+
+    return rows
+
+
+def scan_match_folder(folder: Path) -> list[dict]:
+    """Scan a folder tree of ``<map_name>/<files>.parquet`` for match entries.
+
+    Expects structure::
+
+        folder/
+          MapA/
+            2026-01-24_01-20-48_0.parquet
+            ...
+          MapB/
+            ...
+
+    The immediate parent directory name is used as the map name.
+    The ``parquet_file`` value is the path relative to *folder*
+    (e.g. ``MapA/2026-01-24_01-20-48_0.parquet``), matching what
+    ``index_match_files --match-dir folder`` stores in the database.
+
+    Args:
+        folder: Root directory containing per-map subdirectories.
+
+    Returns:
+        Sorted list of dicts with keys ``parquet_file`` and ``map_name``.
+    """
+    folder = Path(folder)
+    rows = []
+
+    for parquet_path in sorted(folder.rglob('*.parquet')):
+        rel = parquet_path.relative_to(folder)
+        # Must be inside a map subdirectory (depth >= 2)
+        if len(rel.parts) < 2:
+            continue
+        map_name = rel.parts[0].lower()
+        # Store as POSIX relative path (forward slashes)
+        rows.append({
+            'parquet_file': rel.as_posix(),
+            'map_name': map_name,
+        })
 
     return rows
 
