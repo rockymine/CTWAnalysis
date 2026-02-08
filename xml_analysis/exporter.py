@@ -12,6 +12,7 @@ from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
     ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
+    MirrorRegion, TranslateRegion,
 )
 
 
@@ -76,6 +77,21 @@ class MapDataEncoder:
 
         elif isinstance(region, (UnionRegion, NegativeRegion, ComplementRegion, IntersectRegion)):
             base['children'] = [MapDataEncoder.encode_region(child) for child in region.children]
+
+        elif isinstance(region, MirrorRegion):
+            if region.source:
+                base['source'] = MapDataEncoder.encode_region(region.source)
+            if region.ref_region_id:
+                base['ref_region_id'] = region.ref_region_id
+            base['origin'] = {'x': region.origin_x, 'y': region.origin_y, 'z': region.origin_z}
+            base['normal'] = {'x': region.normal_x, 'y': region.normal_y, 'z': region.normal_z}
+
+        elif isinstance(region, TranslateRegion):
+            if region.source:
+                base['source'] = MapDataEncoder.encode_region(region.source)
+            if region.ref_region_id:
+                base['ref_region_id'] = region.ref_region_id
+            base['offset'] = {'x': region.offset_x, 'y': region.offset_y, 'z': region.offset_z}
 
         elif isinstance(region, RegionReference):
             base['ref_id'] = region.ref_id
