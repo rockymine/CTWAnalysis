@@ -1,4 +1,4 @@
-"""'debug-layout' subcommand — scan parquet files across all map output folders."""
+"""'debug' subcommand — diagnostic tools for layout parquet and output JSON files."""
 
 import csv
 import json
@@ -7,8 +7,29 @@ from pathlib import Path
 
 
 def register(subparsers):
-    p = subparsers.add_parser(
-        'debug-layout',
+    debug_parser = subparsers.add_parser(
+        'debug',
+        help='Diagnostic tools for map data inspection',
+        formatter_class=__import__('argparse').RawDescriptionHelpFormatter,
+        epilog="""
+Actions:
+  layout       Scan a layout parquet across all maps and list unique block IDs
+  data         Scan output JSON files across all maps and report empty/missing fields
+
+Examples:
+  python ctw.py debug layout --parquet layout_y0
+  python ctw.py debug layout --parquet layout_y0 --water
+  python ctw.py debug data --json map_data.json
+  python ctw.py debug data --json island_analysis/map_context.json
+""",
+    )
+    debug_sub = debug_parser.add_subparsers(
+        dest='debug_action', metavar='<action>',
+    )
+
+    # debug layout
+    p = debug_sub.add_parser(
+        'layout',
         help='Scan a layout parquet across all maps and list unique block IDs',
     )
     p.add_argument('--parquet', required=True,
@@ -19,10 +40,21 @@ def register(subparsers):
                    help='Write results to CSV file (default: print to stdout)')
     p.add_argument('--water', action='store_true',
                    help='Analyze water blocks (8/9) and check overlap with XML build regions')
-    p.set_defaults(func=handler)
+    p.set_defaults(func=handle_layout)
+
+    # debug data
+    p = debug_sub.add_parser(
+        'data',
+        help='Scan output JSON files across all maps and report empty/missing fields',
+    )
+    p.add_argument('--json', required=True, dest='json_file',
+                   help='JSON filename relative to each map output dir (e.g. map_data.json)')
+    p.add_argument('--dir', default='output',
+                   help='Root directory containing per-map folders (default: output)')
+    p.set_defaults(func=handle_data)
 
 
-def handler(args):
+def handle_layout(args):
     import pandas as pd
 
     root = Path(args.dir)
@@ -38,6 +70,70 @@ def handler(args):
         _handle_water(root, filename)
     else:
         _handle_block_scan(root, filename, args.csv_path)
+
+
+def handle_data(args):
+    root = Path(args.dir)
+    if not root.is_dir():
+        print(f"Error: directory not found: {root}", file=sys.stderr)
+        sys.exit(1)
+
+    json_file = args.json_file
+    missing_file = []
+    issues = []  # (map_name, list of "field=value" strings)
+    scanned = 0
+
+    for map_dir in sorted(root.iterdir()):
+        if not map_dir.is_dir():
+            continue
+        json_path = map_dir / json_file
+        if not json_path.exists():
+            missing_file.append(map_dir.name)
+            continue
+
+        scanned += 1
+        try:
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            issues.append((map_dir.name, [f"PARSE ERROR: {e}"]))
+            continue
+
+        if not isinstance(data, dict):
+            issues.append((map_dir.name, [f"root is {type(data).__name__}, not dict"]))
+            continue
+
+        empty_fields = []
+        for key, value in data.items():
+            if value is None:
+                empty_fields.append(f"{key}=null")
+            elif value == []:
+                empty_fields.append(f"{key}=[]")
+            elif value == {}:
+                empty_fields.append(f"{key}={{}}")
+            elif value == "":
+                empty_fields.append(f'{key}=""')
+
+        if empty_fields:
+            issues.append((map_dir.name, empty_fields))
+
+    # Print results
+    if missing_file:
+        print(f"Maps missing file ({len(missing_file)}): {', '.join(missing_file)}")
+        print()
+
+    if issues:
+        max_name = max(len(name) for name, _ in issues)
+        max_name = max(max_name, len('map_name'))
+        print(f"{'map_name':<{max_name}}  empty fields")
+        print(f"{'-' * max_name}  {'-' * 30}")
+        for name, fields in issues:
+            print(f"{name:<{max_name}}  {', '.join(fields)}")
+        print()
+
+    total = scanned + len(missing_file)
+    n_issues = len(issues)
+    print(f"{scanned} maps scanned, {n_issues} with issues")
 
 
 def _handle_block_scan(root: Path, filename: str, csv_path: str | None):
