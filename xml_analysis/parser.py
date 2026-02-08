@@ -93,6 +93,9 @@ class MapXMLParser:
         """
         data = MapData()
 
+        # Resolve <if>/<unless> variant conditionals before parsing
+        self._resolve_variants(self.root)
+
         # Parse basic info
         data.name = self._get_text('name', '')
         data.version = self._get_text('version', '')
@@ -119,6 +122,38 @@ class MapXMLParser:
         """Get text content of a tag."""
         elem = self.root.find(tag)
         return elem.text if elem is not None and elem.text else default
+
+    def _resolve_variants(self, element):
+        """Resolve <if>/<unless> variant conditionals in-place for the default variant.
+
+        - <if variant="default">      → inline children (we are default)
+        - <if variant="halloween">    → remove (we are not halloween)
+        - <unless variant="halloween"> → inline children (default != halloween)
+        - <unless variant="default">   → remove (we are default)
+        """
+        # Recurse into children first (bottom-up) so nested conditionals resolve
+        for child in list(element):
+            self._resolve_variants(child)
+
+        # Now process this element's direct <if>/<unless> children
+        new_children = []
+        changed = False
+        for child in list(element):
+            if child.tag in ('if', 'unless'):
+                changed = True
+                variants = {v.strip() for v in child.get('variant', '').split(',')}
+                include = (child.tag == 'if' and 'default' in variants) or \
+                          (child.tag == 'unless' and 'default' not in variants)
+                if include:
+                    new_children.extend(child)
+            else:
+                new_children.append(child)
+
+        if changed:
+            for child in list(element):
+                element.remove(child)
+            for child in new_children:
+                element.append(child)
 
     def _parse_teams(self) -> List[Team]:
         """Parse team elements."""
@@ -172,7 +207,7 @@ class MapXMLParser:
         if wools_elem is None:
             return wools
 
-        for wool_elem in wools_elem.findall('wool'):
+        for wool_elem, inherited_team in self._collect_wool_elements(wools_elem):
             location = self._parse_coords(wool_elem.get('location', '0,0,0'))
             monument_elem = wool_elem.find('monument/block')
             monument = (0, 0, 0)
@@ -180,7 +215,7 @@ class MapXMLParser:
                 monument = self._parse_coords(monument_elem.text)
 
             wool = Wool(
-                team=wool_elem.get('team', ''),
+                team=wool_elem.get('team', '') or inherited_team,
                 color=wool_elem.get('color', ''),
                 location=location,
                 monument=monument
@@ -188,6 +223,17 @@ class MapXMLParser:
             wools.append(wool)
 
         return wools
+
+    def _collect_wool_elements(self, parent, inherited_team: str = '') -> list:
+        """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""
+        results = []
+        for child in parent:
+            if child.tag == 'wool':
+                results.append((child, inherited_team))
+            elif child.tag == 'wools':
+                team = child.get('team', '') or inherited_team
+                results.extend(self._collect_wool_elements(child, team))
+        return results
 
     def _parse_regions(self) -> Tuple[Dict[str, Region], List[ApplyRule]]:
         """Parse regions and apply elements."""
