@@ -10,7 +10,10 @@ import os
 from pathlib import Path
 
 from xml_analysis.parser import MapXMLParser
-from xml_analysis.regions import RectangleRegion, CuboidRegion, UnionRegion, BlockRegion
+from xml_analysis.regions import (
+    RectangleRegion, CuboidRegion, UnionRegion, BlockRegion,
+    MirrorRegion, TranslateRegion,
+)
 
 
 class TestRegionParsing(unittest.TestCase):
@@ -266,6 +269,204 @@ class TestRealMapParsing(unittest.TestCase):
         for cat, regions in categories.items():
             if regions:
                 print(f"  {cat}: {regions}")
+
+
+class TestMirrorAndTranslateRegions(unittest.TestCase):
+    """Test mirror and translate region parsing and geometry."""
+
+    def _make_xml(self, regions_xml, wools_xml=""):
+        f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.xml')
+        f.write(f"""<?xml version="1.0"?>
+<map proto="1.5.0">
+<name>Mirror Test</name>
+<version>1.0.0</version>
+<objective>Test</objective>
+<teams>
+    <team id="red" color="dark red" max="8">Red</team>
+    <team id="blue" color="blue" max="8">Blue</team>
+</teams>
+<regions>
+{regions_xml}
+</regions>
+{wools_xml}
+</map>""")
+        f.close()
+        return f.name
+
+    def test_parse_mirror_attribute_form(self):
+        """Mirror with region= attribute referencing another region by ID."""
+        path = self._make_xml("""
+            <rectangle id="red-spawn" min="10,20" max="30,40"/>
+            <mirror id="blue-spawn" region="red-spawn" origin="0,0,0" normal="1,0,0"/>
+        """)
+        try:
+            data = MapXMLParser(path).parse()
+            self.assertIn('blue-spawn', data.regions)
+            region = data.regions['blue-spawn']
+            self.assertIsInstance(region, MirrorRegion)
+            self.assertEqual(region.ref_region_id, 'red-spawn')
+            self.assertEqual(region.normal_x, 1.0)
+            self.assertEqual(region.normal_z, 0.0)
+        finally:
+            os.unlink(path)
+
+    def test_parse_mirror_child_form(self):
+        """Mirror with inline child region."""
+        path = self._make_xml("""
+            <mirror id="mirrored" origin="0,0,0" normal="0,0,1">
+                <rectangle min="10,20" max="30,40"/>
+            </mirror>
+        """)
+        try:
+            data = MapXMLParser(path).parse()
+            self.assertIn('mirrored', data.regions)
+            region = data.regions['mirrored']
+            self.assertIsInstance(region, MirrorRegion)
+            self.assertIsNotNone(region.source)
+            self.assertIsInstance(region.source, RectangleRegion)
+        finally:
+            os.unlink(path)
+
+    def test_mirror_x_geometry(self):
+        """Mirror across X axis: x' = 2*origin_x - x, z unchanged."""
+        rect = RectangleRegion(min_x=10, min_z=20, max_x=30, max_z=40)
+        mirror = MirrorRegion(
+            source=rect, origin_x=0, origin_z=0,
+            normal_x=1, normal_y=0, normal_z=0,
+        )
+        bounds = (-100, -100, 100, 100)
+        geom = mirror.to_shapely_2d(bounds)
+        # rect (10,20)-(30,40) mirrored across x=0 → (-30,20)-(-10,40)
+        self.assertAlmostEqual(geom.bounds[0], -30.0)
+        self.assertAlmostEqual(geom.bounds[1], 20.0)
+        self.assertAlmostEqual(geom.bounds[2], -10.0)
+        self.assertAlmostEqual(geom.bounds[3], 40.0)
+
+    def test_mirror_z_geometry(self):
+        """Mirror across Z axis: z' = 2*origin_z - z, x unchanged."""
+        rect = RectangleRegion(min_x=10, min_z=20, max_x=30, max_z=40)
+        mirror = MirrorRegion(
+            source=rect, origin_x=0, origin_z=0,
+            normal_x=0, normal_y=0, normal_z=1,
+        )
+        bounds = (-100, -100, 100, 100)
+        geom = mirror.to_shapely_2d(bounds)
+        # z mirrored: (10,-40)-(30,-20)
+        self.assertAlmostEqual(geom.bounds[0], 10.0)
+        self.assertAlmostEqual(geom.bounds[1], -40.0)
+        self.assertAlmostEqual(geom.bounds[2], 30.0)
+        self.assertAlmostEqual(geom.bounds[3], -20.0)
+
+    def test_mirror_xz_geometry(self):
+        """Mirror across both X and Z axes."""
+        rect = RectangleRegion(min_x=10, min_z=20, max_x=30, max_z=40)
+        mirror = MirrorRegion(
+            source=rect, origin_x=0, origin_z=0,
+            normal_x=1, normal_y=0, normal_z=1,
+        )
+        bounds = (-100, -100, 100, 100)
+        geom = mirror.to_shapely_2d(bounds)
+        # both mirrored: (-30,-40)-(-10,-20)
+        self.assertAlmostEqual(geom.bounds[0], -30.0)
+        self.assertAlmostEqual(geom.bounds[1], -40.0)
+        self.assertAlmostEqual(geom.bounds[2], -10.0)
+        self.assertAlmostEqual(geom.bounds[3], -20.0)
+
+    def test_mirror_with_nonzero_origin(self):
+        """Mirror with origin not at (0,0)."""
+        rect = RectangleRegion(min_x=0, min_z=0, max_x=10, max_z=10)
+        mirror = MirrorRegion(
+            source=rect, origin_x=20, origin_z=0,
+            normal_x=1, normal_y=0, normal_z=0,
+        )
+        bounds = (-100, -100, 100, 100)
+        geom = mirror.to_shapely_2d(bounds)
+        # x' = 2*20 - x → (0,0)→40, (10,0)→30 → bounds (30,0)-(40,10)
+        self.assertAlmostEqual(geom.bounds[0], 30.0)
+        self.assertAlmostEqual(geom.bounds[1], 0.0)
+        self.assertAlmostEqual(geom.bounds[2], 40.0)
+        self.assertAlmostEqual(geom.bounds[3], 10.0)
+
+    def test_mirror_ref_resolution(self):
+        """Mirror resolves source via registry when using ref_region_id."""
+        rect = RectangleRegion(id='src', min_x=10, min_z=20, max_x=30, max_z=40)
+        mirror = MirrorRegion(
+            ref_region_id='src', origin_x=0, origin_z=0,
+            normal_x=1, normal_y=0, normal_z=0,
+        )
+        bounds = (-100, -100, 100, 100)
+        registry = {'src': rect}
+        geom = mirror.to_shapely_2d(bounds, registry)
+        self.assertAlmostEqual(geom.bounds[0], -30.0)
+        self.assertAlmostEqual(geom.bounds[2], -10.0)
+
+    def test_parse_translate_child_form(self):
+        """Translate with inline child region."""
+        path = self._make_xml("""
+            <rectangle id="base" min="10,20" max="30,40"/>
+            <union id="shifted">
+                <region id="base"/>
+                <translate offset="5,0,10"><region id="base"/></translate>
+            </union>
+        """)
+        try:
+            data = MapXMLParser(path).parse()
+            self.assertIn('shifted', data.regions)
+            union = data.regions['shifted']
+            self.assertEqual(len(union.children), 2)
+            self.assertIsInstance(union.children[1], TranslateRegion)
+        finally:
+            os.unlink(path)
+
+    def test_translate_geometry(self):
+        """Translate shifts geometry by offset."""
+        rect = RectangleRegion(min_x=10, min_z=20, max_x=30, max_z=40)
+        translated = TranslateRegion(
+            source=rect, offset_x=5, offset_y=0, offset_z=-10,
+        )
+        bounds = (-100, -100, 100, 100)
+        geom = translated.to_shapely_2d(bounds)
+        # (10,20)-(30,40) shifted by (5,-10) → (15,10)-(35,30)
+        self.assertAlmostEqual(geom.bounds[0], 15.0)
+        self.assertAlmostEqual(geom.bounds[1], 10.0)
+        self.assertAlmostEqual(geom.bounds[2], 35.0)
+        self.assertAlmostEqual(geom.bounds[3], 30.0)
+
+    def test_parse_ad_astra_mirrors(self):
+        """Ad Astra map should have mirror regions parsed inside unions."""
+        xml_path = Path('xml_examples/ad_astra.xml')
+        if not xml_path.exists():
+            self.skipTest("ad_astra.xml not found")
+        data = MapXMLParser(str(xml_path)).parse()
+        # water-lanes union should contain mirror children
+        water_lanes = data.regions['water-lanes']
+        child_ids = [c.id for c in water_lanes.children]
+        self.assertIn('yellow-water-lane', child_ids)
+        yellow = next(c for c in water_lanes.children if c.id == 'yellow-water-lane')
+        self.assertIsInstance(yellow, MirrorRegion)
+        # blue-wool-rooms should now have mirror children (was empty before)
+        wool_rooms = data.regions['wool-rooms']
+        blue_rooms = next(c for c in wool_rooms.children if c.id == 'blue-wool-rooms')
+        self.assertEqual(len(blue_rooms.children), 2)
+        self.assertIsInstance(blue_rooms.children[0], MirrorRegion)
+
+    def test_ad_astra_mirror_geometry(self):
+        """Ad Astra mirrored water lanes should produce valid geometry."""
+        xml_path = Path('xml_examples/ad_astra.xml')
+        if not xml_path.exists():
+            self.skipTest("ad_astra.xml not found")
+        data = MapXMLParser(str(xml_path)).parse()
+        bounds = (-300, -300, 100, 200)
+        # Resolve via the water-lanes union and registry
+        water_lanes = data.regions['water-lanes']
+        orange = next(c for c in water_lanes.children if c.id == 'orange-water-lane')
+        yellow = next(c for c in water_lanes.children if c.id == 'yellow-water-lane')
+        orange_geom = orange.to_shapely_2d(bounds, data.regions)
+        yellow_geom = yellow.to_shapely_2d(bounds, data.regions)
+        # Both should be non-empty with same area
+        self.assertFalse(orange_geom.is_empty)
+        self.assertFalse(yellow_geom.is_empty)
+        self.assertAlmostEqual(orange_geom.area, yellow_geom.area, places=1)
 
 
 if __name__ == '__main__':
