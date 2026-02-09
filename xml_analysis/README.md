@@ -79,6 +79,15 @@ The parser produces a `MapData` dataclass containing:
 | `NegativeRegion` | Universe minus all children |
 | `ComplementRegion` | First child minus subsequent children |
 
+### Transformations
+
+| Class | Semantics |
+|-------|-----------|
+| `MirrorRegion` | Mirror of a source region across a plane (origin + normal) |
+| `TranslateRegion` | Translated copy of a source region by an (x, y, z) offset |
+
+Both accept the source as either an inline child region or an ID reference (`ref_region_id`) resolved via the registry at `to_shapely_2d()` time.
+
 ### Special
 
 | Class | Purpose |
@@ -100,9 +109,13 @@ All regions support `get_bounds_2d()` and `to_shapely_2d()` for geometric operat
 `build_regions.py` extracts buildable void areas by analyzing `<apply>` rules:
 
 1. Finds `deny(void)` rules — regions where building over void is blocked
-2. Computes buildable area = map bounds minus denied regions
-3. Subtracts island polygons to get buildable void area
-4. Falls back to block 36 detection from `layout_y0.parquet` if no XML rules found
+2. Decomposes the void-area region (typically `NegativeRegion` or `ComplementRegion`) into its children — these are the zones carved out from the void-deny area where building IS allowed
+3. **Filters out** children matching excluded patterns (`spawn`, `wool`, `monument`) — these have their own deny-build rules or don't extend to void level, so including them would inflate the buildable area
+4. Unions the remaining children (bridges, lanes, the central rectangle) as the build-allowed area
+5. Subtracts island polygons to get buildable void area
+6. Falls back to block 36 detection from `layout_y0.parquet` if no XML rules found
+
+The exclusion list is defined in `_EXCLUDED_VOID_CHILD_PATTERNS` and can be extended as needed.
 
 Returns a dict with `source` (`'xml'` or `'block_36'`), `polygons`, `buildable_void`, and `buildable_void_area`.
 
@@ -140,6 +153,42 @@ Regions are automatically categorized by ID pattern matching:
   "region_categories": { "spawn": ["spawns"], "wool": ["wool-rooms"] }
 }
 ```
+
+## Pipeline Data Flow
+
+The XML data follows two separate paths through the pipeline. Understanding both is important because `map_data.json` stores only declarative metadata (mirror references, not resolved polygons), yet the visualization renders fully resolved geometry.
+
+### Path 1: Metadata export (`map_data.json`)
+
+```
+map.xml → MapXMLParser.parse() → MapData (live Region objects)
+       → MapDataEncoder.save_json() → map_data.json
+```
+
+`exporter.py` serializes each `Region` to JSON. For transformation regions like `MirrorRegion`, only the reference metadata is stored (`ref_region_id`, `origin`, `normal`). No polygon geometry is computed — `to_shapely_2d()` is never called. This file is a structural snapshot of the XML.
+
+### Path 2: Build region extraction → visualization
+
+```
+map.xml → MapXMLParser.parse() → MapData (live Region objects)
+       → extract_build_region(map_data, ...) → resolved Shapely polygons
+       → coordinate lists → map_context.json → map_connectivity.png
+```
+
+This is a **second, independent parse** of `map.xml`, triggered by `islands_service._annotate_pois()`. The live `MapData` (with its `.regions` dict of Python objects and `.apply_rules`) is passed to `build_regions.extract_build_region()`, which:
+
+1. Scans `apply_rules` for deny-void patterns
+2. Decomposes the void-area region (negative/complement) into its children
+3. Filters out spawn/wool/monument children (see Build Regions section above)
+4. Resolves each kept child to Shapely geometry via `.to_shapely_2d(bounds, regions_dict)` — transformation regions like `MirrorRegion` resolve recursively at this point
+5. Unions the kept children, then computes `buildable_void = allowed - islands`
+6. Converts Shapely polygons to coordinate lists via `_geometry_to_coords()`
+
+The resolved coordinate lists are stored in `map_context.json` under `build_region.buildable_void`. The visualization (`map_primitives.draw_build_region()`) reads these pre-resolved coordinates directly — it has no knowledge of mirrors or references.
+
+### Why two paths?
+
+`map_data.json` preserves the original XML structure for inspection and debugging. Geometry resolution is deferred to `to_shapely_2d()`, which is only called when actual polygon geometry is needed (build region extraction, visualization). This keeps serialization simple and avoids baking resolved coordinates into the metadata export.
 
 ## Python API
 
