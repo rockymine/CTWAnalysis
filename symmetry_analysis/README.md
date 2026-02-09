@@ -6,8 +6,16 @@ within each team's territory.
 
 ## Usage
 
+Detailed report for a single map:
+
 ```bash
 python ctw.py debug symmetry --map <map_name>
+```
+
+Compact summary table across all preprocessed maps:
+
+```bash
+python ctw.py debug symmetry
 ```
 
 The command reads preprocessed island geometry from
@@ -17,6 +25,23 @@ first by the island analysis pipeline:
 ```bash
 python ctw.py --config ctw_config.yaml run --map <map_name> --no-matches
 ```
+
+### Summary table
+
+When `--map` is omitted, a compact table is printed with one row per map:
+
+```
+  map                      global symmetry  center        intra-team
+  -----------------------  ---------------  ------------  ---------------------
+  annealing_iv             rot_90 (100%)    2x2_area      all teams (3 groups)
+  outback_outback_edition  rot_180 (100%)   2x2_area      all teams (IoU>=100%)
+  tumbleweed               rot_180 (100%)   single_block  none
+
+  3 maps analyzed
+```
+
+Maps whose `output/` folder exists but lacks `map_context.json` are listed as
+skipped.
 
 ## How it works
 
@@ -54,6 +79,11 @@ whether each dimension spans an odd or even number of blocks:
 
 The center type matters for intra-team symmetry splitting (see below).
 
+An island is only marked `has_center` if at least one of the center block(s)
+is literally present in the island's block set.  If the geometric center falls
+in a void (no island occupies it), no island is marked — this is common on
+4-team maps where the center sits between islands.
+
 **Example output:**
 ```
 Map Center
@@ -73,13 +103,13 @@ applying a transform to island A's centroid lands on island B's centroid
 
 The tested transforms are:
 
-| Transform    | Operation                                  | Formula                              |
-|--------------|-------------------------------------------|--------------------------------------|
-| `mirror_x`   | Reflect across the vertical axis X=center | `(x, z) -> (2*cx - x, z)`           |
-| `mirror_z`   | Reflect across the horizontal axis Z=center | `(x, z) -> (x, 2*cz - z)`        |
-| `rot_180`    | 180-degree rotation around center         | `(x, z) -> (2*cx - x, 2*cz - z)`   |
-| `rot_90`     | 90-degree CCW rotation around center      | `(x, z) -> (cx + (z-cz), cz - (x-cx))` |
-| `rot_270`    | 270-degree CCW (= 90 CW) rotation        | `(x, z) -> (cx - (z-cz), cz + (x-cx))` |
+| Transform    | Operation                                   | Formula                                  |
+|--------------|---------------------------------------------|------------------------------------------|
+| `mirror_x`   | Reflect across the vertical axis X=center  | `(x, z) -> (2*cx - x, z)`               |
+| `mirror_z`   | Reflect across the horizontal axis Z=center| `(x, z) -> (x, 2*cz - z)`              |
+| `rot_180`    | 180-degree rotation around center           | `(x, z) -> (2*cx - x, 2*cz - z)`       |
+| `rot_90`     | 90-degree CCW rotation around center        | `(x, z) -> (cx + (z-cz), cz - (x-cx))` |
+| `rot_270`    | 270-degree CCW (= 90 CW) rotation          | `(x, z) -> (cx - (z-cz), cz + (x-cx))` |
 
 A single pair can match multiple transforms (e.g. two islands on opposite sides
 of center satisfy both `mirror_z` and `rot_180` simultaneously).
@@ -109,9 +139,8 @@ Island Pair Analysis
 Each candidate symmetry type is scored using two independent signals:
 
 1. **Pair support** — what fraction of island pairs' centroids are consistent
-   with this transform.  For `rot_90`, both `rot_90` and `rot_270` pairs count
-   as evidence (they are inverses of the same symmetry), but both directions
-   must be present.
+   with this transform (see [group-aware counting](#symmetry-group-aware-pair-counting)
+   below).
 
 2. **Polygon IoU** — all island polygons are unioned into a single shape, the
    transform is applied, and Intersection-over-Union is computed between the
@@ -126,14 +155,42 @@ confidence = 0.4 * pair_support + 0.6 * polygon_iou
 
 A symmetry type is marked **[DETECTED]** when confidence >= 60%.
 
-#### Why pair support can be below 100%
+#### Symmetry-group-aware pair counting
 
-For `rot_90` with groups of 4 islands, 2 out of every 6 pairs in each group
-are diametrically opposite — the centroid test labels those `rot_180`, not
-`rot_90`.  This structurally caps pair support at 4/6 = 66.7% even for a
-perfectly 90-degree-symmetric map.  The polygon IoU (which measures actual
-shape overlap) will still read 100%, so the combined confidence reflects the
-true geometry.
+A naive pair count would only credit pairs that directly show a specific
+transform label.  But transforms within the same symmetry group are all
+evidence for each other:
+
+- **rot_180 = mirror_x composed with mirror_z.**  When polygon IoU confirms
+  both mirror types exist (>= 85%), pairs labelled `mirror_x` or `mirror_z`
+  also count as rot_180 evidence.  On a D2-symmetric map (rot_180 + both
+  mirrors), a canonical group of 4 islands produces 6 pairs: 2 are
+  diametrically opposite (labelled `rot_180`), 2 are `mirror_x`, 2 are
+  `mirror_z`.  All 6 support the D2 group.
+
+- **rot_90 implies rot_180.**  Pairs labelled `rot_180` also count as rot_90
+  evidence when polygon IoU confirms rot_180 (>= 85%).  `rot_270` pairs
+  always count (inverse of rot_90).  On a D4-symmetric map (rot_90 + rot_180
+  + both mirrors), all pairs in a 4-island group support the symmetry.
+
+This ensures pair support reflects the true geometry instead of being
+artificially diluted by transform label distribution.
+
+**Example output:**
+```
+Global Symmetry
+----------------------------------------------------------------------
+  [DETECTED]  90-degree rotational symmetry
+              pair support: 100.0%  polygon IoU: 100.0%  confidence: 100.0%
+  [DETECTED]  180-degree rotational symmetry
+              pair support: 100.0%  polygon IoU: 100.0%  confidence: 100.0%
+
+  [   ---  ]  Mirror across vertical axis (X = center)
+              pair support: 37.5%  polygon IoU: 100.0%  confidence: 75.0%
+```
+
+Note that 180-degree rotation is always a consequence of 90-degree rotation,
+so both are typically detected together on 4-team maps.
 
 #### Consistency indicator
 
@@ -145,22 +202,6 @@ The summary maps confidence to a human-readable label:
 | >= 75%       | **MEDIUM** — geometry is mostly symmetric |
 | >= 60%       | **LOW** — some symmetry present but imperfect |
 | < 60%        | **NONE** — no clear symmetry |
-
-**Example output:**
-```
-Global Symmetry
-----------------------------------------------------------------------
-  [DETECTED]  90-degree rotational symmetry
-              pair support: 66.7%  polygon IoU: 100.0%  confidence: 86.7%
-  [DETECTED]  180-degree rotational symmetry
-              pair support: 33.3%  polygon IoU: 100.0%  confidence: 73.3%
-
-  [   ---  ]  Mirror across vertical axis (X = center)
-              pair support: 16.7%  polygon IoU: 45.0%  confidence: 33.7%
-```
-
-Note that 180-degree rotation is always a consequence of 90-degree rotation,
-so both are typically detected together on 4-team maps.
 
 ### Intra-Team Symmetry
 
@@ -199,7 +240,9 @@ Intra-Team Symmetry
 
 For maps with 90-degree rotational symmetry (typically 4 teams), mirror-split
 analysis is not meaningful.  Island shapes on these maps are often abstract and
-team territories don't fill neat axis-aligned quadrants.
+team territories don't fill neat axis-aligned quadrants — the intra-team axis
+often produces nonsense (e.g. map center, team wool, and team spawn form a
+triangle instead of a line).
 
 Instead, the detector validates **canonical coverage**: each team should receive
 exactly one island from each canonical group.  Canonical groups are sets of
@@ -237,8 +280,8 @@ The summary section reports:
 Summary
 ----------------------------------------------------------------------
   Primary symmetry: 90-degree rotational symmetry
-  Confidence:       86.7%
-  Consistency:      MEDIUM - geometry is mostly symmetric
+  Confidence:       100.0%
+  Consistency:      HIGH - geometry is highly symmetric
   Intra-team symmetry: detected for blue-team, red-team, green-team, yellow-team
 ```
 
@@ -253,10 +296,12 @@ Summary
 | **Canonical pair** | Two islands with the same area, tested as candidates for a symmetric relationship. |
 | **Center point** | The geometric midpoint of the bounding box, `((min_x + max_x) / 2, (min_z + max_z) / 2)`. All transforms operate around this point. |
 | **Confidence** | Weighted combination of pair support (40%) and polygon IoU (60%). Ranges from 0% to 100%. |
+| **D2 symmetry group** | The 4 symmetries generated by two perpendicular mirrors: identity, mirror_x, mirror_z, rot_180. A map with any two of the three non-identity transforms has all three. |
 | **D4 symmetry group** | The 8 symmetries of a square (4 rotations x 2 mirror states). Used upstream to canonicalize island shapes so that rotated/reflected copies share the same canonical key. |
-| **Intra-team axis** | The mirror axis that runs through a team's territory, used to split and compare the two halves. Perpendicular to the axis that separates the teams. |
+| **has_center** | Island flag set only when the island physically contains at least one of the map's center block(s). If the center is void, no island is flagged. |
+| **Intra-team axis** | The mirror axis that runs through a team's territory, used to split and compare the two halves. Perpendicular to the axis that separates the teams. Only meaningful for 2-team maps. |
 | **IoU (Intersection over Union)** | `area(A intersect B) / area(A union B)`. Measures how well two shapes overlap. 1.0 = perfect match, 0.0 = no overlap. |
-| **Pair support** | Fraction of canonical pairs whose centroids are consistent with a given transform. |
+| **Pair support** | Fraction of canonical pairs whose centroids are consistent with a given symmetry type, counting all group-compatible transforms. |
 | **Polygon IoU** | IoU computed on the union of all island polygons after applying a transform to the whole set. |
 | **Simplified polygon** | A Shapely polygon representing an island's outline, stored in `map_context.json`. |
 | **Transform** | A geometric operation (mirror or rotation) applied around the map center point. |
