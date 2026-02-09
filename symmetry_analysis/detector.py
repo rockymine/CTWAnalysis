@@ -417,11 +417,15 @@ def _detect_global_symmetry(
         # Polygon-level verification
         iou, _ = _verify_polygon_symmetry(islands, center_x, center_z, sym_type)
 
-        # For rot_90, also require rot_270
+        # For rot_90, both rot_90 and rot_270 are evidence of 90-degree
+        # symmetry (rot_270 is the inverse).  Require both to be present,
+        # then count their union as supporting pairs.
         if sym_type == "rot_90":
             rot270_count = counts.get("rot_270", 0)
-            if n_pairs > 0:
-                pair_support = min(pair_count, rot270_count) / n_pairs
+            if rot270_count == 0 or pair_count == 0:
+                pair_support = 0.0
+            elif n_pairs > 0:
+                pair_support = (pair_count + rot270_count) / n_pairs
 
         # Combined confidence: weighted average of pair and polygon signals
         if n_pairs > 0:
@@ -489,7 +493,24 @@ def _detect_intra_team_symmetry(
         if isl["id"] not in assigned_ids and not isl.get("has_center")
     ]
 
-    if primary["type"] == "rot_180" and len(teams) == 2:
+    if len(teams) >= 3:
+        # For 3+ team maps, assign unassigned islands to the nearest
+        # team spawn island by Euclidean distance to spawn center.
+        spawn_centers = {}
+        for isl in islands:
+            if isl.get("team") and isl.get("has_spawn"):
+                spawn_centers[isl["team"]] = isl["center"]
+        for isl in unassigned:
+            if not spawn_centers:
+                break
+            ix, iz = isl["center"]
+            best_team = min(
+                spawn_centers,
+                key=lambda t: (ix - spawn_centers[t][0]) ** 2
+                            + (iz - spawn_centers[t][1]) ** 2,
+            )
+            team_islands[best_team].append(isl)
+    elif primary["type"] == "rot_180" and len(teams) == 2:
         # Partition by which side of the perpendicular bisector
         # For 180 rotation, the axis goes through center
         # Use Z coordinate relative to center for typical 2-team maps
