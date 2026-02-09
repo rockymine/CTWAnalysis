@@ -6,10 +6,10 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 
-from .datatypes import (
+from ctw.core.models import (
     IslandResult, SkeletonGraph, CanonicalTransform, CanonicalIsland
 )
-from .canonicalize import canonicalize_island
+from ctw.core.geometry import canonicalize_island, compute_canonical_key
 from .rasterize import rasterize_island
 from .skeletonize import compute_skeleton
 from .nodes import compute_pixel_degrees, extract_nodes
@@ -170,9 +170,8 @@ def _identity_canonical(island_id: int, blocks: np.ndarray) -> CanonicalIsland:
     min_vals = pts.min(axis=0)
     canonical_pts = pts - min_vals
 
-    import hashlib
     sorted_pts = canonical_pts[np.lexsort((canonical_pts[:, 1], canonical_pts[:, 0]))]
-    key = hashlib.sha256(sorted_pts.astype(np.int32).tobytes()).hexdigest()[:16]
+    key = compute_canonical_key(sorted_pts)
 
     transform = CanonicalTransform(
         rotation=0,

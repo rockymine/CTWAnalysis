@@ -7,20 +7,8 @@ Computes pixel degree and classifies skeleton pixels as endpoints or junctions.
 import numpy as np
 from typing import List
 
-from .datatypes import SkeletonPixels, GraphNode
-
-
-# Neighbor offsets for 8-connectivity (clockwise from top-left)
-NEIGHBOR_OFFSETS_8 = [
-    (-1, -1), (-1, 0), (-1, 1),
-    (0, -1),           (0, 1),
-    (1, -1),  (1, 0),  (1, 1),
-]
-
-# Neighbor offsets for 4-connectivity
-NEIGHBOR_OFFSETS_4 = [
-    (-1, 0), (0, -1), (0, 1), (1, 0),
-]
+from ctw.core.models import SkeletonPixels, GraphNode
+from ctw.core.geometry import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 
 
 def compute_pixel_degrees(

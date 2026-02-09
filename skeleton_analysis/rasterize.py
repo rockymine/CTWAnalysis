@@ -5,7 +5,7 @@ Convention: mask[r, c] where r = z-coordinate (row), c = x-coordinate (column).
 """
 
 import numpy as np
-from .datatypes import RasterMask
+from ctw.core.models import RasterMask
 
 
 def rasterize_island(

@@ -16,78 +16,14 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
-# ---------------------------------------------------------------------------
-# Center classification
-# ---------------------------------------------------------------------------
-
-def classify_center(bbox: Tuple[float, float, float, float]) -> Dict:
-    """Classify the geometric map center based on bounding box dimensions.
-
-    In Minecraft's block coordinate system, a block at integer (x, z) occupies
-    the area [x, x+1) x [z, z+1).  The bounding box stores min/max block indices,
-    so the full extent is [min_x, max_x+1) x [min_z, max_z+1).
-
-    The center type depends on whether each dimension spans an odd or even
-    number of blocks:
-        - odd x odd   -> single block center
-        - even x odd  -> 2x1 center line (horizontal)
-        - odd x even  -> 1x2 center line (vertical)
-        - even x even -> 2x2 center area
-
-    Returns dict with keys: center_x, center_z, type, description, blocks
-    """
-    min_x, max_x, min_z, max_z = bbox
-    # max_x/max_z in bbox are already +1 from the raw block coords
-    # (see build_map_context: max + 1), so width = max_x - min_x
-    width_x = max_x - min_x
-    width_z = max_z - min_z
-
-    center_x = (min_x + max_x) / 2.0
-    center_z = (min_z + max_z) / 2.0
-
-    odd_x = (int(width_x) % 2 == 1)
-    odd_z = (int(width_z) % 2 == 1)
-
-    if odd_x and odd_z:
-        center_type = "single_block"
-        description = "Single block center"
-        # The center block index
-        bx = int(center_x - 0.5)
-        bz = int(center_z - 0.5)
-        blocks = [(bx, bz)]
-    elif not odd_x and odd_z:
-        center_type = "2x1_line"
-        description = "2x1 center line (along X axis)"
-        bx1 = int(center_x - 1)
-        bx2 = int(center_x)
-        bz = int(center_z - 0.5)
-        blocks = [(bx1, bz), (bx2, bz)]
-    elif odd_x and not odd_z:
-        center_type = "1x2_line"
-        description = "1x2 center line (along Z axis)"
-        bx = int(center_x - 0.5)
-        bz1 = int(center_z - 1)
-        bz2 = int(center_z)
-        blocks = [(bx, bz1), (bx, bz2)]
-    else:
-        center_type = "2x2_area"
-        description = "2x2 center area"
-        bx1 = int(center_x - 1)
-        bx2 = int(center_x)
-        bz1 = int(center_z - 1)
-        bz2 = int(center_z)
-        blocks = [(bx1, bz1), (bx2, bz1), (bx1, bz2), (bx2, bz2)]
-
-    return {
-        "center_x": center_x,
-        "center_z": center_z,
-        "type": center_type,
-        "description": description,
-        "blocks": blocks,
-        "map_width_x": int(width_x),
-        "map_width_z": int(width_z),
-    }
+from ctw.core.geometry import (
+    classify_center,
+    reflect_polygon_x as _reflect_polygon_x,
+    reflect_polygon_z as _reflect_polygon_z,
+    rotate_polygon_180 as _rotate_polygon_180,
+    rotate_polygon_90 as _rotate_polygon_90,
+    polygon_iou as _polygon_iou,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,69 +114,6 @@ def _detect_pair_transform(
 # ---------------------------------------------------------------------------
 # Polygon-based symmetry verification
 # ---------------------------------------------------------------------------
-
-def _reflect_polygon_x(poly_coords: List[List[float]], center_x: float) -> np.ndarray:
-    """Reflect polygon coordinates across x = center_x."""
-    pts = np.array(poly_coords)
-    pts[:, 0] = 2 * center_x - pts[:, 0]
-    return pts
-
-
-def _reflect_polygon_z(poly_coords: List[List[float]], center_z: float) -> np.ndarray:
-    """Reflect polygon coordinates across z = center_z."""
-    pts = np.array(poly_coords)
-    pts[:, 1] = 2 * center_z - pts[:, 1]
-    return pts
-
-
-def _rotate_polygon_180(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
-    """Rotate polygon coordinates 180 degrees around (cx, cz)."""
-    pts = np.array(poly_coords)
-    pts[:, 0] = 2 * cx - pts[:, 0]
-    pts[:, 1] = 2 * cz - pts[:, 1]
-    return pts
-
-
-def _rotate_polygon_90(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
-    """Rotate polygon coordinates 90 degrees CCW around (cx, cz)."""
-    pts = np.array(poly_coords)
-    dx = pts[:, 0] - cx
-    dz = pts[:, 1] - cz
-    new_pts = np.empty_like(pts)
-    new_pts[:, 0] = cx + dz
-    new_pts[:, 1] = cz - dx
-    return new_pts
-
-
-def _polygon_iou(poly_a_coords, poly_b_coords) -> float:
-    """Compute IoU (Intersection over Union) between two polygons using Shapely.
-
-    Returns 0.0 on any error or degenerate geometry.
-    """
-    try:
-        from shapely.geometry import Polygon
-        from shapely.validation import make_valid
-
-        pa = Polygon(poly_a_coords)
-        pb = Polygon(poly_b_coords)
-
-        if not pa.is_valid:
-            pa = make_valid(pa)
-        if not pb.is_valid:
-            pb = make_valid(pb)
-
-        if pa.is_empty or pb.is_empty:
-            return 0.0
-
-        intersection = pa.intersection(pb).area
-        union = pa.union(pb).area
-
-        if union < 1e-6:
-            return 0.0
-        return intersection / union
-    except Exception:
-        return 0.0
-
 
 def _verify_polygon_symmetry(
     islands: List[Dict],
