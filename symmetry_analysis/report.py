@@ -90,24 +90,36 @@ def format_symmetry_report(result: dict) -> str:
             ids_str = ", ".join(str(i) for i in t["island_ids"])
             lines.append(f"  Team: {team_label}  ({t['island_count']} islands: [{ids_str}])")
 
-            axis_info = ""
-            if t.get("intra_axis"):
-                axis_label = "X" if t["intra_axis"] == "mirror_x" else "Z"
-                axis_info = f", split axis: {axis_label}={t.get('axis_value', '?')}"
+            check_type = t.get("check_type", "mirror_split")
 
-            if t.get("symmetry_detected"):
-                sym_type = t.get("best_symmetry_type", "?")
-                iou = t.get("best_iou", 0)
-                lines.append(f"    [DETECTED]  {sym_type}  "
-                             f"(IoU: {iou:.1%}{axis_info})")
-            else:
-                detail = t.get("detail", "")
-                if detail:
-                    lines.append(f"    [   ---  ]  {detail}")
+            if check_type == "canonical_coverage":
+                covered = t.get("groups_covered", 0)
+                total = t.get("canonical_groups", 0)
+                if t.get("symmetry_detected"):
+                    lines.append(f"    [DETECTED]  canonical coverage: "
+                                 f"{covered}/{total} groups")
                 else:
+                    lines.append(f"    [   ---  ]  canonical coverage: "
+                                 f"{covered}/{total} groups")
+            else:
+                axis_info = ""
+                if t.get("intra_axis"):
+                    axis_label = "X" if t["intra_axis"] == "mirror_x" else "Z"
+                    axis_info = f", split axis: {axis_label}={t.get('axis_value', '?')}"
+
+                if t.get("symmetry_detected"):
+                    sym_type = t.get("best_symmetry_type", "?")
                     iou = t.get("best_iou", 0)
-                    lines.append(f"    [   ---  ]  Best IoU: {iou:.1%} "
-                                 f"(below threshold{axis_info})")
+                    lines.append(f"    [DETECTED]  {sym_type}  "
+                                 f"(IoU: {iou:.1%}{axis_info})")
+                else:
+                    detail = t.get("detail", "")
+                    if detail:
+                        lines.append(f"    [   ---  ]  {detail}")
+                    else:
+                        iou = t.get("best_iou", 0)
+                        lines.append(f"    [   ---  ]  Best IoU: {iou:.1%} "
+                                     f"(below threshold{axis_info})")
 
     # --- Overall Confidence ---
     lines.append("")

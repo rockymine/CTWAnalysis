@@ -649,61 +649,30 @@ def _reflect_shapely_geom_z(geom, center_z: float):
     return affinity.affine_transform(geom, [1, 0, 0, -1, 0, 2 * center_z])
 
 
-def _detect_intra_team_symmetry(
+def _assign_islands_to_teams(
     islands: List[Dict],
+    teams: List[Dict],
     center_x: float,
     center_z: float,
-    center_info: Dict,
-    global_symmetries: List[Dict],
-    teams: List[Dict],
-) -> List[Dict]:
-    """Detect symmetry within each team's territory.
+    primary_global: Dict,
+) -> Dict[str, List[Dict]]:
+    """Assign islands to teams by explicit team field or proximity to spawns.
 
-    Uses the primary global symmetry axis to derive team territory boundaries,
-    then checks whether each team's islands are internally symmetric.
-
-    For spawn islands that straddle the intra-team axis, the polygon is split
-    in half and the two halves are compared via IoU.  The split respects the
-    center type:
-      - Even dimension (2x2 / 2-block center line): clean split, no gap.
-      - Odd dimension (single block / 1-block center line): the center
-        column/row is excluded from both halves so they remain equal-sized.
-
-    Returns list of per-team symmetry results.
+    Unlike prior versions, does NOT exclude has_center islands — the
+    has_center flag only means "closest to map center", which may be void.
     """
-    if not teams:
-        return []
-
-    # Find the primary detected global symmetry
-    detected = [s for s in global_symmetries if s["detected"]]
-    if not detected:
-        return []
-
-    primary = max(detected, key=lambda s: s["confidence"])
-
-    # Assign islands to teams based on team field or proximity to spawns
-    team_islands = {}
-    for team in teams:
-        tid = team["id"]
-        team_islands[tid] = []
-
-    # Islands with explicit team assignment
+    team_islands = {t["id"]: [] for t in teams}
     assigned_ids = set()
+
+    # Explicit team assignment
     for isl in islands:
         if isl.get("team"):
             team_islands.setdefault(isl["team"], []).append(isl)
             assigned_ids.add(isl["id"])
 
-    # For unassigned islands, use the global symmetry axis to partition
-    # into team territories (exclude center islands from partitioning)
-    unassigned = [
-        isl for isl in islands
-        if isl["id"] not in assigned_ids and not isl.get("has_center")
-    ]
+    unassigned = [isl for isl in islands if isl["id"] not in assigned_ids]
 
     if len(teams) >= 3:
-        # For 3+ team maps, assign unassigned islands to the nearest
-        # team spawn island by Euclidean distance to spawn center.
         spawn_centers = {}
         for isl in islands:
             if isl.get("team") and isl.get("has_spawn"):
@@ -718,10 +687,7 @@ def _detect_intra_team_symmetry(
                             + (iz - spawn_centers[t][1]) ** 2,
             )
             team_islands[best_team].append(isl)
-    elif primary["type"] == "rot_180" and len(teams) == 2:
-        # Partition by which side of the perpendicular bisector
-        # For 180 rotation, the axis goes through center
-        # Use Z coordinate relative to center for typical 2-team maps
+    elif primary_global["type"] == "rot_180" and len(teams) == 2:
         team_ids = [t["id"] for t in teams]
         for isl in unassigned:
             iz = isl["center"][1]
@@ -729,10 +695,10 @@ def _detect_intra_team_symmetry(
                 team_islands[team_ids[0]].append(isl)
             else:
                 team_islands[team_ids[1]].append(isl)
-    elif primary["type"] in ("mirror_x", "mirror_z"):
+    elif primary_global["type"] in ("mirror_x", "mirror_z"):
         team_ids = [t["id"] for t in teams]
         for isl in unassigned:
-            if primary["type"] == "mirror_z":
+            if primary_global["type"] == "mirror_z":
                 val = isl["center"][1]
                 ref = center_z
             else:
@@ -742,8 +708,115 @@ def _detect_intra_team_symmetry(
                 team_islands[team_ids[0]].append(isl)
             elif val > ref:
                 team_islands[team_ids[1]].append(isl)
-            # Islands exactly on center belong to neither
 
+    return team_islands
+
+
+def _check_canonical_coverage(
+    islands: List[Dict],
+    teams: List[Dict],
+    team_islands: Dict[str, List[Dict]],
+) -> List[Dict]:
+    """Check that each team gets exactly 1 island from each canonical group.
+
+    For rot_90 (4-team) maps, intra-team mirror symmetry is not meaningful
+    because island shapes are abstract and team territories don't form
+    neat axis-aligned quadrants.  Instead we verify that the rotational
+    symmetry correctly distributes one island from each canonical group
+    to every team.
+
+    Canonical groups are identified by area (islands with the same area
+    share a canonical D4 shape).  Only groups whose size equals the number
+    of teams are considered (one island per team expected).
+    """
+    from collections import defaultdict
+
+    n_teams = len(teams)
+
+    # Build canonical groups by area
+    area_groups = defaultdict(list)
+    for isl in islands:
+        area_groups[isl["area"]].append(isl["id"])
+
+    # Keep groups that have exactly n_teams members
+    canonical_groups = {
+        area: set(ids) for area, ids in area_groups.items()
+        if len(ids) == n_teams
+    }
+
+    total_groups = len(canonical_groups)
+
+    results = []
+    for team in teams:
+        tid = team["id"]
+        t_islands = team_islands.get(tid, [])
+        t_ids = {isl["id"] for isl in t_islands}
+
+        covered = 0
+        for area, group_ids in canonical_groups.items():
+            if len(t_ids & group_ids) == 1:
+                covered += 1
+
+        coverage = covered / total_groups if total_groups > 0 else 0.0
+
+        results.append({
+            "team": tid,
+            "island_count": len(t_islands),
+            "island_ids": [i["id"] for i in t_islands],
+            "symmetry_detected": coverage >= 1.0,
+            "check_type": "canonical_coverage",
+            "canonical_groups": total_groups,
+            "groups_covered": covered,
+            "best_iou": round(coverage, 4),
+            "detail": f"Canonical coverage: {covered}/{total_groups} groups",
+        })
+
+    return results
+
+
+def _detect_intra_team_symmetry(
+    islands: List[Dict],
+    center_x: float,
+    center_z: float,
+    center_info: Dict,
+    global_symmetries: List[Dict],
+    teams: List[Dict],
+) -> List[Dict]:
+    """Detect symmetry within each team's territory.
+
+    Strategy depends on global symmetry type:
+
+    - rot_90 (typically 4 teams): Check canonical coverage — each team
+      should receive exactly 1 island from each canonical group.  Mirror-
+      split is not attempted because island shapes are abstract and team
+      territories don't form neat axis-aligned quadrants.
+
+    - rot_180 / mirror (typically 2 teams): Split each team's territory
+      along the intra-team axis and compare the two halves via polygon
+      IoU.  The split respects the center type (even = clean split,
+      odd = exclude center column/row).
+
+    Returns list of per-team symmetry results.
+    """
+    if not teams:
+        return []
+
+    detected = [s for s in global_symmetries if s["detected"]]
+    if not detected:
+        return []
+
+    primary = max(detected, key=lambda s: s["confidence"])
+
+    # Assign islands to teams
+    team_islands = _assign_islands_to_teams(
+        islands, teams, center_x, center_z, primary,
+    )
+
+    # --- rot_90: canonical coverage instead of mirror split ---
+    if primary["type"] == "rot_90":
+        return _check_canonical_coverage(islands, teams, team_islands)
+
+    # --- 2-team maps: mirror split ---
     results = []
     for team in teams:
         tid = team["id"]
@@ -758,8 +831,6 @@ def _detect_intra_team_symmetry(
             })
             continue
 
-        # Determine the intra-team axis from the global symmetry
-        # Use the team's first spawn island for orientation
         spawn_island = next(
             (i for i in t_islands if i.get("has_spawn")), t_islands[0],
         )
@@ -777,13 +848,8 @@ def _detect_intra_team_symmetry(
             })
             continue
 
-        # The split axis value
-        if intra_axis == "mirror_x":
-            axis_value = center_x
-        else:
-            axis_value = center_z
+        axis_value = center_x if intra_axis == "mirror_x" else center_z
 
-        # Run split-and-compare IoU
         iou, axis_name = _verify_intra_team_symmetry(
             t_islands, intra_axis, axis_value, center_info,
         )
@@ -792,6 +858,7 @@ def _detect_intra_team_symmetry(
             "team": tid,
             "island_count": len(t_islands),
             "island_ids": [i["id"] for i in t_islands],
+            "check_type": "mirror_split",
             "intra_axis": intra_axis,
             "axis_value": axis_value,
             "symmetry_detected": iou >= 0.60,
