@@ -212,25 +212,59 @@ def classify_island_center(
     """
     Set has_center and distance_to_center on each island.
 
-    The island closest to map_center gets has_center=True.
+    An island only gets has_center=True if the geometric map center
+    actually lies on the island — i.e. at least one of the center
+    block(s) is present in the island's block set.
+
+    The center type depends on the bounding box dimensions (odd/even):
+      - odd  x odd  -> 1 center block
+      - even x odd  -> 2 center blocks (2x1)
+      - odd  x even -> 2 center blocks (1x2)
+      - even x even -> 4 center blocks (2x2)
+
+    If the center is void (no island contains any center block),
+    no island is marked has_center.
     """
     if not islands:
         return
 
-    best_island = None
-    best_dist = float('inf')
+    # Determine which block(s) form the geometric center.
+    # map_center is (cx, cz) = midpoint of the bounding box.
+    # For odd dimension the center is at an integer + 0.5 -> single block.
+    # For even dimension the center is at an integer -> two blocks straddle it.
+    cx, cz = map_center
+    cx_is_half = (cx % 1 != 0)  # odd dimension -> x.5
+    cz_is_half = (cz % 1 != 0)
+
+    center_blocks = set()
+    if cx_is_half and cz_is_half:
+        # single block
+        center_blocks.add((int(cx - 0.5), int(cz - 0.5)))
+    elif not cx_is_half and cz_is_half:
+        # 2x1 line
+        bz = int(cz - 0.5)
+        center_blocks.add((int(cx) - 1, bz))
+        center_blocks.add((int(cx), bz))
+    elif cx_is_half and not cz_is_half:
+        # 1x2 line
+        bx = int(cx - 0.5)
+        center_blocks.add((bx, int(cz) - 1))
+        center_blocks.add((bx, int(cz)))
+    else:
+        # 2x2 area
+        for dx in (-1, 0):
+            for dz in (-1, 0):
+                center_blocks.add((int(cx) + dx, int(cz) + dz))
 
     for island in islands:
-        cx, cz = island.center
-        dist = np.sqrt((cx - map_center[0]) ** 2 + (cz - map_center[1]) ** 2)
+        cx_i, cz_i = island.center
+        dist = np.sqrt((cx_i - map_center[0]) ** 2 + (cz_i - map_center[1]) ** 2)
         island.distance_to_center = float(dist)
 
-        if dist < best_dist:
-            best_dist = dist
-            best_island = island
-
-    if best_island is not None:
-        best_island.has_center = True
+        # Check if any center block is in this island
+        block_set = set(map(tuple, island.blocks))
+        if center_blocks & block_set:
+            island.has_center = True
 
 
 def annotate_skeleton_pois(
