@@ -6,9 +6,12 @@ Determines where players can build over the void between islands using:
 2. Block 36 at y=0 in layout_y0.parquet (fallback for maps without XML regions)
 
 Core math:
-  deny(void) applied to region R means "in R, you cannot build over void."
-  buildable_area = map_bounds - R  (area where deny(void) does NOT apply)
-  buildable_void = buildable_area - island_blocks
+  The void-area region (negative/complement) carves out "allowed" zones from
+  the universe.  We decompose it into children, discard spawn/wool/monument
+  children (they have their own deny-build rules), and keep only structurally
+  meaningful ones (bridges, lanes, the central rectangle).
+
+  buildable_void = union(kept_children) - island_blocks
 """
 
 import os
@@ -19,6 +22,12 @@ import pandas as pd
 from shapely.geometry import box, Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
+
+
+# Patterns in region IDs that should be excluded from buildable void.
+# These regions typically have their own deny-build rules or don't extend
+# to void level, so including them would inflate the buildable area.
+_EXCLUDED_VOID_CHILD_PATTERNS = frozenset(['spawn', 'wool', 'monument'])
 
 
 def extract_build_region(
@@ -80,76 +89,136 @@ def extract_build_region(
     }
 
 
+# ---------------------------------------------------------------------------
+# XML-based extraction
+# ---------------------------------------------------------------------------
+
 def _extract_from_xml(map_data, shapely_bounds) -> Optional:
     """
-    Find deny(void) apply rules and compute the buildable area.
-
-    buildable_area = map_bounds_box - union(deny_void_regions)
+    Find deny(void) apply rules, decompose the void-area region, and
+    return only the structurally meaningful allowed children as
+    the build-allowed area.
     """
     if not hasattr(map_data, 'apply_rules') or not map_data.apply_rules:
         return None
 
-    deny_void_regions = _find_deny_void_regions(
-        map_data.apply_rules, map_data.regions, shapely_bounds
-    )
-
-    if not deny_void_regions:
+    void_rules = _find_deny_void_rules(map_data.apply_rules)
+    if not void_rules:
         return None
 
-    universe = box(*shapely_bounds)
-    deny_union = _safe_union(deny_void_regions)
+    allowed_parts = []
+    for rule in void_rules:
+        region = _resolve_rule_to_region(rule, map_data.regions)
+        if region is None:
+            continue
 
-    # buildable_area = everywhere MINUS deny(void) regions
-    build_allowed = universe.difference(deny_union)
+        allowed = _extract_allowed_from_void_region(
+            region, map_data.regions, shapely_bounds
+        )
+        if allowed and not allowed.is_empty:
+            allowed_parts.append(allowed)
+
+    if not allowed_parts:
+        return None
+
+    build_allowed = _safe_union(allowed_parts)
     return _ensure_valid(build_allowed)
 
 
-def _find_deny_void_regions(apply_rules, regions_dict, shapely_bounds) -> List:
-    """
-    Scan apply rules for deny(void) patterns and resolve their regions.
-
-    Checks block, block-place, block-break, and use attributes for
-    "void" substring (covers deny(void), block-place-void-filter, etc.)
-    """
-    deny_regions = []
-
+def _find_deny_void_rules(apply_rules) -> List:
+    """Return apply rules whose filters reference 'void'."""
+    void_rules = []
     for rule in apply_rules:
-        # Check if any filter attribute references void
-        is_void_rule = False
         for attr_val in [rule.block_filter, rule.block_place_filter,
                          rule.block_break_filter, rule.use_filter]:
             if attr_val and 'void' in attr_val.lower():
-                is_void_rule = True
+                void_rules.append(rule)
                 break
-
-        if not is_void_rule:
-            continue
-
-        # Resolve the region
-        region_geom = _resolve_apply_region(rule, regions_dict, shapely_bounds)
-        if region_geom and not region_geom.is_empty:
-            deny_regions.append(region_geom)
-
-    return deny_regions
+    return void_rules
 
 
-def _resolve_apply_region(rule, regions_dict, shapely_bounds):
-    """Resolve an apply rule's region to a Shapely geometry."""
-    from .regions import EverywhereRegion
-
-    # Inline region takes precedence
+def _resolve_rule_to_region(rule, regions_dict):
+    """Resolve an apply rule to its Region object (not geometry)."""
     if rule.inline_region is not None:
-        return rule.inline_region.to_shapely_2d(shapely_bounds, regions_dict)
-
-    # Named region reference
+        return rule.inline_region
     if rule.region_id and rule.region_id in regions_dict:
-        return regions_dict[rule.region_id].to_shapely_2d(
-            shapely_bounds, regions_dict
-        )
+        return regions_dict[rule.region_id]
+    return None
 
-    # No region specified = everywhere (PGM default)
-    return EverywhereRegion().to_shapely_2d(shapely_bounds)
 
+def _extract_allowed_from_void_region(region, regions_dict, shapely_bounds):
+    """
+    Extract the build-allowed geometry from a void-deny region.
+
+    For negative/complement regions (the common case), the "carved out"
+    children represent areas excluded from the void-deny rule — i.e. areas
+    where building IS allowed.  We filter out spawn/wool/monument children
+    and keep only structurally meaningful ones (bridges, lanes, etc.).
+
+    For other region types, falls back to universe - region geometry.
+    """
+    from .regions import NegativeRegion, ComplementRegion
+
+    if isinstance(region, (NegativeRegion, ComplementRegion)):
+        # Negative: universe - union(children)  → children are the allowed areas
+        # Complement: base - union(rest)        → rest children are the allowed areas
+        if isinstance(region, NegativeRegion):
+            subtracted = region.children
+        else:
+            subtracted = region.children[1:] if len(region.children) > 1 else []
+
+        kept = [c for c in subtracted if not _should_exclude_void_child(c)]
+
+        if not kept:
+            return None
+
+        child_geoms = [
+            c.to_shapely_2d(shapely_bounds, regions_dict) for c in kept
+        ]
+        return _safe_union(child_geoms)
+
+    # Fallback for other region types: universe minus the region
+    universe = box(*shapely_bounds)
+    region_geom = region.to_shapely_2d(shapely_bounds, regions_dict)
+    if region_geom is None or region_geom.is_empty:
+        return None
+    return _ensure_valid(universe.difference(region_geom))
+
+
+# ---------------------------------------------------------------------------
+# Void-child filtering
+# ---------------------------------------------------------------------------
+
+def _child_region_ids(child) -> List[str]:
+    """Collect all IDs associated with a region child for pattern matching."""
+    ids = []
+    if child.id:
+        ids.append(child.id)
+    if getattr(child, 'ref_id', ''):
+        ids.append(child.ref_id)
+    if getattr(child, 'ref_region_id', ''):
+        ids.append(child.ref_region_id)
+    return ids
+
+
+def _should_exclude_void_child(child) -> bool:
+    """
+    Check if a child of a void-area region should be excluded.
+
+    Children whose IDs match spawn/wool/monument patterns are excluded
+    because they have their own deny-build rules or don't extend to
+    void level.
+    """
+    for rid in _child_region_ids(child):
+        lower = rid.lower()
+        if any(p in lower for p in _EXCLUDED_VOID_CHILD_PATTERNS):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Block 36 fallback
+# ---------------------------------------------------------------------------
 
 def _extract_block36_region(y0_parquet_path: str):
     """
@@ -186,6 +255,10 @@ def _extract_block36_region(y0_parquet_path: str):
     region = unary_union(squares)
     return _ensure_valid(region)
 
+
+# ---------------------------------------------------------------------------
+# Geometry helpers
+# ---------------------------------------------------------------------------
 
 def _safe_union(geoms) -> Polygon:
     """Union a list of geometries, skipping empty/invalid ones."""

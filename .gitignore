@@ -39,6 +39,7 @@ env/
 map_folders/
 layout_data/
 xml_data/
+xml_examples/
 
 # Match logs
 match_logs/

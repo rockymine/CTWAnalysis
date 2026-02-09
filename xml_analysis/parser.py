@@ -13,6 +13,7 @@ from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
     ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
+    MirrorRegion, TranslateRegion,
 )
 
 
@@ -93,6 +94,9 @@ class MapXMLParser:
         """
         data = MapData()
 
+        # Resolve <if>/<unless> variant conditionals before parsing
+        self._resolve_variants(self.root)
+
         # Parse basic info
         data.name = self._get_text('name', '')
         data.version = self._get_text('version', '')
@@ -119,6 +123,38 @@ class MapXMLParser:
         """Get text content of a tag."""
         elem = self.root.find(tag)
         return elem.text if elem is not None and elem.text else default
+
+    def _resolve_variants(self, element):
+        """Resolve <if>/<unless> variant conditionals in-place for the default variant.
+
+        - <if variant="default">      → inline children (we are default)
+        - <if variant="halloween">    → remove (we are not halloween)
+        - <unless variant="halloween"> → inline children (default != halloween)
+        - <unless variant="default">   → remove (we are default)
+        """
+        # Recurse into children first (bottom-up) so nested conditionals resolve
+        for child in list(element):
+            self._resolve_variants(child)
+
+        # Now process this element's direct <if>/<unless> children
+        new_children = []
+        changed = False
+        for child in list(element):
+            if child.tag in ('if', 'unless'):
+                changed = True
+                variants = {v.strip() for v in child.get('variant', '').split(',')}
+                include = (child.tag == 'if' and 'default' in variants) or \
+                          (child.tag == 'unless' and 'default' not in variants)
+                if include:
+                    new_children.extend(child)
+            else:
+                new_children.append(child)
+
+        if changed:
+            for child in list(element):
+                element.remove(child)
+            for child in new_children:
+                element.append(child)
 
     def _parse_teams(self) -> List[Team]:
         """Parse team elements."""
@@ -172,7 +208,7 @@ class MapXMLParser:
         if wools_elem is None:
             return wools
 
-        for wool_elem in wools_elem.findall('wool'):
+        for wool_elem, inherited_team in self._collect_wool_elements(wools_elem):
             location = self._parse_coords(wool_elem.get('location', '0,0,0'))
             monument_elem = wool_elem.find('monument/block')
             monument = (0, 0, 0)
@@ -180,7 +216,7 @@ class MapXMLParser:
                 monument = self._parse_coords(monument_elem.text)
 
             wool = Wool(
-                team=wool_elem.get('team', ''),
+                team=wool_elem.get('team', '') or inherited_team,
                 color=wool_elem.get('color', ''),
                 location=location,
                 monument=monument
@@ -188,6 +224,17 @@ class MapXMLParser:
             wools.append(wool)
 
         return wools
+
+    def _collect_wool_elements(self, parent, inherited_team: str = '') -> list:
+        """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""
+        results = []
+        for child in parent:
+            if child.tag == 'wool':
+                results.append((child, inherited_team))
+            elif child.tag == 'wools':
+                team = child.get('team', '') or inherited_team
+                results.extend(self._collect_wool_elements(child, team))
+        return results
 
     def _parse_regions(self) -> Tuple[Dict[str, Region], List[ApplyRule]]:
         """Parse regions and apply elements."""
@@ -205,7 +252,25 @@ class MapXMLParser:
                 if region and region.id:
                     regions[region.id] = region
 
+        # Build a flat registry of ALL named regions (including children
+        # of unions, etc.) so mirror/translate refs can resolve them.
+        self._register_nested_regions(regions)
+
         return regions, apply_rules
+
+    @staticmethod
+    def _register_nested_regions(regions: Dict[str, 'Region']):
+        """Walk region tree and register all named sub-regions into the flat dict."""
+        def walk(region):
+            if region.id and region.id not in regions:
+                regions[region.id] = region
+            if hasattr(region, 'children'):
+                for child in region.children:
+                    walk(child)
+            if hasattr(region, 'source') and region.source:
+                walk(region.source)
+        for region in list(regions.values()):
+            walk(region)
 
     def _parse_max_build_height(self) -> Optional[int]:
         """Parse max build height."""
@@ -251,6 +316,10 @@ class MapXMLParser:
             return EverywhereRegion(id=region_id)
         elif tag == 'above':
             return AboveRegion(id=region_id, y=float(elem.get('y', '0')))
+        elif tag == 'mirror':
+            return self._parse_mirror(elem, region_id)
+        elif tag == 'translate':
+            return self._parse_translate(elem, region_id)
         elif tag == 'region':
             # <region id="ref-id"/> — reference to a named region
             ref_id = elem.get('id', '')
@@ -422,6 +491,46 @@ class MapXMLParser:
         return IntersectRegion(
             id=region_id,
             children=children
+        )
+
+    def _parse_mirror(self, elem: ET.Element, region_id: str) -> MirrorRegion:
+        """Parse mirror region.
+
+        Supports both attribute form (<mirror region="id" .../>)
+        and child form (<mirror ...><region id="id"/></mirror>).
+        """
+        origin = self._parse_coords(elem.get('origin', '0,0,0'))
+        normal = self._parse_coords(elem.get('normal', '0,0,0'))
+        ref_region_id = elem.get('region', '')
+        source = None
+        if not ref_region_id:
+            source = self._parse_region_element(elem)
+
+        return MirrorRegion(
+            id=region_id,
+            source=source,
+            ref_region_id=ref_region_id,
+            origin_x=origin[0], origin_y=origin[1], origin_z=origin[2],
+            normal_x=normal[0], normal_y=normal[1], normal_z=normal[2],
+        )
+
+    def _parse_translate(self, elem: ET.Element, region_id: str) -> TranslateRegion:
+        """Parse translate region.
+
+        Supports both attribute form (<translate region="id" .../>)
+        and child form (<translate ...><region id="id"/></translate>).
+        """
+        offset = self._parse_coords(elem.get('offset', '0,0,0'))
+        ref_region_id = elem.get('region', '')
+        source = None
+        if not ref_region_id:
+            source = self._parse_region_element(elem)
+
+        return TranslateRegion(
+            id=region_id,
+            source=source,
+            ref_region_id=ref_region_id,
+            offset_x=offset[0], offset_y=offset[1], offset_z=offset[2],
         )
 
     def _parse_apply(self, elem: ET.Element) -> ApplyRule:

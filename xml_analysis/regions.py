@@ -329,6 +329,99 @@ class IntersectRegion(Region):
 
 
 # ---------------------------------------------------------------------------
+# Transformation regions
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MirrorRegion(Region):
+    """Mirror of a region across a plane defined by origin and normal vector.
+
+    The source region can be provided as an inline child (source) or as an
+    ID reference (ref_region_id) resolved via the registry.
+    """
+    source: Optional[Region] = None
+    ref_region_id: str = ""
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    origin_z: float = 0.0
+    normal_x: float = 0.0
+    normal_y: float = 0.0
+    normal_z: float = 0.0
+    region_type: str = "mirror"
+
+    def _resolve_source(self, bounds, registry):
+        if self.source:
+            return self.source.to_shapely_2d(bounds, registry)
+        if registry and self.ref_region_id in registry:
+            return registry[self.ref_region_id].to_shapely_2d(bounds, registry)
+        return _shapely_empty()
+
+    def get_bounds_2d(self):
+        source = self.source
+        if source is None:
+            return None
+        source_bounds = source.get_bounds_2d()
+        if source_bounds is None:
+            return None
+        (min_x, min_z), (max_x, max_z) = source_bounds
+        if self.normal_x != 0:
+            min_x, max_x = 2 * self.origin_x - max_x, 2 * self.origin_x - min_x
+        if self.normal_z != 0:
+            min_z, max_z = 2 * self.origin_z - max_z, 2 * self.origin_z - min_z
+        return (min(min_x, max_x), min(min_z, max_z)), (max(min_x, max_x), max(min_z, max_z))
+
+    def to_shapely_2d(self, bounds, registry=None):
+        source_geom = self._resolve_source(bounds, registry)
+        if source_geom.is_empty:
+            return source_geom
+        from shapely.affinity import scale
+        xfact = -1 if self.normal_x != 0 else 1
+        zfact = -1 if self.normal_z != 0 else 1  # shapely y = minecraft z
+        return scale(source_geom, xfact=xfact, yfact=zfact,
+                     origin=(self.origin_x, self.origin_z))
+
+
+@dataclass
+class TranslateRegion(Region):
+    """Translated copy of a region, offset by (x, y, z) blocks.
+
+    The source region can be provided as an inline child (source) or as an
+    ID reference (ref_region_id) resolved via the registry.
+    """
+    source: Optional[Region] = None
+    ref_region_id: str = ""
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+    offset_z: float = 0.0
+    region_type: str = "translate"
+
+    def _resolve_source(self, bounds, registry):
+        if self.source:
+            return self.source.to_shapely_2d(bounds, registry)
+        if registry and self.ref_region_id in registry:
+            return registry[self.ref_region_id].to_shapely_2d(bounds, registry)
+        return _shapely_empty()
+
+    def get_bounds_2d(self):
+        source = self.source
+        if source is None:
+            return None
+        source_bounds = source.get_bounds_2d()
+        if source_bounds is None:
+            return None
+        (min_x, min_z), (max_x, max_z) = source_bounds
+        return (min_x + self.offset_x, min_z + self.offset_z), \
+               (max_x + self.offset_x, max_z + self.offset_z)
+
+    def to_shapely_2d(self, bounds, registry=None):
+        source_geom = self._resolve_source(bounds, registry)
+        if source_geom.is_empty:
+            return source_geom
+        from shapely.affinity import translate
+        return translate(source_geom, xoff=self.offset_x, yoff=self.offset_z)
+
+
+# ---------------------------------------------------------------------------
 # Reference and special regions
 # ---------------------------------------------------------------------------
 
