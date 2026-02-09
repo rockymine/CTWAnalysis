@@ -286,6 +286,24 @@ def _annotate_pois(
             )
             print(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
 
+            for w in poi_assignments.get('wools', []):
+                fb = w.get('fallback')
+                if fb:
+                    color = w.get('wool_color', '?')
+                    orig = f"({fb['original_x']:.1f}, {fb['original_z']:.1f})"
+                    room = fb['room_region']
+                    if w.get('island_id') is not None:
+                        print(f"    [!] Wool '{color}' location {orig} outside map, "
+                              f"used room '{room}' centroid -> island {w['island_id']}")
+                    else:
+                        print(f"    [!] Wool '{color}' location {orig} outside map, "
+                              f"tried room '{room}' but still unmatched")
+                elif w.get('island_id') is None:
+                    color = w.get('wool_color', '?')
+                    loc = f"({w['x']:.1f}, {w['z']:.1f})"
+                    print(f"    [!] Wool '{color}' location {loc} outside map, "
+                          f"no matching wool-room region found")
+
             if plots:
                 for result in skeleton_results:
                     has_poi = any(n.poi_type is not None for n in result.graph.nodes)

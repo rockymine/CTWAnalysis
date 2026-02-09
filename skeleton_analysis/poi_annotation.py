@@ -287,17 +287,35 @@ def annotate_skeleton_pois(
 
     # Annotate wools
     for wool in wool_locs:
-        island = find_containing_island((wool['x'], wool['z']), islands)
+        wool_x, wool_z = wool['x'], wool['z']
+        fallback = None
+
+        island = find_containing_island((wool_x, wool_z), islands)
+
         if island is None:
-            assignments['wools'].append({
-                **wool, 'island_id': None, 'node_id': None,
-            })
+            # Wool location outside all islands — try wool-room region fallback
+            room = _find_wool_room_center(wool['wool_color'], map_data, islands)
+            if room is not None:
+                fallback = {
+                    'original_x': wool_x,
+                    'original_z': wool_z,
+                    'room_region': room['region_id'],
+                }
+                wool_x, wool_z = room['x'], room['z']
+                island = find_containing_island((wool_x, wool_z), islands)
+
+        if island is None:
+            entry = {**wool, 'x': wool_x, 'z': wool_z,
+                     'island_id': None, 'node_id': None}
+            if fallback:
+                entry['fallback'] = fallback
+            assignments['wools'].append(entry)
             continue
 
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
-            node_id = find_nearest_node((wool['x'], wool['z']), ir)
+            node_id = find_nearest_node((wool_x, wool_z), ir)
 
             if node_id is not None:
                 for node in ir.graph.nodes:
@@ -308,9 +326,11 @@ def annotate_skeleton_pois(
 
         island.has_wool = True
 
-        assignments['wools'].append({
-            **wool, 'island_id': island.id, 'node_id': node_id,
-        })
+        entry = {**wool, 'x': wool_x, 'z': wool_z,
+                 'island_id': island.id, 'node_id': node_id}
+        if fallback:
+            entry['fallback'] = fallback
+        assignments['wools'].append(entry)
 
     return assignments
 
@@ -332,6 +352,57 @@ def _get_region_center_xz(region) -> Tuple[Optional[float], Optional[float]]:
         if all(abs(v) < 1e6 for v in [min_x, min_z, max_x, max_z]):
             return (min_x + max_x) / 2, (min_z + max_z) / 2
     return None, None
+
+
+def _find_wool_room_center(
+    wool_color: str,
+    map_data,
+    islands: List[Island],
+) -> Optional[Dict]:
+    """Find a wool-room region matching the wool color and return its centroid.
+
+    Used as a fallback when the wool's declared location is outside the map.
+    Matches regions whose ID contains both "wool-room" and the wool color
+    (with spaces replaced by hyphens, e.g. "light blue" → "light-blue").
+
+    Returns dict with 'x', 'z', 'region_id' keys, or None.
+    """
+    color_key = wool_color.strip().lower().replace(' ', '-')
+
+    matched_region = None
+    matched_id = None
+    for region_id, region in map_data.regions.items():
+        rid_lower = region_id.lower()
+        if 'wool-room' in rid_lower and color_key in rid_lower:
+            matched_region = region
+            matched_id = region_id
+            break
+
+    if matched_region is None:
+        return None
+
+    # Try shapely centroid (handles mirrors/unions correctly)
+    try:
+        registry = map_data.regions
+        dummy_bounds = (-10000, -10000, 10000, 10000)
+        geom = matched_region.to_shapely_2d(dummy_bounds, registry=registry)
+        if geom is not None and not geom.is_empty:
+            centroid = geom.centroid
+            return {'x': centroid.x, 'z': centroid.y, 'region_id': matched_id}
+    except Exception:
+        pass
+
+    # Fallback to bounds center
+    bounds = matched_region.get_bounds_2d()
+    if bounds is not None:
+        (min_x, min_z), (max_x, max_z) = bounds
+        return {
+            'x': (min_x + max_x) / 2,
+            'z': (min_z + max_z) / 2,
+            'region_id': matched_id,
+        }
+
+    return None
 
 
 def _extract_team_from_id(region_id: str, teams) -> str:
