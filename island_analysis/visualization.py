@@ -110,6 +110,7 @@ def plot_islands(
     ax.set_ylabel('Z Coordinate (blocks)')
     ax.set_title(title)
     ax.axis('equal')
+    ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
 
     return fig, ax
@@ -190,6 +191,7 @@ def plot_island_triangulation(
     ax.set_ylabel('Z Coordinate (blocks)')
     ax.set_title(title)
     ax.axis('equal')
+    ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
 
     return fig, ax
@@ -233,6 +235,7 @@ def plot_island_comparison(
         ax1.set_ylabel('Z Coordinate (blocks)')
         ax1.set_title("1. Detected Islands (Blocks)")
         ax1.axis('equal')
+        ax1.invert_yaxis()
         ax1.grid(True, alpha=0.3)
     else:
         plot_islands(islands, ax=ax1, title="1. Detected Islands (Blocks)",
@@ -284,6 +287,7 @@ def plot_island_comparison(
     ax4.set_ylabel('Z Coordinate (blocks)')
     ax4.set_title("4. Combined View (Polygons + Triangle Edges + Centers)")
     ax4.axis('equal')
+    ax4.invert_yaxis()
     ax4.grid(True, alpha=0.3)
 
     fig.suptitle('Island Detection and Triangulation Analysis', fontsize=16, fontweight='bold')
@@ -373,6 +377,7 @@ def plot_island_statistics(
     ax4.set_ylabel('Z Coordinate')
     ax4.set_title('Spatial Distribution of Islands (size = area)')
     ax4.axis('equal')
+    ax4.invert_yaxis()
     ax4.grid(True, alpha=0.3)
 
     # 5. Statistics text
@@ -470,6 +475,7 @@ def plot_triangulation_detail(
 
         ax.set_title(f'Island {island.id}\n{island.area:,} blocks, {len(island.triangles)} triangles')
         ax.axis('equal')
+        ax.invert_yaxis()
         ax.grid(True, alpha=0.3)
 
     # Hide unused subplots

@@ -80,6 +80,7 @@ def save_point_plot(
     ax.set_ylabel('World Z', fontsize=12)
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_aspect('equal')
+    ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
 
     # Save

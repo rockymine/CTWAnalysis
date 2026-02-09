@@ -361,6 +361,7 @@ def plot_player_traces(
         )
 
     ax.set_aspect('equal')
+    ax.invert_yaxis()
     if show_title:
         ax.set_xlabel('X (blocks)')
         ax.set_ylabel('Z (blocks)')

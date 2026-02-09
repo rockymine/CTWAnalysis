@@ -183,6 +183,7 @@ def plot_map_connectivity(
     ax.set_xlabel('X (blocks)')
     ax.set_ylabel('Z (blocks)')
     ax.set_aspect('equal')
+    ax.invert_yaxis()
     ax.grid(True, alpha=0.2)
 
     fig.savefig(str(output_path), dpi=200, bbox_inches='tight')
