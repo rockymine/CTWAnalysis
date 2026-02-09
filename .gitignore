@@ -34,9 +34,11 @@ env/
 !05_connectivity.png
 !06_trace_single.png
 !07_trace_team.png
+!map_folders/tumbleweed/map.png
 
 # Map data files
-map_folders/
+map_folders/*
+!map_folders/tumbleweed/
 layout_data/
 xml_data/
 xml_examples/
@@ -52,9 +54,11 @@ output/
 
 # Minecraft region files
 *.mca
+!map_folders/tumbleweed/region/*.mca
 
 # Minecraft level data
 level.dat
+!map_folders/tumbleweed/level.dat
 
 # Generated JSON data (map_data.json, map_context.json, etc.)
 map_folders/*/map_data.json

@@ -1,0 +1,168 @@
+<map proto="1.5.0">
+<name>Tumbleweed</name>
+<version>1.1.5</version>
+<objective>Capture the enemy's two wools!</objective>
+<created>2021-07-31</created>
+<include id="gapple-kill-reward"/>
+<authors>
+    <author uuid="0c44ca5a-6a42-49b7-81f2-58dc6d2ae3e9"/> <!-- Xerocoles -->
+    <author uuid="b8add1ba-8e13-4673-bc73-4e3ed524d40e"/> <!-- Blazy -->
+</authors>
+<teams>
+    <team id="red" color="dark red" max="35">Red</team>
+    <team id="blue" color="blue" max="35">Blue</team>
+</teams>
+<kits>
+    <kit id="spawn-kit">
+        <clear/>
+        <item slot="0" unbreakable="true" material="iron sword"/>
+        <item slot="1" unbreakable="true" material="bow">
+            <enchantment>infinity</enchantment>
+        </item>
+        <item slot="28" material="arrow"/>
+        <item slot="2" unbreakable="true" material="diamond pickaxe"/>
+        <item slot="3" unbreakable="true" material="diamond axe"/>
+        <item slot="30" unbreakable="true" material="iron spade"/>
+        <item slot="4" amount="64" damage="3" material="wood"/>
+        <item slot="31" amount="64" damage="3" material="wood"/>
+        <item slot="5" amount="48" material="glass"/>
+        <item slot="8" material="golden apple"/>
+        <helmet unbreakable="true" team-color="true" material="leather helmet"/>
+        <chestplate unbreakable="true" team-color="true" material="leather chestplate"/>
+        <leggings unbreakable="true" team-color="true" material="leather leggings"/>
+        <boots unbreakable="true" team-color="true" material="leather boots"/>
+        <effect duration="6s" amplifier="255">resistance</effect>
+    </kit>
+</kits>
+<spawns>
+    <default yaw="-90">
+        <region>
+            <cuboid min="-169,57,-43" max="-170,57,-42"/>
+        </region>
+    </default>
+    <spawn team="blue" kit="spawn-kit">
+        <region>
+            <cuboid min="-79,9,-176" max="-80,9,-177"/>
+        </region>
+    </spawn>
+    <spawn team="red" kit="spawn-kit" yaw="180">
+        <region>
+            <cuboid min="-101,9,92" max="-102,9,91"/>
+        </region>
+    </spawn>
+</spawns>
+<filters>
+    <deny id="deny-chest">
+        <material>chest</material>
+    </deny>
+    <team id="only-blue">blue</team>
+    <team id="only-red">red</team>
+    <all id="only-iron-regen">
+        <material id="only-iron">iron block</material>
+        <cause>world</cause>
+    </all>
+</filters>
+<regions>
+    <union id="spawns">
+        <rectangle id="blue-spawn" min="-56,-152" max="-100,-195"/>
+        <rectangle id="red-spawn" min="-125,67" max="-81,110"/>
+    </union>
+    <union id="wool-rooms">
+        <union id="blue-wool-rooms"> <!-- Blue defends these -->
+            <rectangle id="lime-wool-room" min="-116,-159" max="-102,-172"/>
+            <rectangle id="cyan-wool-room" min="-43,-168" max="-30,-182"/>
+        </union>
+        <union id="red-wool-rooms"> <!-- Red defends these -->
+            <rectangle id="orange-wool-room" min="-65,74" max="-79,87"/>
+            <rectangle id="yellow-wool-room" min="-138,83" max="-151,97"/>
+        </union>
+    </union>
+    <apply use="only-blue" region="red-wool-rooms"/>
+    <apply use="only-red" region="blue-wool-rooms"/>
+    <apply enter="only-blue" region="blue-spawn" message="You may not enter the enemy's spawn area!"/>
+    <apply enter="only-red" region="red-spawn" message="You may not enter the enemy's spawn area!"/>
+    <apply enter="only-blue" region="red-wool-rooms" message="You may not enter your team's own wool room!"/>
+    <apply enter="only-red" region="blue-wool-rooms" message="You may not enter your team's own wool room!"/>
+    <apply block-break="only-iron" block-place="only-iron-regen" region="spawns" message="You may not edit the spawn areas!"/>
+    <apply block="deny-chest" region="wool-rooms" message="You may not break or place chests in the wool rooms!"/>
+    <apply block="only-red" region="blue-wool-rooms" message="You may not edit your team's own wool rooms!"/>
+    <apply block="only-blue" region="red-wool-rooms" message="You may not edit your team's own wool rooms!"/>
+    <apply block-place="deny(void)" message="You may not edit the void here!"/>
+</regions>
+<wools craftable="false" wool-proximity-metric="none" monument-proximity-metric="closest block">
+    <wool team="blue" color="orange" location="-74,11,75">
+        <monument>
+            <block>-72,10,-169</block>
+        </monument>
+    </wool>
+    <wool team="blue" color="yellow" location="-146,15,94">
+        <monument>
+            <block>-73,10,-169</block>
+        </monument>
+    </wool>
+    <wool team="red" color="cyan" location="-36,15,-180">
+        <monument>
+            <block>-109,10,83</block>
+        </monument>
+    </wool>
+    <wool team="red" color="lime" location="-108,11,-161">
+        <monument>
+            <block>-110,10,83</block>
+        </monument>
+    </wool>
+</wools>
+<renewables>
+    <renewable renew-filter="only-iron" rate="2" avoid-players="3" region="spawns"/>
+</renewables>
+<toolrepair>
+    <tool>iron sword</tool>
+    <tool>bow</tool>
+    <tool>diamond pickaxe</tool>
+    <tool>diamond axe</tool>
+    <tool>iron spade</tool>
+    <tool>arrow</tool>
+</toolrepair>
+<itemremove>
+    <item>leather helmet</item>
+    <item>leather chestplate</item>
+    <item>leather leggings</item>
+    <item>leather boots</item>
+    <item>string</item>
+    <item>redstone</item>
+    <item>seeds</item>
+    <item>sapling</item>
+    <item>stick</item>
+    <item>brown mushroom</item>
+</itemremove>
+<block-drops>
+    <rule>
+        <filter>
+            <any>
+                <material>wood</material>
+                <material>glass</material>
+            </any>
+        </filter>
+        <drops>
+            <item chance="0" material="glass"/>
+        </drops>
+    </rule>
+</block-drops>
+<itemkeep>
+    <item>golden apple</item>
+    <item>wood</item>
+    <item>glass</item>
+</itemkeep>
+<kill-rewards>
+    <kill-reward>
+        <item amount="24" damage="3" material="wood"/>
+        <item amount="12" material="glass"/>
+    </kill-reward>
+</kill-rewards>
+<crafting>
+    <disable>boat</disable>
+</crafting>
+<maxbuildheight>29</maxbuildheight>
+<hunger>
+    <depletion>off</depletion>
+</hunger>
+</map>
