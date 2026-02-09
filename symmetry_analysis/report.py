@@ -90,19 +90,24 @@ def format_symmetry_report(result: dict) -> str:
             ids_str = ", ".join(str(i) for i in t["island_ids"])
             lines.append(f"  Team: {team_label}  ({t['island_count']} islands: [{ids_str}])")
 
+            axis_info = ""
+            if t.get("intra_axis"):
+                axis_label = "X" if t["intra_axis"] == "mirror_x" else "Z"
+                axis_info = f", split axis: {axis_label}={t.get('axis_value', '?')}"
+
             if t.get("symmetry_detected"):
                 sym_type = t.get("best_symmetry_type", "?")
                 iou = t.get("best_iou", 0)
-                lc = t.get("local_center", (0, 0))
                 lines.append(f"    [DETECTED]  {sym_type}  "
-                             f"(IoU: {iou:.1%}, local center: ({lc[0]}, {lc[1]}))")
+                             f"(IoU: {iou:.1%}{axis_info})")
             else:
                 detail = t.get("detail", "")
                 if detail:
                     lines.append(f"    [   ---  ]  {detail}")
                 else:
                     iou = t.get("best_iou", 0)
-                    lines.append(f"    [   ---  ]  Best IoU: {iou:.1%} (below threshold)")
+                    lines.append(f"    [   ---  ]  Best IoU: {iou:.1%} "
+                                 f"(below threshold{axis_info})")
 
     # --- Overall Confidence ---
     lines.append("")

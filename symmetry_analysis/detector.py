@@ -449,10 +449,211 @@ def _detect_global_symmetry(
 # Intra-team symmetry
 # ---------------------------------------------------------------------------
 
+def _determine_intra_axis(
+    primary_global: Dict,
+    team_island: Dict,
+    center_x: float,
+    center_z: float,
+) -> Optional[str]:
+    """Determine the intra-team symmetry axis from the global symmetry type.
+
+    The intra-team axis is the axis that runs *through* each team's territory,
+    perpendicular to the axis that *separates* the teams.
+
+    For a 2-team map with:
+      - mirror_z (teams separated by Z=center): intra axis is mirror_x
+      - mirror_x (teams separated by X=center): intra axis is mirror_z
+      - rot_180:  use the team's spawn center to decide which axis is
+                  the splitting axis (perpendicular to the team offset)
+
+    Returns "mirror_x" or "mirror_z", or None if undetermined.
+    """
+    gtype = primary_global["type"]
+
+    if gtype == "mirror_z":
+        return "mirror_x"
+    if gtype == "mirror_x":
+        return "mirror_z"
+    if gtype == "rot_180":
+        # The team's spawn island sits on one side of center.
+        # Determine which coordinate has the larger offset from center —
+        # that's the axis separating teams, so the perpendicular is the
+        # intra-team axis.
+        tc = team_island["center"]
+        dx = abs(tc[0] - center_x)
+        dz = abs(tc[1] - center_z)
+        return "mirror_x" if dz > dx else "mirror_z"
+    if gtype == "rot_90":
+        # For 4-team maps the intra-team axis depends on team position.
+        tc = team_island["center"]
+        dx = abs(tc[0] - center_x)
+        dz = abs(tc[1] - center_z)
+        return "mirror_x" if dz > dx else "mirror_z"
+
+    return None
+
+
+def _split_polygon_along_axis(
+    exterior: List[List[float]],
+    axis: str,
+    axis_value: float,
+    center_info: Dict,
+) -> Tuple[Optional[object], Optional[object]]:
+    """Split a polygon into two halves along a symmetry axis.
+
+    For even dimensions (2x2 or 2x1/1x2 along this axis) the split falls
+    cleanly between two block columns — no ambiguity.
+
+    For odd dimensions (single_block or 2x1/1x2 across this axis) the split
+    goes through the center column.  We exclude the center column from both
+    halves to keep them equal-sized.
+
+    Args:
+        exterior: polygon exterior coordinates
+        axis: "mirror_x" (split at x = axis_value) or "mirror_z"
+        axis_value: the coordinate value of the split line
+        center_info: center classification dict (type, map_width_x, map_width_z)
+
+    Returns:
+        (neg_half, pos_half) — Shapely geometries, or (None, None) on failure.
+    """
+    from shapely.geometry import Polygon, box
+    from shapely.validation import make_valid
+
+    try:
+        poly = Polygon(exterior)
+        if not poly.is_valid:
+            poly = make_valid(poly)
+        if poly.is_empty:
+            return None, None
+    except Exception:
+        return None, None
+
+    bounds = poly.bounds  # (minx, minz, maxx, maxz)
+    big = max(abs(bounds[2] - bounds[0]), abs(bounds[3] - bounds[1])) + 100
+
+    # Determine if the axis dimension is odd (center line through a block)
+    center_type = center_info["type"]
+    if axis == "mirror_x":
+        odd_on_axis = (center_type in ("single_block", "1x2_line"))
+    else:
+        odd_on_axis = (center_type in ("single_block", "2x1_line"))
+
+    if odd_on_axis:
+        # Exclude the center column/row (1-block wide strip)
+        # For mirror_x: exclude x in [floor(axis_value), floor(axis_value)+1]
+        # For mirror_z: exclude z in [floor(axis_value), floor(axis_value)+1]
+        strip_lo = int(np.floor(axis_value))
+        strip_hi = strip_lo + 1
+        if axis == "mirror_x":
+            neg_clip = box(bounds[0] - 1, bounds[1] - 1, strip_lo, bounds[3] + 1)
+            pos_clip = box(strip_hi, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
+        else:
+            neg_clip = box(bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, strip_lo)
+            pos_clip = box(bounds[0] - 1, strip_hi, bounds[2] + 1, bounds[3] + 1)
+    else:
+        # Clean split at axis_value (falls between two block columns)
+        if axis == "mirror_x":
+            neg_clip = box(bounds[0] - 1, bounds[1] - 1, axis_value, bounds[3] + 1)
+            pos_clip = box(axis_value, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
+        else:
+            neg_clip = box(bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, axis_value)
+            pos_clip = box(bounds[0] - 1, axis_value, bounds[2] + 1, bounds[3] + 1)
+
+    try:
+        neg_half = poly.intersection(neg_clip)
+        pos_half = poly.intersection(pos_clip)
+        if neg_half.is_empty:
+            neg_half = None
+        if pos_half.is_empty:
+            pos_half = None
+        return neg_half, pos_half
+    except Exception:
+        return None, None
+
+
+def _verify_intra_team_symmetry(
+    team_islands: List[Dict],
+    axis: str,
+    axis_value: float,
+    center_info: Dict,
+) -> Tuple[float, str]:
+    """Verify intra-team symmetry by splitting all territory polygons along
+    the axis and comparing the two halves via IoU.
+
+    The negative half is reflected across the axis, then compared to the
+    positive half.
+
+    Returns (iou, axis_name).
+    """
+    from shapely.ops import unary_union
+    from shapely.validation import make_valid
+
+    neg_parts = []
+    pos_parts = []
+
+    for isl in team_islands:
+        sp = isl.get("simplified_polygon")
+        if not sp or not sp.get("exterior"):
+            continue
+        neg, pos = _split_polygon_along_axis(
+            sp["exterior"], axis, axis_value, center_info,
+        )
+        if neg is not None:
+            neg_parts.append(neg)
+        if pos is not None:
+            pos_parts.append(pos)
+
+    if not neg_parts or not pos_parts:
+        return 0.0, axis
+
+    neg_union = unary_union(neg_parts)
+    pos_union = unary_union(pos_parts)
+
+    # Reflect the negative half to overlay the positive half
+    try:
+        if axis == "mirror_x":
+            reflected = _reflect_shapely_geom_x(neg_union, axis_value)
+        else:
+            reflected = _reflect_shapely_geom_z(neg_union, axis_value)
+
+        if reflected.is_empty or pos_union.is_empty:
+            return 0.0, axis
+
+        intersection = reflected.intersection(pos_union).area
+        union_area = reflected.union(pos_union).area
+        if union_area < 1e-6:
+            return 0.0, axis
+        return intersection / union_area, axis
+    except Exception:
+        return 0.0, axis
+
+
+def _reflect_shapely_geom_x(geom, center_x: float):
+    """Reflect a Shapely geometry across x = center_x.
+
+    Maps x → 2·center_x − x, keeps z unchanged.
+    """
+    from shapely import affinity
+    # Affine matrix [a, b, d, e, xoff, yoff]: x' = a*x + b*y + xoff
+    return affinity.affine_transform(geom, [-1, 0, 0, 1, 2 * center_x, 0])
+
+
+def _reflect_shapely_geom_z(geom, center_z: float):
+    """Reflect a Shapely geometry across z = center_z.
+
+    Maps z → 2·center_z − z, keeps x unchanged.
+    (z is the y-coordinate in Shapely's 2D plane.)
+    """
+    from shapely import affinity
+    return affinity.affine_transform(geom, [1, 0, 0, -1, 0, 2 * center_z])
+
+
 def _detect_intra_team_symmetry(
     islands: List[Dict],
     center_x: float,
     center_z: float,
+    center_info: Dict,
     global_symmetries: List[Dict],
     teams: List[Dict],
 ) -> List[Dict]:
@@ -460,6 +661,13 @@ def _detect_intra_team_symmetry(
 
     Uses the primary global symmetry axis to derive team territory boundaries,
     then checks whether each team's islands are internally symmetric.
+
+    For spawn islands that straddle the intra-team axis, the polygon is split
+    in half and the two halves are compared via IoU.  The split respects the
+    center type:
+      - Even dimension (2x2 / 2-block center line): clean split, no gap.
+      - Odd dimension (single block / 1-block center line): the center
+        column/row is excluded from both halves so they remain equal-sized.
 
     Returns list of per-team symmetry results.
     """
@@ -540,47 +748,55 @@ def _detect_intra_team_symmetry(
     for team in teams:
         tid = team["id"]
         t_islands = team_islands.get(tid, [])
-        if len(t_islands) < 2:
+        if not t_islands:
+            results.append({
+                "team": tid,
+                "island_count": 0,
+                "island_ids": [],
+                "symmetry_detected": False,
+                "detail": "No islands assigned to team",
+            })
+            continue
+
+        # Determine the intra-team axis from the global symmetry
+        # Use the team's first spawn island for orientation
+        spawn_island = next(
+            (i for i in t_islands if i.get("has_spawn")), t_islands[0],
+        )
+        intra_axis = _determine_intra_axis(
+            primary, spawn_island, center_x, center_z,
+        )
+
+        if intra_axis is None:
             results.append({
                 "team": tid,
                 "island_count": len(t_islands),
                 "island_ids": [i["id"] for i in t_islands],
                 "symmetry_detected": False,
-                "detail": "Not enough islands for intra-team symmetry",
+                "detail": "Could not determine intra-team axis",
             })
             continue
 
-        # Find the team's local center
-        all_cx = [i["center"][0] for i in t_islands]
-        all_cz = [i["center"][1] for i in t_islands]
-        t_center_x = sum(all_cx) / len(all_cx)
-        t_center_z = sum(all_cz) / len(all_cz)
+        # The split axis value
+        if intra_axis == "mirror_x":
+            axis_value = center_x
+        else:
+            axis_value = center_z
 
-        # Try mirror and rotational symmetry within this team's islands
-        t_pair_analysis = _aggregate_pair_transforms(
-            t_islands, t_center_x, t_center_z, tolerance=3.0,
+        # Run split-and-compare IoU
+        iou, axis_name = _verify_intra_team_symmetry(
+            t_islands, intra_axis, axis_value, center_info,
         )
-
-        best_iou = 0.0
-        best_type = None
-
-        for sym_type in ("mirror_x", "mirror_z", "rot_180"):
-            iou, _ = _verify_polygon_symmetry(
-                t_islands, t_center_x, t_center_z, sym_type,
-            )
-            if iou > best_iou:
-                best_iou = iou
-                best_type = sym_type
 
         results.append({
             "team": tid,
             "island_count": len(t_islands),
             "island_ids": [i["id"] for i in t_islands],
-            "local_center": (round(t_center_x, 2), round(t_center_z, 2)),
-            "symmetry_detected": best_iou >= 0.60,
-            "best_symmetry_type": best_type,
-            "best_iou": round(best_iou, 4),
-            "pair_analysis": t_pair_analysis,
+            "intra_axis": intra_axis,
+            "axis_value": axis_value,
+            "symmetry_detected": iou >= 0.60,
+            "best_symmetry_type": intra_axis,
+            "best_iou": round(iou, 4),
         })
 
     return results
@@ -621,7 +837,7 @@ def detect_symmetry(map_context_path: str) -> Dict:
 
     # Step 4: Detect intra-team symmetry
     intra_team = _detect_intra_team_symmetry(
-        islands, center_x, center_z, global_symmetries, teams,
+        islands, center_x, center_z, center_info, global_symmetries, teams,
     )
 
     return {
