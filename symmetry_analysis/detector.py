@@ -1,0 +1,612 @@
+"""
+Symmetry detection for CTW maps.
+
+Analyzes the geometric layout of a map from map_context.json to determine
+which symmetry types are present (mirror, 180° rotation, 90° rotation),
+both globally and within each team's territory.
+
+Coordinate convention:
+    - Bounding box: (min_x, max_x, min_z, max_z)
+    - Block at integer (x, z) occupies [x, x+1) x [z, z+1), centroid at (x+0.5, z+0.5)
+    - Map center is computed from bounding box midpoint in block-centroid space
+"""
+
+import json
+import numpy as np
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Center classification
+# ---------------------------------------------------------------------------
+
+def classify_center(bbox: Tuple[float, float, float, float]) -> Dict:
+    """Classify the geometric map center based on bounding box dimensions.
+
+    In Minecraft's block coordinate system, a block at integer (x, z) occupies
+    the area [x, x+1) x [z, z+1).  The bounding box stores min/max block indices,
+    so the full extent is [min_x, max_x+1) x [min_z, max_z+1).
+
+    The center type depends on whether each dimension spans an odd or even
+    number of blocks:
+        - odd x odd   -> single block center
+        - even x odd  -> 2x1 center line (horizontal)
+        - odd x even  -> 1x2 center line (vertical)
+        - even x even -> 2x2 center area
+
+    Returns dict with keys: center_x, center_z, type, description, blocks
+    """
+    min_x, max_x, min_z, max_z = bbox
+    # max_x/max_z in bbox are already +1 from the raw block coords
+    # (see build_map_context: max + 1), so width = max_x - min_x
+    width_x = max_x - min_x
+    width_z = max_z - min_z
+
+    center_x = (min_x + max_x) / 2.0
+    center_z = (min_z + max_z) / 2.0
+
+    odd_x = (int(width_x) % 2 == 1)
+    odd_z = (int(width_z) % 2 == 1)
+
+    if odd_x and odd_z:
+        center_type = "single_block"
+        description = "Single block center"
+        # The center block index
+        bx = int(center_x - 0.5)
+        bz = int(center_z - 0.5)
+        blocks = [(bx, bz)]
+    elif not odd_x and odd_z:
+        center_type = "2x1_line"
+        description = "2x1 center line (along X axis)"
+        bx1 = int(center_x - 1)
+        bx2 = int(center_x)
+        bz = int(center_z - 0.5)
+        blocks = [(bx1, bz), (bx2, bz)]
+    elif odd_x and not odd_z:
+        center_type = "1x2_line"
+        description = "1x2 center line (along Z axis)"
+        bx = int(center_x - 0.5)
+        bz1 = int(center_z - 1)
+        bz2 = int(center_z)
+        blocks = [(bx, bz1), (bx, bz2)]
+    else:
+        center_type = "2x2_area"
+        description = "2x2 center area"
+        bx1 = int(center_x - 1)
+        bx2 = int(center_x)
+        bz1 = int(center_z - 1)
+        bz2 = int(center_z)
+        blocks = [(bx1, bz1), (bx2, bz1), (bx1, bz2), (bx2, bz2)]
+
+    return {
+        "center_x": center_x,
+        "center_z": center_z,
+        "type": center_type,
+        "description": description,
+        "blocks": blocks,
+        "map_width_x": int(width_x),
+        "map_width_z": int(width_z),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Island pairing via canonical keys
+# ---------------------------------------------------------------------------
+
+def _build_canonical_pairs(islands: List[Dict]) -> List[Tuple[Dict, Dict]]:
+    """Group islands by area to find potential symmetric pairs.
+
+    Islands with the same area are candidates for symmetric pairing.
+    Returns list of (island_a, island_b) tuples.
+    """
+    from collections import defaultdict
+    by_area = defaultdict(list)
+    for isl in islands:
+        by_area[isl["area"]].append(isl)
+
+    pairs = []
+    for area, group in by_area.items():
+        if len(group) == 2:
+            pairs.append((group[0], group[1]))
+        elif len(group) == 4:
+            # For 4-team maps: pair all combinations
+            for i in range(len(group)):
+                for j in range(i + 1, len(group)):
+                    pairs.append((group[i], group[j]))
+    return pairs
+
+
+# ---------------------------------------------------------------------------
+# Transform detection between two islands
+# ---------------------------------------------------------------------------
+
+def _detect_pair_transform(
+    a: Dict, b: Dict,
+    center_x: float, center_z: float,
+    tolerance: float = 2.0,
+) -> List[str]:
+    """Detect which global transforms map island A's center to island B's center.
+
+    Tests:
+        - mirror_x: reflection across the vertical axis (x = center_x)
+        - mirror_z: reflection across the horizontal axis (z = center_z)
+        - rot_180:  180-degree rotation around (center_x, center_z)
+        - rot_90:   90-degree rotation around (center_x, center_z)
+
+    Returns list of transform names that match within tolerance.
+    """
+    ax, az = a["center"]
+    bx, bz = b["center"]
+
+    transforms = []
+
+    # Mirror across X = center_x: (x, z) -> (2*cx - x, z)
+    mx = 2 * center_x - ax
+    mz = az
+    if abs(mx - bx) < tolerance and abs(mz - bz) < tolerance:
+        transforms.append("mirror_x")
+
+    # Mirror across Z = center_z: (x, z) -> (x, 2*cz - z)
+    mx = ax
+    mz = 2 * center_z - az
+    if abs(mx - bx) < tolerance and abs(mz - bz) < tolerance:
+        transforms.append("mirror_z")
+
+    # 180-degree rotation: (x, z) -> (2*cx - x, 2*cz - z)
+    rx = 2 * center_x - ax
+    rz = 2 * center_z - az
+    if abs(rx - bx) < tolerance and abs(rz - bz) < tolerance:
+        transforms.append("rot_180")
+
+    # 90-degree rotation: (x, z) -> (cx + (z - cz), cz - (x - cx))
+    # = (cx + az - cz, cz - ax + cx)
+    r90x = center_x + (az - center_z)
+    r90z = center_z - (ax - center_x)
+    if abs(r90x - bx) < tolerance and abs(r90z - bz) < tolerance:
+        transforms.append("rot_90")
+
+    # 270-degree rotation (= 90 CW): (x, z) -> (cx - (z - cz), cz + (x - cx))
+    r270x = center_x - (az - center_z)
+    r270z = center_z + (ax - center_x)
+    if abs(r270x - bx) < tolerance and abs(r270z - bz) < tolerance:
+        transforms.append("rot_270")
+
+    return transforms
+
+
+# ---------------------------------------------------------------------------
+# Polygon-based symmetry verification
+# ---------------------------------------------------------------------------
+
+def _reflect_polygon_x(poly_coords: List[List[float]], center_x: float) -> np.ndarray:
+    """Reflect polygon coordinates across x = center_x."""
+    pts = np.array(poly_coords)
+    pts[:, 0] = 2 * center_x - pts[:, 0]
+    return pts
+
+
+def _reflect_polygon_z(poly_coords: List[List[float]], center_z: float) -> np.ndarray:
+    """Reflect polygon coordinates across z = center_z."""
+    pts = np.array(poly_coords)
+    pts[:, 1] = 2 * center_z - pts[:, 1]
+    return pts
+
+
+def _rotate_polygon_180(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
+    """Rotate polygon coordinates 180 degrees around (cx, cz)."""
+    pts = np.array(poly_coords)
+    pts[:, 0] = 2 * cx - pts[:, 0]
+    pts[:, 1] = 2 * cz - pts[:, 1]
+    return pts
+
+
+def _rotate_polygon_90(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
+    """Rotate polygon coordinates 90 degrees CCW around (cx, cz)."""
+    pts = np.array(poly_coords)
+    dx = pts[:, 0] - cx
+    dz = pts[:, 1] - cz
+    new_pts = np.empty_like(pts)
+    new_pts[:, 0] = cx + dz
+    new_pts[:, 1] = cz - dx
+    return new_pts
+
+
+def _polygon_iou(poly_a_coords, poly_b_coords) -> float:
+    """Compute IoU (Intersection over Union) between two polygons using Shapely.
+
+    Returns 0.0 on any error or degenerate geometry.
+    """
+    try:
+        from shapely.geometry import Polygon
+        from shapely.validation import make_valid
+
+        pa = Polygon(poly_a_coords)
+        pb = Polygon(poly_b_coords)
+
+        if not pa.is_valid:
+            pa = make_valid(pa)
+        if not pb.is_valid:
+            pb = make_valid(pb)
+
+        if pa.is_empty or pb.is_empty:
+            return 0.0
+
+        intersection = pa.intersection(pb).area
+        union = pa.union(pb).area
+
+        if union < 1e-6:
+            return 0.0
+        return intersection / union
+    except Exception:
+        return 0.0
+
+
+def _verify_polygon_symmetry(
+    islands: List[Dict],
+    center_x: float,
+    center_z: float,
+    transform_name: str,
+    iou_threshold: float = 0.85,
+) -> Tuple[float, List[Dict]]:
+    """Verify a symmetry type using polygon geometry (IoU).
+
+    Applies the specified transform to all island polygons and checks
+    whether the transformed set matches the original set.
+
+    Returns (average_iou, list of per-pair match details).
+    """
+    # Collect all polygons with their island IDs
+    polys = []
+    for isl in islands:
+        sp = isl.get("simplified_polygon")
+        if sp and sp.get("exterior"):
+            polys.append({
+                "island_id": isl["id"],
+                "exterior": sp["exterior"],
+                "area": isl["area"],
+                "center": isl["center"],
+            })
+
+    if not polys:
+        return 0.0, []
+
+    # Build Shapely polygons for originals
+    from shapely.geometry import Polygon, MultiPolygon
+    from shapely.validation import make_valid
+    from shapely.ops import unary_union
+
+    original_shapes = []
+    for p in polys:
+        try:
+            shape = Polygon(p["exterior"])
+            if not shape.is_valid:
+                shape = make_valid(shape)
+            if not shape.is_empty:
+                original_shapes.append(shape)
+        except Exception:
+            continue
+
+    if not original_shapes:
+        return 0.0, []
+
+    original_union = unary_union(original_shapes)
+
+    # Transform all polygons
+    transformed_shapes = []
+    for p in polys:
+        ext = p["exterior"]
+        if transform_name == "mirror_x":
+            t_ext = _reflect_polygon_x(ext, center_x).tolist()
+        elif transform_name == "mirror_z":
+            t_ext = _reflect_polygon_z(ext, center_z).tolist()
+        elif transform_name == "rot_180":
+            t_ext = _rotate_polygon_180(ext, center_x, center_z).tolist()
+        elif transform_name in ("rot_90", "rot_270"):
+            if transform_name == "rot_90":
+                t_ext = _rotate_polygon_90(ext, center_x, center_z).tolist()
+            else:
+                # 270 = three 90s
+                coords = _rotate_polygon_90(ext, center_x, center_z)
+                coords = _rotate_polygon_90(coords.tolist(), center_x, center_z)
+                t_ext = _rotate_polygon_90(coords.tolist(), center_x, center_z).tolist()
+        else:
+            continue
+
+        try:
+            shape = Polygon(t_ext)
+            if not shape.is_valid:
+                shape = make_valid(shape)
+            if not shape.is_empty:
+                transformed_shapes.append(shape)
+        except Exception:
+            continue
+
+    if not transformed_shapes:
+        return 0.0, []
+
+    transformed_union = unary_union(transformed_shapes)
+
+    # Compute IoU of the whole-map polygon sets
+    try:
+        intersection = original_union.intersection(transformed_union).area
+        union_area = original_union.union(transformed_union).area
+        if union_area < 1e-6:
+            return 0.0, []
+        global_iou = intersection / union_area
+    except Exception:
+        return 0.0, []
+
+    return global_iou, []
+
+
+# ---------------------------------------------------------------------------
+# Island pair transform aggregation
+# ---------------------------------------------------------------------------
+
+def _aggregate_pair_transforms(
+    islands: List[Dict],
+    center_x: float,
+    center_z: float,
+    tolerance: float = 3.0,
+) -> Dict:
+    """Aggregate observed transforms across all canonical island pairs.
+
+    Returns dict with:
+        - pairs: list of pair info dicts
+        - transform_counts: {transform_name: count}
+        - total_pairs: number of pairs analyzed
+    """
+    pairs = _build_canonical_pairs(islands)
+
+    transform_counts = {}
+    pair_details = []
+
+    for a, b in pairs:
+        transforms = _detect_pair_transform(a, b, center_x, center_z, tolerance)
+        for t in transforms:
+            transform_counts[t] = transform_counts.get(t, 0) + 1
+
+        pair_details.append({
+            "island_a": a["id"],
+            "island_b": b["id"],
+            "area": a["area"],
+            "transforms": transforms,
+        })
+
+    return {
+        "pairs": pair_details,
+        "transform_counts": transform_counts,
+        "total_pairs": len(pairs),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Global symmetry detection
+# ---------------------------------------------------------------------------
+
+def _detect_global_symmetry(
+    islands: List[Dict],
+    center_x: float,
+    center_z: float,
+    pair_analysis: Dict,
+) -> List[Dict]:
+    """Detect global symmetry types combining pair transforms and polygon IoU.
+
+    Returns list of detected symmetry dicts, each with:
+        - type: symmetry type name
+        - pair_support: fraction of pairs supporting this transform
+        - polygon_iou: IoU of full map polygon under this transform
+        - confidence: combined confidence score
+    """
+    n_pairs = pair_analysis["total_pairs"]
+    counts = pair_analysis["transform_counts"]
+
+    candidates = [
+        ("mirror_x", "Mirror across vertical axis (X = center)"),
+        ("mirror_z", "Mirror across horizontal axis (Z = center)"),
+        ("rot_180", "180-degree rotational symmetry"),
+        ("rot_90", "90-degree rotational symmetry"),
+    ]
+
+    results = []
+    for sym_type, description in candidates:
+        pair_count = counts.get(sym_type, 0)
+        pair_support = pair_count / n_pairs if n_pairs > 0 else 0.0
+
+        # Polygon-level verification
+        iou, _ = _verify_polygon_symmetry(islands, center_x, center_z, sym_type)
+
+        # For rot_90, also require rot_270
+        if sym_type == "rot_90":
+            rot270_count = counts.get("rot_270", 0)
+            if n_pairs > 0:
+                pair_support = min(pair_count, rot270_count) / n_pairs
+
+        # Combined confidence: weighted average of pair and polygon signals
+        if n_pairs > 0:
+            confidence = 0.4 * pair_support + 0.6 * iou
+        else:
+            confidence = iou
+
+        results.append({
+            "type": sym_type,
+            "description": description,
+            "pair_support": round(pair_support, 3),
+            "polygon_iou": round(iou, 4),
+            "confidence": round(confidence, 3),
+            "detected": confidence >= 0.60,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Intra-team symmetry
+# ---------------------------------------------------------------------------
+
+def _detect_intra_team_symmetry(
+    islands: List[Dict],
+    center_x: float,
+    center_z: float,
+    global_symmetries: List[Dict],
+    teams: List[Dict],
+) -> List[Dict]:
+    """Detect symmetry within each team's territory.
+
+    Uses the primary global symmetry axis to derive team territory boundaries,
+    then checks whether each team's islands are internally symmetric.
+
+    Returns list of per-team symmetry results.
+    """
+    if not teams:
+        return []
+
+    # Find the primary detected global symmetry
+    detected = [s for s in global_symmetries if s["detected"]]
+    if not detected:
+        return []
+
+    primary = max(detected, key=lambda s: s["confidence"])
+
+    # Assign islands to teams based on team field or proximity to spawns
+    team_islands = {}
+    for team in teams:
+        tid = team["id"]
+        team_islands[tid] = []
+
+    # Islands with explicit team assignment
+    assigned_ids = set()
+    for isl in islands:
+        if isl.get("team"):
+            team_islands.setdefault(isl["team"], []).append(isl)
+            assigned_ids.add(isl["id"])
+
+    # For unassigned islands, use the global symmetry axis to partition
+    # into team territories (exclude center islands from partitioning)
+    unassigned = [
+        isl for isl in islands
+        if isl["id"] not in assigned_ids and not isl.get("has_center")
+    ]
+
+    if primary["type"] == "rot_180" and len(teams) == 2:
+        # Partition by which side of the perpendicular bisector
+        # For 180 rotation, the axis goes through center
+        # Use Z coordinate relative to center for typical 2-team maps
+        team_ids = [t["id"] for t in teams]
+        for isl in unassigned:
+            iz = isl["center"][1]
+            if iz < center_z:
+                team_islands[team_ids[0]].append(isl)
+            else:
+                team_islands[team_ids[1]].append(isl)
+    elif primary["type"] in ("mirror_x", "mirror_z"):
+        team_ids = [t["id"] for t in teams]
+        for isl in unassigned:
+            if primary["type"] == "mirror_z":
+                val = isl["center"][1]
+                ref = center_z
+            else:
+                val = isl["center"][0]
+                ref = center_x
+            if val < ref:
+                team_islands[team_ids[0]].append(isl)
+            elif val > ref:
+                team_islands[team_ids[1]].append(isl)
+            # Islands exactly on center belong to neither
+
+    results = []
+    for team in teams:
+        tid = team["id"]
+        t_islands = team_islands.get(tid, [])
+        if len(t_islands) < 2:
+            results.append({
+                "team": tid,
+                "island_count": len(t_islands),
+                "island_ids": [i["id"] for i in t_islands],
+                "symmetry_detected": False,
+                "detail": "Not enough islands for intra-team symmetry",
+            })
+            continue
+
+        # Find the team's local center
+        all_cx = [i["center"][0] for i in t_islands]
+        all_cz = [i["center"][1] for i in t_islands]
+        t_center_x = sum(all_cx) / len(all_cx)
+        t_center_z = sum(all_cz) / len(all_cz)
+
+        # Try mirror and rotational symmetry within this team's islands
+        t_pair_analysis = _aggregate_pair_transforms(
+            t_islands, t_center_x, t_center_z, tolerance=3.0,
+        )
+
+        best_iou = 0.0
+        best_type = None
+
+        for sym_type in ("mirror_x", "mirror_z", "rot_180"):
+            iou, _ = _verify_polygon_symmetry(
+                t_islands, t_center_x, t_center_z, sym_type,
+            )
+            if iou > best_iou:
+                best_iou = iou
+                best_type = sym_type
+
+        results.append({
+            "team": tid,
+            "island_count": len(t_islands),
+            "island_ids": [i["id"] for i in t_islands],
+            "local_center": (round(t_center_x, 2), round(t_center_z, 2)),
+            "symmetry_detected": best_iou >= 0.60,
+            "best_symmetry_type": best_type,
+            "best_iou": round(best_iou, 4),
+            "pair_analysis": t_pair_analysis,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def detect_symmetry(map_context_path: str) -> Dict:
+    """Run full symmetry analysis on a map from its map_context.json.
+
+    Args:
+        map_context_path: Path to map_context.json
+
+    Returns:
+        Dict with complete symmetry analysis results.
+    """
+    with open(map_context_path, "r") as f:
+        ctx = json.load(f)
+
+    bbox = ctx["bounding_box"]
+    islands = ctx["islands"]
+    teams = ctx.get("teams", [])
+
+    # Step 1: Classify center
+    center_info = classify_center(tuple(bbox))
+    center_x = center_info["center_x"]
+    center_z = center_info["center_z"]
+
+    # Step 2: Aggregate pair transforms
+    pair_analysis = _aggregate_pair_transforms(islands, center_x, center_z)
+
+    # Step 3: Detect global symmetry
+    global_symmetries = _detect_global_symmetry(
+        islands, center_x, center_z, pair_analysis,
+    )
+
+    # Step 4: Detect intra-team symmetry
+    intra_team = _detect_intra_team_symmetry(
+        islands, center_x, center_z, global_symmetries, teams,
+    )
+
+    return {
+        "map_name": ctx.get("map_name", "Unknown"),
+        "center": center_info,
+        "pair_analysis": pair_analysis,
+        "global_symmetry": global_symmetries,
+        "intra_team_symmetry": intra_team,
+    }

@@ -15,12 +15,14 @@ def register(subparsers):
 Actions:
   layout       Scan a layout parquet across all maps and list unique block IDs
   data         Scan output JSON files across all maps and report empty/missing fields
+  symmetry     Analyze map symmetry from preprocessed geometry
 
 Examples:
   python ctw.py debug layout --parquet layout_y0
   python ctw.py debug layout --parquet layout_y0 --water
   python ctw.py debug data --json map_data.json
   python ctw.py debug data --json island_analysis/map_context.json
+  python ctw.py debug symmetry --map tumbleweed
 """,
     )
     debug_sub = debug_parser.add_subparsers(
@@ -52,6 +54,43 @@ Examples:
     p.add_argument('--dir', default='output',
                    help='Root directory containing per-map folders (default: output)')
     p.set_defaults(func=handle_data)
+
+    # debug symmetry
+    p = debug_sub.add_parser(
+        'symmetry',
+        help='Analyze map symmetry from preprocessed geometry (map_context.json)',
+    )
+    p.add_argument('--map', required=True,
+                   help='Map name (e.g. tumbleweed) or path to map folder')
+    p.add_argument('--dir', default='output',
+                   help='Root output directory (default: output)')
+    p.set_defaults(func=handle_symmetry)
+
+
+def handle_symmetry(args):
+    """Run symmetry analysis for a single map."""
+    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis.report import format_symmetry_report
+
+    root = Path(args.dir)
+    map_name = args.map
+
+    # Resolve map_context.json path
+    ctx_path = root / map_name / 'island_analysis' / 'map_context.json'
+    if not ctx_path.exists():
+        # Try as a direct path
+        ctx_path = Path(map_name) / 'island_analysis' / 'map_context.json'
+        if not ctx_path.exists():
+            print(f"Error: map_context.json not found for '{map_name}'", file=sys.stderr)
+            print(f"  Tried: {root / map_name / 'island_analysis' / 'map_context.json'}",
+                  file=sys.stderr)
+            print(f"  Run island analysis first: python ctw.py run --map {map_name}",
+                  file=sys.stderr)
+            sys.exit(1)
+
+    result = detect_symmetry(str(ctx_path))
+    report = format_symmetry_report(result)
+    print(report)
 
 
 def handle_layout(args):
