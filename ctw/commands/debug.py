@@ -23,6 +23,7 @@ Examples:
   python ctw.py debug data --json map_data.json
   python ctw.py debug data --json island_analysis/map_context.json
   python ctw.py debug symmetry --map tumbleweed
+  python ctw.py debug symmetry
 """,
     )
     debug_sub = debug_parser.add_subparsers(
@@ -60,25 +61,33 @@ Examples:
         'symmetry',
         help='Analyze map symmetry from preprocessed geometry (map_context.json)',
     )
-    p.add_argument('--map', required=True,
-                   help='Map name (e.g. tumbleweed) or path to map folder')
+    p.add_argument('--map', default=None,
+                   help='Map name (e.g. tumbleweed). Omit to scan all maps.')
     p.add_argument('--dir', default='output',
                    help='Root output directory (default: output)')
     p.set_defaults(func=handle_symmetry)
 
 
 def handle_symmetry(args):
-    """Run symmetry analysis for a single map."""
+    """Run symmetry analysis for one or all maps."""
     from symmetry_analysis import detect_symmetry
     from symmetry_analysis.report import format_symmetry_report
 
     root = Path(args.dir)
-    map_name = args.map
 
-    # Resolve map_context.json path
+    if args.map is not None:
+        _handle_symmetry_single(root, args.map)
+    else:
+        _handle_symmetry_all(root)
+
+
+def _handle_symmetry_single(root: Path, map_name: str):
+    """Full detailed report for a single map."""
+    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis.report import format_symmetry_report
+
     ctx_path = root / map_name / 'island_analysis' / 'map_context.json'
     if not ctx_path.exists():
-        # Try as a direct path
         ctx_path = Path(map_name) / 'island_analysis' / 'map_context.json'
         if not ctx_path.exists():
             print(f"Error: map_context.json not found for '{map_name}'", file=sys.stderr)
@@ -91,6 +100,95 @@ def handle_symmetry(args):
     result = detect_symmetry(str(ctx_path))
     report = format_symmetry_report(result)
     print(report)
+
+
+def _handle_symmetry_all(root: Path):
+    """Compact summary table across all maps."""
+    from symmetry_analysis import detect_symmetry
+
+    if not root.is_dir():
+        print(f"Error: directory not found: {root}", file=sys.stderr)
+        sys.exit(1)
+
+    rows = []
+    skipped = []
+
+    for map_dir in sorted(root.iterdir()):
+        if not map_dir.is_dir():
+            continue
+        ctx_path = map_dir / 'island_analysis' / 'map_context.json'
+        if not ctx_path.exists():
+            skipped.append(map_dir.name)
+            continue
+
+        try:
+            result = detect_symmetry(str(ctx_path))
+        except Exception as e:
+            rows.append((map_dir.name, f"ERROR: {e}", "", ""))
+            continue
+
+        # Global symmetry summary
+        detected_global = [
+            s for s in result["global_symmetry"] if s["detected"]
+        ]
+        if detected_global:
+            primary = max(detected_global, key=lambda s: s["confidence"])
+            global_str = f"{primary['type']} ({primary['confidence']:.0%})"
+        else:
+            global_str = "none"
+
+        # Center type
+        center_str = result["center"]["type"]
+
+        # Intra-team summary
+        intra = result.get("intra_team_symmetry", [])
+        sym_teams = [t for t in intra if t.get("symmetry_detected")]
+        if not intra:
+            intra_str = "-"
+        elif len(sym_teams) == len(intra) and intra:
+            # All teams symmetric — show check type
+            check = intra[0].get("check_type", "mirror_split")
+            if check == "canonical_coverage":
+                groups = intra[0].get("canonical_groups", "?")
+                intra_str = f"all teams ({groups} groups)"
+            else:
+                iou = min(t.get("best_iou", 0) for t in sym_teams)
+                intra_str = f"all teams (IoU>={iou:.0%})"
+        elif sym_teams:
+            names = ", ".join(t["team"] for t in sym_teams)
+            intra_str = names
+        else:
+            intra_str = "none"
+
+        rows.append((map_dir.name, global_str, center_str, intra_str))
+
+    if not rows and not skipped:
+        print(f"No map output folders found in {root}/")
+        return
+
+    # Print table
+    if rows:
+        col_w = [
+            max(len(r[0]) for r in rows),
+            max(len(r[1]) for r in rows),
+            max(len(r[2]) for r in rows),
+            max(len(r[3]) for r in rows),
+        ]
+        headers = ("map", "global symmetry", "center", "intra-team")
+        col_w = [max(col_w[i], len(headers[i])) for i in range(4)]
+
+        hdr = (f"  {headers[0]:<{col_w[0]}}  {headers[1]:<{col_w[1]}}  "
+               f"{headers[2]:<{col_w[2]}}  {headers[3]}")
+        sep = f"  {'-' * col_w[0]}  {'-' * col_w[1]}  {'-' * col_w[2]}  {'-' * col_w[3]}"
+        print(hdr)
+        print(sep)
+        for name, gs, ct, it in rows:
+            print(f"  {name:<{col_w[0]}}  {gs:<{col_w[1]}}  {ct:<{col_w[2]}}  {it}")
+
+    if skipped:
+        print(f"\n  Skipped (no map_context.json): {', '.join(skipped)}")
+
+    print(f"\n  {len(rows)} maps analyzed")
 
 
 def handle_layout(args):
