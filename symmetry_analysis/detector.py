@@ -393,6 +393,12 @@ def _detect_global_symmetry(
 ) -> List[Dict]:
     """Detect global symmetry types combining pair transforms and polygon IoU.
 
+    Pair support is computed with symmetry-group awareness:
+      - rot_180 = mirror_x ∘ mirror_z, so when both mirrors have high IoU,
+        mirror pairs also count as rot_180 evidence.
+      - rot_90 implies rot_180 (and rot_270 is its inverse), so rot_180
+        pairs also count as rot_90 evidence when IoU confirms.
+
     Returns list of detected symmetry dicts, each with:
         - type: symmetry type name
         - pair_support: fraction of pairs supporting this transform
@@ -401,6 +407,7 @@ def _detect_global_symmetry(
     """
     n_pairs = pair_analysis["total_pairs"]
     counts = pair_analysis["transform_counts"]
+    pairs = pair_analysis["pairs"]
 
     candidates = [
         ("mirror_x", "Mirror across vertical axis (X = center)"),
@@ -409,23 +416,51 @@ def _detect_global_symmetry(
         ("rot_90", "90-degree rotational symmetry"),
     ]
 
+    # First pass: compute polygon IoU for all candidates
+    ious = {}
+    for sym_type, _ in candidates:
+        iou, _ = _verify_polygon_symmetry(islands, center_x, center_z, sym_type)
+        ious[sym_type] = iou
+
+    GROUP_IOU_THRESHOLD = 0.85
+
+    # Second pass: compute group-aware pair support and confidence
     results = []
     for sym_type, description in candidates:
-        pair_count = counts.get(sym_type, 0)
-        pair_support = pair_count / n_pairs if n_pairs > 0 else 0.0
+        iou = ious[sym_type]
 
-        # Polygon-level verification
-        iou, _ = _verify_polygon_symmetry(islands, center_x, center_z, sym_type)
-
-        # For rot_90, both rot_90 and rot_270 are evidence of 90-degree
-        # symmetry (rot_270 is the inverse).  Require both to be present,
-        # then count their union as supporting pairs.
         if sym_type == "rot_90":
-            rot270_count = counts.get("rot_270", 0)
-            if rot270_count == 0 or pair_count == 0:
+            # Must have both rot_90 and rot_270 present
+            if counts.get("rot_90", 0) == 0 or counts.get("rot_270", 0) == 0:
                 pair_support = 0.0
-            elif n_pairs > 0:
-                pair_support = (pair_count + rot270_count) / n_pairs
+            else:
+                # rot_270 is the inverse, rot_180 is rot_90 applied twice
+                compatible = {"rot_90", "rot_270"}
+                if ious.get("rot_180", 0) >= GROUP_IOU_THRESHOLD:
+                    compatible.add("rot_180")
+                if (ious.get("mirror_x", 0) >= GROUP_IOU_THRESHOLD and
+                        ious.get("mirror_z", 0) >= GROUP_IOU_THRESHOLD):
+                    compatible.update(["mirror_x", "mirror_z"])
+                supporting = sum(
+                    1 for p in pairs if compatible & set(p["transforms"])
+                )
+                pair_support = supporting / n_pairs if n_pairs > 0 else 0.0
+
+        elif sym_type == "rot_180":
+            # mirror_x + mirror_z = rot_180, so mirror pairs are evidence
+            compatible = {"rot_180"}
+            if (ious.get("mirror_x", 0) >= GROUP_IOU_THRESHOLD and
+                    ious.get("mirror_z", 0) >= GROUP_IOU_THRESHOLD):
+                compatible.update(["mirror_x", "mirror_z"])
+            supporting = sum(
+                1 for p in pairs if compatible & set(p["transforms"])
+            )
+            pair_support = supporting / n_pairs if n_pairs > 0 else 0.0
+
+        else:
+            # mirror_x / mirror_z: count direct matches only
+            pair_count = counts.get(sym_type, 0)
+            pair_support = pair_count / n_pairs if n_pairs > 0 else 0.0
 
         # Combined confidence: weighted average of pair and polygon signals
         if n_pairs > 0:
