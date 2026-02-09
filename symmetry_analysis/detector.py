@@ -656,11 +656,7 @@ def _assign_islands_to_teams(
     center_z: float,
     primary_global: Dict,
 ) -> Dict[str, List[Dict]]:
-    """Assign islands to teams by explicit team field or proximity to spawns.
-
-    Unlike prior versions, does NOT exclude has_center islands — the
-    has_center flag only means "closest to map center", which may be void.
-    """
+    """Assign islands to teams by explicit team field or proximity to spawns."""
     team_islands = {t["id"]: [] for t in teams}
     assigned_ids = set()
 
