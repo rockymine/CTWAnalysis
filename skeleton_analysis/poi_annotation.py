@@ -11,7 +11,7 @@ import re
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 
-from ctw.core.models import IslandResult, Island
+from ctw.core.models import Island, IslandResult
 from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, UnionRegion,
     CuboidRegion, RectangleRegion,
@@ -183,8 +183,8 @@ def find_nearest_node(
     return best_id
 
 
-# Re-export from ctw.core.geometry for backward compatibility
-from ctw.core.geometry import compute_map_center, classify_island_center
+# Re-export from ctw.core.minecraft for backward compatibility
+from ctw.core.minecraft.center import compute_map_center, classify_island_center
 
 
 def annotate_skeleton_pois(

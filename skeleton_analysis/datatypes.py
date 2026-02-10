@@ -10,7 +10,7 @@ All coordinate conventions:
 - Canonical space: world coords transformed via D4 symmetry, translated so minX=minZ=0
 """
 
-from ctw.core.models import (
+from ctw.core.models.skeleton import (
     CanonicalTransform,
     CanonicalIsland,
     RasterMask,
@@ -22,7 +22,7 @@ from ctw.core.models import (
 )
 
 # Re-export rotate_points for any code that imported _rotate_points from here
-from ctw.core.geometry import rotate_points as _rotate_points
+from ctw.core.math.rotations import rotate_points as _rotate_points
 
 __all__ = [
     "CanonicalTransform",

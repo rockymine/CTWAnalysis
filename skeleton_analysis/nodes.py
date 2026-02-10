@@ -7,8 +7,8 @@ Computes pixel degree and classifies skeleton pixels as endpoints or junctions.
 import numpy as np
 from typing import List
 
-from ctw.core.models import SkeletonPixels, GraphNode
-from ctw.core.geometry import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
+from ctw.core.models.skeleton import SkeletonPixels, GraphNode
+from ctw.core.math.offsets import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 
 
 def compute_pixel_degrees(

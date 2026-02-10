@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import List
 
-from ctw.core.geometry import json_default as _json_default
+from ctw.core.builders.serialization import json_default as _json_default
 
 from .map_graph import DEFAULT_CONNECTIVITY_PARAMS
 

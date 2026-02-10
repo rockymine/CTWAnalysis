@@ -1,41 +1,50 @@
 """
 ctw.core — shared geometry and model foundations.
 
-Provides:
-    ctw.core.geometry   Shared math, D4 symmetry, coordinate conversions.
-    ctw.core.models     Island, MapContext, and skeleton dataclasses.
+Tiered subpackages (dependency direction: left -> right):
+
+    math        No deps (rotations, D4, offsets)
+    minecraft   Standalone (map center, block semantics)
+    geom        Standalone (polygon transforms, IoU)
+    models      Imports math (Island, skeleton types, MapContext)
+    builders    Imports models (context builders, JSON serialization)
+
+Backward-compatible shims:
+    ctw.core.geometry   re-exports from math + minecraft + geom + builders
+    ctw.core.models     re-exports everything (is now a package)
 """
 
-from .geometry import (
-    # Rotation
+# -- math tier --
+from .math import (
     rotate_points,
     rotate_points_int,
-    # D4 symmetry
     D4_ELEMENTS,
     lex_compare,
     compute_canonical_key,
     canonicalize_island,
-    # Neighbor offsets
     NEIGHBOR_OFFSETS_8,
     NEIGHBOR_OFFSETS_4,
-    # Map center / classification
+)
+
+# -- minecraft tier --
+from .minecraft import (
     compute_map_center,
     classify_center,
     classify_island_center,
-    # Polygon transforms
+)
+
+# -- geom tier --
+from .geom import (
     reflect_polygon_x,
     reflect_polygon_z,
     rotate_polygon_180,
     rotate_polygon_90,
     polygon_iou,
-    # JSON
-    json_default,
 )
 
+# -- models tier --
 from .models import (
-    # Island
     Island,
-    # Skeleton types
     CanonicalTransform,
     CanonicalIsland,
     RasterMask,
@@ -44,14 +53,18 @@ from .models import (
     GraphEdge,
     SkeletonGraph,
     IslandResult,
-    # MapContext
     MapContext,
+)
+
+# -- builders tier --
+from .builders import (
+    json_default,
     build_map_context,
     build_skeleton_dicts,
 )
 
 __all__ = [
-    # geometry
+    # math
     "rotate_points",
     "rotate_points_int",
     "D4_ELEMENTS",
@@ -60,15 +73,16 @@ __all__ = [
     "canonicalize_island",
     "NEIGHBOR_OFFSETS_8",
     "NEIGHBOR_OFFSETS_4",
+    # minecraft
     "compute_map_center",
     "classify_center",
     "classify_island_center",
+    # geom
     "reflect_polygon_x",
     "reflect_polygon_z",
     "rotate_polygon_180",
     "rotate_polygon_90",
     "polygon_iou",
-    "json_default",
     # models
     "Island",
     "CanonicalTransform",
@@ -80,6 +94,8 @@ __all__ = [
     "SkeletonGraph",
     "IslandResult",
     "MapContext",
+    # builders
+    "json_default",
     "build_map_context",
     "build_skeleton_dicts",
 ]

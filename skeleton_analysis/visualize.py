@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
 
-from ctw.core.models import IslandResult
+from ctw.core.models.skeleton import IslandResult
 
 
 def plot_island_debug(

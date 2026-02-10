@@ -7,7 +7,7 @@ Minimal mode: no pruning, no smoothing, no simplification.
 import numpy as np
 from skimage.morphology import skeletonize as skimage_skeletonize, medial_axis
 
-from ctw.core.models import RasterMask, SkeletonPixels
+from ctw.core.models.skeleton import RasterMask, SkeletonPixels
 
 
 def compute_skeleton(

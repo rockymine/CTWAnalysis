@@ -16,8 +16,8 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from ctw.core.geometry import (
-    classify_center,
+from ctw.core.minecraft.center import classify_center
+from ctw.core.geom.polygons import (
     reflect_polygon_x as _reflect_polygon_x,
     reflect_polygon_z as _reflect_polygon_z,
     rotate_polygon_180 as _rotate_polygon_180,

@@ -6,10 +6,10 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 
-from ctw.core.models import (
+from ctw.core.models.skeleton import (
     IslandResult, SkeletonGraph, CanonicalTransform, CanonicalIsland
 )
-from ctw.core.geometry import canonicalize_island, compute_canonical_key
+from ctw.core.math.d4 import canonicalize_island, compute_canonical_key
 from .rasterize import rasterize_island
 from .skeletonize import compute_skeleton
 from .nodes import compute_pixel_degrees, extract_nodes

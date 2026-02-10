@@ -10,7 +10,7 @@ This module removes such branches.
 from typing import List, Tuple, Dict, Set
 from collections import defaultdict
 
-from ctw.core.models import GraphNode, GraphEdge
+from ctw.core.models.skeleton import GraphNode, GraphEdge
 
 
 def prune_short_branches(

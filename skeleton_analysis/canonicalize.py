@@ -5,7 +5,7 @@ Re-exports canonicalize_island from ctw.core.geometry for backward
 compatibility. All D4 math now lives in ctw.core.geometry.
 """
 
-from ctw.core.geometry import (
+from ctw.core.math import (
     canonicalize_island,
     rotate_points_int as _rotate_int,
     D4_ELEMENTS as _D4_ELEMENTS,
