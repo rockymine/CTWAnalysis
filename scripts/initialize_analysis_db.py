@@ -134,7 +134,27 @@ def initialize_database():
         )
     """)
 
-    # Table 7: Player team segments (team membership over time)
+    # Table 7: Map spawns (spawn locations per map)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_map_spawn_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_spawns (
+            spawn_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_spawn_id'),
+            map_id INTEGER NOT NULL,
+            x FLOAT NOT NULL,
+            z FLOAT NOT NULL,
+            min_x FLOAT NOT NULL,
+            min_z FLOAT NOT NULL,
+            max_x FLOAT NOT NULL,
+            max_z FLOAT NOT NULL,
+            team TEXT NOT NULL,
+            team_color TEXT NOT NULL,
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table 8: Player team segments (team membership over time)
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1
     """)

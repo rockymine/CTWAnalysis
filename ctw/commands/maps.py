@@ -1,4 +1,4 @@
-"""'maps' subcommand — populate the maps table in the analysis DB."""
+"""'maps' subcommand — map metadata and spawn data commands."""
 
 import argparse
 import json
@@ -9,32 +9,46 @@ from ctw.common import DEFAULT_OUTPUT_ROOT, ensure_match_db
 
 
 def register(subparsers):
-    p = subparsers.add_parser(
+    maps_parser = subparsers.add_parser(
         'maps',
-        help='Load map metadata into the analysis database',
+        help='Map metadata commands',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Actions:
+  load         Load map metadata into the maps table
+  spawns       Load spawn data into the map_spawns table
+
 Examples:
-  python ctw.py maps --map annealing_iv
-  python ctw.py maps                       # all maps with output data
+  python ctw.py maps load --map annealing_iv
+  python ctw.py maps load                       # all maps with output data
+  python ctw.py maps spawns --map annealing_iv
+  python ctw.py maps spawns                      # all maps
 """,
     )
+    maps_sub = maps_parser.add_subparsers(
+        dest='maps_action', metavar='<action>',
+    )
+
+    # maps load
+    p = maps_sub.add_parser('load', help='Load map metadata into the maps table')
     p.add_argument('--map', help='Map name to load (default: all maps)')
     p.add_argument('--output', help='Output root directory (default: output/)')
-    p.set_defaults(func=handler)
+    p.set_defaults(func=handle_load)
+
+    # maps spawns
+    p = maps_sub.add_parser('spawns', help='Load spawn data into the map_spawns table')
+    p.add_argument('--map', help='Map name to load (default: all maps)')
+    p.add_argument('--output', help='Output root directory (default: output/)')
+    p.set_defaults(func=handle_spawns)
 
 
-def handler(args):
-    import duckdb
-
-    ensure_match_db()
-
+def _resolve_map_dirs(args):
+    """Resolve map output directories from args. Returns list of Path or None."""
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
     if not output_root.exists():
         print(f"Error: output directory not found: {output_root}")
-        return
+        return None
 
-    # Collect map output directories
     if args.map:
         names = [n.strip() for n in args.map.split(',') if n.strip()]
         map_dirs = []
@@ -49,6 +63,17 @@ def handler(args):
 
     if not map_dirs:
         print("No map output directories found.")
+        return None
+    return map_dirs
+
+
+def handle_load(args):
+    import duckdb
+
+    ensure_match_db()
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
         return
 
     db_path = Path('match_analysis/metadata.db')
@@ -69,6 +94,73 @@ def handler(args):
 
     conn.close()
     print(f"\nDone: {loaded} map(s) loaded, {skipped} skipped.")
+
+
+def handle_spawns(args):
+    import duckdb
+
+    ensure_match_db()
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
+        return
+
+    db_path = Path('match_analysis/metadata.db')
+    conn = duckdb.connect(str(db_path))
+
+    loaded = 0
+    skipped = 0
+    for map_dir in map_dirs:
+        map_slug = map_dir.name
+        map_context_path = map_dir / 'island_analysis' / 'map_context.json'
+
+        if not map_context_path.exists():
+            print(f"  Skip {map_slug}: map_context.json not found")
+            skipped += 1
+            continue
+
+        # Look up map_id
+        result = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        if result is None:
+            print(f"  Skip {map_slug}: not in maps table (run 'maps load' first)")
+            skipped += 1
+            continue
+        map_id = result[0]
+
+        with open(map_context_path, 'r', encoding='utf-8') as f:
+            map_context = json.load(f)
+
+        spawns = map_context.get('poi_assignments', {}).get('spawns', [])
+        if not spawns:
+            print(f"  Skip {map_slug}: no spawns in map_context.json")
+            skipped += 1
+            continue
+
+        # Delete existing spawns for this map, then insert new ones
+        conn.execute("DELETE FROM map_spawns WHERE map_id = ?", [map_id])
+
+        for spawn in spawns:
+            bounds = spawn.get('bounds_2d', {})
+            bounds_min = bounds.get('min', {})
+            bounds_max = bounds.get('max', {})
+            conn.execute("""
+                INSERT INTO map_spawns (map_id, x, z, min_x, min_z, max_x, max_z, team, team_color)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                map_id,
+                spawn['x'], spawn['z'],
+                bounds_min['x'], bounds_min['z'],
+                bounds_max['x'], bounds_max['z'],
+                spawn['team'], spawn['team_color'],
+            ])
+
+        loaded += 1
+        print(f"  [OK] {map_slug}: {len(spawns)} spawn(s) loaded")
+
+    conn.close()
+    print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
 
 
 def _collect_map_row(map_dir: Path) -> dict | None:
@@ -122,6 +214,12 @@ def _collect_map_row(map_dir: Path) -> dict | None:
 
 def _upsert_map(conn, row: dict):
     """Insert or update a row in the maps table."""
+    # Delete dependent map_spawns first (foreign key constraint)
+    conn.execute("""
+        DELETE FROM map_spawns WHERE map_id IN (
+            SELECT map_id FROM maps WHERE map_slug = ?
+        )
+    """, [row['map_slug']])
     conn.execute("""
         DELETE FROM maps WHERE map_slug = ?
     """, [row['map_slug']])
