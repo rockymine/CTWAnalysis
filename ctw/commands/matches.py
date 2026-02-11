@@ -415,7 +415,14 @@ def handle_trace(args):
             player_ids = [args.player]
 
         # Determine output path
-        if args.output and len(match_ids) == 1:
+        # args.output may be set by global config (output root dir) —
+        # only use it as an explicit file path when the user passed
+        # --output on the CLI (i.e. it looks like a file, not a dir).
+        explicit_output = (
+            args.output and len(match_ids) == 1
+            and not Path(args.output).is_dir()
+        )
+        if explicit_output:
             output_path = Path(args.output)
         else:
             trace_dir = map_output_dir / 'match_analysis'
