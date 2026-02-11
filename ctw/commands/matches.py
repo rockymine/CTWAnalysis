@@ -46,6 +46,7 @@ Actions:
   stats        Show database statistics
   reset        Reset processing state (clears trajectory files)
   trace        Visualize player traces on map
+  kills        Visualize kill-death pairs on map
 
 Examples:
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
@@ -61,6 +62,9 @@ Examples:
   python ctw.py matches trace --map Ingwaz --match ALL --player 0
   python ctw.py matches trace --map Ingwaz --match 1 --player 0 --no-edges --color-mode location
   python ctw.py matches trace --map Ingwaz --match ALL --player ALL --overlay
+  python ctw.py matches kills --map Ingwaz --match 406
+  python ctw.py matches kills --map Ingwaz --match ALL --overlay
+  python ctw.py matches kills --map Ingwaz --match ALL --overlay --color-mode distance
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -155,6 +159,30 @@ Examples:
                    help='Overlay all matches onto a single plot '
                         '(use with --match ALL)')
     p.set_defaults(func=handle_trace)
+
+    # matches kills
+    p = matches_sub.add_parser('kills', help='Visualize kill-death pairs on map')
+    p.add_argument('--map', required=True,
+                   help='Map name (e.g., Ingwaz) or path to map folder')
+    p.add_argument('--match', required=True, type=_match_arg,
+                   help='Match ID, comma-separated IDs (1,2,3), or ALL')
+    p.add_argument('--output', help='Output PNG path (default: auto-generated)')
+    p.add_argument('--overlay', action='store_true',
+                   help='Overlay all matches onto a single plot '
+                        '(use with --match ALL)')
+    p.add_argument('--no-legend', action='store_true',
+                   help='Hide the legend')
+    p.add_argument('--no-stats', action='store_true',
+                   help='Hide the stats box')
+    p.add_argument('--color-mode', choices=['team', 'distance'],
+                   default='team',
+                   help='Color scheme: team (by killer team) or '
+                        'distance (green-red gradient by kill range)')
+    p.add_argument('--map-base', choices=['outline', 'blocks'],
+                   default='outline',
+                   help='Map base layer: outline (polygon outlines) or '
+                        'blocks (individual blocks from layout parquet)')
+    p.set_defaults(func=handle_kills, color_mode='team')
 
 
 def handle_parse(args):
@@ -480,6 +508,144 @@ def handle_trace(args):
 
     if len(valid_match_ids) > 1:
         print(f"\nTraced {traced}/{len(valid_match_ids)} matches.")
+
+
+def handle_kills(args):
+    import json
+    import duckdb
+    from ctw.common import resolve_map_folder, resolve_output_dir
+    from match_analysis.services import get_kill_death_pairs, get_match_map_slug
+    from match_analysis.visualization import plot_kill_death_pairs
+
+    ensure_match_db()
+
+    # Argparse default leaks from sibling 'trace' subparser; normalize here
+    if args.color_mode not in ('team', 'distance'):
+        args.color_mode = 'team'
+
+    map_folder = resolve_map_folder(args.map)
+    map_slug = map_folder.name
+    map_output_dir = resolve_output_dir(map_folder, create=False)
+
+    # --- resolve match IDs ------------------------------------------------
+    if args.match == 'ALL':
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        rows = conn.execute(
+            "SELECT mat.match_id FROM matches mat "
+            "JOIN maps m ON mat.map_id = m.map_id "
+            "WHERE m.map_slug = ? AND mat.processed = TRUE "
+            "ORDER BY mat.match_id",
+            [map_slug],
+        ).fetchall()
+        conn.close()
+        match_ids = [r[0] for r in rows]
+        if not match_ids:
+            print(f"No processed matches found for map '{map_slug}'.")
+            return
+        print(f"Found {len(match_ids)} processed matches for map '{map_slug}'.")
+    else:
+        match_ids = args.match  # list[int] from _match_arg
+
+    # --- validate match IDs belong to this map ----------------------------
+    valid_match_ids = []
+    for match_id in match_ids:
+        try:
+            db_map_slug = get_match_map_slug(match_id)
+        except ValueError as e:
+            print(f"Error: {e}")
+            continue
+        if db_map_slug != map_slug:
+            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
+            continue
+        valid_match_ids.append(match_id)
+
+    if not valid_match_ids:
+        print("No valid matches found.")
+        return
+
+    # --- load map context -------------------------------------------------
+    def _find_file(rel_path):
+        p = map_output_dir / rel_path
+        if p.exists():
+            return p
+        p = map_folder / rel_path
+        if p.exists():
+            return p
+        return None
+
+    context_path = _find_file('island_analysis/map_context.json')
+    if context_path is None:
+        print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
+        print("Run 'ctw islands --map ...' first to generate map context.")
+        return
+
+    with open(context_path) as f:
+        map_context = json.load(f)
+
+    map_graph = None
+    if args.color_mode == 'team':
+        graph_path = _find_file('map_graph.json')
+        if graph_path is not None:
+            with open(graph_path) as f:
+                map_graph = json.load(f)
+
+    layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
+
+    # --- overlay mode: all matches on a single plot -----------------------
+    if getattr(args, 'overlay', False):
+        pairs_df = get_kill_death_pairs(match_ids=valid_match_ids)
+        trace_dir = map_output_dir / 'match_analysis'
+        output_path = trace_dir / f"kills_overlay_{len(valid_match_ids)}matches.png"
+        if args.output and not Path(args.output).is_dir():
+            output_path = Path(args.output)
+
+        print(f"Overlaying kills from {len(valid_match_ids)} matches "
+              f"({len(pairs_df)} pairs)...")
+
+        plot_kill_death_pairs(
+            map_context, pairs_df, output_path,
+            match_ids=valid_match_ids,
+            map_graph=map_graph,
+            show_legend=not args.no_legend,
+            show_stats=not args.no_stats,
+            color_mode=args.color_mode,
+            map_base=args.map_base,
+            map_folder=layout_dir,
+        )
+        return
+
+    # --- per-match loop ---------------------------------------------------
+    plotted = 0
+    for match_id in valid_match_ids:
+        pairs_df = get_kill_death_pairs(match_id=match_id)
+
+        explicit_output = (
+            args.output and len(valid_match_ids) == 1
+            and not Path(args.output).is_dir()
+        )
+        if explicit_output:
+            output_path = Path(args.output)
+        else:
+            trace_dir = map_output_dir / 'match_analysis'
+            output_path = trace_dir / f"kills_match{match_id}.png"
+
+        if len(valid_match_ids) > 1:
+            print(f"  Plotting match {match_id} ({len(pairs_df)} pairs)...")
+
+        plot_kill_death_pairs(
+            map_context, pairs_df, output_path,
+            match_id=match_id,
+            map_graph=map_graph,
+            show_legend=not args.no_legend,
+            show_stats=not args.no_stats,
+            color_mode=args.color_mode,
+            map_base=args.map_base,
+            map_folder=layout_dir,
+        )
+        plotted += 1
+
+    if len(valid_match_ids) > 1:
+        print(f"\nPlotted kills for {plotted}/{len(valid_match_ids)} matches.")
 
 
 def handle_list(args):

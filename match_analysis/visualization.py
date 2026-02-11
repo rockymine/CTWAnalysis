@@ -409,3 +409,236 @@ def plot_player_traces(
     fig.savefig(str(output_path), dpi=200, bbox_inches='tight')
     plt.close(fig)
     print(f"Player trace plot saved to: {output_path}")
+
+
+def _get_killer_teams(pairs_df) -> dict[tuple[int, int], str]:
+    """Look up killer team from player_team_segments for each (match_id, killer_id).
+
+    Returns a dict mapping (match_id, killer_id) -> team string.
+    """
+    import duckdb
+    from match_analysis.services.match_service import DB_PATH
+
+    unique_keys = pairs_df[['match_id', 'killer_id']].drop_duplicates()
+    if len(unique_keys) == 0:
+        return {}
+
+    conn = duckdb.connect(DB_PATH, read_only=True)
+    try:
+        # For each killer, find the team segment active at their first kill
+        teams = {}
+        for _, row in unique_keys.iterrows():
+            mid, kid = int(row['match_id']), int(row['killer_id'])
+            result = conn.execute(
+                "SELECT team FROM player_team_segments "
+                "WHERE match_id = ? AND player_id = ? "
+                "ORDER BY start_timestamp LIMIT 1",
+                [mid, kid],
+            ).fetchone()
+            if result:
+                teams[(mid, kid)] = result[0]
+        return teams
+    finally:
+        conn.close()
+
+
+def _team_to_color(team: str) -> str:
+    """Map a team name to a display color."""
+    # Normalize: strip common prefixes
+    key = team.replace('-team', '').replace('team-', '').replace('team_', '')
+    return _TEAM_TRACE_COLORS.get(key, _TEAM_TRACE_COLORS['gray'])
+
+
+def _distance_to_color(dist: float, max_dist: float) -> tuple:
+    """Map distance to a green→yellow→red gradient."""
+    if max_dist <= 0:
+        return (0.2, 0.8, 0.2, 1.0)
+    t = min(dist / max_dist, 1.0)
+    # Green (0) → Yellow (0.5) → Red (1)
+    if t < 0.5:
+        r = t * 2
+        g = 1.0
+    else:
+        r = 1.0
+        g = 1.0 - (t - 0.5) * 2
+    return (r, g, 0.15, 1.0)
+
+
+def plot_kill_death_pairs(
+    map_context: dict,
+    pairs_df,
+    output_path: Path,
+    match_id: int | None = None,
+    match_ids: list[int] | None = None,
+    map_graph: dict = None,
+    show_legend: bool = True,
+    show_stats: bool = True,
+    color_mode: str = 'team',
+    map_base: str = 'outline',
+    map_folder: Path = None,
+) -> None:
+    """Plot kill-death pairs as connected marker pairs on the map.
+
+    Args:
+        map_context: Parsed map_context.json dict.
+        pairs_df: DataFrame from get_kill_death_pairs().
+        output_path: Where to save the PNG.
+        match_id: Single match ID (for title).
+        match_ids: List of match IDs (for overlay title).
+        map_graph: Parsed map_graph.json (needed for team color mode).
+        show_legend: Show the legend.
+        show_stats: Show the stats text box.
+        color_mode: 'team' (color by killer team) or 'distance' (green-red gradient).
+        map_base: 'outline' or 'blocks'.
+        map_folder: Path to map folder (for blocks mode).
+    """
+    output_path = Path(output_path)
+    os.makedirs(output_path.parent, exist_ok=True)
+
+    if len(pairs_df) == 0:
+        src = f"match {match_id}" if match_id else f"{len(match_ids)} matches"
+        print(f"No kill-death pairs found in {src}")
+        return
+
+    n_pairs = len(pairs_df)
+    overlay = match_ids is not None and len(match_ids) > 1
+
+    # Compute distances
+    dx = pairs_df['kill_x'].values - pairs_df['death_x'].values
+    dz = pairs_df['kill_z'].values - pairs_df['death_z'].values
+    distances = np.sqrt(dx.astype(float)**2 + dz.astype(float)**2)
+    avg_dist = float(np.mean(distances))
+    max_dist = float(np.max(distances))
+
+    # Resolve colors per pair
+    if color_mode == 'team':
+        team_map = _get_killer_teams(pairs_df)
+        pair_colors = []
+        for _, row in pairs_df.iterrows():
+            key = (int(row['match_id']), int(row['killer_id']))
+            team = team_map.get(key, 'gray')
+            pair_colors.append(_team_to_color(team))
+    else:  # distance
+        pair_colors = [_distance_to_color(d, max_dist) for d in distances]
+
+    # Density-based alpha/linewidth
+    if n_pairs > 500:
+        line_alpha = 0.15
+        line_lw = 0.4
+        marker_alpha = 0.3
+    elif n_pairs > 100:
+        line_alpha = 0.3
+        line_lw = 0.6
+        marker_alpha = 0.5
+    else:
+        line_alpha = 0.6
+        line_lw = 1.0
+        marker_alpha = 0.8
+
+    # --- Figure setup ---
+    fig, ax = plt.subplots(figsize=(16, 10))
+    map_name = map_context.get('map_name', 'Unknown')
+
+    mode_label = ' [Team]' if color_mode == 'team' else ' [Distance]'
+    if overlay:
+        ax.set_title(
+            f"{map_name} — {n_pairs} Kills across "
+            f"{len(match_ids)} Matches{mode_label}",
+            fontsize=13, fontweight='bold',
+        )
+    else:
+        ax.set_title(
+            f"{map_name} — {n_pairs} Kills (Match {match_id}){mode_label}",
+            fontsize=13, fontweight='bold',
+        )
+
+    draw_map_base(ax, map_context,
+                  build_style=_BUILD_STYLE,
+                  island_style=_ISLAND_STYLE,
+                  poi_style=_POI_STYLE,
+                  map_base=map_base,
+                  map_folder=map_folder)
+
+    # --- Draw kill-death pairs ---
+    kill_xs = pairs_df['kill_x'].values.astype(float)
+    kill_zs = pairs_df['kill_z'].values.astype(float)
+    death_xs = pairs_df['death_x'].values.astype(float)
+    death_zs = pairs_df['death_z'].values.astype(float)
+
+    # Connecting lines
+    line_segs = [[(kill_xs[i], kill_zs[i]), (death_xs[i], death_zs[i])]
+                 for i in range(n_pairs)]
+    lc = LineCollection(line_segs, colors=pair_colors,
+                        linewidths=line_lw, alpha=line_alpha, zorder=3)
+    ax.add_collection(lc)
+
+    # Sword markers at killer positions
+    ax.scatter(kill_xs, kill_zs, marker=_SWORD, s=100, c=pair_colors,
+               edgecolors='black', linewidths=0.3, alpha=marker_alpha, zorder=4)
+
+    # Tombstone markers at victim positions
+    ax.scatter(death_xs, death_zs, marker=_TOMBSTONE, s=80, c=pair_colors,
+               edgecolors='black', linewidths=0.3, alpha=marker_alpha, zorder=4)
+
+    # --- Legend ---
+    if show_legend:
+        legend_handles = map_base_legend_handles(
+            has_build_region=True,
+            island_style=_ISLAND_STYLE,
+            poi_style=_POI_STYLE,
+        )
+        legend_handles.append(
+            plt.Line2D([0], [0], marker=_SWORD, color='w',
+                       markerfacecolor='gray', markeredgecolor='black',
+                       markersize=10, label='Kill (killer pos)'))
+        legend_handles.append(
+            plt.Line2D([0], [0], marker=_TOMBSTONE, color='w',
+                       markerfacecolor='gray', markeredgecolor='black',
+                       markersize=10, label='Death (victim pos)'))
+        legend_handles.append(
+            plt.Line2D([0], [0], color='gray', linewidth=1,
+                       alpha=0.5, label='Kill→Death line'))
+
+        if color_mode == 'team':
+            for team_name, team_hex in _TEAM_TRACE_COLORS.items():
+                if team_name != 'gray':
+                    legend_handles.append(
+                        plt.Line2D([0], [0], color=team_hex, linewidth=2,
+                                   label=f'{team_name.capitalize()} team'))
+        else:  # distance
+            legend_handles.append(
+                plt.Line2D([0], [0], color='green', linewidth=2, label='Short range'))
+            legend_handles.append(
+                plt.Line2D([0], [0], color='red', linewidth=2, label='Long range'))
+
+        ax.legend(handles=legend_handles, loc='upper right',
+                  fontsize=8, framealpha=0.9)
+
+    # --- Stats box ---
+    if show_stats:
+        n_matches = len(match_ids) if overlay else 1
+        stats_parts = []
+        if overlay:
+            stats_parts.append(f"Matches: {n_matches}")
+        stats_parts.extend([
+            f"Kill pairs: {n_pairs}",
+            f"Avg dist: {avg_dist:.1f}",
+            f"Max dist: {max_dist:.1f}",
+        ])
+        stats_text = '  |  '.join(stats_parts)
+        ax.text(
+            0.02, 0.02, stats_text,
+            transform=ax.transAxes, fontsize=9, fontfamily='monospace',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
+            zorder=10,
+        )
+
+    ax.set_aspect('equal')
+    ax.invert_yaxis()
+    ax.set_xlabel('X (blocks)')
+    ax.set_ylabel('Z (blocks)')
+    ax.grid(True, alpha=0.2)
+
+    fig.savefig(str(output_path), dpi=200, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Kill-death pairs plot saved to: {output_path}")
