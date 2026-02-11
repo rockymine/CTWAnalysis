@@ -114,6 +114,9 @@ class MapXMLParser:
         # Parse regions and apply rules
         data.regions, data.apply_rules = self._parse_regions()
 
+        # Resolve spawn region references now that regions are available
+        self._resolve_spawn_regions(data)
+
         # Parse max build height
         data.max_build_height = self._parse_max_build_height()
 
@@ -184,12 +187,17 @@ class MapXMLParser:
 
         for spawn_elem in spawns_elem.findall('spawn'):
             region = None
-            # Try singular <region> first, then plural <regions>
-            region_elem = spawn_elem.find('region')
-            if region_elem is None:
-                region_elem = spawn_elem.find('regions')
-            if region_elem is not None:
-                region = self._parse_region_element(region_elem)
+            # Check for region attribute (e.g. <spawn region="blue-spawn-point"/>)
+            region_attr = spawn_elem.get('region', '')
+            if region_attr:
+                region = RegionReference(ref_id=region_attr)
+            else:
+                # Try singular <region> child first, then plural <regions>
+                region_elem = spawn_elem.find('region')
+                if region_elem is None:
+                    region_elem = spawn_elem.find('regions')
+                if region_elem is not None:
+                    region = self._parse_region_element(region_elem)
 
             spawn = Spawn(
                 team=spawn_elem.get('team', ''),
@@ -200,6 +208,13 @@ class MapXMLParser:
             spawns.append(spawn)
 
         return spawns
+
+    @staticmethod
+    def _resolve_spawn_regions(data: MapData):
+        """Resolve RegionReference objects on spawns now that regions are parsed."""
+        for spawn in data.spawns:
+            if isinstance(spawn.region, RegionReference) and spawn.region.ref_id in data.regions:
+                spawn.region = data.regions[spawn.region.ref_id]
 
     def _parse_wools(self) -> List[Wool]:
         """Parse wool elements."""
