@@ -4,4 +4,6 @@ from .match_service import (
     get_match_file,
     get_match_map_slug,
     get_match_player_ids,
+    resolve_match_ids,
+    validate_match_ids,
 )

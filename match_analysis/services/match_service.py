@@ -230,6 +230,65 @@ def get_kill_death_pairs(
     return result
 
 
+def resolve_match_ids(match_arg, map_slug: str) -> list[int] | None:
+    """Resolve a match CLI argument to a list of match IDs.
+
+    Handles the 'ALL' sentinel (queries DB for all processed matches on the
+    given map) or passes through the already-parsed list[int].
+
+    Args:
+        match_arg: 'ALL' or list[int] from _match_arg parser.
+        map_slug: Map slug to filter by when match_arg is 'ALL'.
+
+    Returns:
+        List of match IDs, or None if 'ALL' yielded no results.
+    """
+    if match_arg == 'ALL':
+        conn = duckdb.connect(DB_PATH, read_only=True)
+        try:
+            rows = conn.execute(
+                "SELECT mat.match_id FROM matches mat "
+                "JOIN maps m ON mat.map_id = m.map_id "
+                "WHERE m.map_slug = ? AND mat.processed = TRUE "
+                "ORDER BY mat.match_id",
+                [map_slug],
+            ).fetchall()
+        finally:
+            conn.close()
+        match_ids = [r[0] for r in rows]
+        if not match_ids:
+            return None
+        print(f"Found {len(match_ids)} processed matches for map '{map_slug}'.")
+        return match_ids
+    return match_arg
+
+
+def validate_match_ids(match_ids: list[int], map_slug: str) -> list[int]:
+    """Filter match IDs to only those belonging to the given map.
+
+    Prints warnings for missing or mismatched matches.
+
+    Args:
+        match_ids: List of match IDs to validate.
+        map_slug: Expected map slug.
+
+    Returns:
+        List of valid match IDs (may be empty).
+    """
+    valid = []
+    for match_id in match_ids:
+        try:
+            db_map_slug = get_match_map_slug(match_id)
+        except ValueError as e:
+            print(f"Error: {e}")
+            continue
+        if db_map_slug != map_slug:
+            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
+            continue
+        valid.append(match_id)
+    return valid
+
+
 def get_match_player_ids(match_id: int) -> list[int]:
     """Return sorted list of unique player IDs for a match from the database."""
     conn = duckdb.connect(DB_PATH, read_only=True)

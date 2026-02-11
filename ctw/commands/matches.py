@@ -355,11 +355,62 @@ def handle_reset(args):
     conn.close()
 
 
-def handle_trace(args):
+def _find_map_file(map_output_dir: Path, map_folder: Path, rel_path: str):
+    """Check map_output_dir first, fall back to map_folder.
+
+    Returns the resolved Path or None if not found in either location.
+    """
+    p = map_output_dir / rel_path
+    if p.exists():
+        return p
+    p = map_folder / rel_path
+    if p.exists():
+        return p
+    return None
+
+
+def _load_map_context(map_output_dir: Path, map_folder: Path):
+    """Load map_context.json, returning the parsed dict or None on error."""
     import json
-    import duckdb
+
+    context_path = _find_map_file(map_output_dir, map_folder,
+                                  'island_analysis/map_context.json')
+    if context_path is None:
+        print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
+        print("Run 'ctw islands --map ...' first to generate map context.")
+        return None
+
+    with open(context_path) as f:
+        return json.load(f)
+
+
+def _load_map_graph(map_output_dir: Path, map_folder: Path, required: bool = False):
+    """Load map_graph.json if available, returning the parsed dict or None."""
+    import json
+
+    graph_path = _find_map_file(map_output_dir, map_folder, 'map_graph.json')
+    if graph_path is None:
+        if required:
+            print(f"Error: map_graph.json not found in {map_output_dir} or {map_folder}")
+            print("Run 'ctw islands --map ...' first to generate map graph.")
+        return None
+
+    with open(graph_path) as f:
+        return json.load(f)
+
+
+def _resolve_layout_dir(map_output_dir: Path, map_folder: Path) -> Path:
+    """Return the directory containing layout_bedrock.parquet."""
+    if (map_output_dir / 'layout_bedrock.parquet').exists():
+        return map_output_dir
+    return map_folder
+
+
+def handle_trace(args):
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.services import get_match_map_slug, get_match_player_ids
+    from match_analysis.services import (
+        get_match_player_ids, resolve_match_ids, validate_match_ids,
+    )
     from match_analysis.visualization import plot_player_traces
 
     ensure_match_db()
@@ -368,74 +419,30 @@ def handle_trace(args):
     map_slug = map_folder.name
     map_output_dir = resolve_output_dir(map_folder, create=False)
 
-    # --- resolve match IDs ------------------------------------------------
-    if args.match == 'ALL':
-        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
-        rows = conn.execute(
-            "SELECT mat.match_id FROM matches mat "
-            "JOIN maps m ON mat.map_id = m.map_id "
-            "WHERE m.map_slug = ? AND mat.processed = TRUE "
-            "ORDER BY mat.match_id",
-            [map_slug],
-        ).fetchall()
-        conn.close()
-        match_ids = [r[0] for r in rows]
-        if not match_ids:
-            print(f"No processed matches found for map '{map_slug}'.")
-            return
-        print(f"Found {len(match_ids)} processed matches for map '{map_slug}'.")
-    else:
-        match_ids = args.match  # list[int] from _match_arg
-
-    # --- shared map setup (done once) -------------------------------------
-    def _find_file(rel_path):
-        """Check map_output_dir first, fall back to map_folder."""
-        p = map_output_dir / rel_path
-        if p.exists():
-            return p
-        p = map_folder / rel_path
-        if p.exists():
-            return p
-        return None
-
-    context_path = _find_file('island_analysis/map_context.json')
-    if context_path is None:
-        print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
-        print("Run 'ctw islands --map ...' first to generate map context.")
+    # --- resolve and validate match IDs -----------------------------------
+    match_ids = resolve_match_ids(args.match, map_slug)
+    if match_ids is None:
+        print(f"No processed matches found for map '{map_slug}'.")
         return
 
-    with open(context_path) as f:
-        map_context = json.load(f)
+    valid_match_ids = validate_match_ids(match_ids, map_slug)
+    if not valid_match_ids:
+        print("No valid matches found.")
+        return
+
+    # --- load map data ----------------------------------------------------
+    map_context = _load_map_context(map_output_dir, map_folder)
+    if map_context is None:
+        return
 
     needs_graph = args.snap_skeleton or args.color_mode in ('team', 'location')
     map_graph = None
     if needs_graph:
-        graph_path = _find_file('map_graph.json')
-        if graph_path is None:
-            print(f"Error: map_graph.json not found in {map_output_dir} or {map_folder}")
-            print("Run 'ctw islands --map ...' first to generate map graph.")
+        map_graph = _load_map_graph(map_output_dir, map_folder, required=True)
+        if map_graph is None:
             return
-        with open(graph_path) as f:
-            map_graph = json.load(f)
 
-    layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
-
-    # --- validate match IDs belong to this map ----------------------------
-    valid_match_ids = []
-    for match_id in match_ids:
-        try:
-            db_map_slug = get_match_map_slug(match_id)
-        except ValueError as e:
-            print(f"Error: {e}")
-            continue
-        if db_map_slug != map_slug:
-            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
-            continue
-        valid_match_ids.append(match_id)
-
-    if not valid_match_ids:
-        print("No valid matches found.")
-        return
+    layout_dir = _resolve_layout_dir(map_output_dir, map_folder)
 
     # --- overlay mode: all matches on a single plot -----------------------
     if getattr(args, 'overlay', False):
@@ -511,10 +518,10 @@ def handle_trace(args):
 
 
 def handle_kills(args):
-    import json
-    import duckdb
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.services import get_kill_death_pairs, get_match_map_slug
+    from match_analysis.services import (
+        get_kill_death_pairs, resolve_match_ids, validate_match_ids,
+    )
     from match_analysis.visualization import plot_kill_death_pairs
 
     ensure_match_db()
@@ -527,69 +534,27 @@ def handle_kills(args):
     map_slug = map_folder.name
     map_output_dir = resolve_output_dir(map_folder, create=False)
 
-    # --- resolve match IDs ------------------------------------------------
-    if args.match == 'ALL':
-        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
-        rows = conn.execute(
-            "SELECT mat.match_id FROM matches mat "
-            "JOIN maps m ON mat.map_id = m.map_id "
-            "WHERE m.map_slug = ? AND mat.processed = TRUE "
-            "ORDER BY mat.match_id",
-            [map_slug],
-        ).fetchall()
-        conn.close()
-        match_ids = [r[0] for r in rows]
-        if not match_ids:
-            print(f"No processed matches found for map '{map_slug}'.")
-            return
-        print(f"Found {len(match_ids)} processed matches for map '{map_slug}'.")
-    else:
-        match_ids = args.match  # list[int] from _match_arg
+    # --- resolve and validate match IDs -----------------------------------
+    match_ids = resolve_match_ids(args.match, map_slug)
+    if match_ids is None:
+        print(f"No processed matches found for map '{map_slug}'.")
+        return
 
-    # --- validate match IDs belong to this map ----------------------------
-    valid_match_ids = []
-    for match_id in match_ids:
-        try:
-            db_map_slug = get_match_map_slug(match_id)
-        except ValueError as e:
-            print(f"Error: {e}")
-            continue
-        if db_map_slug != map_slug:
-            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
-            continue
-        valid_match_ids.append(match_id)
-
+    valid_match_ids = validate_match_ids(match_ids, map_slug)
     if not valid_match_ids:
         print("No valid matches found.")
         return
 
-    # --- load map context -------------------------------------------------
-    def _find_file(rel_path):
-        p = map_output_dir / rel_path
-        if p.exists():
-            return p
-        p = map_folder / rel_path
-        if p.exists():
-            return p
-        return None
-
-    context_path = _find_file('island_analysis/map_context.json')
-    if context_path is None:
-        print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
-        print("Run 'ctw islands --map ...' first to generate map context.")
+    # --- load map data ----------------------------------------------------
+    map_context = _load_map_context(map_output_dir, map_folder)
+    if map_context is None:
         return
-
-    with open(context_path) as f:
-        map_context = json.load(f)
 
     map_graph = None
     if args.color_mode == 'team':
-        graph_path = _find_file('map_graph.json')
-        if graph_path is not None:
-            with open(graph_path) as f:
-                map_graph = json.load(f)
+        map_graph = _load_map_graph(map_output_dir, map_folder)
 
-    layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
+    layout_dir = _resolve_layout_dir(map_output_dir, map_folder)
 
     # --- overlay mode: all matches on a single plot -----------------------
     if getattr(args, 'overlay', False):
