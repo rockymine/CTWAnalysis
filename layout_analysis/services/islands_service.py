@@ -354,20 +354,23 @@ def _build_context(
     y0_path = map_output_dir / 'layout_y0.parquet'
     if y0_path.exists():
         y0_df = pd.read_parquet(y0_path)
-        block_counts = y0_df['block_id'].value_counts()
-        n_block36 = int(block_counts.get(36, 0))
-        total = len(y0_df)
-        if n_block36 > 0:
-            other = total - n_block36
-            if other == 0:
-                print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
-            else:
-                other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
-                print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
-                      f"{other} other (ids: {other_ids})")
+        if len(y0_df) == 0 or 'block_id' not in y0_df.columns:
+            print(f"    Y0 layer: empty (0 blocks)")
         else:
-            ids = sorted(block_counts.index.tolist())
-            print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
+            block_counts = y0_df['block_id'].value_counts()
+            n_block36 = int(block_counts.get(36, 0))
+            total = len(y0_df)
+            if n_block36 > 0:
+                other = total - n_block36
+                if other == 0:
+                    print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
+                else:
+                    other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
+                    print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
+                          f"{other} other (ids: {other_ids})")
+            else:
+                ids = sorted(block_counts.index.tolist())
+                print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
     else:
         print(f"    Y0 layer: not found (skipped or not yet extracted)")
 
