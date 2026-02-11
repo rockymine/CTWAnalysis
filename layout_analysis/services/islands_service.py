@@ -547,7 +547,7 @@ def analyze_islands_step(
     Returns:
         Path: Path to island analysis output directory
     """
-    print(f"\n[2/4] Island Analysis: {map_folder.name}")
+    print(f"\n[2/5] Island Analysis: {map_folder.name}")
     print("=" * 70)
 
     # Resolve directories

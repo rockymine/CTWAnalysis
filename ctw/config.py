@@ -53,6 +53,7 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
     'run': {
         'no_layout': bool,
         'no_islands': bool,
+        'no_symmetry': bool,
         'no_xml': bool,
         'no_matches': bool,
         'island_layout': str,

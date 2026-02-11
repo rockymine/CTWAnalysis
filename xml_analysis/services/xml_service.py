@@ -19,7 +19,7 @@ def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = 
     """
     out = Path(output_dir) if output_dir else map_folder
 
-    print(f"\n[3/4] XML Analysis: {map_folder.name}")
+    print(f"\n[4/5] XML Analysis: {map_folder.name}")
     print("=" * 70)
 
     # Define paths

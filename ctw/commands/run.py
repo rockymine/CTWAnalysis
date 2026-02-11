@@ -17,6 +17,7 @@ def register(subparsers):
     p.add_argument('--output', help='Output root directory (default: output/)')
     p.add_argument('--no-layout', action='store_true', help='Skip layout analysis')
     p.add_argument('--no-islands', action='store_true', help='Skip island analysis')
+    p.add_argument('--no-symmetry', action='store_true', help='Skip symmetry analysis')
     p.add_argument('--no-xml', action='store_true', help='Skip XML analysis')
     p.add_argument('--no-matches', action='store_true', help='Skip match analysis')
     p.add_argument('--match-history', default='match_logs/match_history.txt',
@@ -87,7 +88,7 @@ def handler(args):
                 density_mode=args.density_mode,
             )
         else:
-            print("\n[1/4] Layout Analysis: SKIPPED")
+            print("\n[1/5] Layout Analysis: SKIPPED")
 
         if not args.no_islands:
             analyze_islands_step(
@@ -104,19 +105,61 @@ def handler(args):
                 plots=args.plots,
             )
         else:
-            print("\n[2/4] Island Analysis: SKIPPED")
+            print("\n[2/5] Island Analysis: SKIPPED")
+
+        if not args.no_symmetry:
+            _run_symmetry(map_output_dir)
+        else:
+            print("\n[3/5] Symmetry Analysis: SKIPPED")
 
         if not args.no_xml:
             analyze_xml(map_folder, force_rerun=args.force,
                         output_dir=map_output_dir)
         else:
-            print("\n[3/4] XML Analysis: SKIPPED")
+            print("\n[4/5] XML Analysis: SKIPPED")
 
         if not args.no_matches:
-            print(f"\n[4/4] Match Analysis: Currently not supported")
+            print(f"\n[5/5] Match Analysis: Currently not supported")
         else:
-            print("\n[4/4] Match Analysis: Currently not supported")
+            print("\n[5/5] Match Analysis: Currently not supported")
 
     print(f"\n{'=' * 70}")
     print("WORKFLOW COMPLETE")
     print(f"{'=' * 70}\n")
+
+
+def _run_symmetry(map_output_dir: Path) -> None:
+    """Run symmetry analysis on a map's preprocessed geometry."""
+    import json
+    from symmetry_analysis import detect_symmetry
+
+    print(f"\n[3/5] Symmetry Analysis")
+    print("=" * 70)
+
+    ctx_path = map_output_dir / 'island_analysis' / 'map_context.json'
+    if not ctx_path.exists():
+        print("  map_context.json not found — skipping symmetry analysis")
+        return
+
+    result = detect_symmetry(str(ctx_path))
+
+    # Save results
+    out_path = map_output_dir / 'symmetry.json'
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(result, f, indent=2)
+
+    # Print summary
+    detected = [s for s in result['global_symmetry'] if s['detected']]
+    if detected:
+        primary = max(detected, key=lambda s: s['confidence'])
+        print(f"  Global: {primary['description']} "
+              f"(confidence: {primary['confidence']:.0%})")
+    else:
+        print("  Global: no symmetry detected")
+
+    intra = result.get('intra_team_symmetry', [])
+    sym_teams = [t['team'] for t in intra if t.get('symmetry_detected')]
+    if sym_teams:
+        print(f"  Intra-team: detected for {', '.join(sym_teams)}")
+
+    print(f"    [OK] Saved symmetry.json")

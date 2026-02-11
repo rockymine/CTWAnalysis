@@ -39,6 +39,7 @@ xml:
 run:
   no-layout: false
   no-islands: false
+  no-symmetry: false
   no-xml: false
   no-matches: true
   island-layout: "bedrock"
