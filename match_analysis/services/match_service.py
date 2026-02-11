@@ -104,10 +104,19 @@ def extract_player_life_segments(
             [match_id, player_id],
         ).fetchdf()
 
-        # Fetch all combat events (kills, deaths, wool) for this player+match
+        # Fetch combat events (kills, deaths) for this player+match
         all_combat = conn.execute(
             "SELECT timestamp, event_type, x, z, segment_idx "
             "FROM combat_events "
+            "WHERE match_id = ? AND player_id = ? "
+            "ORDER BY timestamp",
+            [match_id, player_id],
+        ).fetchdf()
+
+        # Fetch wool events (touch/capture) for this player+match
+        all_wool = conn.execute(
+            "SELECT timestamp, event_type, x, z, segment_idx "
+            "FROM wool_events "
             "WHERE match_id = ? AND player_id = ? "
             "ORDER BY timestamp",
             [match_id, player_id],
@@ -125,7 +134,7 @@ def extract_player_life_segments(
         combat = all_combat[all_combat['segment_idx'] == seg_idx]
 
         kills = combat[combat['event_type'] == 3]
-        wool_events = combat[combat['event_type'].isin([6, 7])]
+        wool = all_wool[all_wool['segment_idx'] == seg_idx]
 
         # trace_events = positions + kills + wool (matching old format)
         trace_parts = []
@@ -133,8 +142,8 @@ def extract_player_life_segments(
             trace_parts.append(pos[['timestamp', 'x', 'z']].assign(event_type=5))
         if len(kills) > 0:
             trace_parts.append(kills[['timestamp', 'x', 'z', 'event_type']])
-        if len(wool_events) > 0:
-            trace_parts.append(wool_events[['timestamp', 'x', 'z', 'event_type']])
+        if len(wool) > 0:
+            trace_parts.append(wool[['timestamp', 'x', 'z', 'event_type']])
 
         if trace_parts:
             trace_events = pd.concat(trace_parts, ignore_index=True).sort_values('timestamp')
@@ -145,7 +154,7 @@ def extract_player_life_segments(
             'trace_events': trace_events,
             'positions': pos,
             'kills': kills,
-            'wool_events': wool_events,
+            'wool_events': wool,
             'spawn_x': float(row.spawn_x),
             'spawn_z': float(row.spawn_z),
             'outcome': row.outcome,

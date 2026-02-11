@@ -163,7 +163,7 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
         victim_id, x, y, z, segment_idx.
     """
     df = pd.read_parquet(match_file)
-    combat = df[df['event_type'].isin([3, 4, 6, 7])].copy()
+    combat = df[df['event_type'].isin([3, 4])].copy()
 
     if len(combat) == 0:
         return pd.DataFrame(columns=[
@@ -207,6 +207,37 @@ def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> 
     )
 
     return positions[['player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx']]
+
+
+def extract_wool_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
+    """Extract wool touch/capture events (types 6/7), each assigned to a life segment.
+
+    Args:
+        match_file: Path to raw match parquet file.
+        life_segments_df: DataFrame from extract_life_segments_from_match().
+
+    Returns:
+        DataFrame with columns: player_id, timestamp, event_type,
+        wool_id, x, y, z, segment_idx.
+    """
+    df = pd.read_parquet(match_file)
+    wool = df[df['event_type'].isin([6, 7])].copy()
+
+    if len(wool) == 0:
+        return pd.DataFrame(columns=[
+            'player_id', 'timestamp', 'event_type',
+            'wool_id', 'x', 'y', 'z', 'segment_idx',
+        ])
+
+    find_segment_idx = _build_segment_lookup(life_segments_df)
+    wool['segment_idx'] = wool.apply(
+        lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
+    )
+    if 'wool_id' not in wool.columns:
+        wool['wool_id'] = None
+
+    return wool[['player_id', 'timestamp', 'event_type',
+                 'wool_id', 'x', 'y', 'z', 'segment_idx']]
 
 
 def process_match(match_id: int):
@@ -295,6 +326,47 @@ def process_match(match_id: int):
             FROM combat_df
         """)
         print(f"Inserted {len(combat_df)} combat events into database")
+
+        # Extract and insert wool events
+        wool_df = extract_wool_events(match_file, life_segments_df)
+
+        # Auto-create table for existing databases (migration)
+        conn.execute(
+            "CREATE SEQUENCE IF NOT EXISTS seq_wool_event_id START 1"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS wool_events (
+                wool_event_id INTEGER PRIMARY KEY
+                    DEFAULT nextval('seq_wool_event_id'),
+                match_id INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL,
+                event_type INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                wool_id INTEGER,
+                x INTEGER,
+                y INTEGER,
+                z INTEGER,
+                segment_idx INTEGER,
+                FOREIGN KEY (match_id) REFERENCES matches(match_id)
+            )
+        """)
+
+        conn.execute(
+            "DELETE FROM wool_events WHERE match_id = ?", [match_id]
+        )
+        if len(wool_df) > 0:
+            wool_df['match_id'] = match_id
+            wool_df['segment_idx'] = wool_df['segment_idx'].astype('Int64')
+            wool_df['wool_id'] = wool_df['wool_id'].astype('Int64')
+            conn.execute("""
+                INSERT INTO wool_events
+                    (match_id, timestamp, event_type, player_id,
+                     wool_id, x, y, z, segment_idx)
+                SELECT match_id, timestamp, event_type, player_id,
+                       wool_id, x, y, z, segment_idx
+                FROM wool_df
+            """)
+        print(f"Inserted {len(wool_df)} wool events into database")
 
         # Extract and insert position events
         position_df = extract_position_events(match_file, life_segments_df)

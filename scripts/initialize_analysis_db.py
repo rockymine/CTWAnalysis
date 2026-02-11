@@ -114,7 +114,27 @@ def initialize_database():
         )
     """)
 
-    # Table 6: Position events (type 5 only)
+    # Table 6: Wool events (touch + capture)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_wool_event_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS wool_events (
+            wool_event_id INTEGER PRIMARY KEY DEFAULT nextval('seq_wool_event_id'),
+            match_id INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL,
+            event_type INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            wool_id INTEGER,
+            x INTEGER,
+            y INTEGER,
+            z INTEGER,
+            segment_idx INTEGER,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+    # Table 7: Position events (type 5 only)
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_position_id START 1
     """)
