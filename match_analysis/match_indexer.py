@@ -18,13 +18,37 @@ EVENT_TYPES = {
 }
 
 
-def get_map_slug_from_match(match_file: Path) -> str:
+def get_map_slug_from_match(match_file: Path, logs_dir: Path = None,
+                             history: dict[str, str] | None = None) -> str | None:
     """Determine map slug from match file.
 
-    Current implementation: All files in match_logs are for Ingwaz.
+    Resolution order:
+    1. History CSV lookup (relative path from logs_dir, then basename).
+    2. Parent directory name (assumes ``<map>/<file>.parquet`` layout).
+
+    Returns the map slug (lowercase) or ``None`` if it cannot be determined.
     """
-    # TODO: Extract from file metadata or filename when available
-    return "ingwaz"
+    # 1. History CSV lookup
+    if history is not None:
+        if logs_dir is not None:
+            try:
+                rel = match_file.resolve().relative_to(logs_dir.resolve())
+                slug = history.get(rel.as_posix())
+                if slug is not None:
+                    return slug
+            except ValueError:
+                pass
+        # Fallback: basename only
+        slug = history.get(match_file.name)
+        if slug is not None:
+            return slug
+
+    # 2. Parent directory name
+    parent = match_file.parent.name
+    if parent:
+        return parent.lower()
+
+    return None
 
 
 def _resolve_map_id(conn, map_slug: str) -> int | None:
@@ -35,62 +59,11 @@ def _resolve_map_id(conn, map_slug: str) -> int | None:
     return result[0] if result else None
 
 
-def _apply_history_mapping(conn, history_csv: str, match_logs_dir: str = None):
-    """Update map_id for indexed matches using a history CSV.
-
-    The CSV must have columns: parquet_file, map_name.
-    The parquet_file value can be a basename (``file.parquet``) or a
-    relative path (``MapName/file.parquet``).  Matching is tried against
-    the relative path from *match_logs_dir* first, then the basename.
-
-    The map_name from the CSV is treated as a map_slug and looked up
-    in the maps table.
-    """
+def _load_history(history_csv: str) -> dict[str, str]:
+    """Load a history CSV into a ``{parquet_file: map_slug}`` dict."""
     with open(history_csv, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        history = {row['parquet_file']: row['map_name'].lower() for row in reader}
-
-    rows = conn.execute("SELECT match_id, match_file FROM matches").fetchall()
-
-    matched = 0
-    unmatched = 0
-    missing_maps = set()
-    # Use Path (not PurePosixPath) so relative_to is case-insensitive on Windows
-    logs_dir_resolved = (
-        Path(match_logs_dir).resolve() if match_logs_dir else None
-    )
-
-    for match_id, match_file in rows:
-        # Try relative path from match_logs_dir first
-        map_slug = None
-        if logs_dir_resolved is not None:
-            try:
-                rel = Path(match_file).relative_to(logs_dir_resolved)
-                map_slug = history.get(rel.as_posix())
-            except ValueError:
-                pass
-
-        # Fallback: basename
-        if map_slug is None:
-            map_slug = history.get(PurePosixPath(match_file).name)
-
-        if map_slug is not None:
-            map_id = _resolve_map_id(conn, map_slug)
-            if map_id is None:
-                if map_slug not in missing_maps:
-                    print(f"  Warning: map '{map_slug}' not in maps table, skipping")
-                    missing_maps.add(map_slug)
-                unmatched += 1
-                continue
-            conn.execute(
-                "UPDATE matches SET map_id = ? WHERE match_id = ?",
-                [map_id, match_id],
-            )
-            matched += 1
-        else:
-            unmatched += 1
-
-    print(f"\nHistory mapping: {matched} matched, {unmatched} unmatched")
+        return {row['parquet_file']: row['map_name'].lower() for row in reader}
 
 
 def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = None):
@@ -100,10 +73,14 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
     Assigns sequential match_id (max existing + 1).
     Skips files whose match_file path is already in the database.
 
+    Map resolution order per file:
+    1. History CSV lookup (if ``--history`` provided).
+    2. Parent directory name (``<map>/<file>.parquet`` layout).
+    3. If the resolved map is not in the ``maps`` table the file is skipped.
+
     Args:
         match_logs_dir: Directory containing match parquet files.
         history_csv: Optional path to a CSV with parquet_file,map_name columns.
-            If provided, map_id is updated for matching rows after indexing.
     """
     conn = duckdb.connect('match_analysis/metadata.db')
     logs_path = Path(match_logs_dir)
@@ -111,6 +88,8 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
     match_files = sorted(logs_path.rglob('*.parquet'))
 
     print(f"Found {len(match_files)} match files")
+
+    history = _load_history(history_csv) if history_csv else None
 
     # Determine next sequential match_id
     result = conn.execute(
@@ -120,6 +99,8 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
 
     indexed = 0
     skipped = 0
+    # Track maps missing from the DB so we warn once and summarise at the end
+    missing_maps: dict[str, int] = {}  # map_slug -> count of skipped files
 
     for match_file in match_files:
         # Store as POSIX path (forward slashes) for cross-platform compat
@@ -136,15 +117,21 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
             continue
 
         try:
-            df = pd.read_parquet(match_file)
-
-            map_slug = get_map_slug_from_match(match_file)
-            map_id = _resolve_map_id(conn, map_slug)
-            if map_id is None:
-                print(f"  Skip {match_file.name}: map '{map_slug}' not in maps table "
-                      f"(run 'maps load' first)")
+            map_slug = get_map_slug_from_match(
+                match_file, logs_dir=logs_path, history=history,
+            )
+            if map_slug is None:
+                print(f"  Skip {match_file.name}: could not determine map name")
                 skipped += 1
                 continue
+
+            map_id = _resolve_map_id(conn, map_slug)
+            if map_id is None:
+                missing_maps[map_slug] = missing_maps.get(map_slug, 0) + 1
+                skipped += 1
+                continue
+
+            df = pd.read_parquet(match_file)
 
             player_count = int(df['player_id'].dropna().nunique())
             position_count = len(df)
@@ -192,10 +179,15 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = Non
         except Exception as e:
             print(f"  Error indexing {match_file.name}: {e}")
 
-    # Apply history mapping if provided
-    if history_csv:
-        _apply_history_mapping(conn, history_csv, match_logs_dir)
-
     conn.close()
-    print(f"\nIndexed {indexed} new matches, skipped {skipped} existing")
+
+    # Summary
+    if missing_maps:
+        total_missing = sum(missing_maps.values())
+        print(f"\nWarning: {total_missing} match file(s) skipped — map not preprocessed:")
+        for slug in sorted(missing_maps):
+            print(f"  {slug}: {missing_maps[slug]} file(s)")
+        print("Run 'ctw run --map <name>' then 'ctw maps load' for these maps first.")
+
+    print(f"\nIndexed {indexed} new matches, skipped {skipped} existing/unresolvable")
     return indexed, skipped
