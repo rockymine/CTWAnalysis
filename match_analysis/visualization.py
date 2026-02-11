@@ -19,7 +19,7 @@ from visualization import (
     IslandOutlineStyle,
     POIStyle,
 )
-from match_analysis.services import extract_player_life_segments
+from match_analysis.services import extract_player_life_segments, get_match_player_ids
 
 
 # Distinct colors for life segment traces
@@ -122,6 +122,7 @@ def plot_player_traces(
     color_mode: str = 'life',
     map_base: str = 'outline',
     map_folder: Path = None,
+    match_files: list[str] = None,
 ) -> None:
     """Plot life segments for one or more players on the map base layer.
 
@@ -156,18 +157,32 @@ def plot_player_traces(
         from match_analysis.position_classifier import PositionClassifier
         classifier = PositionClassifier(map_context, map_graph)
 
-    # Collect life segments across all requested players
+    # Collect life segments across all requested players (and matches)
+    overlay_mode = match_files is not None and len(match_files) > 0
     all_segments = []  # (player_id, seg_index, segment)
-    for pid in player_ids:
-        segments = extract_player_life_segments(match_file, pid)
-        for i, seg in enumerate(segments):
-            all_segments.append((pid, i, seg))
+    all_player_ids = set()
+
+    if overlay_mode:
+        for mf in match_files:
+            pids = get_match_player_ids(mf)
+            for pid in pids:
+                segments = extract_player_life_segments(mf, pid)
+                for i, seg in enumerate(segments):
+                    all_segments.append((pid, i, seg))
+                    all_player_ids.add(pid)
+    else:
+        for pid in player_ids:
+            segments = extract_player_life_segments(match_file, pid)
+            for i, seg in enumerate(segments):
+                all_segments.append((pid, i, seg))
+                all_player_ids.add(pid)
 
     if not all_segments:
-        print(f"No life segments found in {match_file}")
+        src = f"{len(match_files)} match files" if overlay_mode else match_file
+        print(f"No life segments found in {src}")
         return
 
-    multi_player = len(player_ids) > 1
+    multi_player = len(all_player_ids) > 1 or overlay_mode
 
     # --- Figure setup ---
     fig, ax = plt.subplots(figsize=(16, 10))
@@ -181,9 +196,16 @@ def plot_player_traces(
         mode_label = ' [Location View]'
 
     if show_title:
-        if multi_player:
+        if overlay_mode:
             ax.set_title(
-                f"{map_name} — {len(player_ids)} Players "
+                f"{map_name} — {len(match_files)} Matches "
+                f"({len(all_segments)} lives, {len(all_player_ids)} players)"
+                f"{mode_label}",
+                fontsize=13, fontweight='bold',
+            )
+        elif multi_player:
+            ax.set_title(
+                f"{map_name} — {len(all_player_ids)} Players "
                 f"({len(all_segments)} total lives){mode_label}\n"
                 f"Match: {match_name}",
                 fontsize=13, fontweight='bold',
@@ -203,9 +225,16 @@ def plot_player_traces(
                   map_base=map_base,
                   map_folder=map_folder)
 
-    # Visual density adjustments for multi-player
-    trace_alpha = 0.4 if multi_player else 0.8
-    trace_lw = 0.8 if multi_player else 1.5
+    # Visual density adjustments for multi-player / overlay
+    if overlay_mode:
+        trace_alpha = 0.25
+        trace_lw = 0.5
+    elif multi_player:
+        trace_alpha = 0.4
+        trace_lw = 0.8
+    else:
+        trace_alpha = 0.8
+        trace_lw = 1.5
 
     # --- Draw each life segment ---
     for global_idx, (pid, seg_i, seg) in enumerate(all_segments):
@@ -342,9 +371,16 @@ def plot_player_traces(
         total_pos = sum(len(s['positions']) for _, _, s in all_segments)
         total_kills = sum(len(s['kills']) for _, _, s in all_segments)
         total_duration = sum(s['end_time'] - s['start_time'] for _, _, s in all_segments)
-        if multi_player:
+        if overlay_mode:
             stats_text = (
-                f"Players: {len(player_ids)}  |  "
+                f"Matches: {len(match_files)}  |  "
+                f"Players: {len(all_player_ids)}  |  "
+                f"Lives: {len(all_segments)}  |  Positions: {total_pos}  |  "
+                f"Kills: {total_kills}  |  Total time: {total_duration:.0f}s"
+            )
+        elif multi_player:
+            stats_text = (
+                f"Players: {len(all_player_ids)}  |  "
                 f"Lives: {len(all_segments)}  |  Positions: {total_pos}  |  "
                 f"Kills: {total_kills}  |  Total time: {total_duration:.0f}s"
             )

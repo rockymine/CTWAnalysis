@@ -60,6 +60,7 @@ Examples:
   python ctw.py matches trace --map Ingwaz --match 1,2,3 --player ALL --color-mode team
   python ctw.py matches trace --map Ingwaz --match ALL --player 0
   python ctw.py matches trace --map Ingwaz --match 1 --player 0 --no-edges --color-mode location
+  python ctw.py matches trace --map Ingwaz --match ALL --player ALL --overlay
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -150,6 +151,9 @@ Examples:
                    default='outline',
                    help='Map base layer: outline (polygon outlines) or '
                         'blocks (individual blocks from layout parquet)')
+    p.add_argument('--overlay', action='store_true',
+                   help='Overlay all matches onto a single plot '
+                        '(use with --match ALL)')
     p.set_defaults(func=handle_trace)
 
 
@@ -386,6 +390,51 @@ def handle_trace(args):
             map_graph = json.load(f)
 
     layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
+
+    # --- overlay mode: collect all matches into a single plot -------------
+    if getattr(args, 'overlay', False):
+        match_files = []
+        for match_id in match_ids:
+            try:
+                match_file, db_map_slug = get_match_file(match_id)
+            except ValueError as e:
+                print(f"Error: {e}")
+                continue
+            if db_map_slug != map_slug:
+                print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
+                continue
+            if not Path(match_file).exists():
+                print(f"Error: match file not found: {match_file}")
+                continue
+            match_files.append(str(match_file))
+
+        if not match_files:
+            print("No valid match files found for overlay.")
+            return
+
+        trace_dir = map_output_dir / 'match_analysis'
+        output_path = trace_dir / f"trace_overlay_{len(match_files)}matches.png"
+        if args.output and not Path(args.output).is_dir():
+            output_path = Path(args.output)
+
+        print(f"Overlaying {len(match_files)} matches onto a single plot...")
+
+        plot_player_traces(
+            map_context, match_files[0], [], output_path,
+            match_files=match_files,
+            map_graph=map_graph,
+            snap_skeleton=args.snap_skeleton,
+            show_deaths=not args.no_deaths,
+            show_kills=not args.no_kills,
+            show_wool=not args.no_wool,
+            show_edges=not args.no_edges,
+            show_legend=not args.no_legend,
+            show_stats=not args.no_stats,
+            color_mode=args.color_mode,
+            map_base=args.map_base,
+            map_folder=layout_dir,
+        )
+        return
 
     # --- per-match loop ---------------------------------------------------
     traced = 0
