@@ -112,7 +112,29 @@ def initialize_database():
         )
     """)
 
-    # Table 6: Player team segments (team membership over time)
+    # Table 6: Maps metadata
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_map_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS maps (
+            map_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_id'),
+            map_slug TEXT NOT NULL UNIQUE,
+            map_name TEXT NOT NULL,
+            max_build_height INTEGER,
+            min_x FLOAT NOT NULL,
+            max_x FLOAT NOT NULL,
+            min_z FLOAT NOT NULL,
+            max_z FLOAT NOT NULL,
+            center_x FLOAT NOT NULL,
+            center_z FLOAT NOT NULL,
+            island_count INTEGER NOT NULL,
+            team_count INTEGER,
+            last_updated TIMESTAMP
+        )
+    """)
+
+    # Table 7: Player team segments (team membership over time)
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1
     """)
