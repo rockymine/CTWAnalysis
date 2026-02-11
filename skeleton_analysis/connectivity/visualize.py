@@ -113,35 +113,35 @@ def plot_map_connectivity(
     draw_pois(ax, map_context)
 
     # ── Layer 4: Void links ─────────────────────────────────────────
-    void_edges = [e for e in graph_section.get('edges', []) if e['edge_type'] == 'void_link']
-    max_dist = max((e['distance'] for e in void_edges), default=1.0)
-    for edge in void_edges:
-        src_c = edge.get('src_coords', node_lookup.get(edge['src'], {}).get('coords'))
-        dst_c = edge.get('dst_coords', node_lookup.get(edge['dst'], {}).get('coords'))
-        if src_c is None or dst_c is None:
-            continue
+    # void_edges = [e for e in graph_section.get('edges', []) if e['edge_type'] == 'void_link']
+    # max_dist = max((e['distance'] for e in void_edges), default=1.0)
+    # for edge in void_edges:
+    #     src_c = edge.get('src_coords', node_lookup.get(edge['src'], {}).get('coords'))
+    #     dst_c = edge.get('dst_coords', node_lookup.get(edge['dst'], {}).get('coords'))
+    #     if src_c is None or dst_c is None:
+    #         continue
 
-        thickness = 1.0 + 2.0 * (1.0 - edge['distance'] / max_dist)
-        ax.plot(
-            [src_c[0], dst_c[0]],
-            [src_c[1], dst_c[1]],
-            color='#e63946',
-            linestyle='--',
-            linewidth=thickness,
-            alpha=0.8,
-            zorder=5,
-        )
+    #     thickness = 1.0 + 2.0 * (1.0 - edge['distance'] / max_dist)
+    #     ax.plot(
+    #         [src_c[0], dst_c[0]],
+    #         [src_c[1], dst_c[1]],
+    #         color='#e63946',
+    #         linestyle='--',
+    #         linewidth=thickness,
+    #         alpha=0.8,
+    #         zorder=5,
+    #     )
 
-        # Distance label at midpoint
-        mx = (src_c[0] + dst_c[0]) / 2
-        mz = (src_c[1] + dst_c[1]) / 2
-        ax.text(
-            mx, mz, f"{edge['distance']:.1f}",
-            fontsize=7, color='#e63946',
-            ha='center', va='bottom',
-            fontweight='bold',
-            zorder=6,
-        )
+    #     # Distance label at midpoint
+    #     mx = (src_c[0] + dst_c[0]) / 2
+    #     mz = (src_c[1] + dst_c[1]) / 2
+    #     ax.text(
+    #         mx, mz, f"{edge['distance']:.1f}",
+    #         fontsize=7, color='#e63946',
+    #         ha='center', va='bottom',
+    #         fontweight='bold',
+    #         zorder=6,
+    #     )
 
     # ── Layer 5: Map-level endpoint nodes ───────────────────────────
     for node in graph_section.get('nodes', []):
@@ -156,29 +156,29 @@ def plot_map_connectivity(
         )
 
     # ── Legend ───────────────────────────────────────────────────────
-    legend_handles = map_base_legend_handles(has_build_region=has_build)
-    legend_handles += [
-        plt.Line2D([0], [0], color='lightblue', linewidth=1, label='Skeleton path'),
-        plt.Line2D([0], [0], color='#e63946', linestyle='--', linewidth=2.0, label='Void link'),
-        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#1d3557',
-                    markersize=6, label='Endpoint'),
-        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange',
-                    markeredgecolor='black', markersize=5, label='Map node'),
-    ]
-    ax.legend(handles=legend_handles, loc='upper right', fontsize=9, framealpha=0.9)
+    # legend_handles = map_base_legend_handles(has_build_region=has_build)
+    # legend_handles += [
+    #     plt.Line2D([0], [0], color='lightblue', linewidth=1, label='Skeleton path'),
+    #     plt.Line2D([0], [0], color='#e63946', linestyle='--', linewidth=2.0, label='Void link'),
+    #     plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#1d3557',
+    #                 markersize=6, label='Endpoint'),
+    #     plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange',
+    #                 markeredgecolor='black', markersize=5, label='Map node'),
+    # ]
+    # ax.legend(handles=legend_handles, loc='upper right', fontsize=9, framealpha=0.9)
 
     # ── Summary text ────────────────────────────────────────────────
-    n_nodes = len(graph_section.get('nodes', []))
-    n_intra = sum(1 for e in graph_section.get('edges', []) if e['edge_type'] == 'intra')
-    n_void = len(void_edges)
-    summary_text = f"Nodes: {n_nodes}  |  Intra edges: {n_intra}  |  Void links: {n_void}"
-    ax.text(
-        0.02, 0.02, summary_text,
-        transform=ax.transAxes,
-        fontsize=9, fontfamily='monospace',
-        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
-        zorder=10,
-    )
+    # n_nodes = len(graph_section.get('nodes', []))
+    # n_intra = sum(1 for e in graph_section.get('edges', []) if e['edge_type'] == 'intra')
+    # n_void = len(void_edges)
+    # summary_text = f"Nodes: {n_nodes}  |  Intra edges: {n_intra}  |  Void links: {n_void}"
+    # ax.text(
+    #     0.02, 0.02, summary_text,
+    #     transform=ax.transAxes,
+    #     fontsize=9, fontfamily='monospace',
+    #     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
+    #     zorder=10,
+    # )
 
     ax.set_xlabel('X (blocks)')
     ax.set_ylabel('Z (blocks)')

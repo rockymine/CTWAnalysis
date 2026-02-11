@@ -26,11 +26,16 @@ def resolve_map_folder(map_arg: str) -> Path:
 
 
 def collect_map_folders(args) -> list:
-    """Return list of map folder Paths from --map or --all."""
+    """Return list of map folder Paths from --map or --all.
+
+    When --all is used, scans --map-dir (if provided) or the default
+    map_folders/ directory.
+    """
     if getattr(args, 'all', False):
-        mf_dir = PROJECT_ROOT / 'map_folders'
+        map_dir = getattr(args, 'map_dir', None)
+        mf_dir = Path(map_dir) if map_dir else PROJECT_ROOT / 'map_folders'
         if not mf_dir.exists():
-            print(f"Error: map_folders directory not found", file=sys.stderr)
+            print(f"Error: map directory not found: {mf_dir}", file=sys.stderr)
             sys.exit(1)
         return sorted(f for f in mf_dir.iterdir() if f.is_dir())
     if getattr(args, 'map', None):
