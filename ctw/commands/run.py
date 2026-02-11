@@ -13,6 +13,9 @@ def register(subparsers):
     )
     p.add_argument('--map', help='Map name to analyze')
     p.add_argument('--all', action='store_true', help='Analyze all maps')
+    p.add_argument('--map-dir',
+                   help='Directory containing map folders (default: map_folders/). '
+                        'Used with --all to scan an external map collection.')
     p.add_argument('--force', action='store_true', help='Force regeneration')
     p.add_argument('--output', help='Output root directory (default: output/)')
     p.add_argument('--no-layout', action='store_true', help='Skip layout analysis')
