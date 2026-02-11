@@ -380,9 +380,28 @@ class MapXMLParser:
         )
 
     def _parse_cuboid(self, elem: ET.Element, region_id: str) -> CuboidRegion:
-        """Parse cuboid region."""
-        min_coords = self._parse_coords(elem.get('min', '0,0,0'))
-        max_coords = self._parse_coords(elem.get('max', '0,0,0'))
+        """Parse cuboid region.
+
+        Supports three forms:
+          <cuboid min="X1,Y1,Z1" max="X2,Y2,Z2"/>
+          <cuboid min="X1,Y1,Z1" size="W,H,D"/>   → max = min + size
+          <cuboid max="X2,Y2,Z2" size="W,H,D"/>   → min = max - size
+        """
+        size_str = elem.get('size', '')
+        has_min = elem.get('min') is not None
+        has_max = elem.get('max') is not None
+
+        if size_str and has_min and not has_max:
+            min_coords = self._parse_coords(elem.get('min'))
+            size = self._parse_coords(size_str)
+            max_coords = (min_coords[0] + size[0], min_coords[1] + size[1], min_coords[2] + size[2])
+        elif size_str and has_max and not has_min:
+            max_coords = self._parse_coords(elem.get('max'))
+            size = self._parse_coords(size_str)
+            min_coords = (max_coords[0] - size[0], max_coords[1] - size[1], max_coords[2] - size[2])
+        else:
+            min_coords = self._parse_coords(elem.get('min', '0,0,0'))
+            max_coords = self._parse_coords(elem.get('max', '0,0,0'))
 
         return CuboidRegion(
             id=region_id,
