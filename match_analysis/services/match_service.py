@@ -173,6 +173,8 @@ def get_kill_death_pairs(
 
     Each row represents one kill: the killer's position (from the kill event,
     type 3) and the victim's position (from the matching death event, type 4).
+    Team assignments are resolved via player_team_segments using the kill
+    timestamp.
 
     Args:
         match_id: Single match ID to query.
@@ -180,41 +182,46 @@ def get_kill_death_pairs(
 
     Returns:
         DataFrame with columns: match_id, killer_id, victim_id, kill_x, kill_z,
-        death_x, death_z, timestamp.
+        death_x, death_z, killer_team, victim_team, timestamp.
     """
+    base_query = (
+        "SELECT k.match_id, k.player_id AS killer_id, k.victim_id, "
+        "       k.x AS kill_x, k.z AS kill_z, "
+        "       d.x AS death_x, d.z AS death_z, "
+        "       kt.team AS killer_team, vt.team AS victim_team, "
+        "       k.timestamp "
+        "FROM combat_events k "
+        "JOIN combat_events d "
+        "  ON k.match_id = d.match_id "
+        "  AND k.victim_id = d.player_id "
+        "  AND k.timestamp = d.timestamp "
+        "LEFT JOIN player_team_segments kt "
+        "  ON k.match_id = kt.match_id "
+        "  AND k.player_id = kt.player_id "
+        "  AND k.timestamp >= kt.start_timestamp "
+        "  AND (kt.end_timestamp IS NULL OR k.timestamp <= kt.end_timestamp) "
+        "LEFT JOIN player_team_segments vt "
+        "  ON d.match_id = vt.match_id "
+        "  AND d.player_id = vt.player_id "
+        "  AND d.timestamp >= vt.start_timestamp "
+        "  AND (vt.end_timestamp IS NULL OR d.timestamp <= vt.end_timestamp) "
+        "WHERE k.event_type = 3 AND d.event_type = 4 "
+        "  AND k.victim_id IS NOT NULL"
+    )
+
     conn = duckdb.connect(DB_PATH, read_only=True)
     try:
         if match_ids is not None:
             placeholders = ', '.join(['?'] * len(match_ids))
             result = conn.execute(
-                f"SELECT k.match_id, k.player_id AS killer_id, k.victim_id, "
-                f"       k.x AS kill_x, k.z AS kill_z, "
-                f"       d.x AS death_x, d.z AS death_z, k.timestamp "
-                f"FROM combat_events k "
-                f"JOIN combat_events d "
-                f"  ON k.match_id = d.match_id "
-                f"  AND k.victim_id = d.player_id "
-                f"  AND k.timestamp = d.timestamp "
-                f"WHERE k.event_type = 3 AND d.event_type = 4 "
-                f"  AND k.victim_id IS NOT NULL "
-                f"  AND k.match_id IN ({placeholders}) "
+                f"{base_query} AND k.match_id IN ({placeholders}) "
                 f"ORDER BY k.match_id, k.timestamp",
                 match_ids,
             ).fetchdf()
         else:
             result = conn.execute(
-                "SELECT k.match_id, k.player_id AS killer_id, k.victim_id, "
-                "       k.x AS kill_x, k.z AS kill_z, "
-                "       d.x AS death_x, d.z AS death_z, k.timestamp "
-                "FROM combat_events k "
-                "JOIN combat_events d "
-                "  ON k.match_id = d.match_id "
-                "  AND k.victim_id = d.player_id "
-                "  AND k.timestamp = d.timestamp "
-                "WHERE k.event_type = 3 AND d.event_type = 4 "
-                "  AND k.victim_id IS NOT NULL "
-                "  AND k.match_id = ? "
-                "ORDER BY k.timestamp",
+                f"{base_query} AND k.match_id = ? "
+                f"ORDER BY k.timestamp",
                 [match_id],
             ).fetchdf()
     finally:

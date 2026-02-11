@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib.collections import LineCollection
 from matplotlib.path import Path as MplPath
 
@@ -411,37 +412,6 @@ def plot_player_traces(
     print(f"Player trace plot saved to: {output_path}")
 
 
-def _get_killer_teams(pairs_df) -> dict[tuple[int, int], str]:
-    """Look up killer team from player_team_segments for each (match_id, killer_id).
-
-    Returns a dict mapping (match_id, killer_id) -> team string.
-    """
-    import duckdb
-    from match_analysis.services.match_service import DB_PATH
-
-    unique_keys = pairs_df[['match_id', 'killer_id']].drop_duplicates()
-    if len(unique_keys) == 0:
-        return {}
-
-    conn = duckdb.connect(DB_PATH, read_only=True)
-    try:
-        # For each killer, find the team segment active at their first kill
-        teams = {}
-        for _, row in unique_keys.iterrows():
-            mid, kid = int(row['match_id']), int(row['killer_id'])
-            result = conn.execute(
-                "SELECT team FROM player_team_segments "
-                "WHERE match_id = ? AND player_id = ? "
-                "ORDER BY start_timestamp LIMIT 1",
-                [mid, kid],
-            ).fetchone()
-            if result:
-                teams[(mid, kid)] = result[0]
-        return teams
-    finally:
-        conn.close()
-
-
 def _team_to_color(team: str) -> str:
     """Map a team name to a display color."""
     # Normalize: strip common prefixes
@@ -510,16 +480,22 @@ def plot_kill_death_pairs(
     avg_dist = float(np.mean(distances))
     max_dist = float(np.max(distances))
 
-    # Resolve colors per pair
+    # Resolve colors per pair — team mode uses separate killer/victim colors
     if color_mode == 'team':
-        team_map = _get_killer_teams(pairs_df)
-        pair_colors = []
-        for _, row in pairs_df.iterrows():
-            key = (int(row['match_id']), int(row['killer_id']))
-            team = team_map.get(key, 'gray')
-            pair_colors.append(_team_to_color(team))
+        killer_colors = [
+            _team_to_color(t) if pd.notna(t) else _TEAM_TRACE_COLORS['gray']
+            for t in pairs_df['killer_team']
+        ]
+        victim_colors = [
+            _team_to_color(t) if pd.notna(t) else _TEAM_TRACE_COLORS['gray']
+            for t in pairs_df['victim_team']
+        ]
+        line_colors = killer_colors  # lines colored by killer team
     else:  # distance
-        pair_colors = [_distance_to_color(d, max_dist) for d in distances]
+        dist_colors = [_distance_to_color(d, max_dist) for d in distances]
+        killer_colors = dist_colors
+        victim_colors = dist_colors
+        line_colors = dist_colors
 
     # Density-based alpha/linewidth
     if n_pairs > 500:
@@ -565,19 +541,19 @@ def plot_kill_death_pairs(
     death_xs = pairs_df['death_x'].values.astype(float)
     death_zs = pairs_df['death_z'].values.astype(float)
 
-    # Connecting lines
+    # Connecting lines (colored by killer team or distance)
     line_segs = [[(kill_xs[i], kill_zs[i]), (death_xs[i], death_zs[i])]
                  for i in range(n_pairs)]
-    lc = LineCollection(line_segs, colors=pair_colors,
+    lc = LineCollection(line_segs, colors=line_colors,
                         linewidths=line_lw, alpha=line_alpha, zorder=3)
     ax.add_collection(lc)
 
-    # Sword markers at killer positions
-    ax.scatter(kill_xs, kill_zs, marker=_SWORD, s=100, c=pair_colors,
+    # Sword markers at killer positions (killer's team color)
+    ax.scatter(kill_xs, kill_zs, marker=_SWORD, s=100, c=killer_colors,
                edgecolors='black', linewidths=0.3, alpha=marker_alpha, zorder=4)
 
-    # Tombstone markers at victim positions
-    ax.scatter(death_xs, death_zs, marker=_TOMBSTONE, s=80, c=pair_colors,
+    # Tombstone markers at victim positions (victim's team color)
+    ax.scatter(death_xs, death_zs, marker=_TOMBSTONE, s=80, c=victim_colors,
                edgecolors='black', linewidths=0.3, alpha=marker_alpha, zorder=4)
 
     # --- Legend ---
