@@ -54,6 +54,8 @@ def register(subparsers):
     p.add_argument('--no-holes', action='store_true', help='Disable hole detection')
     p.add_argument('--workers', type=int, default=1,
                    help='Number of maps to process in parallel (default: 1)')
+    p.add_argument('--skip-existing', action='store_true',
+                   help='Skip maps that already have output (map_context.json exists)')
     p.set_defaults(func=handler)
 
 
@@ -129,6 +131,16 @@ def _process_single_map(map_folder, args, output_override=None):
 
 def handler(args):
     map_folders = collect_map_folders(args)
+
+    if args.skip_existing:
+        total = len(map_folders)
+        map_folders = [
+            mf for mf in map_folders
+            if not (resolve_output_dir(mf, args.output) / 'island_analysis' / 'map_context.json').exists()
+        ]
+        skipped = total - len(map_folders)
+        if skipped:
+            print(f"Skipping {skipped} maps with existing output")
 
     print("=" * 70)
     print("CTW ANALYSIS WORKFLOW")
