@@ -107,7 +107,7 @@ def _resolve_team_color(
 
 def plot_player_traces(
     map_context: dict,
-    match_file: str,
+    match_id: int,
     player_ids: list[int],
     output_path: Path,
     map_graph: dict = None,
@@ -122,13 +122,13 @@ def plot_player_traces(
     color_mode: str = 'life',
     map_base: str = 'outline',
     map_folder: Path = None,
-    match_files: list[str] = None,
+    match_ids: list[int] = None,
 ) -> None:
     """Plot life segments for one or more players on the map base layer.
 
     Args:
         map_context: Parsed map_context.json dict.
-        match_file: Path to the raw match parquet file.
+        match_id: Match ID for single-match mode.
         player_ids: List of player IDs to visualize.
         output_path: Where to save the PNG.
         map_graph: Parsed map_graph.json dict (needed for snap_skeleton,
@@ -146,6 +146,8 @@ def plot_player_traces(
         map_base: 'outline' for polygon outlines, 'blocks' for individual
             block rendering from layout_bedrock.parquet.
         map_folder: Path to the map folder (required when map_base='blocks').
+        match_ids: List of match IDs for overlay mode. When provided,
+            all players from all listed matches are rendered on one plot.
     """
     output_path = Path(output_path)
     os.makedirs(output_path.parent, exist_ok=True)
@@ -158,27 +160,27 @@ def plot_player_traces(
         classifier = PositionClassifier(map_context, map_graph)
 
     # Collect life segments across all requested players (and matches)
-    overlay_mode = match_files is not None and len(match_files) > 0
+    overlay_mode = match_ids is not None and len(match_ids) > 0
     all_segments = []  # (player_id, seg_index, segment)
     all_player_ids = set()
 
     if overlay_mode:
-        for mf in match_files:
-            pids = get_match_player_ids(mf)
+        for mid in match_ids:
+            pids = get_match_player_ids(mid)
             for pid in pids:
-                segments = extract_player_life_segments(mf, pid)
+                segments = extract_player_life_segments(mid, pid)
                 for i, seg in enumerate(segments):
                     all_segments.append((pid, i, seg))
                     all_player_ids.add(pid)
     else:
         for pid in player_ids:
-            segments = extract_player_life_segments(match_file, pid)
+            segments = extract_player_life_segments(match_id, pid)
             for i, seg in enumerate(segments):
                 all_segments.append((pid, i, seg))
                 all_player_ids.add(pid)
 
     if not all_segments:
-        src = f"{len(match_files)} match files" if overlay_mode else match_file
+        src = f"{len(match_ids)} matches" if overlay_mode else f"match {match_id}"
         print(f"No life segments found in {src}")
         return
 
@@ -187,7 +189,6 @@ def plot_player_traces(
     # --- Figure setup ---
     fig, ax = plt.subplots(figsize=(16, 10))
     map_name = map_context.get('map_name', 'Unknown')
-    match_name = Path(match_file).stem
 
     mode_label = ''
     if color_mode == 'team':
@@ -198,7 +199,7 @@ def plot_player_traces(
     if show_title:
         if overlay_mode:
             ax.set_title(
-                f"{map_name} — {len(match_files)} Matches "
+                f"{map_name} — {len(match_ids)} Matches "
                 f"({len(all_segments)} lives, {len(all_player_ids)} players)"
                 f"{mode_label}",
                 fontsize=13, fontweight='bold',
@@ -207,14 +208,14 @@ def plot_player_traces(
             ax.set_title(
                 f"{map_name} — {len(all_player_ids)} Players "
                 f"({len(all_segments)} total lives){mode_label}\n"
-                f"Match: {match_name}",
+                f"Match {match_id}",
                 fontsize=13, fontweight='bold',
             )
         else:
             ax.set_title(
                 f"{map_name} — Player {player_ids[0]} Traces "
                 f"({len(all_segments)} lives){mode_label}\n"
-                f"Match: {match_name}",
+                f"Match {match_id}",
                 fontsize=13, fontweight='bold',
             )
 
@@ -373,7 +374,7 @@ def plot_player_traces(
         total_duration = sum(s['end_time'] - s['start_time'] for _, _, s in all_segments)
         if overlay_mode:
             stats_text = (
-                f"Matches: {len(match_files)}  |  "
+                f"Matches: {len(match_ids)}  |  "
                 f"Players: {len(all_player_ids)}  |  "
                 f"Lives: {len(all_segments)}  |  Positions: {total_pos}  |  "
                 f"Kills: {total_kills}  |  Total time: {total_duration:.0f}s"

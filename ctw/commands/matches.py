@@ -331,7 +331,7 @@ def handle_trace(args):
     import json
     import duckdb
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.services import get_match_file, get_match_player_ids
+    from match_analysis.services import get_match_map_slug, get_match_player_ids
     from match_analysis.visualization import plot_player_traces
 
     ensure_match_db()
@@ -346,15 +346,16 @@ def handle_trace(args):
         rows = conn.execute(
             "SELECT mat.match_id FROM matches mat "
             "JOIN maps m ON mat.map_id = m.map_id "
-            "WHERE m.map_slug = ? ORDER BY mat.match_id",
+            "WHERE m.map_slug = ? AND mat.processed = TRUE "
+            "ORDER BY mat.match_id",
             [map_slug],
         ).fetchall()
         conn.close()
         match_ids = [r[0] for r in rows]
         if not match_ids:
-            print(f"No matches found for map '{map_slug}'.")
+            print(f"No processed matches found for map '{map_slug}'.")
             return
-        print(f"Found {len(match_ids)} matches for map '{map_slug}'.")
+        print(f"Found {len(match_ids)} processed matches for map '{map_slug}'.")
     else:
         match_ids = args.match  # list[int] from _match_arg
 
@@ -391,37 +392,35 @@ def handle_trace(args):
 
     layout_dir = map_output_dir if (map_output_dir / 'layout_bedrock.parquet').exists() else map_folder
 
-    # --- overlay mode: collect all matches into a single plot -------------
+    # --- validate match IDs belong to this map ----------------------------
+    valid_match_ids = []
+    for match_id in match_ids:
+        try:
+            db_map_slug = get_match_map_slug(match_id)
+        except ValueError as e:
+            print(f"Error: {e}")
+            continue
+        if db_map_slug != map_slug:
+            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
+            continue
+        valid_match_ids.append(match_id)
+
+    if not valid_match_ids:
+        print("No valid matches found.")
+        return
+
+    # --- overlay mode: all matches on a single plot -----------------------
     if getattr(args, 'overlay', False):
-        match_files = []
-        for match_id in match_ids:
-            try:
-                match_file, db_map_slug = get_match_file(match_id)
-            except ValueError as e:
-                print(f"Error: {e}")
-                continue
-            if db_map_slug != map_slug:
-                print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
-                continue
-            if not Path(match_file).exists():
-                print(f"Error: match file not found: {match_file}")
-                continue
-            match_files.append(str(match_file))
-
-        if not match_files:
-            print("No valid match files found for overlay.")
-            return
-
         trace_dir = map_output_dir / 'match_analysis'
-        output_path = trace_dir / f"trace_overlay_{len(match_files)}matches.png"
+        output_path = trace_dir / f"trace_overlay_{len(valid_match_ids)}matches.png"
         if args.output and not Path(args.output).is_dir():
             output_path = Path(args.output)
 
-        print(f"Overlaying {len(match_files)} matches onto a single plot...")
+        print(f"Overlaying {len(valid_match_ids)} matches onto a single plot...")
 
         plot_player_traces(
-            map_context, match_files[0], [], output_path,
-            match_files=match_files,
+            map_context, valid_match_ids[0], [], output_path,
+            match_ids=valid_match_ids,
             map_graph=map_graph,
             snap_skeleton=args.snap_skeleton,
             show_deaths=not args.no_deaths,
@@ -438,25 +437,10 @@ def handle_trace(args):
 
     # --- per-match loop ---------------------------------------------------
     traced = 0
-    for match_id in match_ids:
-        try:
-            match_file, db_map_slug = get_match_file(match_id)
-        except ValueError as e:
-            print(f"Error: {e}")
-            continue
-
-        if db_map_slug != map_slug:
-            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
-            continue
-
-        match_path = Path(match_file)
-        if not match_path.exists():
-            print(f"Error: match file not found: {match_file}")
-            continue
-
+    for match_id in valid_match_ids:
         # Resolve player IDs
         if args.player == 'ALL':
-            player_ids = get_match_player_ids(str(match_file))
+            player_ids = get_match_player_ids(match_id)
             if not player_ids:
                 print(f"No players found in match {match_id}.")
                 continue
@@ -464,11 +448,8 @@ def handle_trace(args):
             player_ids = [args.player]
 
         # Determine output path
-        # args.output may be set by global config (output root dir) —
-        # only use it as an explicit file path when the user passed
-        # --output on the CLI (i.e. it looks like a file, not a dir).
         explicit_output = (
-            args.output and len(match_ids) == 1
+            args.output and len(valid_match_ids) == 1
             and not Path(args.output).is_dir()
         )
         if explicit_output:
@@ -478,11 +459,11 @@ def handle_trace(args):
             player_label = 'all' if args.player == 'ALL' else f'player{args.player}'
             output_path = trace_dir / f"trace_{player_label}_match{match_id}.png"
 
-        if len(match_ids) > 1:
+        if len(valid_match_ids) > 1:
             print(f"  Tracing match {match_id} ({len(player_ids)} players)...")
 
         plot_player_traces(
-            map_context, str(match_file), player_ids, output_path,
+            map_context, match_id, player_ids, output_path,
             map_graph=map_graph,
             snap_skeleton=args.snap_skeleton,
             show_deaths=not args.no_deaths,
@@ -497,8 +478,8 @@ def handle_trace(args):
         )
         traced += 1
 
-    if len(match_ids) > 1:
-        print(f"\nTraced {traced}/{len(match_ids)} matches.")
+    if len(valid_match_ids) > 1:
+        print(f"\nTraced {traced}/{len(valid_match_ids)} matches.")
 
 
 def handle_list(args):

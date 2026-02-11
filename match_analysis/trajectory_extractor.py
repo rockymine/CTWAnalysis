@@ -152,7 +152,7 @@ def _build_segment_lookup(life_segments_df: pd.DataFrame):
 
 
 def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
-    """Extract kill and death events, each assigned to a life segment.
+    """Extract kill, death, and wool events, each assigned to a life segment.
 
     Args:
         match_file: Path to raw match parquet file.
@@ -163,7 +163,7 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
         victim_id, x, y, z, segment_idx.
     """
     df = pd.read_parquet(match_file)
-    combat = df[df['event_type'].isin([3, 4])].copy()
+    combat = df[df['event_type'].isin([3, 4, 6, 7])].copy()
 
     if len(combat) == 0:
         return pd.DataFrame(columns=[
