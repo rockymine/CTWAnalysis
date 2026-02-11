@@ -59,6 +59,35 @@ def load_team_spawn_centers(map_context_path: str) -> list[dict]:
     return centers
 
 
+def load_spawns_from_db(conn, map_id: int) -> list[dict]:
+    """Load team spawn centers from the map_spawns DB table.
+
+    Returns the same format as load_team_spawn_centers(): list of dicts
+    with keys: team (str), x (float), z (float), bounds_2d (dict).
+    """
+    rows = conn.execute(
+        "SELECT x, z, min_x, min_z, max_x, max_z, team FROM map_spawns "
+        "WHERE map_id = ?",
+        [map_id],
+    ).fetchall()
+
+    centers = []
+    for x, z, min_x, min_z, max_x, max_z, team_raw in rows:
+        # Normalize: "red-team" -> "red" (matching file-based loader)
+        team = team_raw.removesuffix('-team')
+        centers.append({
+            'team': team,
+            'x': float(x),
+            'z': float(z),
+            'bounds_2d': {
+                'min': {'x': float(min_x), 'z': float(min_z)},
+                'max': {'x': float(max_x), 'z': float(max_z)},
+            },
+        })
+
+    return centers
+
+
 def infer_team(spawn_x: float, spawn_z: float, spawn_centers: list[dict]) -> str:
     """Determine team from a spawn position.
 

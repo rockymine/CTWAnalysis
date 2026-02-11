@@ -9,10 +9,10 @@ DB_PATH = 'match_analysis/metadata.db'
 
 
 def get_match_file(match_id: int) -> tuple[str, str]:
-    """Look up match file path and map name from the database.
+    """Look up match file path and map slug from the database.
 
     Returns:
-        (match_file, map_name) tuple.  The match_file path is normalized
+        (match_file, map_slug) tuple.  The match_file path is normalized
         to the current platform's separator convention.
 
     Raises:
@@ -21,7 +21,10 @@ def get_match_file(match_id: int) -> tuple[str, str]:
     conn = duckdb.connect(DB_PATH, read_only=True)
     try:
         result = conn.execute(
-            "SELECT match_file, map_name FROM matches WHERE match_id = ?",
+            "SELECT mat.match_file, m.map_slug "
+            "FROM matches mat "
+            "JOIN maps m ON mat.map_id = m.map_id "
+            "WHERE mat.match_id = ?",
             [match_id],
         ).fetchone()
     finally:

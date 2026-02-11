@@ -25,10 +25,10 @@ _SPATIAL_COLUMNS = [
 ]
 
 
-def _get_classifier(map_name: str):
+def _get_classifier(map_slug: str):
     """Build a PositionClassifier for the given map, or None if data missing."""
-    context_path = Path(f'output/{map_name}/island_analysis/map_context.json')
-    graph_path = Path(f'output/{map_name}/map_graph.json')
+    context_path = Path(f'output/{map_slug}/island_analysis/map_context.json')
+    graph_path = Path(f'output/{map_slug}/map_graph.json')
     if not context_path.exists() or not graph_path.exists():
         return None
 
@@ -221,7 +221,10 @@ def process_match(match_id: int):
 
     try:
         result = conn.execute(
-            "SELECT match_file, map_name FROM matches WHERE match_id = ?",
+            "SELECT mat.match_file, m.map_id, m.map_slug, m.map_name "
+            "FROM matches mat "
+            "JOIN maps m ON mat.map_id = m.map_id "
+            "WHERE mat.match_id = ?",
             [match_id],
         ).fetchone()
 
@@ -229,7 +232,7 @@ def process_match(match_id: int):
             print(f"Match {match_id} not found in database")
             return
 
-        match_file_raw, map_name = result
+        match_file_raw, map_id, map_slug, map_name = result
         # Normalize stored path to current platform (handles legacy backslash paths)
         match_file = str(Path(match_file_raw.replace('\\', '/')))
         print(f"\nProcessing match {match_id} ({map_name})")
@@ -309,7 +312,7 @@ def process_match(match_id: int):
         spatial_cols = ['location_type', 'island_id',
                         'nearest_node_1', 'nearest_node_2',
                         'nearest_island_1', 'nearest_island_2']
-        classifier = _get_classifier(map_name)
+        classifier = _get_classifier(map_slug)
         if classifier is not None and len(position_df) > 0:
             import numpy as np
             xs = position_df['x'].values.astype(float)
@@ -345,14 +348,13 @@ def process_match(match_id: int):
 
         # Extract and insert team segments
         from match_analysis.team_extractor import (
-            load_team_spawn_centers, extract_team_segments,
+            load_spawns_from_db, extract_team_segments,
         )
 
-        map_context_path = f'output/{map_name}/island_analysis/map_context.json'
-        spawn_centers = load_team_spawn_centers(map_context_path)
+        spawn_centers = load_spawns_from_db(conn, map_id)
 
         if not spawn_centers:
-            print(f"Warning: No team spawn centers found in {map_context_path}")
+            print(f"Warning: No spawns in map_spawns for map_id={map_id}")
             print("  Team segments will be marked 'unknown'")
 
         team_df = extract_team_segments(match_file, spawn_centers)

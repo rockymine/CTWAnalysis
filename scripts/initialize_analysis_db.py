@@ -11,23 +11,66 @@ def initialize_database():
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(db_path))
 
-    # Table 1: Match metadata
+    # Table 1: Maps metadata (must precede matches for FK)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_map_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS maps (
+            map_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_id'),
+            map_slug TEXT NOT NULL UNIQUE,
+            map_name TEXT NOT NULL,
+            max_build_height INTEGER,
+            min_x FLOAT NOT NULL,
+            max_x FLOAT NOT NULL,
+            min_z FLOAT NOT NULL,
+            max_z FLOAT NOT NULL,
+            center_x FLOAT NOT NULL,
+            center_z FLOAT NOT NULL,
+            island_count INTEGER NOT NULL,
+            team_count INTEGER,
+            last_updated TIMESTAMP
+        )
+    """)
+
+    # Table 2: Map spawns (spawn locations per map)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_map_spawn_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_spawns (
+            spawn_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_spawn_id'),
+            map_id INTEGER NOT NULL,
+            x FLOAT NOT NULL,
+            z FLOAT NOT NULL,
+            min_x FLOAT NOT NULL,
+            min_z FLOAT NOT NULL,
+            max_x FLOAT NOT NULL,
+            max_z FLOAT NOT NULL,
+            team TEXT NOT NULL,
+            team_color TEXT NOT NULL,
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table 3: Match metadata
     conn.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             match_id INTEGER PRIMARY KEY,
             match_file TEXT NOT NULL UNIQUE,
-            map_name TEXT NOT NULL,
+            map_id INTEGER NOT NULL,
             match_start TIMESTAMP,
             match_duration FLOAT,
             player_count INTEGER,
             position_count INTEGER,
             processed BOOLEAN DEFAULT FALSE,
             processed_at TIMESTAMP,
-            processing_time FLOAT
+            processing_time FLOAT,
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
     """)
 
-    # Table 2: Life segment summaries
+    # Table 4: Life segment summaries
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_segment_id START 1
     """)
@@ -51,7 +94,7 @@ def initialize_database():
         )
     """)
 
-    # Table 3: Combat events (kills + deaths)
+    # Table 5: Combat events (kills + deaths)
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_combat_id START 1
     """)
@@ -71,7 +114,7 @@ def initialize_database():
         )
     """)
 
-    # Table 4: Position events (type 5 only)
+    # Table 6: Position events (type 5 only)
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_position_id START 1
     """)
@@ -95,7 +138,7 @@ def initialize_database():
         )
     """)
 
-    # Table 5: Processing log
+    # Table 7: Processing log
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_log_id START 1
     """)
@@ -109,48 +152,6 @@ def initialize_database():
             error_message TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
-        )
-    """)
-
-    # Table 6: Maps metadata
-    conn.execute("""
-        CREATE SEQUENCE IF NOT EXISTS seq_map_id START 1
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS maps (
-            map_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_id'),
-            map_slug TEXT NOT NULL UNIQUE,
-            map_name TEXT NOT NULL,
-            max_build_height INTEGER,
-            min_x FLOAT NOT NULL,
-            max_x FLOAT NOT NULL,
-            min_z FLOAT NOT NULL,
-            max_z FLOAT NOT NULL,
-            center_x FLOAT NOT NULL,
-            center_z FLOAT NOT NULL,
-            island_count INTEGER NOT NULL,
-            team_count INTEGER,
-            last_updated TIMESTAMP
-        )
-    """)
-
-    # Table 7: Map spawns (spawn locations per map)
-    conn.execute("""
-        CREATE SEQUENCE IF NOT EXISTS seq_map_spawn_id START 1
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS map_spawns (
-            spawn_id INTEGER PRIMARY KEY DEFAULT nextval('seq_map_spawn_id'),
-            map_id INTEGER NOT NULL,
-            x FLOAT NOT NULL,
-            z FLOAT NOT NULL,
-            min_x FLOAT NOT NULL,
-            min_z FLOAT NOT NULL,
-            max_x FLOAT NOT NULL,
-            max_z FLOAT NOT NULL,
-            team TEXT NOT NULL,
-            team_color TEXT NOT NULL,
-            FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
     """)
 

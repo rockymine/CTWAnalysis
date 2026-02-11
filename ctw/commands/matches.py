@@ -214,7 +214,7 @@ def handle_index(args):
     import duckdb
     conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
     result = conn.execute(
-        "SELECT COUNT(*) as total, COUNT(DISTINCT map_name) as maps FROM matches"
+        "SELECT COUNT(*) as total, COUNT(DISTINCT map_id) as maps FROM matches"
     ).fetchone()
     conn.close()
 
@@ -248,16 +248,32 @@ def handle_process_all(args):
         reset_query = "UPDATE matches SET processed = FALSE"
         reset_params = []
         if args.map_name:
-            reset_query += " WHERE map_name = ?"
-            reset_params.append(args.map_name)
+            map_id = conn.execute(
+                "SELECT map_id FROM maps WHERE map_slug = ?",
+                [args.map_name],
+            ).fetchone()
+            if map_id is None:
+                print(f"Error: map '{args.map_name}' not found in maps table")
+                conn.close()
+                return
+            reset_query += " WHERE map_id = ?"
+            reset_params.append(map_id[0])
         conn.execute(reset_query, reset_params)
         print("Reset processing flags (--force).")
 
     query = "SELECT match_id FROM matches WHERE processed = FALSE"
     params = []
     if args.map_name:
-        query += " AND map_name = ?"
-        params.append(args.map_name)
+        map_id = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?",
+            [args.map_name],
+        ).fetchone()
+        if map_id is None:
+            print(f"Error: map '{args.map_name}' not found in maps table")
+            conn.close()
+            return
+        query += " AND map_id = ?"
+        params.append(map_id[0])
     query += " ORDER BY match_id"
 
     results = conn.execute(query, params).fetchall()
@@ -317,22 +333,24 @@ def handle_trace(args):
     ensure_match_db()
 
     map_folder = resolve_map_folder(args.map)
-    map_name = map_folder.name
+    map_slug = map_folder.name
     map_output_dir = resolve_output_dir(map_folder, create=False)
 
     # --- resolve match IDs ------------------------------------------------
     if args.match == 'ALL':
         conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
         rows = conn.execute(
-            "SELECT match_id FROM matches WHERE map_name = ? ORDER BY match_id",
-            [map_name],
+            "SELECT mat.match_id FROM matches mat "
+            "JOIN maps m ON mat.map_id = m.map_id "
+            "WHERE m.map_slug = ? ORDER BY mat.match_id",
+            [map_slug],
         ).fetchall()
         conn.close()
         match_ids = [r[0] for r in rows]
         if not match_ids:
-            print(f"No matches found for map '{map_name}'.")
+            print(f"No matches found for map '{map_slug}'.")
             return
-        print(f"Found {len(match_ids)} matches for map '{map_name}'.")
+        print(f"Found {len(match_ids)} matches for map '{map_slug}'.")
     else:
         match_ids = args.match  # list[int] from _match_arg
 
@@ -373,13 +391,13 @@ def handle_trace(args):
     traced = 0
     for match_id in match_ids:
         try:
-            match_file, db_map_name = get_match_file(match_id)
+            match_file, db_map_slug = get_match_file(match_id)
         except ValueError as e:
             print(f"Error: {e}")
             continue
 
-        if db_map_name != map_name:
-            print(f"Skipping match {match_id}: map is '{db_map_name}', not '{map_name}'")
+        if db_map_slug != map_slug:
+            print(f"Skipping match {match_id}: map is '{db_map_slug}', not '{map_slug}'")
             continue
 
         match_path = Path(match_file)
@@ -433,21 +451,23 @@ def handle_list(args):
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
-    query = "SELECT match_id, map_name, player_count, match_duration, processed FROM matches"
+    query = ("SELECT mat.match_id, m.map_slug, mat.player_count, "
+             "mat.match_duration, mat.processed "
+             "FROM matches mat JOIN maps m ON mat.map_id = m.map_id")
     conditions = []
     params = []
 
     if args.map_name:
-        conditions.append("map_name = ?")
+        conditions.append("m.map_slug = ?")
         params.append(args.map_name)
     if args.processed:
-        conditions.append("processed = TRUE")
+        conditions.append("mat.processed = TRUE")
     elif args.unprocessed:
-        conditions.append("processed = FALSE")
+        conditions.append("mat.processed = FALSE")
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY match_id"
+    query += " ORDER BY mat.match_id"
 
     results = conn.execute(query, params).fetchall()
     conn.close()
@@ -456,10 +476,10 @@ def handle_list(args):
     print(f"{'ID':<6} {'Map':<15} {'Players':<8} {'Duration':<10} {'Processed'}")
     print("-" * 55)
 
-    for match_id, map_name, players, duration, proc in results:
+    for match_id, map_slug, players, duration, proc in results:
         duration_str = f"{duration:.0f}s" if duration else "N/A"
         proc_str = "yes" if proc else "no"
-        print(f"{match_id:<6} {map_name:<15} {players:<8} {duration_str:<10} {proc_str}")
+        print(f"{match_id:<6} {map_slug:<15} {players:<8} {duration_str:<10} {proc_str}")
 
 
 def handle_stats(args):
@@ -472,7 +492,7 @@ def handle_stats(args):
         SELECT
             COUNT(*) as total,
             SUM(CASE WHEN processed THEN 1 ELSE 0 END) as processed,
-            COUNT(DISTINCT map_name) as maps,
+            COUNT(DISTINCT map_id) as maps,
             SUM(player_count) as total_players,
             SUM(position_count) as total_positions
         FROM matches
@@ -494,15 +514,16 @@ def handle_stats(args):
     print("\n=== Matches by Map ===\n")
     results = conn.execute("""
         SELECT
-            map_name,
+            m.map_slug,
             COUNT(*) as count,
-            SUM(CASE WHEN processed THEN 1 ELSE 0 END) as processed
-        FROM matches
-        GROUP BY map_name
+            SUM(CASE WHEN mat.processed THEN 1 ELSE 0 END) as processed
+        FROM matches mat
+        JOIN maps m ON mat.map_id = m.map_id
+        GROUP BY m.map_slug
         ORDER BY count DESC
     """).fetchall()
 
-    for map_name, count, processed in results:
-        print(f"{map_name:<20} {count:>3} matches ({processed} processed)")
+    for map_slug, count, processed in results:
+        print(f"{map_slug:<20} {count:>3} matches ({processed} processed)")
 
     conn.close()
