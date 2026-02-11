@@ -52,32 +52,24 @@ def register(subparsers):
     p.add_argument('--min-size', type=int, default=10,
                    help='Minimum island block count (default: 10)')
     p.add_argument('--no-holes', action='store_true', help='Disable hole detection')
+    p.add_argument('--workers', type=int, default=1,
+                   help='Number of maps to process in parallel (default: 1)')
     p.set_defaults(func=handler)
 
 
-def handler(args):
+def _process_single_map(map_folder, args, output_override=None):
+    """Run the full pipeline for a single map. Safe for multiprocessing."""
     from layout_analysis.services import analyze_layout, analyze_islands_step
     from xml_analysis.services import analyze_xml
 
-    map_folders = collect_map_folders(args)
-    match_history_path = Path(args.match_history)
+    map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
 
-    print("=" * 70)
-    print("CTW ANALYSIS WORKFLOW")
-    print("=" * 70)
-    print(f"Maps to analyze: {len(map_folders)}")
-    for folder in map_folders:
-        print(f"  - {folder.name}")
-    print()
+    print(f"\n{'=' * 70}")
+    print(f"Processing: {map_folder.name}")
+    print(f"Output: {map_output_dir}")
+    print(f"{'=' * 70}")
 
-    for map_folder in map_folders:
-        map_output_dir = resolve_output_dir(map_folder, args.output, create=True)
-
-        print(f"\n{'=' * 70}")
-        print(f"Processing: {map_folder.name}")
-        print(f"Output: {map_output_dir}")
-        print(f"{'=' * 70}")
-
+    try:
         if not args.no_layout:
             analyze_layout(
                 map_folder,
@@ -126,9 +118,63 @@ def handler(args):
         else:
             print("\n[5/5] Match Analysis: Currently not supported")
 
-    print(f"\n{'=' * 70}")
-    print("WORKFLOW COMPLETE")
-    print(f"{'=' * 70}\n")
+        return map_folder.name, True, None
+
+    except Exception as e:
+        import traceback
+        print(f"\n  ERROR processing {map_folder.name}: {e}")
+        traceback.print_exc()
+        return map_folder.name, False, str(e)
+
+
+def handler(args):
+    map_folders = collect_map_folders(args)
+
+    print("=" * 70)
+    print("CTW ANALYSIS WORKFLOW")
+    print("=" * 70)
+    print(f"Maps to analyze: {len(map_folders)}")
+    if args.workers > 1:
+        print(f"Workers: {args.workers}")
+    for folder in map_folders:
+        print(f"  - {folder.name}")
+    print()
+
+    if args.workers > 1 and len(map_folders) > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        results = []
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(_process_single_map, mf, args, args.output): mf
+                for mf in map_folders
+            }
+            for future in as_completed(futures):
+                results.append(future.result())
+
+        # Summary
+        succeeded = [r for r in results if r[1]]
+        failed = [r for r in results if not r[1]]
+        print(f"\n{'=' * 70}")
+        print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
+        if failed:
+            for name, _, err in failed:
+                print(f"  FAILED: {name}: {err}")
+        print(f"{'=' * 70}\n")
+    else:
+        results = []
+        for map_folder in map_folders:
+            result = _process_single_map(map_folder, args, args.output)
+            results.append(result)
+
+        succeeded = [r for r in results if r[1]]
+        failed = [r for r in results if not r[1]]
+        print(f"\n{'=' * 70}")
+        print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
+        if failed:
+            for name, _, err in failed:
+                print(f"  FAILED: {name}: {err}")
+        print(f"{'=' * 70}\n")
 
 
 def _run_symmetry(map_output_dir: Path) -> None:
