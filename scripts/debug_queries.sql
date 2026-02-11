@@ -17,7 +17,29 @@ LEFT JOIN matches mat ON mp.map_id = mat.map_id
 GROUP BY mp.map_slug, mp.map_name
 ORDER BY matches DESC;
 
--- 1b. Full match listing
+-- 1b. Matches for a specific map (sorted by most positions)
+SELECT mat.match_id, mp.map_slug, mat.player_count AS players,
+       ROUND(mat.match_duration, 0) AS duration_s,
+       mat.position_count AS positions, mat.processed,
+       ROUND(gaps.median_gap, 1) AS interval_s
+FROM matches mat
+JOIN maps mp ON mat.map_id = mp.map_id
+LEFT JOIN (
+    SELECT match_id, MEDIAN(gap) AS median_gap
+    FROM (
+        SELECT match_id,
+               timestamp - LAG(timestamp) OVER (
+                   PARTITION BY match_id, player_id ORDER BY timestamp
+               ) AS gap
+        FROM position_events
+    )
+    WHERE gap > 0 AND gap < 30
+    GROUP BY match_id
+) gaps ON gaps.match_id = mat.match_id
+WHERE mp.map_slug = 'expedition'
+ORDER BY mat.position_count DESC;
+
+-- 1c. Full match listing (all maps)
 SELECT mat.match_id, mp.map_slug,
        ROUND(mat.match_duration, 0) AS duration_s,
        mat.player_count, mat.position_count, mat.processed
@@ -25,19 +47,19 @@ FROM matches mat
 JOIN maps mp ON mat.map_id = mp.map_id
 ORDER BY mat.match_id;
 
--- 1c. Processing status summary
+-- 1d. Processing status summary
 SELECT processed, COUNT(*) AS matches
 FROM matches
 GROUP BY processed;
 
--- 1d. Unprocessed matches
+-- 1e. Unprocessed matches
 SELECT mat.match_id, mp.map_slug, mat.match_file
 FROM matches mat
 JOIN maps mp ON mat.map_id = mp.map_id
 WHERE mat.processed = FALSE
 ORDER BY mat.match_id;
 
--- 1e. Row counts per table
+-- 1f. Row counts per table
 SELECT 'maps' AS tbl, COUNT(*) AS rows FROM maps
 UNION ALL SELECT 'map_spawns', COUNT(*) FROM map_spawns
 UNION ALL SELECT 'matches', COUNT(*) FROM matches
@@ -47,7 +69,7 @@ UNION ALL SELECT 'position_events', COUNT(*) FROM position_events
 UNION ALL SELECT 'player_team_segments', COUNT(*) FROM player_team_segments
 UNION ALL SELECT 'processing_log', COUNT(*) FROM processing_log;
 
--- 1f. Map spawns overview
+-- 1g. Map spawns overview
 SELECT mp.map_slug, ms.team, ms.team_color,
        ROUND(ms.x, 1) AS x, ROUND(ms.z, 1) AS z
 FROM map_spawns ms
