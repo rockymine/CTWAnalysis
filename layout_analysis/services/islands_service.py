@@ -1,4 +1,4 @@
-"""Island detection, skeleton, pathfinding, and connectivity orchestration."""
+"""Island detection and skeleton analysis orchestration."""
 
 import json
 import shutil
@@ -341,7 +341,6 @@ def _build_context(
     Returns the MapContext instance.
     """
     from layout_analysis.map_context import build_map_context, build_skeleton_dicts
-    from skeleton_analysis.connectivity import save_initial_map_graph
 
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
@@ -409,89 +408,47 @@ def _build_context(
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
 
     island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    save_initial_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
+    _save_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
 
     return map_ctx
 
 
 # ---------------------------------------------------------------------------
-# Stage 7: Pathfinding
+# map_graph.json writer (skeleton data only)
 # ---------------------------------------------------------------------------
 
-def _run_pathfinding(
-    map_output_dir: Path,
-    island_output_dir: Path,
-    plots: bool = True,
-):
-    """Run pathfinding analysis and generate path grid visualizations."""
-    from skeleton_analysis.pathfinding import run_pathfinding_analysis, load_edge_pixels
+def _save_map_graph(
+    island_skeletons: list,
+    map_name: str,
+    output_dir: Path,
+) -> None:
+    """Save map_graph.json containing island skeleton data.
 
-    print(f"  Running pathfinding analysis...")
-    pathfinding_results = run_pathfinding_analysis(str(map_output_dir))
-    if not pathfinding_results or pathfinding_results['islands_analyzed'] == 0:
-        return
+    Downstream consumers (match analysis / PositionClassifier) read
+    islands[].skeleton.edge_pixels from this file for spatial queries.
+    """
+    import numpy as np
 
-    n_analyzed = pathfinding_results['islands_analyzed']
-    n_paths = pathfinding_results['total_poi_endpoint_paths']
-    n_defender = pathfinding_results['total_defender_paths']
-    print(f"    Pathfinding: {n_analyzed} islands, {n_paths} POI paths, {n_defender} defender paths")
+    def _json_default(obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-    if plots:
-        from skeleton_analysis.visualize import plot_path_grid
+    data = {
+        'map_name': map_name,
+        'islands': island_skeletons,
+        'map_graph': {'nodes': [], 'edges': []},
+    }
 
-        pathfinding_dir = island_output_dir / 'pathfinding'
-        pathfinding_dir.mkdir(exist_ok=True)
-
-        with open(str(map_output_dir / 'map_graph.json'), 'r') as f:
-            graph_data = json.load(f)
-        islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
-
-        for island_result in pathfinding_results['island_results']:
-            iid = island_result['island_id']
-            island_entry = islands_by_id.get(iid)
-            if island_entry:
-                edge_px = load_edge_pixels(island_entry.get('skeleton'))
-                if edge_px:
-                    plot_path_grid(
-                        island_result, edge_px,
-                        str(pathfinding_dir / f'island_{iid}_paths.png'),
-                    )
-
-
-# ---------------------------------------------------------------------------
-# Stage 8: Inter-island connectivity
-# ---------------------------------------------------------------------------
-
-def _build_connectivity(map_output_dir: Path, island_output_dir: Path):
-    """Build inter-island connectivity graph and generate visualization."""
-    from skeleton_analysis.connectivity import (
-        build_map_graph,
-        save_map_graph,
-        plot_map_connectivity,
-    )
-
-    print(f"  Building map connectivity graph...")
-    graph_path = map_output_dir / 'map_graph.json'
-    if not graph_path.exists():
-        return
-
-    with open(str(graph_path), 'r') as f:
-        graph_data = json.load(f)
-    map_graph_result = build_map_graph(graph_data)
-    save_map_graph(map_graph_result, map_output_dir)
-
-    n_nodes = len(map_graph_result['nodes'])
-    n_intra = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'intra')
-    n_void = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'void_link')
-    print(f"    Map Graph: {n_nodes} nodes, {n_intra} intra-island edges, {n_void} void links")
-
-    with open(str(graph_path), 'r') as f:
-        final_graph_data = json.load(f)
-    with open(str(island_output_dir / 'map_context.json'), 'r') as f:
-        ctx_for_viz = json.load(f)
-
-    viz_path = island_output_dir / 'map_connectivity.png'
-    plot_map_connectivity(ctx_for_viz, final_graph_data, viz_path)
+    output_path = output_dir / 'map_graph.json'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, default=_json_default)
+    print(f"  Map graph saved to: {output_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -545,7 +502,7 @@ def analyze_islands_step(
         map_output_dir: Per-map output root (where layout parquets and
             map_graph.json live). Defaults to map_folder for backward compat.
         output_dir: Override island_analysis subdir specifically.
-        plots: If True, generate debug plots (per-island debug, POI, pathfinding).
+        plots: If True, generate debug plots (per-island debug, POI).
 
     Returns:
         Path: Path to island analysis output directory
@@ -618,12 +575,6 @@ def analyze_islands_step(
         map_data_obj, map_center_pt, poi_assignments, island_output_dir,
         map_output_dir=_map_output_dir,
     )
-
-    # Stage 7: Pathfinding
-    _run_pathfinding(_map_output_dir, island_output_dir, plots=plots)
-
-    # Stage 8: Connectivity
-    _build_connectivity(_map_output_dir, island_output_dir)
 
     # Cleanup
     _cleanup_legacy(island_output_dir)

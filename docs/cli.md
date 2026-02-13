@@ -225,7 +225,7 @@ Visualize player movement traces on the map.
 
 ```
 python ctw.py matches trace --map NAME --match ID --player (ID | ALL)
-    [--output PATH] [--snap-skeleton]
+    [--output PATH]
     [--no-deaths] [--no-kills] [--no-wool] [--no-edges]
     [--no-legend] [--no-stats]
     [--color-mode life|team|location]
@@ -238,7 +238,6 @@ python ctw.py matches trace --map NAME --match ID --player (ID | ALL)
 | `--match ID` | Match ID (from database) |
 | `--player ID` | Player ID to visualize, or `ALL` for every player |
 | `--output PATH` | Output PNG path (default: auto-generated in `match_analysis/`) |
-| `--snap-skeleton` | Snap on-island positions to skeleton paths |
 | `--no-deaths` | Hide death markers |
 | `--no-kills` | Hide kill markers |
 | `--no-wool` | Hide wool event markers |
