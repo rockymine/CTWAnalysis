@@ -19,10 +19,10 @@ def register(subparsers, map_parent):
     p.add_argument('--no-holes', action='store_true', help='Disable hole detection')
     p.add_argument('--layout', choices=['bedrock', 'y0', 'top', 'density'],
                    default='bedrock', help='Layout file to use')
-    p.add_argument('--canonical-triangulation', action='store_true',
-                   help='Use canonical-consistent triangulation')
+    p.add_argument('--canonical-polygons', action='store_true',
+                   help='Use canonical-consistent polygon construction')
     p.add_argument('--basic', action='store_true',
-                   help='Basic mode: detection + triangulation only (no skeleton/POI)')
+                   help='Basic mode: detection + polygon only (no skeleton/POI)')
     p.add_argument('--output', help='Override output directory')
     p.add_argument('--plots', action='store_true',
                    help='Generate debug plots (per-island debug, POI, pathfinding)')
@@ -37,7 +37,7 @@ def handler(args):
         import pandas as pd
         from island_analysis import (
             detect_islands,
-            triangulate_island_union,
+            build_island_polygon,
             compute_island_statistics,
             classify_islands,
             create_island_report,
@@ -73,16 +73,14 @@ def handler(args):
         for island in islands:
             print(f"     Island {island.id}: {island.area:,} blocks at ({island.center[0]:.1f}, {island.center[1]:.1f})")
 
-        print(f"\n3. Triangulating islands (union mode, holes={not args.no_holes})...")
-        total_triangles = 0
+        print(f"\n3. Building polygons (union mode, holes={not args.no_holes})...")
         for island in islands:
-            triangles = triangulate_island_union(
+            build_island_polygon(
                 island, buffer_distance=args.buffer,
                 simplify_tolerance=args.simplify, detect_holes=not args.no_holes,
             )
-            total_triangles += len(triangles)
-            print(f"     Island {island.id}: {len(triangles)} triangles, {len(island.holes)} holes")
-        print(f"   Total triangles: {total_triangles}")
+            has_poly = island.simplified_polygon is not None
+            print(f"     Island {island.id}: polygon={'yes' if has_poly else 'no'}, {len(island.holes)} holes")
 
         print("\n4. Computing statistics...")
         stats = compute_island_statistics(islands)
@@ -111,7 +109,7 @@ def handler(args):
             simplify_tolerance=args.simplify,
             buffer_distance=args.buffer,
             layout_type=args.layout,
-            canonical_triangulation=args.canonical_triangulation,
+            canonical_polygons=args.canonical_polygons,
             map_output_dir=map_output_dir,
             output_dir=args.output,
             plots=args.plots,

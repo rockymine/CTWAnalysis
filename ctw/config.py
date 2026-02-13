@@ -41,7 +41,7 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
         'simplify': float,
         'no_holes': bool,
         'layout': str,
-        'canonical_triangulation': bool,
+        'canonical_polygons': bool,
         'basic': bool,
     },
     'xml': {
@@ -57,7 +57,7 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
         'no_xml': bool,
         'no_matches': bool,
         'island_layout': str,
-        'canonical_triangulation': bool,
+        'canonical_polygons': bool,
         'match_history': str,
         'simplify': float,
         'buffer': float,

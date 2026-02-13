@@ -139,7 +139,6 @@ def build_map_context(
             'has_center': island.has_center,
             'distance_to_center': round(island.distance_to_center, 2),
             'team': island.team,
-            'triangle_count': len(island.triangles),
             'hole_count': len(island.holes),
             'simplified_polygon': island.simplified_polygon,
         }

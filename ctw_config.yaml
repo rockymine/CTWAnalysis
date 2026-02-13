@@ -27,7 +27,7 @@ islands:
   simplify: 0.0
   no-holes: false
   layout: "bedrock"
-  canonical-triangulation: true
+  canonical-polygons: true
   basic: false
 
 xml:
@@ -43,7 +43,7 @@ run:
   no-xml: false
   no-matches: true
   island-layout: "bedrock"
-  canonical-triangulation: true
+  canonical-polygons: true
   match-history: "C:/Users/Michael/source/repos/PGMLoggerResults/match_history.csv"
   # Pass-through to islands service (also reads from islands: section)
   simplify: 0.0

@@ -67,44 +67,39 @@ def _detect_and_label(
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: Triangulation
+# Stage 2: Polygon construction
 # ---------------------------------------------------------------------------
 
-def _triangulate(
+def _build_polygons(
     islands: list,
     canonical: bool = False,
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,
     detect_holes: bool = True,
-) -> int:
-    """Triangulate all islands.  Returns total triangle count."""
+) -> None:
+    """Build simplified polygons for all islands."""
     from island_analysis import (
-        triangulate_island_union,
-        triangulate_islands_canonical,
+        build_island_polygon,
+        build_island_polygons_canonical,
     )
 
     if canonical:
-        print(f"  Triangulating islands (canonical mode, simplify={simplify_tolerance})...")
-        total_triangles = triangulate_islands_canonical(
+        print(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
+        build_island_polygons_canonical(
             islands,
             buffer_distance=buffer_distance,
             simplify_tolerance=simplify_tolerance,
             detect_holes=detect_holes,
         )
     else:
-        print(f"  Triangulating islands (union mode, simplify={simplify_tolerance})...")
-        total_triangles = 0
+        print(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
         for island in islands:
-            triangles = triangulate_island_union(
+            build_island_polygon(
                 island,
                 buffer_distance=buffer_distance,
                 simplify_tolerance=simplify_tolerance,
                 detect_holes=detect_holes,
             )
-            total_triangles += len(triangles)
-
-    print(f"    Total triangles: {total_triangles}")
-    return total_triangles
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +166,7 @@ def _generate_skeleton_visuals(
     """Write island reports, skeleton debug images, and overview plots.
 
     Essential outputs (always generated):
-        - island_triangulation_detail.png
+        - island_detail.png
         - unique_islands.png
         - world_overview.png
 
@@ -180,7 +175,7 @@ def _generate_skeleton_visuals(
         - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt
     """
-    from island_analysis.visualization import plot_triangulation_detail
+    from island_analysis.visualization import plot_island_detail
     from skeleton_analysis.visualize import (
         plot_island_debug,
         plot_unique_islands,
@@ -190,10 +185,10 @@ def _generate_skeleton_visuals(
 
     print(f"  Generating visualizations...")
 
-    # Essential: triangulation detail
-    plot_triangulation_detail(
+    # Essential: island polygon detail
+    plot_island_detail(
         islands,
-        output_path=str(island_output_dir / 'island_triangulation_detail.png'),
+        output_path=str(island_output_dir / 'island_detail.png'),
     )
 
     if plots:
@@ -496,7 +491,7 @@ def analyze_islands_step(
     simplify_tolerance: float = 1.0,
     buffer_distance: float = 0.0,
     layout_type: str = 'bedrock',
-    canonical_triangulation: bool = False,
+    canonical_polygons: bool = False,
     connectivity: int = 8,
     min_size: int = 10,
     detect_holes: bool = True,
@@ -505,19 +500,19 @@ def analyze_islands_step(
     plots: bool = False,
 ):
     """
-    Step 2: Detect and triangulate islands from layout data.
+    Step 2: Detect islands, build polygons, and compute skeletons.
 
     Args:
         map_folder: Path to map folder (read-only input).
         force_rerun: If True, regenerate even if output exists.
-        simplify_tolerance: Simplification tolerance for union triangulation.
+        simplify_tolerance: Simplification tolerance for polygon construction.
         buffer_distance: Buffer distance for smoothing.
         layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density').
-        canonical_triangulation: If True, use canonical-consistent triangulation
-            so that symmetrically identical islands share the same mesh.
+        canonical_polygons: If True, use canonical-consistent polygon construction
+            so that symmetrically identical islands are grouped.
         connectivity: Island detection connectivity (4 or 8).
         min_size: Minimum island block count.
-        detect_holes: If True, detect holes in islands during triangulation.
+        detect_holes: If True, detect holes in islands during polygon construction.
         map_output_dir: Per-map output root (where layout parquets and
             map_graph.json live). Defaults to map_folder for backward compat.
         output_dir: Override island_analysis subdir specifically.
@@ -563,10 +558,10 @@ def analyze_islands_step(
         print("  [X] No islands detected!")
         return island_output_dir
 
-    # Stage 2: Triangulate
-    _triangulate(
+    # Stage 2: Build polygons
+    _build_polygons(
         islands,
-        canonical=canonical_triangulation,
+        canonical=canonical_polygons,
         buffer_distance=buffer_distance,
         simplify_tolerance=simplify_tolerance,
         detect_holes=detect_holes,

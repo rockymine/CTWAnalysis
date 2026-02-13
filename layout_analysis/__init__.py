@@ -3,7 +3,7 @@ Layout Analysis Package
 
 Provides tools for analyzing Minecraft world layouts from Anvil region files.
 Supports extraction of Y0 layer, top surface, and density-based point sets.
-Also provides island detection and triangulation for map topology analysis.
+Also provides island detection and polygon construction for map topology analysis.
 """
 
 from .extractors import Y0LayerExtractor, TopSurfaceExtractor, VerticalDensityExtractor, LowestBedrockExtractor
