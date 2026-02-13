@@ -452,7 +452,7 @@ def _save_map_graph(
                 map_nodes.append({
                     'map_node_id': node_id,
                     'island_id': iid,
-                    'local_node_id': node['id'],
+                    'local_node_id': node['node_id'],
                     'coords': [node['x'], node['z']],
                 })
                 node_id += 1
