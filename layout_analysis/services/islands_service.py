@@ -438,10 +438,29 @@ def _save_map_graph(
             return obj.tolist()
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
+    # Build flat node index from per-island skeleton endpoint nodes.
+    # PositionClassifier reads map_graph.nodes for nearest-node lookups.
+    map_nodes = []
+    node_id = 0
+    for isle in island_skeletons:
+        skeleton = isle.get('skeleton')
+        if skeleton is None:
+            continue
+        iid = isle['island_id']
+        for node in skeleton.get('nodes', []):
+            if node.get('type') == 'endpoint':
+                map_nodes.append({
+                    'map_node_id': node_id,
+                    'island_id': iid,
+                    'local_node_id': node['id'],
+                    'coords': [node['x'], node['z']],
+                })
+                node_id += 1
+
     data = {
         'map_name': map_name,
         'islands': island_skeletons,
-        'map_graph': {'nodes': [], 'edges': []},
+        'map_graph': {'nodes': map_nodes, 'edges': []},
     }
 
     output_path = output_dir / 'map_graph.json'
