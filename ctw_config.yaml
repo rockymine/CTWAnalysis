@@ -28,7 +28,6 @@ islands:
   no-holes: false
   layout: "bedrock"
   canonical-polygons: true
-  basic: false
 
 xml:
   visualize: false

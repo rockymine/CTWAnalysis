@@ -42,7 +42,6 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
         'no_holes': bool,
         'layout': str,
         'canonical_polygons': bool,
-        'basic': bool,
     },
     'xml': {
         'visualize': bool,
