@@ -11,8 +11,7 @@ import re
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 
-from .datatypes import IslandResult
-from island_analysis.datatypes import Island
+from ctw.core.models import Island, IslandResult
 from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, UnionRegion,
     CuboidRegion, RectangleRegion,
@@ -184,87 +183,8 @@ def find_nearest_node(
     return best_id
 
 
-def compute_map_center(layout_df) -> Tuple[float, float]:
-    """
-    Compute the geometric center of all blocks in the layout.
-
-    Args:
-        layout_df: DataFrame with world_x and world_z columns
-
-    Returns:
-        (center_x, center_z) tuple
-    """
-    x_col = 'world_x' if 'world_x' in layout_df.columns else 'x'
-    z_col = 'world_z' if 'world_z' in layout_df.columns else 'z'
-
-    min_x = layout_df[x_col].min()
-    max_x = layout_df[x_col].max()
-    min_z = layout_df[z_col].min()
-    max_z = layout_df[z_col].max()
-
-    return ((min_x + max_x + 1) / 2.0, (min_z + max_z + 1) / 2.0)
-
-
-def classify_island_center(
-    islands: List[Island],
-    map_center: Tuple[float, float],
-) -> None:
-    """
-    Set has_center and distance_to_center on each island.
-
-    An island only gets has_center=True if the geometric map center
-    actually lies on the island — i.e. at least one of the center
-    block(s) is present in the island's block set.
-
-    The center type depends on the bounding box dimensions (odd/even):
-      - odd  x odd  -> 1 center block
-      - even x odd  -> 2 center blocks (2x1)
-      - odd  x even -> 2 center blocks (1x2)
-      - even x even -> 4 center blocks (2x2)
-
-    If the center is void (no island contains any center block),
-    no island is marked has_center.
-    """
-    if not islands:
-        return
-
-    # Determine which block(s) form the geometric center.
-    # map_center is (cx, cz) = midpoint of the bounding box.
-    # For odd dimension the center is at an integer + 0.5 -> single block.
-    # For even dimension the center is at an integer -> two blocks straddle it.
-    cx, cz = map_center
-    cx_is_half = (cx % 1 != 0)  # odd dimension -> x.5
-    cz_is_half = (cz % 1 != 0)
-
-    center_blocks = set()
-    if cx_is_half and cz_is_half:
-        # single block
-        center_blocks.add((int(cx - 0.5), int(cz - 0.5)))
-    elif not cx_is_half and cz_is_half:
-        # 2x1 line
-        bz = int(cz - 0.5)
-        center_blocks.add((int(cx) - 1, bz))
-        center_blocks.add((int(cx), bz))
-    elif cx_is_half and not cz_is_half:
-        # 1x2 line
-        bx = int(cx - 0.5)
-        center_blocks.add((bx, int(cz) - 1))
-        center_blocks.add((bx, int(cz)))
-    else:
-        # 2x2 area
-        for dx in (-1, 0):
-            for dz in (-1, 0):
-                center_blocks.add((int(cx) + dx, int(cz) + dz))
-
-    for island in islands:
-        cx_i, cz_i = island.center
-        dist = np.sqrt((cx_i - map_center[0]) ** 2 + (cz_i - map_center[1]) ** 2)
-        island.distance_to_center = float(dist)
-
-        # Check if any center block is in this island
-        block_set = set(map(tuple, island.blocks))
-        if center_blocks & block_set:
-            island.has_center = True
+# Re-export from ctw.core.minecraft for backward compatibility
+from ctw.core.minecraft.center import compute_map_center, classify_island_center
 
 
 def annotate_skeleton_pois(

@@ -8,8 +8,8 @@ until reaching another node pixel. No pathfinding, no shortest-path search.
 import numpy as np
 from typing import List, Tuple, Optional, Set, Dict, FrozenSet
 
-from .datatypes import SkeletonPixels, GraphNode, GraphEdge
-from .nodes import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
+from ctw.core.models.skeleton import SkeletonPixels, GraphNode, GraphEdge
+from ctw.core.math.offsets import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 
 
 def extract_edges(

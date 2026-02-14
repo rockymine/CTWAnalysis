@@ -3,9 +3,11 @@ Skeleton analysis sub-package.
 
 Provides island skeletonization and graph extraction with D4 symmetry
 canonicalization, deterministic edge walking, and intra-island pathfinding.
+
+Data types are re-exported from ctw.core.models for backward compatibility.
 """
 
-from .datatypes import (
+from ctw.core.models.skeleton import (
     CanonicalTransform,
     CanonicalIsland,
     RasterMask,
@@ -16,7 +18,7 @@ from .datatypes import (
     IslandResult,
 )
 
-from .canonicalize import canonicalize_island
+from ctw.core.math.d4 import canonicalize_island
 from .rasterize import rasterize_island
 from .skeletonize import compute_skeleton
 from .nodes import compute_pixel_degrees, extract_nodes
@@ -32,7 +34,7 @@ from .pathfinding import (
 )
 
 __all__ = [
-    # Data types
+    # Data types (from ctw.core.models)
     "CanonicalTransform",
     "CanonicalIsland",
     "RasterMask",

@@ -10,8 +10,8 @@ import numpy as np
 from typing import List, Tuple, Dict, Set
 from collections import deque
 
-from .datatypes import GraphNode, GraphEdge
-from .nodes import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
+from ctw.core.models.skeleton import GraphNode, GraphEdge
+from ctw.core.math.offsets import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 
 
 def merge_junction_blobs(

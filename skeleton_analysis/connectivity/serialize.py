@@ -9,20 +9,9 @@ import os
 from pathlib import Path
 from typing import List
 
-import numpy as np
+from ctw.core.builders.serialization import json_default as _json_default
 
 from .map_graph import DEFAULT_CONNECTIVITY_PARAMS
-
-
-def _json_default(obj):
-    """JSON serializer for numpy types."""
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
 def save_initial_map_graph(

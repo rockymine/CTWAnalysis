@@ -92,7 +92,7 @@ def triangulate_islands_canonical(
         Total number of triangles across all islands
     """
     from shapely.geometry import Polygon
-    from skeleton_analysis.canonicalize import canonicalize_island
+    from ctw.core.math.d4 import canonicalize_island
 
     # Step 1: Canonicalize all islands and group by canonical_key
     groups: Dict[str, List[Tuple[Island, object]]] = {}
