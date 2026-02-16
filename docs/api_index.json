@@ -1665,10 +1665,11 @@
         "returns": "None"
       },
       {
-        "name": "plot_world_overview",
+        "name": "plot_map_overview",
         "args": [
           "results",
-          "output_path"
+          "output_path",
+          "map_context"
         ],
         "returns": "None"
       },

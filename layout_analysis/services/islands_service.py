@@ -168,7 +168,6 @@ def _generate_skeleton_visuals(
     Essential outputs (always generated):
         - island_detail.png
         - unique_islands.png
-        - world_overview.png
 
     Debug outputs (only when plots=True):
         - island_comparison.png, island_statistics.png, island_report.txt
@@ -179,7 +178,6 @@ def _generate_skeleton_visuals(
     from skeleton_analysis.visualize import (
         plot_island_debug,
         plot_unique_islands,
-        plot_world_overview,
         generate_skeleton_report,
     )
 
@@ -210,15 +208,10 @@ def _generate_skeleton_visuals(
                     str(skeleton_output_dir / f'island_{rep_id}_debug.png'),
                 )
 
-    # Essential: unique islands overview and world overview
+    # Essential: unique islands overview
     plot_unique_islands(
         skeleton_results, canonical_groups,
         str(skeleton_output_dir / 'unique_islands.png'),
-    )
-
-    plot_world_overview(
-        skeleton_results,
-        str(skeleton_output_dir / 'world_overview.png'),
     )
 
     if plots:
@@ -584,10 +577,18 @@ def analyze_islands_step(
     )
 
     # Stage 6: Build MapContext + initial map_graph.json
-    _build_context(
+    map_ctx = _build_context(
         map_folder, islands, df, skeleton_results, canonical_groups,
         map_data_obj, map_center_pt, poi_assignments, island_output_dir,
         map_output_dir=_map_output_dir,
+    )
+
+    # Stage 7: Map overview (needs map_context for polygons + build regions)
+    from skeleton_analysis.visualize import plot_map_overview
+    plot_map_overview(
+        skeleton_results,
+        str(skeleton_output_dir / 'map_overview.png'),
+        map_context=map_ctx.to_dict(),
     )
 
     # Cleanup

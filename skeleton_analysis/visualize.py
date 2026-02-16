@@ -4,7 +4,7 @@ Skeleton visualization: debug images and overview plots.
 Generates:
 1. Per-island 4-panel debug images (mask, skeleton, nodes, edges)
 2. Unique islands grid (one per canonical_key)
-3. World overview (all islands in world orientation)
+3. Map overview (all islands in world orientation with polygons + build regions)
 """
 
 import os
@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
 
+from visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
 
 
@@ -196,26 +197,31 @@ def plot_unique_islands(
     print(f"Unique islands overview saved to: {output_path}")
 
 
-def plot_world_overview(
+def plot_map_overview(
     results: List[IslandResult],
-    output_path: str
+    output_path: str,
+    map_context: Optional[dict] = None,
 ) -> None:
     """
     Full map with all islands in world orientation.
-    Skeleton graphs transformed back to world coordinates.
+    Skeleton graphs transformed back to world coordinates,
+    with island polygon outlines and build regions from map_context.
 
     Args:
         results: List of IslandResult
         output_path: Path to save the image
+        map_context: Parsed map_context dict (for island outlines + build regions)
     """
     if not results:
         return
 
     fig, ax = plt.subplots(figsize=(16, 12))
 
-    # Collect all world blocks for background
-    all_blocks_x = []
-    all_blocks_z = []
+    # Draw build region and island outlines from map_context (bottom layers)
+    has_build = False
+    if map_context is not None:
+        has_build = draw_build_region(ax, map_context)
+        draw_island_outlines(ax, map_context)
 
     # Generate distinct colors per island
     cmap = plt.cm.Set2
@@ -232,8 +238,6 @@ def plot_world_overview(
             world_blocks[:, 0], world_blocks[:, 1],
             c=[color], s=1, alpha=0.2, rasterized=True
         )
-        all_blocks_x.extend(world_blocks[:, 0])
-        all_blocks_z.extend(world_blocks[:, 1])
 
         # Transform skeleton edges to world coords and draw
         for edge in result.graph.edges:
@@ -257,7 +261,7 @@ def plot_world_overview(
     ax.set_aspect('equal')
     ax.set_xlabel("X (world)")
     ax.set_ylabel("Z (world)")
-    ax.set_title(f"World Overview - {n_islands} islands")
+    ax.set_title(f"Map Overview - {n_islands} islands")
     ax.invert_yaxis()
 
     # Legend
@@ -265,13 +269,17 @@ def plot_world_overview(
         mpatches.Patch(color='lime', label='Endpoints'),
         mpatches.Patch(color='red', label='Junctions'),
     ]
+    if has_build:
+        legend_elements.append(
+            mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void')
+        )
     ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"World overview saved to: {output_path}")
+    print(f"Map overview saved to: {output_path}")
 
 
 def generate_skeleton_report(

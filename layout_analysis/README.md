@@ -54,7 +54,7 @@ builds polygons from world-space blocks.
 | `map_graph.json` | Inter-island connectivity graph |
 | `island_analysis/island_triangulation_detail.png` | Triangulation overview (essential) |
 | `island_analysis/skeleton/unique_islands.png` | Canonical shapes (essential) |
-| `island_analysis/skeleton/world_overview.png` | World skeleton overlay (essential) |
+| `island_analysis/skeleton/map_overview.png` | Skeleton with polygons + build regions (essential) |
 | `island_analysis/map_connectivity.png` | Connectivity graph (essential) |
 
 Debug outputs (with `--plots`): per-island skeleton/POI images, pathfinding

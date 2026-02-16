@@ -116,7 +116,7 @@ pathfinding grids, and the full island report. Use `--basic` for quick detection
 without the full analysis stack.
 
 **Essential figures** (always generated):
-`island_triangulation_detail.png`, `unique_islands.png`, `world_overview.png`,
+`island_triangulation_detail.png`, `unique_islands.png`, `map_overview.png`,
 `map_connectivity.png`
 
 **Debug figures** (only with `--plots`):
