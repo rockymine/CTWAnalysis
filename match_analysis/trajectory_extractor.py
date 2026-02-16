@@ -19,6 +19,32 @@ EVENT_TYPES = {
 }
 
 
+def _bulk_insert(conn, table: str, match_id: int, df: pd.DataFrame,
+                  columns: list[str], nullable_int_cols: list[str] = ()):
+    """Delete previous rows for match_id, then bulk-insert df into table.
+
+    Args:
+        conn: DuckDB connection.
+        table: Target table name.
+        match_id: Match ID (used for DELETE and added as column).
+        df: DataFrame to insert.
+        columns: Column names for INSERT (must include 'match_id').
+        nullable_int_cols: Columns to cast to pandas Int64 (nullable integer).
+
+    Returns:
+        Number of rows inserted.
+    """
+    conn.execute(f"DELETE FROM {table} WHERE match_id = ?", [match_id])
+    if len(df) == 0:
+        return 0
+    df['match_id'] = match_id
+    for col in nullable_int_cols:
+        df[col] = df[col].astype('Int64')
+    col_list = ', '.join(columns)
+    conn.execute(f"INSERT INTO {table} ({col_list}) SELECT {col_list} FROM df")
+    return len(df)
+
+
 def _get_classifier(map_slug: str):
     """Build a PositionClassifier for the given map, or None if data missing."""
     context_path = Path(f'output/{map_slug}/island_analysis/map_context.json')
@@ -270,77 +296,35 @@ def process_match(match_id: int):
 
         print(f"Saved life segment metadata to {output_file}")
 
-        # Clear any previous segments for this match (supports reprocessing)
-        conn.execute(
-            "DELETE FROM life_segments WHERE match_id = ?", [match_id]
-        )
-
-        # Bulk insert life segments into DuckDB
-        metadata_df['match_id'] = match_id
-        conn.execute("""
-            INSERT INTO life_segments
-                (match_id, player_id, segment_idx,
-                 start_timestamp, end_timestamp, duration, outcome,
-                 spawn_x, spawn_z,
-                 position_count, kill_count, wool_touches, wool_captures)
-            SELECT match_id, player_id, segment_idx,
-                   start_timestamp, end_timestamp, duration, outcome,
-                   spawn_x, spawn_z,
-                   position_count, kill_count, wool_touches, wool_captures
-            FROM metadata_df
-        """)
-
-        print(f"Inserted {len(metadata_df)} life segments into database")
+        n = _bulk_insert(conn, 'life_segments', match_id, metadata_df,
+                         ['match_id', 'player_id', 'segment_idx',
+                          'start_timestamp', 'end_timestamp', 'duration',
+                          'outcome', 'spawn_x', 'spawn_z',
+                          'position_count', 'kill_count',
+                          'wool_touches', 'wool_captures'])
+        print(f"Inserted {n} life segments into database")
 
         # Build segment lookup once — shared by combat, position, wool extractors
         find_segment_idx = _build_segment_lookup(life_segments_df)
 
         # Extract and insert combat events
         combat_df = extract_combat_events(raw_df, find_segment_idx)
-        conn.execute(
-            "DELETE FROM combat_events WHERE match_id = ?", [match_id]
-        )
-        combat_df['match_id'] = match_id
-        combat_df['segment_idx'] = combat_df['segment_idx'].astype('Int64')
-        combat_df['victim_id'] = combat_df['victim_id'].astype('Int64')
-        conn.execute("""
-            INSERT INTO combat_events
-                (match_id, timestamp, event_type, player_id,
-                 victim_id, x, y, z, segment_idx)
-            SELECT match_id, timestamp, event_type, player_id,
-                   victim_id, x, y, z, segment_idx
-            FROM combat_df
-        """)
-        print(f"Inserted {len(combat_df)} combat events into database")
+        n = _bulk_insert(conn, 'combat_events', match_id, combat_df,
+                         ['match_id', 'timestamp', 'event_type', 'player_id',
+                          'victim_id', 'x', 'y', 'z', 'segment_idx'],
+                         nullable_int_cols=['segment_idx', 'victim_id'])
+        print(f"Inserted {n} combat events into database")
 
         # Extract and insert wool events
         wool_df = extract_wool_events(raw_df, find_segment_idx)
-
-        conn.execute(
-            "DELETE FROM wool_events WHERE match_id = ?", [match_id]
-        )
-        if len(wool_df) > 0:
-            wool_df['match_id'] = match_id
-            wool_df['segment_idx'] = wool_df['segment_idx'].astype('Int64')
-            wool_df['wool_id'] = wool_df['wool_id'].astype('Int64')
-            conn.execute("""
-                INSERT INTO wool_events
-                    (match_id, timestamp, event_type, player_id,
-                     wool_id, x, y, z, segment_idx)
-                SELECT match_id, timestamp, event_type, player_id,
-                       wool_id, x, y, z, segment_idx
-                FROM wool_df
-            """)
-        print(f"Inserted {len(wool_df)} wool events into database")
+        n = _bulk_insert(conn, 'wool_events', match_id, wool_df,
+                         ['match_id', 'timestamp', 'event_type', 'player_id',
+                          'wool_id', 'x', 'y', 'z', 'segment_idx'],
+                         nullable_int_cols=['segment_idx', 'wool_id'])
+        print(f"Inserted {n} wool events into database")
 
         # Extract and insert position events
         position_df = extract_position_events(raw_df, find_segment_idx)
-
-        conn.execute(
-            "DELETE FROM position_events WHERE match_id = ?", [match_id]
-        )
-        position_df['match_id'] = match_id
-        position_df['segment_idx'] = position_df['segment_idx'].astype('Int64')
 
         # Spatial annotation via PositionClassifier
         spatial_cols = ['location_type', 'island_id',
@@ -354,9 +338,6 @@ def process_match(match_id: int):
             bulk = classifier.classify_bulk(xs, zs)
             for col in spatial_cols:
                 position_df[col] = bulk[col]
-            # Cast nullable int columns
-            for col in spatial_cols[1:]:
-                position_df[col] = position_df[col].astype('Int64')
             n_island = (bulk['location_type'] == 'island').sum()
             n_build = (bulk['location_type'] == 'build_region').sum()
             n_void = (bulk['location_type'] == 'void').sum()
@@ -366,19 +347,16 @@ def process_match(match_id: int):
             for col in spatial_cols:
                 position_df[col] = None
 
-        conn.execute("""
-            INSERT INTO position_events
-                (match_id, timestamp, player_id, x, y, z, segment_idx,
-                 location_type, island_id,
-                 nearest_node_1, nearest_node_2,
-                 nearest_island_1, nearest_island_2)
-            SELECT match_id, timestamp, player_id, x, y, z, segment_idx,
-                   location_type, island_id,
-                   nearest_node_1, nearest_node_2,
-                   nearest_island_1, nearest_island_2
-            FROM position_df
-        """)
-        print(f"Inserted {len(position_df)} position events into database")
+        n = _bulk_insert(
+            conn, 'position_events', match_id, position_df,
+            ['match_id', 'timestamp', 'player_id', 'x', 'y', 'z',
+             'segment_idx', 'location_type', 'island_id',
+             'nearest_node_1', 'nearest_node_2',
+             'nearest_island_1', 'nearest_island_2'],
+            nullable_int_cols=['segment_idx', 'island_id',
+                               'nearest_node_1', 'nearest_node_2',
+                               'nearest_island_1', 'nearest_island_2'])
+        print(f"Inserted {n} position events into database")
 
         # Extract and insert team segments
         from match_analysis.team_extractor import (
@@ -392,26 +370,12 @@ def process_match(match_id: int):
             print("  Team segments will be marked 'unknown'")
 
         team_df = extract_team_segments(raw_df, spawn_centers)
-
-        conn.execute(
-            "DELETE FROM player_team_segments WHERE match_id = ?", [match_id]
-        )
-
-        if len(team_df) > 0:
-            team_df['match_id'] = match_id
-            team_df['end_timestamp'] = team_df['end_timestamp'].astype('Int64')
-            conn.execute("""
-                INSERT INTO player_team_segments
-                    (match_id, player_id, team,
-                     start_timestamp, end_timestamp,
-                     spawn_x, spawn_z)
-                SELECT match_id, player_id, team,
-                       start_timestamp, end_timestamp,
-                       spawn_x, spawn_z
-                FROM team_df
-            """)
-
-        print(f"Inserted {len(team_df)} team segments into database")
+        n = _bulk_insert(
+            conn, 'player_team_segments', match_id, team_df,
+            ['match_id', 'player_id', 'team',
+             'start_timestamp', 'end_timestamp', 'spawn_x', 'spawn_z'],
+            nullable_int_cols=['end_timestamp'])
+        print(f"Inserted {n} team segments into database")
 
         team_time = time.time() - start_time
         conn.execute(
