@@ -79,62 +79,80 @@ def extract_life_segments_from_match(df: pd.DataFrame) -> pd.DataFrame:
     - player_id, segment_idx
     - start_timestamp, end_timestamp, duration
     - outcome ('death' or 'match_end')
-    - Event counts (kills, wool_touches, wool_captures)
-    - All position records for this segment
+    - Event counts (kills, wool_touches, wool_captures, position_count)
     """
+    sorted_df = df.sort_values(['player_id', 'timestamp'])
 
-    life_segments = []
+    # Build spawn/death tables with per-player ordinal index
+    spawns = sorted_df[sorted_df['event_type'] == 2].copy()
+    deaths = sorted_df[sorted_df['event_type'] == 4].copy()
 
-    for player_id in df['player_id'].dropna().unique():
-        player_df = df[df['player_id'] == player_id].sort_values('timestamp')
+    if len(spawns) == 0:
+        return pd.DataFrame(columns=[
+            'player_id', 'segment_idx', 'start_timestamp', 'end_timestamp',
+            'duration', 'outcome', 'spawn_x', 'spawn_z',
+            'position_count', 'kill_count', 'wool_touches', 'wool_captures',
+        ])
 
-        spawn_events = player_df[player_df['event_type'] == 2]
-        death_events = player_df[player_df['event_type'] == 4]
+    spawns['segment_idx'] = spawns.groupby('player_id').cumcount()
+    deaths['segment_idx'] = deaths.groupby('player_id').cumcount()
 
-        for segment_idx, spawn_row in enumerate(spawn_events.itertuples()):
-            start_time = spawn_row.timestamp
+    # Pair nth spawn with nth death per player
+    segments = spawns[['player_id', 'segment_idx', 'timestamp', 'x', 'z']].rename(
+        columns={'timestamp': 'start_timestamp', 'x': 'spawn_x', 'z': 'spawn_z'},
+    )
+    death_times = deaths[['player_id', 'segment_idx', 'timestamp']].rename(
+        columns={'timestamp': 'end_timestamp'},
+    )
+    segments = segments.merge(death_times, on=['player_id', 'segment_idx'], how='left')
 
-            # Find next death after this spawn
-            next_deaths = death_events[death_events['timestamp'] > start_time]
+    # Segments without a death end at the player's last event
+    last_ts = sorted_df.groupby('player_id')['timestamp'].last()
+    no_death = segments['end_timestamp'].isna()
+    segments.loc[no_death, 'end_timestamp'] = (
+        segments.loc[no_death, 'player_id'].map(last_ts)
+    )
+    segments['outcome'] = no_death.map({True: 'match_end', False: 'death'})
+    segments['duration'] = (
+        segments['end_timestamp'] - segments['start_timestamp']
+    ).astype(float)
 
-            if len(next_deaths) > 0:
-                end_time = next_deaths.iloc[0]['timestamp']
-                outcome = 'death'
-            else:
-                end_time = player_df['timestamp'].iloc[-1]
-                outcome = 'match_end'
+    # Assign segment_idx to all events via merge_asof (backward = last spawn ≤ ts)
+    events = sorted_df[sorted_df['event_type'].isin([3, 5, 6, 7])].copy()
+    if len(events) > 0:
+        spawn_keys = spawns[['player_id', 'timestamp', 'segment_idx']].sort_values(
+            'timestamp',
+        )
+        events = events.sort_values('timestamp')
+        events = pd.merge_asof(
+            events, spawn_keys,
+            on='timestamp', by='player_id', direction='backward',
+            suffixes=('', '_seg'),
+        )
+        # Aggregate event counts per segment
+        counts = events.groupby(['player_id', 'segment_idx'])['event_type'].agg(
+            kill_count=lambda x: (x == 3).sum(),
+            position_count=lambda x: (x == 5).sum(),
+            wool_touches=lambda x: (x == 6).sum(),
+            wool_captures=lambda x: (x == 7).sum(),
+        ).reset_index()
+        segments = segments.merge(counts, on=['player_id', 'segment_idx'], how='left')
+    else:
+        for col in ['kill_count', 'position_count', 'wool_touches', 'wool_captures']:
+            segments[col] = 0
 
-            segment_events = player_df[
-                (player_df['timestamp'] >= start_time)
-                & (player_df['timestamp'] <= end_time)
-            ]
+    # Fill NaN counts (segments with no matching events)
+    for col in ['kill_count', 'position_count', 'wool_touches', 'wool_captures']:
+        segments[col] = segments[col].fillna(0).astype(int)
 
-            if len(segment_events) == 0:
-                continue
+    # Cast to final types
+    segments['player_id'] = segments['player_id'].astype(int)
+    segments['start_timestamp'] = segments['start_timestamp'].astype(int)
+    segments['end_timestamp'] = segments['end_timestamp'].astype(int)
 
-            kill_count = len(segment_events[segment_events['event_type'] == 3])
-            wool_touches = len(segment_events[segment_events['event_type'] == 6])
-            wool_captures = len(segment_events[segment_events['event_type'] == 7])
-
-            positions = segment_events[segment_events['event_type'] == 5]
-
-            life_segments.append({
-                'player_id': int(player_id),
-                'segment_idx': segment_idx,
-                'start_timestamp': int(start_time),
-                'end_timestamp': int(end_time),
-                'duration': float(end_time - start_time),
-                'outcome': outcome,
-                'spawn_x': float(spawn_row.x),
-                'spawn_z': float(spawn_row.z),
-                'position_count': len(positions),
-                'kill_count': kill_count,
-                'wool_touches': wool_touches,
-                'wool_captures': wool_captures,
-                'positions': positions.to_dict('records'),
-            })
-
-    return pd.DataFrame(life_segments)
+    return segments[['player_id', 'segment_idx', 'start_timestamp', 'end_timestamp',
+                     'duration', 'outcome', 'spawn_x', 'spawn_z',
+                     'position_count', 'kill_count', 'wool_touches', 'wool_captures']]
 
 
 def _build_segment_lookup(life_segments_df: pd.DataFrame):
@@ -290,13 +308,11 @@ def process_match(match_id: int):
         output_file = Path(f'match_analysis/trajectories/{match_id}.parquet')
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save metadata only (positions column dropped - will be used in later phases)
-        metadata_df = life_segments_df.drop(columns=['positions'])
-        metadata_df.to_parquet(output_file, index=False)
+        life_segments_df.to_parquet(output_file, index=False)
 
         print(f"Saved life segment metadata to {output_file}")
 
-        n = _bulk_insert(conn, 'life_segments', match_id, metadata_df,
+        n = _bulk_insert(conn, 'life_segments', match_id, life_segments_df,
                          ['match_id', 'player_id', 'segment_idx',
                           'start_timestamp', 'end_timestamp', 'duration',
                           'outcome', 'spawn_x', 'spawn_z',
