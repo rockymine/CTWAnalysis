@@ -133,8 +133,6 @@ Examples:
     p.add_argument('--player', required=True, type=_player_arg,
                    help='Player ID to visualize, or ALL for every player')
     p.add_argument('--output', help='Output PNG path (default: auto-generated)')
-    p.add_argument('--snap-skeleton', action='store_true',
-                   help='Snap on-island positions to skeleton paths')
     p.add_argument('--no-deaths', action='store_true',
                    help='Hide death markers')
     p.add_argument('--no-kills', action='store_true',
@@ -435,9 +433,8 @@ def handle_trace(args):
     if map_context is None:
         return
 
-    needs_graph = args.snap_skeleton or args.color_mode in ('team', 'location')
     map_graph = None
-    if needs_graph:
+    if args.color_mode in ('team', 'location'):
         map_graph = _load_map_graph(map_output_dir, map_folder, required=True)
         if map_graph is None:
             return
@@ -457,7 +454,6 @@ def handle_trace(args):
             map_context, valid_match_ids[0], [], output_path,
             match_ids=valid_match_ids,
             map_graph=map_graph,
-            snap_skeleton=args.snap_skeleton,
             show_deaths=not args.no_deaths,
             show_kills=not args.no_kills,
             show_wool=not args.no_wool,
@@ -500,7 +496,6 @@ def handle_trace(args):
         plot_player_traces(
             map_context, match_id, player_ids, output_path,
             map_graph=map_graph,
-            snap_skeleton=args.snap_skeleton,
             show_deaths=not args.no_deaths,
             show_kills=not args.no_kills,
             show_wool=not args.no_wool,

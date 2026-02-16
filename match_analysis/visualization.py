@@ -112,7 +112,6 @@ def plot_player_traces(
     player_ids: list[int],
     output_path: Path,
     map_graph: dict = None,
-    snap_skeleton: bool = False,
     show_deaths: bool = True,
     show_kills: bool = True,
     show_wool: bool = True,
@@ -132,9 +131,8 @@ def plot_player_traces(
         match_id: Match ID for single-match mode.
         player_ids: List of player IDs to visualize.
         output_path: Where to save the PNG.
-        map_graph: Parsed map_graph.json dict (needed for snap_skeleton,
+        map_graph: Parsed map_graph.json dict (needed for
             color_mode 'team' or 'location').
-        snap_skeleton: Snap on-island positions to skeleton paths.
         show_deaths: Draw death markers.
         show_kills: Draw kill markers.
         show_wool: Draw wool event markers.
@@ -155,8 +153,7 @@ def plot_player_traces(
 
     # Build classifier when needed
     classifier = None
-    needs_classifier = snap_skeleton or color_mode in ('team', 'location')
-    if needs_classifier and map_graph is not None:
+    if color_mode in ('team', 'location') and map_graph is not None:
         from match_analysis.position_classifier import PositionClassifier
         classifier = PositionClassifier(map_context, map_graph)
 
@@ -252,20 +249,13 @@ def plot_player_traces(
         else:  # location — segment color used only for markers
             color = _LOCATION_COLORS.get('island', '#95a5a6')
 
-        # Classify trace events (once, reuse for snap + location coloring)
+        # Classify trace events for location coloring
         trace = seg['trace_events']
         enriched_df = None
         if classifier is not None and len(trace) > 0:
-            enriched_df = classifier.classify_dataframe(trace, snap_skeleton=snap_skeleton)
-            if snap_skeleton:
-                trace_xs = enriched_df['snap_x'].values
-                trace_zs = enriched_df['snap_z'].values
-            else:
-                trace_xs = trace['x'].values
-                trace_zs = trace['z'].values
-        else:
-            trace_xs = trace['x'].values
-            trace_zs = trace['z'].values
+            enriched_df = classifier.classify_dataframe(trace)
+        trace_xs = trace['x'].values
+        trace_zs = trace['z'].values
 
         xs = np.concatenate([[seg['spawn_x']], trace_xs])
         zs = np.concatenate([[seg['spawn_z']], trace_zs])

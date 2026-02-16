@@ -120,52 +120,6 @@ def _draw_skeleton_nodes(ax, map_context, map_graph):
                 )
 
 
-def _draw_void_links(ax, map_graph):
-    """Draw void link edges (dashed red) from map_graph JSON data."""
-    graph_section = map_graph.get('map_graph', {})
-    node_lookup = {
-        n['map_node_id']: n for n in graph_section.get('nodes', [])
-    }
-
-    void_edges = [
-        e for e in graph_section.get('edges', [])
-        if e['edge_type'] == 'void_link'
-    ]
-    if not void_edges:
-        return
-
-    max_dist = max(e['distance'] for e in void_edges)
-    for edge in void_edges:
-        src_c = edge.get('src_coords', node_lookup.get(edge['src'], {}).get('coords'))
-        dst_c = edge.get('dst_coords', node_lookup.get(edge['dst'], {}).get('coords'))
-        if src_c is None or dst_c is None:
-            continue
-
-        thickness = 1.0 + 2.0 * (1.0 - edge['distance'] / max_dist)
-        ax.plot(
-            [src_c[0], dst_c[0]],
-            [src_c[1], dst_c[1]],
-            color='#e63946',
-            linestyle='--',
-            linewidth=thickness,
-            alpha=0.8,
-            zorder=5,
-        )
-
-
-def _draw_map_nodes(ax, map_graph):
-    """Draw map-level endpoint nodes (orange dots)."""
-    graph_section = map_graph.get('map_graph', {})
-    for node in graph_section.get('nodes', []):
-        x, z = node['coords']
-        ax.scatter(
-            x, z,
-            s=20, c='orange',
-            edgecolors='black', linewidths=0.4,
-            zorder=9,
-        )
-
-
 # ── Image generators ───────────────────────────────────────────────────
 
 def gen_blocks(map_folder, map_context, output_path):
@@ -218,21 +172,6 @@ def gen_outline(map_context, output_path):
     _save(fig, output_path)
 
 
-def gen_connectivity(map_context, map_graph, output_path):
-    """05 — Full connectivity graph (all layers, no legend/text)."""
-    fig, ax = _new_figure()
-    draw_build_region(ax, map_context)
-    draw_island_outlines(ax, map_context)
-    _draw_skeleton_edges(ax, map_context, map_graph)
-    _draw_skeleton_nodes(ax, map_context, map_graph)
-    draw_pois(ax, map_context)
-    _draw_void_links(ax, map_graph)
-    _draw_map_nodes(ax, map_graph)
-    _set_bounds_from_context(ax, map_context)
-    ax.invert_yaxis()
-    _save(fig, output_path)
-
-
 def gen_trace_single(map_context, match_file, player_id, map_graph, map_folder,
                      output_path):
     """06 — Single player trace (no legend/stats/title)."""
@@ -275,9 +214,8 @@ STABLE_NAMES = [
     '02_regions.png',
     '03_skeleton.png',
     '04_outline.png',
-    '05_connectivity.png',
-    '06_trace_single.png',
-    '07_trace_team.png',
+    '05_trace_single.png',
+    '06_trace_team.png',
 ]
 
 
@@ -355,46 +293,41 @@ def main():
     # Generate images
     outputs = []
 
-    print("\n[1/7] Block layout...")
+    print("\n[1/6] Block layout...")
     path = output_dir / STABLE_NAMES[0]
     gen_blocks(layout_dir, map_context, path)
     outputs.append(path)
 
-    print("[2/7] XML regions...")
+    print("[2/6] XML regions...")
     path = output_dir / STABLE_NAMES[1]
     gen_regions(map_context, path)
     outputs.append(path)
 
-    print("[3/7] Skeleton overlay...")
+    print("[3/6] Skeleton overlay...")
     path = output_dir / STABLE_NAMES[2]
     gen_skeleton(map_context, map_graph, path)
     outputs.append(path)
 
-    print("[4/7] Polygon outlines...")
+    print("[4/6] Polygon outlines...")
     path = output_dir / STABLE_NAMES[3]
     gen_outline(map_context, path)
     outputs.append(path)
 
-    print("[5/7] Connectivity graph...")
-    path = output_dir / STABLE_NAMES[4]
-    gen_connectivity(map_context, map_graph, path)
-    outputs.append(path)
-
     if match_file:
-        print(f"[6/7] Single player trace (player {args.player}, match {args.match})...")
-        path = output_dir / STABLE_NAMES[5]
+        print(f"[5/6] Single player trace (player {args.player}, match {args.match})...")
+        path = output_dir / STABLE_NAMES[4]
         gen_trace_single(map_context, match_file, args.player, map_graph,
                          layout_dir, path)
         outputs.append(path)
 
-        print(f"[7/7] Team trace ({len(all_player_ids)} players, match {args.match})...")
-        path = output_dir / STABLE_NAMES[6]
+        print(f"[6/6] Team trace ({len(all_player_ids)} players, match {args.match})...")
+        path = output_dir / STABLE_NAMES[5]
         gen_trace_team(map_context, match_file, all_player_ids, map_graph,
                        layout_dir, path)
         outputs.append(path)
     else:
-        print("[6/7] Skipped (no match data)")
-        print("[7/7] Skipped (no match data)")
+        print("[5/6] Skipped (no match data)")
+        print("[6/6] Skipped (no match data)")
 
     print(f"\nDone. Generated {len(outputs)} images in {output_dir}")
 

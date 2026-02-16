@@ -1,7 +1,7 @@
 """
 Island Visualization
 
-Visualization functions for displaying detected islands and their triangulations.
+Visualization functions for displaying detected islands and their polygons.
 """
 
 import numpy as np
@@ -31,7 +31,6 @@ def plot_islands(
     title: str = "Detected Islands",
     show_blocks: bool = False,
     show_hulls: bool = True,
-    show_triangles: bool = False,
     show_labels: bool = True,
     show_centers: bool = True,
     alpha: float = 0.5,
@@ -45,8 +44,7 @@ def plot_islands(
         ax: Optional matplotlib axes
         title: Plot title
         show_blocks: Show individual block positions
-        show_hulls: Show convex hulls
-        show_triangles: Show triangulation
+        show_hulls: Show polygon outlines
         show_labels: Show island IDs
         show_centers: Show island centers
         alpha: Transparency level
@@ -81,14 +79,6 @@ def plot_islands(
                 hole = np.array(hole_coords)
                 ax.fill(hole[:, 0], hole[:, 1], color='white', edgecolor='black', linewidth=1, alpha=0.9)
 
-        # Plot triangles
-        if show_triangles and island.triangles:
-            for tri in island.triangles:
-                triangle = Polygon(tri, closed=True, fill=True,
-                                  facecolor=color, edgecolor='darkgray',
-                                  alpha=alpha * 0.8, linewidth=0.5)
-                ax.add_patch(triangle)
-
         # Plot center
         if show_centers:
             ax.scatter(*island.center, c='black', s=50, marker='x', zorder=5)
@@ -116,20 +106,20 @@ def plot_islands(
     return fig, ax
 
 
-def plot_island_triangulation(
+def plot_island_polygons(
     islands: List,
     ax=None,
-    title: str = "Island Triangulation",
+    title: str = "Island Polygons",
     show_blocks: bool = True,
     show_holes: bool = True,
     alpha: float = 0.6,
     figsize: Tuple[int, int] = (14, 10)
 ):
     """
-    Plot island triangulation with optional hole visualization.
+    Plot island polygon outlines with optional hole visualization.
 
     Args:
-        islands: List of Island objects with triangles
+        islands: List of Island objects with simplified_polygon
         ax: Optional matplotlib axes
         title: Plot title
         show_blocks: Show original block positions
@@ -157,17 +147,16 @@ def plot_island_triangulation(
                 alpha=0.3
             )
 
-        # Plot triangles
-        if island.triangles:
-            for tri in island.triangles:
-                triangle = Polygon(
-                    tri, closed=True, fill=True,
-                    facecolor=color, edgecolor='black',
-                    alpha=alpha, linewidth=0.3
-                )
-                ax.add_patch(triangle)
+        # Plot polygon outline
+        if island.simplified_polygon is not None:
+            exterior = np.array(island.simplified_polygon['exterior'])
+            ax.fill(exterior[:, 0], exterior[:, 1], color=color, alpha=alpha, edgecolor='black', linewidth=1)
+            for hole_coords in island.simplified_polygon.get('holes', []):
+                hole = np.array(hole_coords)
+                ax.fill(hole[:, 0], hole[:, 1], color='white', edgecolor='red',
+                        linewidth=2, alpha=0.8)
 
-        # Plot holes
+        # Plot holes from detection
         if show_holes and island.holes:
             for hole in island.holes:
                 hole_closed = np.vstack([hole, hole[0]])
@@ -177,7 +166,7 @@ def plot_island_triangulation(
 
         # Label
         ax.annotate(
-            f'{island.id}\n({len(island.triangles)} tri)',
+            f'{island.id}',
             island.center,
             fontsize=9,
             ha='center',
@@ -239,20 +228,20 @@ def plot_island_comparison(
         ax1.grid(True, alpha=0.3)
     else:
         plot_islands(islands, ax=ax1, title="1. Detected Islands (Blocks)",
-                    show_blocks=True, show_hulls=False, show_triangles=False,
+                    show_blocks=True, show_hulls=False,
                     show_labels=True, alpha=0.7)
 
-    # 2. Convex hulls
+    # 2. Simplified polygons
     ax2 = fig.add_subplot(gs[0, 1])
     plot_islands(islands, ax=ax2, title="2. Simplified Polygons",
-                show_blocks=False, show_hulls=True, show_triangles=False,
+                show_blocks=False, show_hulls=True,
                 show_labels=True, alpha=0.5)
 
-    # 3. Triangulation
+    # 3. Polygons with holes
     ax3 = fig.add_subplot(gs[1, 0])
-    plot_island_triangulation(islands, ax=ax3,
-                             title="3. Triangle Mesh Reconstruction",
-                             show_blocks=False, show_holes=True, alpha=0.6)
+    plot_island_polygons(islands, ax=ax3,
+                         title="3. Polygon Outlines",
+                         show_blocks=False, show_holes=True, alpha=0.6)
 
     # 4. Combined view
     ax4 = fig.add_subplot(gs[1, 1])
@@ -261,7 +250,7 @@ def plot_island_comparison(
     for i, island in enumerate(islands):
         color = colors[i]
 
-        # Light polygon background
+        # Polygon fill
         if island.simplified_polygon is not None:
             exterior = np.array(island.simplified_polygon['exterior'])
             ax4.fill(exterior[:, 0], exterior[:, 1], color=color, alpha=0.2)
@@ -271,13 +260,6 @@ def plot_island_comparison(
                 ax4.fill(hole[:, 0], hole[:, 1], color='white', alpha=0.9)
                 ax4.plot(hole[:, 0], hole[:, 1], color='black', linewidth=1, alpha=0.5)
 
-        # Triangle edges
-        if island.triangles:
-            for tri in island.triangles:
-                tri_closed = np.vstack([tri, tri[0]])
-                ax4.plot(tri_closed[:, 0], tri_closed[:, 1],
-                        color=color, linewidth=0.5, alpha=0.8)
-
         # Center and label
         ax4.scatter(*island.center, c='red', s=80, marker='*', zorder=5, edgecolors='black')
         ax4.annotate(f'{island.id}', island.center, fontsize=10, fontweight='bold',
@@ -285,12 +267,12 @@ def plot_island_comparison(
 
     ax4.set_xlabel('X Coordinate (blocks)')
     ax4.set_ylabel('Z Coordinate (blocks)')
-    ax4.set_title("4. Combined View (Polygons + Triangle Edges + Centers)")
+    ax4.set_title("4. Combined View (Polygons + Centers)")
     ax4.axis('equal')
     ax4.invert_yaxis()
     ax4.grid(True, alpha=0.3)
 
-    fig.suptitle('Island Detection and Triangulation Analysis', fontsize=16, fontweight='bold')
+    fig.suptitle('Island Detection and Polygon Analysis', fontsize=16, fontweight='bold')
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -417,14 +399,14 @@ Avg distance from center: {stats['avg_distance_from_center']:.1f} blocks
     return fig
 
 
-def plot_triangulation_detail(
+def plot_island_detail(
     islands: List,
     output_path: str = None,
     figsize: Tuple[int, int] = (20, 16),
     cols: int = 3
 ):
     """
-    Create detailed view of each island's triangulation.
+    Create detailed view of each island's polygon.
 
     Args:
         islands: List of Island objects
@@ -454,26 +436,15 @@ def plot_triangulation_detail(
             label='Blocks'
         )
 
-        # Plot triangles with distinct colors
-        if island.triangles:
-            tri_colors = plt.cm.Set3(np.linspace(0, 1, len(island.triangles)))
-            for j, tri in enumerate(island.triangles):
-                triangle = Polygon(
-                    tri, closed=True, fill=True,
-                    facecolor=tri_colors[j], edgecolor='black',
-                    alpha=0.6, linewidth=1.5
-                )
-                ax.add_patch(triangle)
-
-        # Plot simplified polygon outline
+        # Plot simplified polygon (filled)
         if island.simplified_polygon is not None:
             exterior = np.array(island.simplified_polygon['exterior'])
-            ax.plot(exterior[:, 0], exterior[:, 1], 'r--', linewidth=1, alpha=0.5, label='Simplified Polygon')
+            ax.fill(exterior[:, 0], exterior[:, 1], color=color, alpha=0.4, edgecolor='black', linewidth=1.5)
             for hole_coords in island.simplified_polygon.get('holes', []):
                 hole = np.array(hole_coords)
-                ax.plot(hole[:, 0], hole[:, 1], 'r--', linewidth=1, alpha=0.5)
+                ax.fill(hole[:, 0], hole[:, 1], color='white', edgecolor='red', linewidth=1.5, alpha=0.9)
 
-        ax.set_title(f'Island {island.id}\n{island.area:,} blocks, {len(island.triangles)} triangles')
+        ax.set_title(f'Island {island.id}\n{island.area:,} blocks')
         ax.axis('equal')
         ax.invert_yaxis()
         ax.grid(True, alpha=0.3)
@@ -482,12 +453,12 @@ def plot_triangulation_detail(
     for i in range(n_islands, len(axes)):
         axes[i].set_visible(False)
 
-    fig.suptitle('Island Triangulation Detail View', fontsize=16, fontweight='bold')
+    fig.suptitle('Island Polygon Detail View', fontsize=16, fontweight='bold')
     plt.tight_layout()
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Triangulation detail saved to: {output_path}")
+        print(f"Island detail saved to: {output_path}")
     else:
         plt.show()
 
@@ -530,10 +501,10 @@ def create_island_report(
         output_path=os.path.join(output_dir, 'island_statistics.png')
     )
 
-    # Generate triangulation detail view
-    plot_triangulation_detail(
+    # Generate polygon detail view
+    plot_island_detail(
         islands,
-        output_path=os.path.join(output_dir, 'island_triangulation_detail.png')
+        output_path=os.path.join(output_dir, 'island_detail.png')
     )
 
     # Text report
@@ -557,8 +528,6 @@ def create_island_report(
             f.write(f"  Center: ({island.center[0]:.1f}, {island.center[1]:.1f})\n")
             f.write(f"  Bounding box: X[{island.bounding_box[0]}, {island.bounding_box[1]}] ")
             f.write(f"Z[{island.bounding_box[2]}, {island.bounding_box[3]}]\n")
-            if island.triangles:
-                f.write(f"  Triangles: {len(island.triangles)}\n")
             if island.holes:
                 f.write(f"  Internal holes: {len(island.holes)}\n")
             f.write("\n")

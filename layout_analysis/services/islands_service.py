@@ -1,4 +1,4 @@
-"""Island detection, skeleton, pathfinding, and connectivity orchestration."""
+"""Island detection and skeleton analysis orchestration."""
 
 import json
 import shutil
@@ -67,44 +67,39 @@ def _detect_and_label(
 
 
 # ---------------------------------------------------------------------------
-# Stage 2: Triangulation
+# Stage 2: Polygon construction
 # ---------------------------------------------------------------------------
 
-def _triangulate(
+def _build_polygons(
     islands: list,
     canonical: bool = False,
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,
     detect_holes: bool = True,
-) -> int:
-    """Triangulate all islands.  Returns total triangle count."""
+) -> None:
+    """Build simplified polygons for all islands."""
     from island_analysis import (
-        triangulate_island_union,
-        triangulate_islands_canonical,
+        build_island_polygon,
+        build_island_polygons_canonical,
     )
 
     if canonical:
-        print(f"  Triangulating islands (canonical mode, simplify={simplify_tolerance})...")
-        total_triangles = triangulate_islands_canonical(
+        print(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
+        build_island_polygons_canonical(
             islands,
             buffer_distance=buffer_distance,
             simplify_tolerance=simplify_tolerance,
             detect_holes=detect_holes,
         )
     else:
-        print(f"  Triangulating islands (union mode, simplify={simplify_tolerance})...")
-        total_triangles = 0
+        print(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
         for island in islands:
-            triangles = triangulate_island_union(
+            build_island_polygon(
                 island,
                 buffer_distance=buffer_distance,
                 simplify_tolerance=simplify_tolerance,
                 detect_holes=detect_holes,
             )
-            total_triangles += len(triangles)
-
-    print(f"    Total triangles: {total_triangles}")
-    return total_triangles
 
 
 # ---------------------------------------------------------------------------
@@ -171,29 +166,27 @@ def _generate_skeleton_visuals(
     """Write island reports, skeleton debug images, and overview plots.
 
     Essential outputs (always generated):
-        - island_triangulation_detail.png
+        - island_detail.png
         - unique_islands.png
-        - world_overview.png
 
     Debug outputs (only when plots=True):
         - island_comparison.png, island_statistics.png, island_report.txt
         - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt
     """
-    from island_analysis.visualization import plot_triangulation_detail
+    from island_analysis.visualization import plot_island_detail
     from skeleton_analysis.visualize import (
         plot_island_debug,
         plot_unique_islands,
-        plot_world_overview,
         generate_skeleton_report,
     )
 
     print(f"  Generating visualizations...")
 
-    # Essential: triangulation detail
-    plot_triangulation_detail(
+    # Essential: island polygon detail
+    plot_island_detail(
         islands,
-        output_path=str(island_output_dir / 'island_triangulation_detail.png'),
+        output_path=str(island_output_dir / 'island_detail.png'),
     )
 
     if plots:
@@ -215,15 +208,10 @@ def _generate_skeleton_visuals(
                     str(skeleton_output_dir / f'island_{rep_id}_debug.png'),
                 )
 
-    # Essential: unique islands overview and world overview
+    # Essential: unique islands overview
     plot_unique_islands(
         skeleton_results, canonical_groups,
         str(skeleton_output_dir / 'unique_islands.png'),
-    )
-
-    plot_world_overview(
-        skeleton_results,
-        str(skeleton_output_dir / 'world_overview.png'),
     )
 
     if plots:
@@ -341,7 +329,6 @@ def _build_context(
     Returns the MapContext instance.
     """
     from layout_analysis.map_context import build_map_context, build_skeleton_dicts
-    from skeleton_analysis.connectivity import save_initial_map_graph
 
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
@@ -409,89 +396,66 @@ def _build_context(
     map_ctx.save_json(str(island_output_dir / 'map_context.json'))
 
     island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    save_initial_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
+    _save_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
 
     return map_ctx
 
 
 # ---------------------------------------------------------------------------
-# Stage 7: Pathfinding
+# map_graph.json writer (skeleton data only)
 # ---------------------------------------------------------------------------
 
-def _run_pathfinding(
-    map_output_dir: Path,
-    island_output_dir: Path,
-    plots: bool = True,
-):
-    """Run pathfinding analysis and generate path grid visualizations."""
-    from skeleton_analysis.pathfinding import run_pathfinding_analysis, load_edge_pixels
+def _save_map_graph(
+    island_skeletons: list,
+    map_name: str,
+    output_dir: Path,
+) -> None:
+    """Save map_graph.json containing island skeleton data.
 
-    print(f"  Running pathfinding analysis...")
-    pathfinding_results = run_pathfinding_analysis(str(map_output_dir))
-    if not pathfinding_results or pathfinding_results['islands_analyzed'] == 0:
-        return
+    Downstream consumers (match analysis / PositionClassifier) read
+    islands[].skeleton.edge_pixels from this file for spatial queries.
+    """
+    import numpy as np
 
-    n_analyzed = pathfinding_results['islands_analyzed']
-    n_paths = pathfinding_results['total_poi_endpoint_paths']
-    n_defender = pathfinding_results['total_defender_paths']
-    print(f"    Pathfinding: {n_analyzed} islands, {n_paths} POI paths, {n_defender} defender paths")
+    def _json_default(obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-    if plots:
-        from skeleton_analysis.visualize import plot_path_grid
+    # Build flat node index from per-island skeleton endpoint nodes.
+    # PositionClassifier reads map_graph.nodes for nearest-node lookups.
+    map_nodes = []
+    node_id = 0
+    for isle in island_skeletons:
+        skeleton = isle.get('skeleton')
+        if skeleton is None:
+            continue
+        iid = isle['island_id']
+        for node in skeleton.get('nodes', []):
+            if node.get('type') == 'endpoint':
+                map_nodes.append({
+                    'map_node_id': node_id,
+                    'island_id': iid,
+                    'local_node_id': node['node_id'],
+                    'coords': [node['x'], node['z']],
+                })
+                node_id += 1
 
-        pathfinding_dir = island_output_dir / 'pathfinding'
-        pathfinding_dir.mkdir(exist_ok=True)
+    data = {
+        'map_name': map_name,
+        'islands': island_skeletons,
+        'map_graph': {'nodes': map_nodes, 'edges': []},
+    }
 
-        with open(str(map_output_dir / 'map_graph.json'), 'r') as f:
-            graph_data = json.load(f)
-        islands_by_id = {ie['island_id']: ie for ie in graph_data.get('islands', [])}
-
-        for island_result in pathfinding_results['island_results']:
-            iid = island_result['island_id']
-            island_entry = islands_by_id.get(iid)
-            if island_entry:
-                edge_px = load_edge_pixels(island_entry.get('skeleton'))
-                if edge_px:
-                    plot_path_grid(
-                        island_result, edge_px,
-                        str(pathfinding_dir / f'island_{iid}_paths.png'),
-                    )
-
-
-# ---------------------------------------------------------------------------
-# Stage 8: Inter-island connectivity
-# ---------------------------------------------------------------------------
-
-def _build_connectivity(map_output_dir: Path, island_output_dir: Path):
-    """Build inter-island connectivity graph and generate visualization."""
-    from skeleton_analysis.connectivity import (
-        build_map_graph,
-        save_map_graph,
-        plot_map_connectivity,
-    )
-
-    print(f"  Building map connectivity graph...")
-    graph_path = map_output_dir / 'map_graph.json'
-    if not graph_path.exists():
-        return
-
-    with open(str(graph_path), 'r') as f:
-        graph_data = json.load(f)
-    map_graph_result = build_map_graph(graph_data)
-    save_map_graph(map_graph_result, map_output_dir)
-
-    n_nodes = len(map_graph_result['nodes'])
-    n_intra = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'intra')
-    n_void = sum(1 for e in map_graph_result['edges'] if e['edge_type'] == 'void_link')
-    print(f"    Map Graph: {n_nodes} nodes, {n_intra} intra-island edges, {n_void} void links")
-
-    with open(str(graph_path), 'r') as f:
-        final_graph_data = json.load(f)
-    with open(str(island_output_dir / 'map_context.json'), 'r') as f:
-        ctx_for_viz = json.load(f)
-
-    viz_path = island_output_dir / 'map_connectivity.png'
-    plot_map_connectivity(ctx_for_viz, final_graph_data, viz_path)
+    output_path = output_dir / 'map_graph.json'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, default=_json_default)
+    print(f"  Map graph saved to: {output_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +484,7 @@ def analyze_islands_step(
     simplify_tolerance: float = 1.0,
     buffer_distance: float = 0.0,
     layout_type: str = 'bedrock',
-    canonical_triangulation: bool = False,
+    canonical_polygons: bool = False,
     connectivity: int = 8,
     min_size: int = 10,
     detect_holes: bool = True,
@@ -529,23 +493,23 @@ def analyze_islands_step(
     plots: bool = False,
 ):
     """
-    Step 2: Detect and triangulate islands from layout data.
+    Step 2: Detect islands, build polygons, and compute skeletons.
 
     Args:
         map_folder: Path to map folder (read-only input).
         force_rerun: If True, regenerate even if output exists.
-        simplify_tolerance: Simplification tolerance for union triangulation.
+        simplify_tolerance: Simplification tolerance for polygon construction.
         buffer_distance: Buffer distance for smoothing.
         layout_type: Which layout file to use ('bedrock', 'y0', 'top', 'density').
-        canonical_triangulation: If True, use canonical-consistent triangulation
-            so that symmetrically identical islands share the same mesh.
+        canonical_polygons: If True, use canonical-consistent polygon construction
+            so that symmetrically identical islands are grouped.
         connectivity: Island detection connectivity (4 or 8).
         min_size: Minimum island block count.
-        detect_holes: If True, detect holes in islands during triangulation.
+        detect_holes: If True, detect holes in islands during polygon construction.
         map_output_dir: Per-map output root (where layout parquets and
             map_graph.json live). Defaults to map_folder for backward compat.
         output_dir: Override island_analysis subdir specifically.
-        plots: If True, generate debug plots (per-island debug, POI, pathfinding).
+        plots: If True, generate debug plots (per-island debug, POI).
 
     Returns:
         Path: Path to island analysis output directory
@@ -587,10 +551,10 @@ def analyze_islands_step(
         print("  [X] No islands detected!")
         return island_output_dir
 
-    # Stage 2: Triangulate
-    _triangulate(
+    # Stage 2: Build polygons
+    _build_polygons(
         islands,
-        canonical=canonical_triangulation,
+        canonical=canonical_polygons,
         buffer_distance=buffer_distance,
         simplify_tolerance=simplify_tolerance,
         detect_holes=detect_holes,
@@ -613,17 +577,19 @@ def analyze_islands_step(
     )
 
     # Stage 6: Build MapContext + initial map_graph.json
-    _build_context(
+    map_ctx = _build_context(
         map_folder, islands, df, skeleton_results, canonical_groups,
         map_data_obj, map_center_pt, poi_assignments, island_output_dir,
         map_output_dir=_map_output_dir,
     )
 
-    # Stage 7: Pathfinding
-    _run_pathfinding(_map_output_dir, island_output_dir, plots=plots)
-
-    # Stage 8: Connectivity
-    _build_connectivity(_map_output_dir, island_output_dir)
+    # Stage 7: Map overview (needs map_context for polygons + build regions)
+    from skeleton_analysis.visualize import plot_map_overview
+    plot_map_overview(
+        skeleton_results,
+        str(skeleton_output_dir / 'map_overview.png'),
+        map_context=map_ctx.to_dict(),
+    )
 
     # Cleanup
     _cleanup_legacy(island_output_dir)

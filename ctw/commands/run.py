@@ -41,8 +41,8 @@ def register(subparsers):
     # Island settings (also settable via islands: section in config)
     p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density'],
                    default='bedrock', help='Layout file for island analysis')
-    p.add_argument('--canonical-triangulation', action='store_true',
-                   help='Use canonical-consistent triangulation')
+    p.add_argument('--canonical-polygons', action='store_true',
+                   help='Use canonical-consistent polygon construction')
     p.add_argument('--simplify', type=float, default=1.0,
                    help='Simplification tolerance for islands (default: 1.0)')
     p.add_argument('--buffer', type=float, default=0.0,
@@ -92,7 +92,7 @@ def _process_single_map(map_folder, args, output_override=None):
                 map_folder,
                 force_rerun=args.force,
                 layout_type=args.island_layout,
-                canonical_triangulation=args.canonical_triangulation,
+                canonical_polygons=args.canonical_polygons,
                 simplify_tolerance=args.simplify,
                 buffer_distance=args.buffer,
                 connectivity=args.connectivity,

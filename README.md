@@ -115,7 +115,7 @@ map_folders/your_map_name/
     map_connectivity.png             # connectivity graph visualization (essential)
     skeleton/
       unique_islands.png           # canonical shape comparison (essential)
-      world_overview.png           # skeleton graph on world layout (essential)
+      map_overview.png             # skeleton graph with polygons + build regions (essential)
       island_N_debug.png           # per-island skeleton debug (--plots)
       island_N_poi.png             # per-island POI annotation (--plots)
       skeleton_report.txt          # skeleton text report (--plots)

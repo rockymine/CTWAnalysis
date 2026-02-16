@@ -4,7 +4,7 @@ Skeleton visualization: debug images and overview plots.
 Generates:
 1. Per-island 4-panel debug images (mask, skeleton, nodes, edges)
 2. Unique islands grid (one per canonical_key)
-3. World overview (all islands in world orientation)
+3. Map overview (all islands in world orientation with polygons + build regions)
 """
 
 import os
@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
 
+from visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
 
 
@@ -196,26 +197,31 @@ def plot_unique_islands(
     print(f"Unique islands overview saved to: {output_path}")
 
 
-def plot_world_overview(
+def plot_map_overview(
     results: List[IslandResult],
-    output_path: str
+    output_path: str,
+    map_context: Optional[dict] = None,
 ) -> None:
     """
     Full map with all islands in world orientation.
-    Skeleton graphs transformed back to world coordinates.
+    Skeleton graphs transformed back to world coordinates,
+    with island polygon outlines and build regions from map_context.
 
     Args:
         results: List of IslandResult
         output_path: Path to save the image
+        map_context: Parsed map_context dict (for island outlines + build regions)
     """
     if not results:
         return
 
     fig, ax = plt.subplots(figsize=(16, 12))
 
-    # Collect all world blocks for background
-    all_blocks_x = []
-    all_blocks_z = []
+    # Draw build region and island outlines from map_context (bottom layers)
+    has_build = False
+    if map_context is not None:
+        has_build = draw_build_region(ax, map_context)
+        draw_island_outlines(ax, map_context)
 
     # Generate distinct colors per island
     cmap = plt.cm.Set2
@@ -232,8 +238,6 @@ def plot_world_overview(
             world_blocks[:, 0], world_blocks[:, 1],
             c=[color], s=1, alpha=0.2, rasterized=True
         )
-        all_blocks_x.extend(world_blocks[:, 0])
-        all_blocks_z.extend(world_blocks[:, 1])
 
         # Transform skeleton edges to world coords and draw
         for edge in result.graph.edges:
@@ -257,7 +261,7 @@ def plot_world_overview(
     ax.set_aspect('equal')
     ax.set_xlabel("X (world)")
     ax.set_ylabel("Z (world)")
-    ax.set_title(f"World Overview - {n_islands} islands")
+    ax.set_title(f"Map Overview - {n_islands} islands")
     ax.invert_yaxis()
 
     # Legend
@@ -265,13 +269,17 @@ def plot_world_overview(
         mpatches.Patch(color='lime', label='Endpoints'),
         mpatches.Patch(color='red', label='Junctions'),
     ]
+    if has_build:
+        legend_elements.append(
+            mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void')
+        )
     ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"World overview saved to: {output_path}")
+    print(f"Map overview saved to: {output_path}")
 
 
 def generate_skeleton_report(
@@ -492,149 +500,3 @@ def plot_island_poi_debug(
     print(f"POI debug image saved to: {output_path}")
 
 
-def plot_path_grid(
-    island_result: dict,
-    edge_pixels: dict,
-    output_path: str,
-    max_panels: int = 15,
-) -> None:
-    """
-    Grid visualization of pathfinding results for one island.
-
-    Each panel shows one path in world (x, z) coordinate space with
-    colored segments between nodes. Defender paths are shown first,
-    then POI->endpoint paths.
-
-    Args:
-        island_result: Single island dict from pathfinding analysis.
-        edge_pixels: Dict from load_edge_pixels() for this island.
-        output_path: Path to save the image.
-        max_panels: Maximum number of path panels to draw.
-    """
-    if edge_pixels is None:
-        print(f"  WARNING: No edge pixel data for island {island_result['island_id']}")
-        return
-
-    # Collect paths to plot: defender paths first, then POI->endpoint
-    paths_to_plot = []
-
-    for dp in (island_result.get('defender_paths') or []):
-        paths_to_plot.append({
-            'title': f"{dp['spawn_team']} spawn -> {dp['wool_color']} wool",
-            'category': 'defender',
-            'path_nodes': dp['path_nodes'],
-            'distance': dp['distance'],
-        })
-
-    for pp in island_result.get('poi_to_endpoint_paths', []):
-        paths_to_plot.append({
-            'title': f"{pp['poi_id']} {pp['poi_type']} -> ep{pp['endpoint_node']}",
-            'category': pp['poi_type'],
-            'path_nodes': pp['path_nodes'],
-            'distance': pp['distance'],
-        })
-
-    if not paths_to_plot:
-        return
-
-    paths_to_plot = paths_to_plot[:max_panels]
-    n = len(paths_to_plot)
-    cols = min(4, n)
-    rows = math.ceil(n / cols)
-
-    fig, axes = plt.subplots(rows, cols, figsize=(4.5 * cols, 4 * rows))
-    if rows == 1 and cols == 1:
-        axes = np.array([[axes]])
-    elif rows == 1:
-        axes = axes.reshape(1, -1)
-    elif cols == 1:
-        axes = axes.reshape(-1, 1)
-
-    iid = island_result['island_id']
-    team = island_result.get('team') or 'neutral'
-
-    # Color scheme per category
-    category_cmap = {
-        'defender': 'Reds',
-        'spawn': 'Blues',
-        'wool': 'Oranges',
-    }
-
-    for idx, path_info in enumerate(paths_to_plot):
-        r, c = divmod(idx, cols)
-        ax = axes[r, c]
-
-        path_nodes = path_info['path_nodes']
-        cmap_name = category_cmap.get(path_info['category'], 'Greys')
-        cmap = plt.cm.get_cmap(cmap_name)
-
-        from .pathfinding import get_edge_detail
-
-        # Draw each edge segment with incrementing color
-        n_segments = max(len(path_nodes) - 1, 1)
-        for i in range(len(path_nodes) - 1):
-            src_n, dst_n = path_nodes[i], path_nodes[i + 1]
-            segment = get_edge_detail(edge_pixels, src_n, dst_n)
-            if segment is None:
-                continue
-            xs = [p[0] for p in segment]
-            zs = [p[1] for p in segment]
-            # Color from 0.3 to 0.9 across segments
-            color = cmap(0.3 + 0.6 * i / n_segments)
-            ax.plot(xs, zs, color=color, linewidth=2.0, solid_capstyle='round')
-
-        # Mark nodes along the path
-        if len(path_nodes) < 2:
-            continue
-        for i, nid in enumerate(path_nodes):
-            # Get coords from the pixel data edges
-            # First node: start of first edge, last node: end of last edge
-            if i == 0:
-                seg = get_edge_detail(edge_pixels, path_nodes[0], path_nodes[1])
-                if seg:
-                    nx_, nz_ = seg[0]
-                else:
-                    continue
-            elif i == len(path_nodes) - 1:
-                seg = get_edge_detail(edge_pixels, path_nodes[-2], path_nodes[-1])
-                if seg:
-                    nx_, nz_ = seg[-1]
-                else:
-                    continue
-            else:
-                # Junction: end of previous segment
-                seg = get_edge_detail(edge_pixels, path_nodes[i - 1], path_nodes[i])
-                if seg:
-                    nx_, nz_ = seg[-1]
-                else:
-                    continue
-
-            if i == 0 or i == len(path_nodes) - 1:
-                marker = '*' if i == 0 else 'D'
-                ax.scatter([nx_], [nz_], c='black', s=60, zorder=5,
-                           marker=marker, edgecolors='white', linewidths=0.5)
-            else:
-                ax.scatter([nx_], [nz_], c='gray', s=25, zorder=5,
-                           marker='s', edgecolors='black', linewidths=0.3)
-
-            ax.annotate(str(nid), (nx_, nz_), fontsize=6,
-                        textcoords='offset points', xytext=(3, 3),
-                        color='black', fontweight='bold')
-
-        ax.set_aspect('equal')
-        ax.invert_yaxis()
-        ax.set_title(f"{path_info['title']}\n{path_info['distance']} blocks",
-                     fontsize=8)
-        ax.tick_params(labelsize=6)
-
-    # Hide unused axes
-    for idx in range(n, rows * cols):
-        r, c = divmod(idx, cols)
-        axes[r, c].set_visible(False)
-
-    fig.suptitle(f"Island {iid} ({team}) - Paths", fontsize=13)
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Path grid saved to: {output_path}")

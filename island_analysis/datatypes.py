@@ -17,7 +17,6 @@ class Island:
     bounding_box: Tuple[int, int, int, int]  # (min_x, max_x, min_z, max_z)
     hull_vertices: np.ndarray = None  # Convex hull vertices
     simplified_polygon: Optional[dict] = None  # {exterior: [[x,z],...], holes: [...]}
-    triangles: List[np.ndarray] = field(default_factory=list)  # Triangle vertices
     holes: List[np.ndarray] = field(default_factory=list)  # Internal air pockets
     skeleton_result: Optional[object] = None  # IslandResult from skeleton pipeline
     has_spawn: bool = False
