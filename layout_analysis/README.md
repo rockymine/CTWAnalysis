@@ -50,7 +50,7 @@ builds polygons from world-space blocks.
 | File | Description |
 |------|-------------|
 | `layout_bedrock.parquet` | Block positions with `island_id` column |
-| `island_analysis/map_context.json` | Aggregated map context |
+| `map_context.json` | Aggregated map context |
 | `map_graph.json` | Inter-island connectivity graph |
 | `island_analysis/island_triangulation_detail.png` | Triangulation overview (essential) |
 | `island_analysis/skeleton/unique_islands.png` | Canonical shapes (essential) |

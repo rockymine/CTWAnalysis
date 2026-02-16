@@ -392,7 +392,7 @@ def _build_context(
         except Exception as e:
             print(f"    [!] Build region extraction failed: {e}")
 
-    map_ctx.save_json(str(island_output_dir / 'map_context.json'))
+    map_ctx.save_json(str(map_output_dir / 'map_context.json'))
 
     island_skeletons = build_skeleton_dicts(islands, skeleton_results)
     _save_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)

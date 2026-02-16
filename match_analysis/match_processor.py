@@ -48,7 +48,7 @@ def _bulk_insert(conn, table: str, match_id: int, df: pd.DataFrame,
 
 def _get_classifier(map_slug: str):
     """Build a PositionClassifier for the given map, or None if data missing."""
-    context_path = Path(f'output/{map_slug}/island_analysis/map_context.json')
+    context_path = Path(f'output/{map_slug}/map_context.json')
     graph_path = Path(f'output/{map_slug}/map_graph.json')
     if not context_path.exists() or not graph_path.exists():
         return None

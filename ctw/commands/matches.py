@@ -372,7 +372,7 @@ def _load_map_context(map_output_dir: Path, map_folder: Path):
     import json
 
     context_path = _find_map_file(map_output_dir, map_folder,
-                                  'island_analysis/map_context.json')
+                                  'map_context.json')
     if context_path is None:
         print(f"Error: map_context.json not found in {map_output_dir} or {map_folder}")
         print("Run 'ctw islands --map ...' first to generate map context.")

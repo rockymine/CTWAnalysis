@@ -22,7 +22,7 @@ Examples:
   python ctw.py debug layout --parquet layout_y0
   python ctw.py debug layout --parquet layout_y0 --water
   python ctw.py debug data --json map_data.json
-  python ctw.py debug data --json island_analysis/map_context.json
+  python ctw.py debug data --json map_context.json
   python ctw.py debug symmetry --map tumbleweed
   python ctw.py debug symmetry
   python ctw.py debug compare --map acapulco
@@ -157,12 +157,12 @@ def _handle_symmetry_single(root: Path, map_name: str):
     from symmetry_analysis import detect_symmetry
     from symmetry_analysis.report import format_symmetry_report
 
-    ctx_path = root / map_name / 'island_analysis' / 'map_context.json'
+    ctx_path = root / map_name / 'map_context.json'
     if not ctx_path.exists():
-        ctx_path = Path(map_name) / 'island_analysis' / 'map_context.json'
+        ctx_path = Path(map_name) / 'map_context.json'
         if not ctx_path.exists():
             print(f"Error: map_context.json not found for '{map_name}'", file=sys.stderr)
-            print(f"  Tried: {root / map_name / 'island_analysis' / 'map_context.json'}",
+            print(f"  Tried: {root / map_name / 'map_context.json'}",
                   file=sys.stderr)
             print(f"  Run island analysis first: python ctw.py run --map {map_name}",
                   file=sys.stderr)
@@ -187,7 +187,7 @@ def _handle_symmetry_all(root: Path):
     for map_dir in sorted(root.iterdir()):
         if not map_dir.is_dir():
             continue
-        ctx_path = map_dir / 'island_analysis' / 'map_context.json'
+        ctx_path = map_dir / 'map_context.json'
         if not ctx_path.exists():
             skipped.append(map_dir.name)
             continue
@@ -441,7 +441,7 @@ def _handle_water(root: Path, filename: str):
                   f"holes={len(list(wp.interiors))}")
 
         # Load map_context.json
-        ctx_path = map_dir / 'island_analysis' / 'map_context.json'
+        ctx_path = map_dir / 'map_context.json'
         if not ctx_path.exists():
             print(f"  map_context.json: NOT FOUND")
             continue

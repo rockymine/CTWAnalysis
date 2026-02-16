@@ -112,7 +112,7 @@ def handle_spawns(args):
     skipped = 0
     for map_dir in map_dirs:
         map_slug = map_dir.name
-        map_context_path = map_dir / 'island_analysis' / 'map_context.json'
+        map_context_path = map_dir / 'map_context.json'
 
         if not map_context_path.exists():
             print(f"  Skip {map_slug}: map_context.json not found")
@@ -166,7 +166,7 @@ def handle_spawns(args):
 def _collect_map_row(map_dir: Path) -> dict | None:
     """Read map_data.json and map_context.json, return a row dict or None."""
     map_data_path = map_dir / 'map_data.json'
-    map_context_path = map_dir / 'island_analysis' / 'map_context.json'
+    map_context_path = map_dir / 'map_context.json'
 
     if not map_data_path.exists():
         print(f"  Skip {map_dir.name}: map_data.json not found")

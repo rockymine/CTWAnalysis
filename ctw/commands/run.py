@@ -136,7 +136,7 @@ def handler(args):
         total = len(map_folders)
         map_folders = [
             mf for mf in map_folders
-            if not (resolve_output_dir(mf, args.output) / 'island_analysis' / 'map_context.json').exists()
+            if not (resolve_output_dir(mf, args.output) / 'map_context.json').exists()
         ]
         skipped = total - len(map_folders)
         if skipped:
@@ -196,7 +196,7 @@ def _run_symmetry(map_output_dir: Path) -> None:
     print(f"\n[3/5] Symmetry Analysis")
     print("=" * 70)
 
-    ctx_path = map_output_dir / 'island_analysis' / 'map_context.json'
+    ctx_path = map_output_dir / 'map_context.json'
     if not ctx_path.exists():
         print("  map_context.json not found — skipping symmetry analysis")
         return
