@@ -18,12 +18,6 @@ EVENT_TYPES = {
     7: "WOOL_CAPTURE",
 }
 
-_SPATIAL_COLUMNS = [
-    'location_type', 'island_id',
-    'nearest_node_1', 'nearest_node_2',
-    'nearest_island_1', 'nearest_island_2',
-]
-
 
 def _get_classifier(map_slug: str):
     """Build a PositionClassifier for the given map, or None if data missing."""
@@ -41,22 +35,6 @@ def _get_classifier(map_slug: str):
 
     return PositionClassifier(map_context, map_graph)
 
-
-def _migrate_position_events_columns(conn):
-    """Add spatial columns to position_events if they don't exist yet."""
-    existing = {
-        row[0] for row in conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'position_events'"
-        ).fetchall()
-    }
-    type_map = {'location_type': 'TEXT'}
-    for col in _SPATIAL_COLUMNS:
-        if col not in existing:
-            col_type = type_map.get(col, 'INTEGER')
-            conn.execute(
-                f"ALTER TABLE position_events ADD COLUMN {col} {col_type}"
-            )
 
 
 def extract_life_segments_from_match(df: pd.DataFrame) -> pd.DataFrame:
@@ -338,27 +316,6 @@ def process_match(match_id: int):
         # Extract and insert wool events
         wool_df = extract_wool_events(raw_df, find_segment_idx)
 
-        # Auto-create table for existing databases (migration)
-        conn.execute(
-            "CREATE SEQUENCE IF NOT EXISTS seq_wool_event_id START 1"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS wool_events (
-                wool_event_id INTEGER PRIMARY KEY
-                    DEFAULT nextval('seq_wool_event_id'),
-                match_id INTEGER NOT NULL,
-                timestamp INTEGER NOT NULL,
-                event_type INTEGER NOT NULL,
-                player_id INTEGER NOT NULL,
-                wool_id INTEGER,
-                x INTEGER,
-                y INTEGER,
-                z INTEGER,
-                segment_idx INTEGER,
-                FOREIGN KEY (match_id) REFERENCES matches(match_id)
-            )
-        """)
-
         conn.execute(
             "DELETE FROM wool_events WHERE match_id = ?", [match_id]
         )
@@ -378,9 +335,6 @@ def process_match(match_id: int):
 
         # Extract and insert position events
         position_df = extract_position_events(raw_df, find_segment_idx)
-
-        # Inline migration: add spatial columns to existing databases
-        _migrate_position_events_columns(conn)
 
         conn.execute(
             "DELETE FROM position_events WHERE match_id = ?", [match_id]
@@ -438,25 +392,6 @@ def process_match(match_id: int):
             print("  Team segments will be marked 'unknown'")
 
         team_df = extract_team_segments(raw_df, spawn_centers)
-
-        # Auto-create table for existing databases (migration)
-        conn.execute(
-            "CREATE SEQUENCE IF NOT EXISTS seq_team_segment_id START 1"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS player_team_segments (
-                team_segment_id INTEGER PRIMARY KEY
-                    DEFAULT nextval('seq_team_segment_id'),
-                match_id INTEGER NOT NULL,
-                player_id INTEGER NOT NULL,
-                team TEXT NOT NULL,
-                start_timestamp BIGINT NOT NULL,
-                end_timestamp BIGINT,
-                spawn_x FLOAT,
-                spawn_z FLOAT,
-                FOREIGN KEY (match_id) REFERENCES matches(match_id)
-            )
-        """)
 
         conn.execute(
             "DELETE FROM player_team_segments WHERE match_id = ?", [match_id]
