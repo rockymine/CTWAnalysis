@@ -59,14 +59,17 @@ def _migrate_position_events_columns(conn):
             )
 
 
-def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
-    """Extract life segments from raw match parquet.
+def extract_life_segments_from_match(df: pd.DataFrame) -> pd.DataFrame:
+    """Extract life segments from raw match DataFrame.
 
     Life segment = spawn -> death (or match end).
     Uses event_type codes:
     - 2: SPAWN (start of life)
     - 4: DEATH (end of life)
     - 1: MATCH_END (alternative end if no death)
+
+    Args:
+        df: Raw match DataFrame (from pd.read_parquet).
 
     Returns DataFrame with one row per life segment containing:
     - player_id, segment_idx
@@ -75,7 +78,6 @@ def extract_life_segments_from_match(match_file: str) -> pd.DataFrame:
     - Event counts (kills, wool_touches, wool_captures)
     - All position records for this segment
     """
-    df = pd.read_parquet(match_file)
 
     life_segments = []
 
@@ -151,18 +153,19 @@ def _build_segment_lookup(life_segments_df: pd.DataFrame):
     return find_segment_idx
 
 
-def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
-    """Extract kill, death, and wool events, each assigned to a life segment.
+def extract_combat_events(
+    df: pd.DataFrame, find_segment_idx,
+) -> pd.DataFrame:
+    """Extract kill and death events, each assigned to a life segment.
 
     Args:
-        match_file: Path to raw match parquet file.
-        life_segments_df: DataFrame from extract_life_segments_from_match().
+        df: Raw match DataFrame (from pd.read_parquet).
+        find_segment_idx: Callable from _build_segment_lookup().
 
     Returns:
         DataFrame with columns: player_id, timestamp, event_type,
         victim_id, x, y, z, segment_idx.
     """
-    df = pd.read_parquet(match_file)
     combat = df[df['event_type'].isin([3, 4])].copy()
 
     if len(combat) == 0:
@@ -171,7 +174,6 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
             'victim_id', 'x', 'y', 'z', 'segment_idx',
         ])
 
-    find_segment_idx = _build_segment_lookup(life_segments_df)
     combat['segment_idx'] = combat.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
@@ -183,17 +185,18 @@ def extract_combat_events(match_file: str, life_segments_df: pd.DataFrame) -> pd
                     'victim_id', 'x', 'y', 'z', 'segment_idx']]
 
 
-def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
+def extract_position_events(
+    df: pd.DataFrame, find_segment_idx,
+) -> pd.DataFrame:
     """Extract position events (type 5), each assigned to a life segment.
 
     Args:
-        match_file: Path to raw match parquet file.
-        life_segments_df: DataFrame from extract_life_segments_from_match().
+        df: Raw match DataFrame (from pd.read_parquet).
+        find_segment_idx: Callable from _build_segment_lookup().
 
     Returns:
         DataFrame with columns: player_id, timestamp, x, y, z, segment_idx.
     """
-    df = pd.read_parquet(match_file)
     positions = df[df['event_type'] == 5].copy()
 
     if len(positions) == 0:
@@ -201,7 +204,6 @@ def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> 
             'player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx',
         ])
 
-    find_segment_idx = _build_segment_lookup(life_segments_df)
     positions['segment_idx'] = positions.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
@@ -209,18 +211,19 @@ def extract_position_events(match_file: str, life_segments_df: pd.DataFrame) -> 
     return positions[['player_id', 'timestamp', 'x', 'y', 'z', 'segment_idx']]
 
 
-def extract_wool_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.DataFrame:
+def extract_wool_events(
+    df: pd.DataFrame, find_segment_idx,
+) -> pd.DataFrame:
     """Extract wool touch/capture events (types 6/7), each assigned to a life segment.
 
     Args:
-        match_file: Path to raw match parquet file.
-        life_segments_df: DataFrame from extract_life_segments_from_match().
+        df: Raw match DataFrame (from pd.read_parquet).
+        find_segment_idx: Callable from _build_segment_lookup().
 
     Returns:
         DataFrame with columns: player_id, timestamp, event_type,
         wool_id, x, y, z, segment_idx.
     """
-    df = pd.read_parquet(match_file)
     wool = df[df['event_type'].isin([6, 7])].copy()
 
     if len(wool) == 0:
@@ -229,7 +232,6 @@ def extract_wool_events(match_file: str, life_segments_df: pd.DataFrame) -> pd.D
             'wool_id', 'x', 'y', 'z', 'segment_idx',
         ])
 
-    find_segment_idx = _build_segment_lookup(life_segments_df)
     wool['segment_idx'] = wool.apply(
         lambda r: find_segment_idx(int(r['player_id']), r['timestamp']), axis=1
     )
@@ -269,8 +271,11 @@ def process_match(match_id: int):
         print(f"\nProcessing match {match_id} ({map_name})")
         print(f"File: {match_file}")
 
+        # Read parquet once — all extractors share this DataFrame
+        raw_df = pd.read_parquet(match_file)
+
         print("Extracting life segments...")
-        life_segments_df = extract_life_segments_from_match(match_file)
+        life_segments_df = extract_life_segments_from_match(raw_df)
 
         print(f"Found {len(life_segments_df)} life segments")
         print(f"  Players: {life_segments_df['player_id'].nunique()}")
@@ -309,8 +314,11 @@ def process_match(match_id: int):
 
         print(f"Inserted {len(metadata_df)} life segments into database")
 
+        # Build segment lookup once — shared by combat, position, wool extractors
+        find_segment_idx = _build_segment_lookup(life_segments_df)
+
         # Extract and insert combat events
-        combat_df = extract_combat_events(match_file, life_segments_df)
+        combat_df = extract_combat_events(raw_df, find_segment_idx)
         conn.execute(
             "DELETE FROM combat_events WHERE match_id = ?", [match_id]
         )
@@ -328,7 +336,7 @@ def process_match(match_id: int):
         print(f"Inserted {len(combat_df)} combat events into database")
 
         # Extract and insert wool events
-        wool_df = extract_wool_events(match_file, life_segments_df)
+        wool_df = extract_wool_events(raw_df, find_segment_idx)
 
         # Auto-create table for existing databases (migration)
         conn.execute(
@@ -369,7 +377,7 @@ def process_match(match_id: int):
         print(f"Inserted {len(wool_df)} wool events into database")
 
         # Extract and insert position events
-        position_df = extract_position_events(match_file, life_segments_df)
+        position_df = extract_position_events(raw_df, find_segment_idx)
 
         # Inline migration: add spatial columns to existing databases
         _migrate_position_events_columns(conn)
@@ -429,7 +437,7 @@ def process_match(match_id: int):
             print(f"Warning: No spawns in map_spawns for map_id={map_id}")
             print("  Team segments will be marked 'unknown'")
 
-        team_df = extract_team_segments(match_file, spawn_centers)
+        team_df = extract_team_segments(raw_df, spawn_centers)
 
         # Auto-create table for existing databases (migration)
         conn.execute(

@@ -217,8 +217,12 @@ class PositionClassifier:
             dx = self._node_coords[:, 0, np.newaxis] - xs[np.newaxis, :]
             dz = self._node_coords[:, 1, np.newaxis] - zs[np.newaxis, :]
             dists = np.hypot(dx, dz)
-            # top-2 per column
-            idx = np.argpartition(dists, 2, axis=0)[:2]
+            # top-2 per column (kth must be < n_nodes)
+            n_nodes = len(self._node_list)
+            if n_nodes == 2:
+                idx = np.array([np.zeros(n, dtype=int), np.ones(n, dtype=int)])
+            else:
+                idx = np.argpartition(dists, 2, axis=0)[:2]
             for j in range(n):
                 i0, i1 = idx[0, j], idx[1, j]
                 # ensure i0 is actually closer
