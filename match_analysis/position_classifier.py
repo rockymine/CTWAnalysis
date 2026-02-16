@@ -148,21 +148,6 @@ class PositionClassifier:
             'nearest_island_2': nearest_island_2,
         }
 
-    def snap_to_skeleton(
-        self, x: float, z: float, island_id: int,
-    ) -> Tuple[float, float]:
-        """Snap an on-island position to the nearest skeleton edge pixel.
-
-        Returns (snap_x, snap_z). Falls back to (x, z) if no pixels available.
-        """
-        pixels = self._edge_pixels_by_island.get(island_id)
-        if pixels is None or len(pixels) == 0:
-            return (x, z)
-
-        dists = np.hypot(pixels[:, 0] - x, pixels[:, 1] - z)
-        nearest_idx = np.argmin(dists)
-        return (float(pixels[nearest_idx, 0]), float(pixels[nearest_idx, 1]))
-
     def classify_bulk(
         self, xs: np.ndarray, zs: np.ndarray,
     ) -> dict[str, np.ndarray]:
