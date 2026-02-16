@@ -179,7 +179,8 @@ CTWAnalysisWithClaudeCode/
 │   └── exporter.py                  # JSON export
 ├── match_analysis/                  # Match event processing
 │   ├── match_indexer.py             # Match file indexing (DuckDB)
-│   ├── trajectory_extractor.py      # Trajectory extraction
+│   ├── match_processor.py           # Per-match processing orchestrator
+│   ├── extractors.py                # Event extraction (life segments, combat, etc.)
 │   ├── position_classifier.py       # Position classification
 │   ├── visualization.py             # Player trace plotting
 │   └── services/                    # Match service layer

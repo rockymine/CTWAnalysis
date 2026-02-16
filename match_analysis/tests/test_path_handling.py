@@ -3,7 +3,7 @@
 Verifies that:
 - match_indexer stores POSIX paths (forward slashes) in the database
 - match_service normalizes legacy backslash paths on read
-- trajectory_extractor normalizes legacy backslash paths on read
+- match_processor normalizes legacy backslash paths on read
 """
 
 import unittest

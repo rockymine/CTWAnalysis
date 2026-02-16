@@ -131,7 +131,7 @@ def infer_team(spawn_x: float, spawn_z: float, spawn_centers: list[dict]) -> str
 
 
 def extract_team_segments(
-    match_file: str,
+    df: pd.DataFrame,
     spawn_centers: list[dict],
 ) -> pd.DataFrame:
     """Build team membership segments for all players in a match.
@@ -141,7 +141,7 @@ def extract_team_segments(
     spawns on the same team are merged into a single segment.
 
     Args:
-        match_file: Path to raw match parquet file.
+        df: Raw match DataFrame (from pd.read_parquet).
         spawn_centers: Output of load_team_spawn_centers().
 
     Returns:
@@ -149,7 +149,6 @@ def extract_team_segments(
         end_timestamp, spawn_x, spawn_z.
         end_timestamp is None for the last segment of each player.
     """
-    df = pd.read_parquet(match_file)
     spawns = df[df['event_type'] == 2].copy()
 
     if len(spawns) == 0:

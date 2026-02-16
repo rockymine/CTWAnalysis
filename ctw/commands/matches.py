@@ -253,7 +253,7 @@ def handle_index(args):
 
 def handle_process(args):
     ensure_match_db()
-    from match_analysis.trajectory_extractor import process_match
+    from match_analysis.match_processor import process_match
 
     if getattr(args, 'force', False):
         import duckdb
@@ -270,7 +270,7 @@ def handle_process(args):
 def handle_process_all(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.trajectory_extractor import process_match
+    from match_analysis.match_processor import process_match
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
