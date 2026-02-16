@@ -1,6 +1,5 @@
 """Island detection and skeleton analysis orchestration."""
 
-import json
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -415,16 +414,7 @@ def _save_map_graph(
     Downstream consumers (match analysis / PositionClassifier) read
     islands[].skeleton.edge_pixels from this file for spatial queries.
     """
-    import numpy as np
-
-    def _json_default(obj):
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+    from json_export import save_json
 
     # Build flat node index from per-island skeleton endpoint nodes.
     # PositionClassifier reads map_graph.nodes for nearest-node lookups.
@@ -452,10 +442,8 @@ def _save_map_graph(
     }
 
     output_path = output_dir / 'map_graph.json'
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, default=_json_default)
-    print(f"  Map graph saved to: {output_path}")
+    save_json(data, output_path)
+    print(f"  Saved JSON: {output_path}")
 
 
 # ---------------------------------------------------------------------------

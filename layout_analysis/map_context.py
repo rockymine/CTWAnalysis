@@ -5,11 +5,11 @@ Collects islands, skeleton, POI, and XML metadata into a single
 serializable structure for downstream consumption.
 """
 
-import json
-import os
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
+
+from json_export import save_json
 
 from island_analysis.datatypes import Island
 from skeleton_analysis.datatypes import IslandResult
@@ -72,10 +72,8 @@ class MapContext:
 
     def save_json(self, output_path: str) -> None:
         """Save to JSON file."""
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(self.to_dict(), f, indent=2, default=_json_default)
-        print(f"Map context saved to: {output_path}")
+        save_json(self.to_dict(), output_path)
+        print(f"  Saved JSON: {output_path}")
 
 
 def build_map_context(
@@ -231,14 +229,3 @@ def _build_skeleton_dict(result: IslandResult) -> dict:
         'edges': edges,
         'edge_pixels': edge_pixels,
     }
-
-
-def _json_default(obj):
-    """JSON serializer for numpy types."""
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")

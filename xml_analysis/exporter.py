@@ -7,6 +7,8 @@ Converts parsed map data to JSON-serializable format.
 import json
 from typing import Dict, Any, List
 
+from json_export import save_json
+
 from .parser import MapData, Team, Spawn, Wool, ApplyRule
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
@@ -225,7 +227,6 @@ class MapDataEncoder:
             output_path: Path to save JSON file
             categories: Optional region categories
         """
-        json_str = MapDataEncoder.to_json(data, categories)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(json_str)
+        encoded = MapDataEncoder.encode_map_data(data, categories)
+        save_json(encoded, output_path)
         print(f"  Saved JSON: {output_path}")
