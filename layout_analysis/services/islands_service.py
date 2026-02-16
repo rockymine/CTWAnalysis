@@ -175,7 +175,7 @@ def _generate_skeleton_visuals(
         - skeleton_report.txt
     """
     from island_analysis.visualization import plot_island_detail
-    from skeleton_analysis.visualize import (
+    from skeleton_analysis.visualization import (
         plot_island_debug,
         plot_unique_islands,
         generate_skeleton_report,
@@ -245,7 +245,7 @@ def _annotate_pois(
         compute_map_center,
         classify_island_center,
     )
-    from skeleton_analysis.visualize import plot_island_poi_debug
+    from skeleton_analysis.visualization import plot_island_poi_debug
 
     map_center_pt = compute_map_center(df)
     classify_island_center(islands, map_center_pt)
@@ -584,7 +584,7 @@ def analyze_islands_step(
     )
 
     # Stage 7: Map overview (needs map_context for polygons + build regions)
-    from skeleton_analysis.visualize import plot_map_overview
+    from skeleton_analysis.visualization import plot_map_overview
     plot_map_overview(
         skeleton_results,
         str(skeleton_output_dir / 'map_overview.png'),

@@ -36,7 +36,7 @@ def handler(args):
             RegionReader, Y0LayerExtractor, TopSurfaceExtractor,
             VerticalDensityExtractor, LowestBedrockExtractor,
         )
-        from layout_analysis.plotting import save_all_plots
+        from layout_analysis.visualization import save_all_plots
 
         region_folder = map_folder / 'region'
         if not region_folder.exists():

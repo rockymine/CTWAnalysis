@@ -1092,34 +1092,6 @@
     ]
   },
   {
-    "file": "./layout_analysis/plotting.py",
-    "functions": [
-      {
-        "name": "save_point_plot",
-        "args": [
-          "df",
-          "output_path",
-          "title",
-          "use_binned",
-          "bin_size"
-        ],
-        "returns": null
-      },
-      {
-        "name": "save_all_plots",
-        "args": [
-          "y0_df",
-          "top_surface_df",
-          "density_dfs",
-          "bedrock_df",
-          "output_dir"
-        ],
-        "returns": null
-      }
-    ],
-    "classes": []
-  },
-  {
     "file": "./layout_analysis/region_reader.py",
     "functions": [],
     "classes": [
@@ -1195,6 +1167,34 @@
           "x",
           "y",
           "z"
+        ],
+        "returns": null
+      }
+    ],
+    "classes": []
+  },
+  {
+    "file": "./layout_analysis/visualization.py",
+    "functions": [
+      {
+        "name": "save_point_plot",
+        "args": [
+          "df",
+          "output_path",
+          "title",
+          "use_binned",
+          "bin_size"
+        ],
+        "returns": null
+      },
+      {
+        "name": "save_all_plots",
+        "args": [
+          "y0_df",
+          "top_surface_df",
+          "density_dfs",
+          "bedrock_df",
+          "output_dir"
         ],
         "returns": null
       }
@@ -2326,7 +2326,7 @@
     "classes": []
   },
   {
-    "file": "./skeleton_analysis/visualize.py",
+    "file": "./skeleton_analysis/visualization.py",
     "functions": [
       {
         "name": "plot_island_debug",
@@ -3905,7 +3905,7 @@
     ]
   },
   {
-    "file": "./xml_analysis/visualizer.py",
+    "file": "./xml_analysis/visualization.py",
     "functions": [],
     "classes": [
       {

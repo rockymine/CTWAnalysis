@@ -8,7 +8,7 @@ Also provides island detection and polygon construction for map topology analysi
 
 from .extractors import Y0LayerExtractor, TopSurfaceExtractor, VerticalDensityExtractor, LowestBedrockExtractor
 from .region_reader import RegionReader
-from .plotting import save_point_plot
+from .visualization import save_point_plot
 from .utils import nibble, decode_block_id, decode_block_data, get_block_index
 
 __version__ = "1.0.0"

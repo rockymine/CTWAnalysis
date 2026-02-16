@@ -6,7 +6,7 @@ Analyzes teams, spawns, wools, and regions.
 """
 
 from .parser import MapXMLParser
-from .visualizer import MapVisualizer
+from .visualization import MapVisualizer
 from .exporter import MapDataEncoder
 
 __version__ = "1.0.0"

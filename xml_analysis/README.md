@@ -11,7 +11,7 @@ xml_analysis/
 ├── regions.py               # Region class hierarchy with Shapely integration
 ├── build_regions.py         # Build region / void area extraction
 ├── exporter.py              # JSON serialization (MapDataEncoder)
-├── visualizer.py            # Matplotlib region plots
+├── visualization.py         # Matplotlib region plots
 ├── services/
 │   └── xml_service.py       # Pipeline step 3 orchestration
 └── tests/

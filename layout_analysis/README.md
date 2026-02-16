@@ -14,7 +14,7 @@ layout_analysis/
 ├── region_reader.py         # Anvil region file reader (MC 1.8.9)
 ├── extractors.py            # Block extraction modes (Y0, surface, density, bedrock)
 ├── utils.py                 # NBT decoding utilities (nibble, block ID)
-├── plotting.py              # Layout-level visualization (density, surface plots)
+├── visualization.py         # Layout-level visualization (density, surface plots)
 ├── map_context.py           # MapContext dataclass and builder
 │
 ├── services/                # CLI orchestration
