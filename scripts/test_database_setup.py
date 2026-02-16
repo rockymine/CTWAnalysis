@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.initialize_analysis_db import initialize_database
 from match_analysis.match_indexer import index_match_files
-from match_analysis.trajectory_extractor import process_match
+from match_analysis.match_processor import process_match
 import duckdb
 
 
