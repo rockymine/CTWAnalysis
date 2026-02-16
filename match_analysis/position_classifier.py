@@ -245,30 +245,25 @@ class PositionClassifier:
             'nearest_island_2': nearest_island_2,
         }
 
-    def classify_dataframe(
-        self, df: pd.DataFrame, snap_skeleton: bool = False,
-    ) -> pd.DataFrame:
+    def classify_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Classify all positions in a DataFrame, adding new columns.
 
         Expects columns: x, z (world coords).
         Adds columns: location_type, island_id, nearest_node_1, nearest_node_2,
             nearest_island_1, nearest_island_2.
-        If snap_skeleton=True, also adds: snap_x, snap_z.
         """
-        results = []
-        for row in df.itertuples():
-            cls = self.classify_position(row.x, row.z)
-            if snap_skeleton and cls['island_id'] is not None:
-                sx, sz = self.snap_to_skeleton(row.x, row.z, cls['island_id'])
-                cls['snap_x'] = sx
-                cls['snap_z'] = sz
-            else:
-                cls['snap_x'] = row.x
-                cls['snap_z'] = row.z
-            results.append(cls)
-
-        result_df = pd.DataFrame(results, index=df.index)
         out = df.copy()
-        for col in result_df.columns:
-            out[col] = result_df[col]
+        if len(df) == 0:
+            for col in ['location_type', 'island_id',
+                         'nearest_node_1', 'nearest_node_2',
+                         'nearest_island_1', 'nearest_island_2']:
+                out[col] = pd.Series(dtype=object)
+            return out
+
+        bulk = self.classify_bulk(
+            df['x'].values.astype(float),
+            df['z'].values.astype(float),
+        )
+        for col, arr in bulk.items():
+            out[col] = arr
         return out
