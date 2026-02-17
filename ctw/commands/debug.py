@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+from common.geometry import get_grid_extent, block_unit_square
+
 
 def register(subparsers):
     debug_parser = subparsers.add_parser(
@@ -733,11 +735,13 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> di
     # Compute shared axis bounds from all available data
     all_x, all_z = [], []
     if y0_df is not None:
-        all_x.extend([y0_df['world_x'].min(), y0_df['world_x'].max() + 1])
-        all_z.extend([y0_df['world_z'].min(), y0_df['world_z'].max() + 1])
+        mn_x, mx_x, mn_z, mx_z = get_grid_extent(y0_df['world_x'], y0_df['world_z'])
+        all_x.extend([mn_x, mx_x])
+        all_z.extend([mn_z, mx_z])
     if bed_df is not None:
-        all_x.extend([bed_df['world_x'].min(), bed_df['world_x'].max() + 1])
-        all_z.extend([bed_df['world_z'].min(), bed_df['world_z'].max() + 1])
+        mn_x, mx_x, mn_z, mx_z = get_grid_extent(bed_df['world_x'], bed_df['world_z'])
+        all_x.extend([mn_x, mx_x])
+        all_z.extend([mn_z, mx_z])
     if not all_x:
         return stats
 
@@ -769,7 +773,7 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> di
         colors = []
         for _, row in y0_df.iterrows():
             x, z = row['world_x'], row['world_z']
-            verts.append([(x, z), (x+1, z), (x+1, z+1), (x, z+1)])
+            verts.append(block_unit_square(x, z))
             colors.append(id_to_color[row['block_id']])
 
         pc = PolyCollection(verts, facecolors=colors, edgecolors='none', linewidths=0)
@@ -801,7 +805,7 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> di
         colors = []
         for _, row in bed_df.iterrows():
             x, z = row['world_x'], row['world_z']
-            verts.append([(x, z), (x+1, z), (x+1, z+1), (x, z+1)])
+            verts.append(block_unit_square(x, z))
             norm_y = (row['y'] - y_lo) / max(y_hi - y_lo, 1)
             colors.append(cmap_bed(norm_y))
 
@@ -843,7 +847,7 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> di
     for coords, color, label in diff_groups:
         if not coords:
             continue
-        verts = [[(x, z), (x+1, z), (x+1, z+1), (x, z+1)] for x, z in coords]
+        verts = [block_unit_square(x, z) for x, z in coords]
         pc = PolyCollection(verts, facecolors=color, edgecolors='none',
                             linewidths=0, alpha=0.7, label=label)
         ax.add_collection(pc)

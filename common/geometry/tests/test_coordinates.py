@@ -1,9 +1,10 @@
 """Tests for common.geometry.coordinates.
 
-Verifies correctness of get_grid_extent, get_center_from_extent, and
-get_block_centroid, including exact agreement with the legacy inline
-formulas that are being replaced in skeleton_analysis, island_analysis,
-and layout_analysis.
+Verifies correctness of get_grid_extent, get_center_from_extent,
+get_block_centroid, block_unit_square, and blocks_to_unit_squares,
+including exact agreement with the legacy inline formulas that are being
+replaced in skeleton_analysis, island_analysis, layout_analysis,
+ctw/commands/debug.py, and visualization/map_primitives.py.
 """
 
 import unittest
@@ -13,6 +14,8 @@ from common.geometry.coordinates import (
     get_grid_extent,
     get_center_from_extent,
     get_block_centroid,
+    block_unit_square,
+    blocks_to_unit_squares,
 )
 
 
@@ -335,6 +338,174 @@ class TestCrossFunction(unittest.TestCase):
         # Odd block count -> centre falls at a half-integer (inside a block)
         self.assertAlmostEqual(cx, 0.5)
         self.assertAlmostEqual(cz, 0.5)
+
+
+# ===========================================================================
+# block_unit_square
+# ===========================================================================
+
+class TestBlockUnitSquare(unittest.TestCase):
+    """Tests for block_unit_square — single-block vertex list."""
+
+    def test_origin_block(self):
+        """Block at (0, 0) has corners (0,0), (1,0), (1,1), (0,1)."""
+        verts = block_unit_square(0, 0)
+        self.assertEqual(len(verts), 4)
+        self.assertEqual(verts[0], (0.0, 0.0))
+        self.assertEqual(verts[1], (1.0, 0.0))
+        self.assertEqual(verts[2], (1.0, 1.0))
+        self.assertEqual(verts[3], (0.0, 1.0))
+
+    def test_offset_block(self):
+        """Block at (3, 5) has corners at (3,5), (4,5), (4,6), (3,6)."""
+        verts = block_unit_square(3, 5)
+        self.assertEqual(verts[0], (3.0, 5.0))
+        self.assertEqual(verts[1], (4.0, 5.0))
+        self.assertEqual(verts[2], (4.0, 6.0))
+        self.assertEqual(verts[3], (3.0, 6.0))
+
+    def test_negative_coordinates(self):
+        """Block at (-2, -3) has corners at (-2,-3), (-1,-3), (-1,-2), (-2,-2)."""
+        verts = block_unit_square(-2, -3)
+        self.assertEqual(verts[0], (-2.0, -3.0))
+        self.assertEqual(verts[1], (-1.0, -3.0))
+        self.assertEqual(verts[2], (-1.0, -2.0))
+        self.assertEqual(verts[3], (-2.0, -2.0))
+
+    def test_returns_python_floats(self):
+        """All coordinates are Python floats."""
+        verts = block_unit_square(5, 7)
+        for x, z in verts:
+            self.assertIsInstance(x, float)
+            self.assertIsInstance(z, float)
+
+    def test_unit_width_and_height(self):
+        """Each edge of the square has length 1."""
+        verts = block_unit_square(10, 20)
+        xs = [v[0] for v in verts]
+        zs = [v[1] for v in verts]
+        self.assertAlmostEqual(max(xs) - min(xs), 1.0)
+        self.assertAlmostEqual(max(zs) - min(zs), 1.0)
+
+    def test_agrees_with_legacy_debug_formula(self):
+        """Matches the legacy debug.py inline formula.
+
+        Legacy (ctw/commands/debug.py):
+            verts.append([(x, z), (x+1, z), (x+1, z+1), (x, z+1)])
+        """
+        x, z = 7, 12
+        legacy = [(x, z), (x + 1, z), (x + 1, z + 1), (x, z + 1)]
+        result = block_unit_square(x, z)
+        self.assertEqual(len(result), len(legacy))
+        for new_pt, old_pt in zip(result, legacy):
+            self.assertAlmostEqual(new_pt[0], old_pt[0])
+            self.assertAlmostEqual(new_pt[1], old_pt[1])
+
+
+# ===========================================================================
+# blocks_to_unit_squares
+# ===========================================================================
+
+class TestBlocksToUnitSquares(unittest.TestCase):
+    """Tests for blocks_to_unit_squares — vectorised vertex array."""
+
+    def test_shape_single_block(self):
+        """Single block produces shape (1, 4, 2)."""
+        result = blocks_to_unit_squares([5], [3])
+        self.assertEqual(result.shape, (1, 4, 2))
+
+    def test_shape_multiple_blocks(self):
+        """N blocks produce shape (N, 4, 2)."""
+        result = blocks_to_unit_squares([0, 1, 2], [0, 0, 0])
+        self.assertEqual(result.shape, (3, 4, 2))
+
+    def test_single_block_vertices(self):
+        """Single block at (3, 5): corners match block_unit_square."""
+        result = blocks_to_unit_squares([3], [5])
+        expected = block_unit_square(3, 5)
+        for i, (ex, ez) in enumerate(expected):
+            self.assertAlmostEqual(result[0, i, 0], ex)
+            self.assertAlmostEqual(result[0, i, 1], ez)
+
+    def test_vertex_layout(self):
+        """Verify vertex layout: BL, BR, TR, TL for each block."""
+        xs = np.array([10.0, 20.0])
+        zs = np.array([5.0, 5.0])
+        result = blocks_to_unit_squares(xs, zs)
+
+        for i, (x, z) in enumerate(zip(xs, zs)):
+            bl = result[i, 0]  # bottom-left
+            br = result[i, 1]  # bottom-right
+            tr = result[i, 2]  # top-right
+            tl = result[i, 3]  # top-left
+
+            self.assertAlmostEqual(bl[0], x)
+            self.assertAlmostEqual(bl[1], z)
+            self.assertAlmostEqual(br[0], x + 1)
+            self.assertAlmostEqual(br[1], z)
+            self.assertAlmostEqual(tr[0], x + 1)
+            self.assertAlmostEqual(tr[1], z + 1)
+            self.assertAlmostEqual(tl[0], x)
+            self.assertAlmostEqual(tl[1], z + 1)
+
+    def test_numpy_input(self):
+        """Accepts numpy array inputs."""
+        xs = np.array([0, 5, 10])
+        zs = np.array([0, 5, 10])
+        result = blocks_to_unit_squares(xs, zs)
+        self.assertEqual(result.shape, (3, 4, 2))
+
+    def test_negative_coordinates(self):
+        """Negative block indices produce correct unit squares."""
+        result = blocks_to_unit_squares([-3], [-7])
+        self.assertAlmostEqual(result[0, 0, 0], -3.0)  # BL x
+        self.assertAlmostEqual(result[0, 1, 0], -2.0)  # BR x
+        self.assertAlmostEqual(result[0, 2, 1], -6.0)  # TR z
+        self.assertAlmostEqual(result[0, 3, 1], -6.0)  # TL z
+
+    def test_consistent_with_block_unit_square(self):
+        """blocks_to_unit_squares row i matches block_unit_square for same block."""
+        test_blocks = [(0, 0), (5, 3), (-2, 7), (100, -50)]
+        xs = [b[0] for b in test_blocks]
+        zs = [b[1] for b in test_blocks]
+        batch = blocks_to_unit_squares(xs, zs)
+
+        for i, (x, z) in enumerate(test_blocks):
+            single = block_unit_square(x, z)
+            for j, (ex, ez) in enumerate(single):
+                self.assertAlmostEqual(batch[i, j, 0], ex,
+                                       msg=f"block {i} vertex {j} x mismatch")
+                self.assertAlmostEqual(batch[i, j, 1], ez,
+                                       msg=f"block {i} vertex {j} z mismatch")
+
+    def test_agrees_with_legacy_map_primitives_formula(self):
+        """Matches the legacy map_primitives.py inline formula.
+
+        Legacy (visualization/map_primitives.py):
+            squares = np.stack([
+                np.column_stack([xs,       zs]),
+                np.column_stack([xs + 1,   zs]),
+                np.column_stack([xs + 1,   zs + 1]),
+                np.column_stack([xs,       zs + 1]),
+            ], axis=1)
+        """
+        xs = np.array([0.0, 3.0, -1.0])
+        zs = np.array([0.0, 4.0, 2.0])
+
+        legacy = np.stack([
+            np.column_stack([xs,     zs]),
+            np.column_stack([xs + 1, zs]),
+            np.column_stack([xs + 1, zs + 1]),
+            np.column_stack([xs,     zs + 1]),
+        ], axis=1)
+
+        result = blocks_to_unit_squares(xs, zs)
+        np.testing.assert_array_almost_equal(result, legacy)
+
+    def test_returns_float64_array(self):
+        """Output dtype is float64."""
+        result = blocks_to_unit_squares([1, 2], [3, 4])
+        self.assertEqual(result.dtype, np.float64)
 
 
 if __name__ == "__main__":

@@ -31,12 +31,13 @@ Bounding Box Convention:
 from __future__ import annotations
 
 import numpy as np
-from typing import Sequence, Tuple, Union
+from typing import List, Sequence, Tuple, Union
 
 # Type aliases for readability
 _Array = Union[Sequence, np.ndarray]
-BBox = Tuple[float, float, float, float]   # (min_x, max_x, min_z, max_z)
-Point2D = Tuple[float, float]              # (x, z)
+BBox = Tuple[float, float, float, float]         # (min_x, max_x, min_z, max_z)
+Point2D = Tuple[float, float]                    # (x, z)
+UnitSquareVerts = List[Tuple[float, float]]      # 4 (x, z) corner pairs
 
 
 def get_grid_extent(xs: _Array, zs: _Array) -> BBox:
@@ -132,3 +133,63 @@ def get_block_centroid(xs: _Array, zs: _Array) -> Point2D:
     xs_arr = np.asarray(xs, dtype=float)
     zs_arr = np.asarray(zs, dtype=float)
     return (float(xs_arr.mean()) + 0.5, float(zs_arr.mean()) + 0.5)
+
+
+def block_unit_square(x: float, z: float) -> UnitSquareVerts:
+    """Return the four corner vertices of a single block's unit square.
+
+    Block at integer index ``(x, z)`` occupies ``[x, x+1] × [z, z+1]``.
+    The four corners are returned in counter-clockwise order starting from
+    the bottom-left, matching the convention expected by matplotlib's
+    ``PolyCollection``.
+
+    Args:
+        x: Block x-index (integer world coordinate).
+        z: Block z-index (integer world coordinate).
+
+    Returns:
+        ``[(x, z), (x+1, z), (x+1, z+1), (x, z+1)]`` as Python floats.
+
+    Examples::
+
+        >>> block_unit_square(3, 5)
+        [(3.0, 5.0), (4.0, 5.0), (4.0, 6.0), (3.0, 6.0)]
+    """
+    fx, fz = float(x), float(z)
+    return [(fx, fz), (fx + 1.0, fz), (fx + 1.0, fz + 1.0), (fx, fz + 1.0)]
+
+
+def blocks_to_unit_squares(xs: _Array, zs: _Array) -> np.ndarray:
+    """Build unit-square vertex arrays for a collection of blocks.
+
+    Each block at integer index ``(x, z)`` occupies ``[x, x+1] × [z, z+1]``.
+    Returns a shape ``(N, 4, 2)`` array suitable for direct use with
+    matplotlib's ``PolyCollection``.
+
+    Vertex layout per block::
+
+        [:, 0, :] = (x,     z)     bottom-left
+        [:, 1, :] = (x+1,   z)     bottom-right
+        [:, 2, :] = (x+1,   z+1)   top-right
+        [:, 3, :] = (x,     z+1)   top-left
+
+    Args:
+        xs: Block x-indices (integer world coordinates).
+        zs: Block z-indices (integer world coordinates).
+
+    Returns:
+        ``ndarray`` of shape ``(N, 4, 2)``.
+
+    Examples::
+
+        >>> blocks_to_unit_squares([0, 1], [0, 0]).shape
+        (2, 4, 2)
+    """
+    xs_arr = np.asarray(xs, dtype=float)
+    zs_arr = np.asarray(zs, dtype=float)
+    return np.stack([
+        np.column_stack([xs_arr,         zs_arr]),
+        np.column_stack([xs_arr + 1.0,   zs_arr]),
+        np.column_stack([xs_arr + 1.0,   zs_arr + 1.0]),
+        np.column_stack([xs_arr,         zs_arr + 1.0]),
+    ], axis=1)
