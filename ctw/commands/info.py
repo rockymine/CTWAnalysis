@@ -37,11 +37,11 @@ def handler(args):
         'layout_vertical_density.parquet': 'Layout Vertical Density',
         'map_data.json': 'XML Data',
         'map_graph.json': 'Map Graph',
-        'island_analysis/map_context.json': 'Map Context',
+        'map_context.json': 'Map Context',
         'island_analysis/island_report.txt': 'Island Report',
     }
 
-    ctx_path = _find_file('island_analysis/map_context.json')
+    ctx_path = _find_file('map_context.json')
     ctx = None
     if ctx_path:
         with open(ctx_path) as f:

@@ -136,7 +136,7 @@ def handler(args):
         total = len(map_folders)
         map_folders = [
             mf for mf in map_folders
-            if not (resolve_output_dir(mf, args.output) / 'island_analysis' / 'map_context.json').exists()
+            if not (resolve_output_dir(mf, args.output) / 'map_context.json').exists()
         ]
         skipped = total - len(map_folders)
         if skipped:
@@ -191,13 +191,13 @@ def handler(args):
 
 def _run_symmetry(map_output_dir: Path) -> None:
     """Run symmetry analysis on a map's preprocessed geometry."""
-    import json
     from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import exporter as symmetry_exporter
 
     print(f"\n[3/5] Symmetry Analysis")
     print("=" * 70)
 
-    ctx_path = map_output_dir / 'island_analysis' / 'map_context.json'
+    ctx_path = map_output_dir / 'map_context.json'
     if not ctx_path.exists():
         print("  map_context.json not found — skipping symmetry analysis")
         return
@@ -206,8 +206,7 @@ def _run_symmetry(map_output_dir: Path) -> None:
 
     # Save results
     out_path = map_output_dir / 'symmetry.json'
-    with open(out_path, 'w', encoding='utf-8') as f:
-        json.dump(result, f, indent=2)
+    symmetry_exporter.save(result, out_path)
 
     # Print summary
     detected = [s for s in result['global_symmetry'] if s['detected']]
@@ -222,5 +221,3 @@ def _run_symmetry(map_output_dir: Path) -> None:
     sym_teams = [t['team'] for t in intra if t.get('symmetry_detected')]
     if sym_teams:
         print(f"  Intra-team: detected for {', '.join(sym_teams)}")
-
-    print(f"    [OK] Saved symmetry.json")

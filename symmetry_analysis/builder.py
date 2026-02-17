@@ -1,5 +1,5 @@
 """
-Symmetry detection for CTW maps.
+Builder for symmetry analysis results.
 
 Analyzes the geometric layout of a map from map_context.json to determine
 which symmetry types are present (mirror, 180° rotation, 90° rotation),

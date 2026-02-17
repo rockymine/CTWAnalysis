@@ -1,6 +1,5 @@
 """Island detection and skeleton analysis orchestration."""
 
-import json
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -328,7 +327,10 @@ def _build_context(
 
     Returns the MapContext instance.
     """
-    from layout_analysis.map_context import build_map_context, build_skeleton_dicts
+    from layout_analysis.builder import build_map_context
+    from layout_analysis import exporter as map_context_exporter
+    from skeleton_analysis.builder import build_skeleton_dicts
+    from skeleton_analysis import exporter as map_graph_exporter
 
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
@@ -393,69 +395,12 @@ def _build_context(
         except Exception as e:
             print(f"    [!] Build region extraction failed: {e}")
 
-    map_ctx.save_json(str(island_output_dir / 'map_context.json'))
+    map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
 
     island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    _save_map_graph(island_skeletons, map_ctx.map_name, map_output_dir)
+    map_graph_exporter.save(island_skeletons, map_ctx.map_name, map_output_dir)
 
     return map_ctx
-
-
-# ---------------------------------------------------------------------------
-# map_graph.json writer (skeleton data only)
-# ---------------------------------------------------------------------------
-
-def _save_map_graph(
-    island_skeletons: list,
-    map_name: str,
-    output_dir: Path,
-) -> None:
-    """Save map_graph.json containing island skeleton data.
-
-    Downstream consumers (match analysis / PositionClassifier) read
-    islands[].skeleton.edge_pixels from this file for spatial queries.
-    """
-    import numpy as np
-
-    def _json_default(obj):
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-    # Build flat node index from per-island skeleton endpoint nodes.
-    # PositionClassifier reads map_graph.nodes for nearest-node lookups.
-    map_nodes = []
-    node_id = 0
-    for isle in island_skeletons:
-        skeleton = isle.get('skeleton')
-        if skeleton is None:
-            continue
-        iid = isle['island_id']
-        for node in skeleton.get('nodes', []):
-            if node.get('type') == 'endpoint':
-                map_nodes.append({
-                    'map_node_id': node_id,
-                    'island_id': iid,
-                    'local_node_id': node['node_id'],
-                    'coords': [node['x'], node['z']],
-                })
-                node_id += 1
-
-    data = {
-        'map_name': map_name,
-        'islands': island_skeletons,
-        'map_graph': {'nodes': map_nodes, 'edges': []},
-    }
-
-    output_path = output_dir / 'map_graph.json'
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, default=_json_default)
-    print(f"  Map graph saved to: {output_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -585,10 +530,11 @@ def analyze_islands_step(
 
     # Stage 7: Map overview (needs map_context for polygons + build regions)
     from skeleton_analysis.visualization import plot_map_overview
+    from layout_analysis import exporter as map_context_exporter
     plot_map_overview(
         skeleton_results,
         str(skeleton_output_dir / 'map_overview.png'),
-        map_context=map_ctx.to_dict(),
+        map_context=map_context_exporter.to_dict(map_ctx),
     )
 
     # Cleanup

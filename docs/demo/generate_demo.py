@@ -256,7 +256,7 @@ def main():
     print(f"Output: {output_dir}")
 
     # Load shared data
-    context_path = _find('island_analysis/map_context.json')
+    context_path = _find('map_context.json')
     if context_path is None:
         print(f"Error: map_context.json not found. Run 'ctw islands --map {map_name}' first.")
         sys.exit(1)

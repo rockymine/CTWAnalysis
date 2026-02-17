@@ -21,7 +21,7 @@ def load_team_spawn_centers(map_context_path: str) -> list[dict]:
 
     Args:
         map_context_path: Path to the map_context.json file
-            (typically output/<map>/island_analysis/map_context.json).
+            (typically output/<map>/map_context.json).
 
     Returns:
         List of dicts with keys: team (str), x (float), z (float),

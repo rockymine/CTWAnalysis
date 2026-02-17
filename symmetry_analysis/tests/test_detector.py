@@ -1,4 +1,4 @@
-"""Tests for symmetry_analysis.detector.
+"""Tests for symmetry_analysis.builder.
 
 Uses synthetic island layouts with known symmetry properties to verify
 center classification, pair transform detection, global symmetry scoring,
@@ -11,7 +11,7 @@ import os
 import tempfile
 import unittest
 
-from symmetry_analysis.detector import (
+from symmetry_analysis.builder import (
     classify_center,
     _build_canonical_pairs,
     _detect_pair_transform,

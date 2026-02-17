@@ -10,8 +10,8 @@ import tempfile
 import os
 from pathlib import Path
 
-from xml_analysis.parser import MapXMLParser
-from xml_analysis.exporter import MapDataEncoder
+from xml_analysis.builder import MapXMLParser
+from xml_analysis import exporter as map_data_exporter
 
 
 class TestJSONExport(unittest.TestCase):
@@ -60,7 +60,7 @@ class TestJSONExport(unittest.TestCase):
         data = parser.parse()
         categories = parser.identify_region_categories(data)
 
-        json_str = MapDataEncoder.to_json(data, categories)
+        json_str = map_data_exporter.to_json(data, categories)
 
         # Should be valid JSON
         parsed = json.loads(json_str)
@@ -72,7 +72,7 @@ class TestJSONExport(unittest.TestCase):
         data = parser.parse()
         categories = parser.identify_region_categories(data)
 
-        json_str = MapDataEncoder.to_json(data, categories)
+        json_str = map_data_exporter.to_json(data, categories)
         parsed = json.loads(json_str)
 
         # Check top-level fields
@@ -91,7 +91,7 @@ class TestJSONExport(unittest.TestCase):
         parser = MapXMLParser(self.temp_xml.name)
         data = parser.parse()
 
-        json_str = MapDataEncoder.to_json(data)
+        json_str = map_data_exporter.to_json(data)
         parsed = json.loads(json_str)
 
         self.assertEqual(len(parsed['teams']), 2)
@@ -107,7 +107,7 @@ class TestJSONExport(unittest.TestCase):
         parser = MapXMLParser(self.temp_xml.name)
         data = parser.parse()
 
-        json_str = MapDataEncoder.to_json(data)
+        json_str = map_data_exporter.to_json(data)
         parsed = json.loads(json_str)
 
         self.assertEqual(len(parsed['spawns']), 1)
@@ -128,7 +128,7 @@ class TestJSONExport(unittest.TestCase):
         parser = MapXMLParser(self.temp_xml.name)
         data = parser.parse()
 
-        json_str = MapDataEncoder.to_json(data)
+        json_str = map_data_exporter.to_json(data)
         parsed = json.loads(json_str)
 
         self.assertEqual(len(parsed['wools']), 1)
@@ -149,7 +149,7 @@ class TestJSONExport(unittest.TestCase):
         parser = MapXMLParser(self.temp_xml.name)
         data = parser.parse()
 
-        json_str = MapDataEncoder.to_json(data)
+        json_str = map_data_exporter.to_json(data)
         parsed = json.loads(json_str)
 
         self.assertIn('test-region', parsed['regions'])
@@ -169,7 +169,7 @@ class TestJSONExport(unittest.TestCase):
             temp_json = f.name
 
         try:
-            MapDataEncoder.save_json(data, temp_json)
+            map_data_exporter.save(data, temp_json)
 
             # Verify file exists and is valid JSON
             self.assertTrue(os.path.exists(temp_json))
@@ -198,7 +198,7 @@ class TestRealMapJSON(unittest.TestCase):
         data = parser.parse()
         categories = parser.identify_region_categories(data)
 
-        json_str = MapDataEncoder.to_json(data, categories)
+        json_str = map_data_exporter.to_json(data, categories)
 
         # Should be valid JSON
         parsed = json.loads(json_str)

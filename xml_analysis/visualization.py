@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from .parser import MapData, Spawn, Wool
+from .datatypes import MapData, Spawn, Wool
 from .regions import Region, RectangleRegion, CuboidRegion, CircleRegion, CylinderRegion
 
 

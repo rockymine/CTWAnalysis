@@ -19,7 +19,7 @@ python ctw.py debug symmetry
 ```
 
 The command reads preprocessed island geometry from
-`output/<map_name>/island_analysis/map_context.json`, which must be generated
+`output/<map_name>/map_context.json`, which must be generated
 first by the island analysis pipeline:
 
 ```bash
