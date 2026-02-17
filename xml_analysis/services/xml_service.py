@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from xml_analysis import MapXMLParser, MapDataEncoder
+from xml_analysis import MapXMLParser
+from xml_analysis import exporter as map_data_exporter
 
 
 def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = None):
@@ -45,7 +46,7 @@ def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = 
         categories = parser.identify_region_categories(map_data)
 
         # Save JSON
-        MapDataEncoder.save_json(map_data, str(json_file), categories)
+        map_data_exporter.save(map_data, str(json_file), categories)
 
         print(f"    [OK] Saved {json_file.name}")
         print(f"      - Teams: {len(map_data.teams)}")

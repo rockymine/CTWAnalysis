@@ -28,7 +28,8 @@ def handler(args):
         sys.exit(1)
 
     if args.visualize or args.category_plots:
-        from xml_analysis import MapXMLParser, MapVisualizer, MapDataEncoder
+        from xml_analysis import MapXMLParser, MapVisualizer
+        from xml_analysis import exporter as map_data_exporter
 
         output_dir = resolve_output_dir(map_folder, create=True)
         parser = MapXMLParser(str(xml_path))
@@ -41,9 +42,8 @@ def handler(args):
             visualizer.print_summary()
 
         if not args.no_json:
-            map_name_safe = map_data.name.replace(' ', '_').lower()
-            json_path = output_dir / f'map_data.json'
-            MapDataEncoder.save_json(map_data, str(json_path), categories)
+            json_path = output_dir / 'map_data.json'
+            map_data_exporter.save(map_data, str(json_path), categories)
 
         map_name_safe = map_data.name.replace(' ', '_').lower()
         main_plot_path = output_dir / f'{map_name_safe}_layout.png'

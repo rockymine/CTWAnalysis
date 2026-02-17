@@ -191,7 +191,8 @@ def handler(args):
 
 def _run_symmetry(map_output_dir: Path) -> None:
     """Run symmetry analysis on a map's preprocessed geometry."""
-    from symmetry_analysis import detect_symmetry, save_symmetry_json
+    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import exporter as symmetry_exporter
 
     print(f"\n[3/5] Symmetry Analysis")
     print("=" * 70)
@@ -205,7 +206,7 @@ def _run_symmetry(map_output_dir: Path) -> None:
 
     # Save results
     out_path = map_output_dir / 'symmetry.json'
-    save_symmetry_json(result, out_path)
+    symmetry_exporter.save(result, out_path)
 
     # Print summary
     detected = [s for s in result['global_symmetry'] if s['detected']]
