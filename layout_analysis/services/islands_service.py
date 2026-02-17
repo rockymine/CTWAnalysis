@@ -311,77 +311,6 @@ def _annotate_pois(
 # Stage 6: Build MapContext + initial map_graph.json
 # ---------------------------------------------------------------------------
 
-def _build_map_context(
-    islands, skeleton_results, canonical_groups, layout_df,
-    map_data=None, map_center=None, poi_assignments=None,
-):
-    """Populate a MapContext from all analysis results.
-
-    This is the *builder* for the MapContext dataclass.
-    """
-    from layout_analysis.datatypes import MapContext
-
-    ctx = MapContext()
-
-    # XML metadata
-    if map_data is not None:
-        ctx.map_name = map_data.name
-        ctx.map_version = map_data.version
-        ctx.objective = map_data.objective
-        ctx.teams = [
-            {'id': t.id, 'color': t.color, 'name': t.name, 'max_players': t.max_players}
-            for t in map_data.teams
-        ]
-
-    # Layout info
-    x_col = 'world_x' if 'world_x' in layout_df.columns else 'x'
-    z_col = 'world_z' if 'world_z' in layout_df.columns else 'z'
-    ctx.bounding_box = (
-        float(layout_df[x_col].min()),
-        float(layout_df[x_col].max()) + 1,
-        float(layout_df[z_col].min()),
-        float(layout_df[z_col].max()) + 1,
-    )
-    ctx.total_blocks = len(layout_df)
-    ctx.map_center = map_center
-
-    # Islands (geometry only; skeleton/pathfinding live in map_graph.json)
-    ctx.island_count = len(islands)
-    for island in islands:
-        ctx.islands.append({
-            'id': island.id,
-            'area': island.area,
-            'center': list(island.center),
-            'bounding_box': list(island.bounding_box),
-            'has_spawn': island.has_spawn,
-            'has_wool': island.has_wool,
-            'has_center': island.has_center,
-            'distance_to_center': round(island.distance_to_center, 2),
-            'team': island.team,
-            'hole_count': len(island.holes),
-            'simplified_polygon': island.simplified_polygon,
-        })
-
-    # Skeleton
-    ctx.total_nodes = sum(len(r.graph.nodes) for r in skeleton_results)
-    ctx.total_edges = sum(len(r.graph.edges) for r in skeleton_results)
-    ctx.total_endpoints = sum(
-        sum(1 for n in r.graph.nodes if n.node_type == 'endpoint')
-        for r in skeleton_results
-    )
-    ctx.total_junctions = sum(
-        sum(1 for n in r.graph.nodes if n.node_type == 'junction')
-        for r in skeleton_results
-    )
-    ctx.unique_canonical_shapes = len(canonical_groups)
-
-    # POI
-    if poi_assignments is not None:
-        ctx.poi_assignments = poi_assignments
-
-    return ctx
-
-
 def _build_context(
     map_folder: Path,
     islands: list,
@@ -398,10 +327,12 @@ def _build_context(
 
     Returns the MapContext instance.
     """
+    from layout_analysis.builder import build_map_context
     from layout_analysis import exporter as map_context_exporter
+    from skeleton_analysis.builder import build_skeleton_dicts
     from skeleton_analysis import exporter as map_graph_exporter
 
-    map_ctx = _build_map_context(
+    map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
         map_data=map_data_obj,
         map_center=map_center_pt,
@@ -466,7 +397,7 @@ def _build_context(
 
     map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
 
-    island_skeletons = map_graph_exporter.build_skeleton_dicts(islands, skeleton_results)
+    island_skeletons = build_skeleton_dicts(islands, skeleton_results)
     map_graph_exporter.save(island_skeletons, map_ctx.map_name, map_output_dir)
 
     return map_ctx

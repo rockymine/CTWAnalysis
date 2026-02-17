@@ -9,7 +9,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from xml_analysis.parser import MapXMLParser
+from xml_analysis.builder import MapXMLParser
 from xml_analysis.regions import (
     RectangleRegion, CuboidRegion, UnionRegion, BlockRegion,
     MirrorRegion, TranslateRegion,

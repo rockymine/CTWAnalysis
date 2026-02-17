@@ -10,6 +10,8 @@ from .extractors import Y0LayerExtractor, TopSurfaceExtractor, VerticalDensityEx
 from .region_reader import RegionReader
 from .visualization import save_point_plot
 from .utils import nibble, decode_block_id, decode_block_data, get_block_index
+from . import builder
+from . import exporter
 
 __version__ = "1.0.0"
 
@@ -21,6 +23,9 @@ __all__ = [
     "LowestBedrockExtractor",
     "RegionReader",
     "save_point_plot",
+    # Modules
+    "builder",
+    "exporter",
     # Utils
     "nibble",
     "decode_block_id",

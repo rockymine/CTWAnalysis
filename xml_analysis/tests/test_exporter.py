@@ -10,7 +10,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from xml_analysis.parser import MapXMLParser
+from xml_analysis.builder import MapXMLParser
 from xml_analysis import exporter as map_data_exporter
 
 

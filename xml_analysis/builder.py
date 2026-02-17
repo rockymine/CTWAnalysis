@@ -1,7 +1,8 @@
 """
-XML parser for Minecraft map configurations.
+Builder for map data from XML configuration.
 
-Parses teams, spawns, wools, regions, and other map elements from XML files.
+Parses teams, spawns, wools, regions, and other map elements from XML files,
+returning a populated MapData dataclass.
 """
 
 import xml.etree.ElementTree as ET

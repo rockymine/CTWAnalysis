@@ -6,8 +6,9 @@ Analyzes teams, spawns, wools, and regions.
 """
 
 from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
-from .parser import MapXMLParser
+from .builder import MapXMLParser
 from .visualization import MapVisualizer
+from . import builder
 from . import exporter
 
 __version__ = "1.0.0"
@@ -16,5 +17,6 @@ __all__ = [
     "MapData",
     "MapXMLParser",
     "MapVisualizer",
+    "builder",
     "exporter",
 ]

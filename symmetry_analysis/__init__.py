@@ -1,4 +1,5 @@
 """Symmetry analysis for CTW maps."""
 
-from .detector import detect_symmetry
+from .builder import detect_symmetry
+from . import builder
 from . import exporter
