@@ -7,6 +7,7 @@ and populates a MapContext dataclass.
 from typing import Dict, List, Optional, Tuple
 
 from .datatypes import MapContext
+from common.geometry import get_grid_extent
 
 
 def build_map_context(
@@ -47,12 +48,7 @@ def build_map_context(
     # Layout info
     x_col = 'world_x' if 'world_x' in layout_df.columns else 'x'
     z_col = 'world_z' if 'world_z' in layout_df.columns else 'z'
-    ctx.bounding_box = (
-        float(layout_df[x_col].min()),
-        float(layout_df[x_col].max()) + 1,
-        float(layout_df[z_col].min()),
-        float(layout_df[z_col].max()) + 1,
-    )
+    ctx.bounding_box = get_grid_extent(layout_df[x_col], layout_df[z_col])
     ctx.total_blocks = len(layout_df)
     ctx.map_center = map_center
 
