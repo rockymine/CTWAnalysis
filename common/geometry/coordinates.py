@@ -1,31 +1,23 @@
-"""Canonical spatial coordinate utilities for the CTW analysis pipeline.
+"""Block extent, vertex, and polygon utilities for the CTW analysis pipeline.
 
-Coordinate Systems
-------------------
-World Space (Integer Indices):
-    Raw block positions as stored in Parquet/DataFrames.
-    Block at integer index (x, z) occupies the continuous interval
-    [x, x+1] x [z, z+1] with its physical centre at (x+0.5, z+0.5).
+See :mod:`common.geometry` (this package's ``__init__.py``) for the full
+coordinate-system overview, the conversion graph, the "+1 Rule", and the
+"Rotation of Extent" constraint.
 
-World Extent (Continuous):
-    The physical volume occupied by a set of blocks.
-    For blocks spanning integer indices [min_x, max_x], the world extent
-    is [min_x, max_x + 1] because the rightmost block at max_x occupies
-    [max_x, max_x + 1].
+Functions in this module embody the "+1 Rule":
+  - :func:`get_grid_extent`         — the canonical bounding-box builder
+  - :func:`get_center_from_extent`  — midpoint of an already-adjusted extent
+  - :func:`get_block_centroid`      — per-block weighted centroid
+  - :func:`block_unit_square`       — single block → 4 corner vertices
+  - :func:`blocks_to_unit_squares`  — many blocks → (N, 4, 2) vertex array
+  - :func:`world_blocks_to_shapely` — world block indices → Shapely polygon
 
-The "+1 Rule":
-    Never compute width as ``max_x - min_x``.  A layout containing only
-    the block at x=10 has width 1, not 0.  The "+1" adjustment must be
-    applied *exactly once*, inside ``get_grid_extent``.  No caller should
-    ever write ``+ 1`` or ``+ 0.5`` when computing bounding boxes or
-    centres — they should call the functions below instead.
-
-Bounding Box Convention:
-    ``(min_x, max_x, min_z, max_z)`` where ``max_x`` and ``max_z`` are
-    the *extent* upper bounds, i.e. already +1 relative to the highest
-    block index.  This is the convention used throughout the pipeline in
-    ``Island.bounding_box``, ``MapContext.bounding_box``, and the JSON
-    exports.
+Bounding Box Convention
+-----------------------
+``(min_x, max_x, min_z, max_z)`` where ``max_x`` and ``max_z`` are the
+*extent* upper bounds — already +1 relative to the highest block index.
+This is the convention used in ``Island.bounding_box``,
+``MapContext.bounding_box``, and all JSON exports.
 """
 
 from __future__ import annotations

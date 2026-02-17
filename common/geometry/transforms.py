@@ -1,4 +1,14 @@
-"""Coordinate-space transform utilities for the CTW analysis pipeline.
+"""Canonical-space and raster-space transform utilities.
+
+See :mod:`common.geometry` (this package's ``__init__.py``) for the full
+coordinate-system overview, the four-space conversion graph, the "+1 Rule",
+and the "Rotation of Extent" constraint.
+
+This module provides:
+  - :class:`CanonicalTransform` — world ↔ canonical block-index converter
+  - :class:`RasterMask`         — raster ↔ canonical array-index converter
+  - :func:`raster_to_world_path`  — combined raster → canonical → world path
+  - :func:`raster_to_world_point` — combined raster → canonical → world point
 
 Canonical Space
 ---------------
