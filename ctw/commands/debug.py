@@ -391,8 +391,9 @@ def _handle_block_scan(root: Path, filename: str, csv_path: str | None):
 def _handle_water(root: Path, filename: str):
     """Analyze water blocks and check overlap with XML build regions."""
     import pandas as pd
-    from shapely.geometry import box, Polygon, MultiPolygon
+    from shapely.geometry import Polygon, MultiPolygon
     from shapely.ops import unary_union
+    from common.geometry import world_blocks_to_shapely
 
     maps_with_water = 0
 
@@ -420,11 +421,9 @@ def _handle_water(root: Path, filename: str):
         print(f"{'=' * 60}")
 
         # Build water polygons (exact, no simplification)
-        squares = [
-            box(x, z, x + 1, z + 1)
-            for x, z in zip(water['world_x'], water['world_z'])
-        ]
-        water_geom = unary_union(squares)
+        water_geom = world_blocks_to_shapely(
+            list(zip(water['world_x'], water['world_z']))
+        )
 
         if isinstance(water_geom, Polygon):
             water_polys = [water_geom]

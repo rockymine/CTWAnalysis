@@ -193,3 +193,47 @@ def blocks_to_unit_squares(xs: _Array, zs: _Array) -> np.ndarray:
         np.column_stack([xs_arr + 1.0,   zs_arr + 1.0]),
         np.column_stack([xs_arr,         zs_arr + 1.0]),
     ], axis=1)
+
+
+def world_blocks_to_shapely(blocks: _Array):
+    """Build a Shapely polygon from world-space block indices.
+
+    Each block at integer index ``(x, z)`` occupies ``[x, x+1] × [z, z+1]``.
+    This function converts each block to its unit-square polygon and returns
+    their union, giving the exact boundary of the block layout (including
+    concavities and holes).
+
+    The "+1 extent" is applied here in world space — the one authoritative
+    place where ``x+1`` and ``z+1`` appear for block-to-polygon conversion.
+    Callers must **never** apply a spatial transform (rotation, mirror) to the
+    result and expect it to remain block-accurate; polygons must always be
+    built in world space.  See the module docstring of
+    :mod:`common.geometry.transforms` for details.
+
+    Args:
+        blocks: Nx2 array-like of ``(x, z)`` integer block indices.
+
+    Returns:
+        A :class:`shapely.geometry.base.BaseGeometry` (``Polygon`` or
+        ``MultiPolygon``) representing the union of all block unit squares.
+        Returns an empty ``Polygon`` if *blocks* is empty.
+
+    Examples::
+
+        >>> from common.geometry import world_blocks_to_shapely
+        >>> p = world_blocks_to_shapely([[0, 0], [1, 0]])
+        >>> p.bounds   # (minx, miny, maxx, maxy) in shapely convention
+        (0.0, 0.0, 2.0, 1.0)
+    """
+    from shapely.geometry import box, Polygon
+    from shapely.ops import unary_union
+
+    blocks_arr = np.asarray(blocks, dtype=float)
+    if blocks_arr.size == 0:
+        return Polygon()
+
+    squares = [
+        box(float(x), float(z), float(x) + 1.0, float(z) + 1.0)
+        for x, z in blocks_arr
+    ]
+    return unary_union(squares)

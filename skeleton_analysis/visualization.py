@@ -17,6 +17,7 @@ from typing import List, Dict, Optional
 
 from visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
+from common.geometry import raster_to_world_path, raster_to_world_point
 
 
 def plot_island_debug(
@@ -241,18 +242,14 @@ def plot_map_overview(
 
         # Transform skeleton edges to world coords and draw
         for edge in result.graph.edges:
-            # Convert pixel path (r,c) -> canonical (x,z) -> world (x,z)
-            path_canonical = np.array([
-                raster.rc_to_canonical(r, c) for r, c in edge.pixel_path
-            ], dtype=float)
-            path_world = transform.to_original(path_canonical)
+            # Convert pixel path: raster (r,c) -> canonical (x,z) -> world (x,z)
+            path_world = raster_to_world_path(edge.pixel_path, raster, transform)
             ax.plot(path_world[:, 0], path_world[:, 1],
                     color=color, linewidth=1.5, alpha=0.8)
 
         # Transform nodes to world coords and draw
         for node in result.graph.nodes:
-            cx, cz = raster.rc_to_canonical(node.rc[0], node.rc[1])
-            world_pt = transform.to_original(np.array([[cx, cz]], dtype=float))[0]
+            world_pt = raster_to_world_point(node.rc, raster, transform)
             marker_color = 'lime' if node.node_type == 'endpoint' else 'red'
             marker = 'o' if node.node_type == 'endpoint' else 's'
             ax.scatter(world_pt[0], world_pt[1], c=marker_color, s=20,
