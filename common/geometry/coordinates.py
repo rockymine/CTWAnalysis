@@ -167,6 +167,34 @@ def blocks_to_unit_squares(xs: _Array, zs: _Array) -> np.ndarray:
     ], axis=1)
 
 
+def block_centers(block_indices: _Array) -> np.ndarray:
+    """Convert block index coordinates to block center coordinates.
+
+    Block at integer index ``x`` occupies ``[x, x+1]``; its center is at
+    ``x + 0.5``.  Works on any array shape: pass ``(2,)`` for a single
+    ``(x, z)`` point, or ``(N, 2)`` for a collection.
+
+    Use this whenever scatter or line plots must be centred on blocks rather
+    than placed at the lower-left corner that integer indices represent.
+
+    Args:
+        block_indices: Array-like of integer block index coordinates.
+
+    Returns:
+        Float array of the same shape with every element incremented by 0.5.
+
+    Examples::
+
+        >>> block_centers([10, 5])
+        array([10.5,  5.5])
+
+        >>> block_centers([[0, 0], [1, 0]])
+        array([[0.5, 0.5],
+               [1.5, 0.5]])
+    """
+    return np.asarray(block_indices, dtype=float) + 0.5
+
+
 def world_blocks_to_shapely(blocks: _Array):
     """Build a Shapely polygon from world-space block indices.
 

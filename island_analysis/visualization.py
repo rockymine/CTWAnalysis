@@ -12,6 +12,8 @@ from matplotlib.collections import PatchCollection, PolyCollection
 from typing import List, Dict, Tuple, Optional
 import colorsys
 
+from common.geometry import block_centers
+
 
 def generate_distinct_colors(n: int) -> List[Tuple[float, float, float]]:
     """Generate n visually distinct colors."""
@@ -60,11 +62,12 @@ def plot_islands(
     for i, island in enumerate(islands):
         color = colors[i]
 
-        # Plot blocks as scatter
+        # Plot blocks as scatter (centred on each block)
         if show_blocks:
+            bc = block_centers(island.blocks)
             ax.scatter(
-                island.blocks[:, 0],
-                island.blocks[:, 1],
+                bc[:, 0],
+                bc[:, 1],
                 c=[color],
                 s=3,
                 alpha=alpha * 0.5,
@@ -137,11 +140,12 @@ def plot_island_polygons(
     for i, island in enumerate(islands):
         color = colors[i]
 
-        # Plot blocks as light background
+        # Plot blocks as light background (centred on each block)
         if show_blocks:
+            bc = block_centers(island.blocks)
             ax.scatter(
-                island.blocks[:, 0],
-                island.blocks[:, 1],
+                bc[:, 0],
+                bc[:, 1],
                 c=[(*color, 0.2)],
                 s=1,
                 alpha=0.3
@@ -426,10 +430,11 @@ def plot_island_detail(
         ax = axes[i]
         color = colors[i]
 
-        # Plot the actual blocks as background
+        # Plot the actual blocks as background (centred on each block)
+        bc = block_centers(island.blocks)
         ax.scatter(
-            island.blocks[:, 0],
-            island.blocks[:, 1],
+            bc[:, 0],
+            bc[:, 1],
             c='lightgray',
             s=2,
             alpha=0.5,
