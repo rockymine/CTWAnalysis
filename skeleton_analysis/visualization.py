@@ -17,7 +17,10 @@ from typing import List, Dict, Optional
 
 from visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
-from common.geometry import raster_to_world_path, raster_to_world_point, block_centers
+from common.geometry import (
+    raster_to_world_path, raster_to_world_point,
+    block_centers, raster_imshow_extent,
+)
 
 
 def plot_island_debug(
@@ -50,7 +53,7 @@ def plot_island_debug(
     # Panel 1: Island mask
     ax = axes[0, 0]
     ax.imshow(mask, cmap='Greys', interpolation='nearest', origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Island mask ({mask.sum()} blocks)")
     ax.set_xlabel("c (x)")
     ax.set_ylabel("r (z)")
@@ -58,11 +61,11 @@ def plot_island_debug(
     # Panel 2: Skeleton overlay
     ax = axes[0, 1]
     ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
     skel_display = np.zeros((*mask.shape, 4))
     skel_display[skel_mask] = [1, 0, 0, 1]  # Red skeleton
     ax.imshow(skel_display, interpolation='nearest', origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Skeleton ({skel_mask.sum()} pixels)")
     ax.set_xlabel("c (x)")
     ax.set_ylabel("r (z)")
@@ -70,9 +73,9 @@ def plot_island_debug(
     # Panel 3: Nodes on skeleton
     ax = axes[0 + 1, 0]
     ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
     ax.imshow(skel_display, interpolation='nearest', origin='upper', alpha=0.5,
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
 
     endpoints = [(n.rc[1], n.rc[0]) for n in result.graph.nodes if n.node_type == 'endpoint']
     junctions = [(n.rc[1], n.rc[0]) for n in result.graph.nodes if n.node_type == 'junction']
@@ -95,7 +98,7 @@ def plot_island_debug(
     # Panel 4: Edges
     ax = axes[1, 1]
     ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
 
     # Color edges distinctly
     cmap = plt.cm.tab20
@@ -169,7 +172,7 @@ def plot_unique_islands(
 
         mask = result.raster.mask
         ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
 
         # Draw edges
         for edge in result.graph.edges:
@@ -431,13 +434,13 @@ def plot_island_poi_debug(
 
     # Background mask
     ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
 
     # Skeleton overlay (muted gray)
     skel_display = np.zeros((*mask.shape, 4))
     skel_display[skel_mask] = [0.5, 0.5, 0.5, 0.5]
     ax.imshow(skel_display, interpolation='nearest', origin='upper',
-              extent=[0, mask.shape[1], mask.shape[0], 0])
+              extent=raster_imshow_extent(mask.shape))
 
     # Draw edges
     for edge in result.graph.edges:

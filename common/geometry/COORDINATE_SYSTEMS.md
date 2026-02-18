@@ -176,6 +176,86 @@ This is why `_build_union_polygon` in `island_analysis/polygon.py` receives
 
 ---
 
+## Plotting Recipes
+
+Every plot in the pipeline falls into one of two modes depending on which
+coordinate space the axes use.  The rules below are mandatory — violating
+either rule in isolation produces a 0.5-block shift.
+
+---
+
+### World-Space Plots
+
+Axes show `world_x` (horizontal) and `world_z` (vertical, inverted with
+`ax.invert_yaxis()`).  Polygon outlines from `map_context.json` and from
+`world_blocks_to_shapely()` already use extent coordinates and need no
+adjustment.
+
+**Scatter / line coordinates must go through `block_centers`:**
+
+```python
+# Wrong — integer index is the lower-left corner of the block unit square;
+#          marker appears 0.5 blocks away from the polygon outline.
+ax.scatter(blocks[:, 0], blocks[:, 1])
+
+# Right — block_centers adds 0.5 to land on the block centre.
+bc = block_centers(blocks)          # shape (N, 2)
+ax.scatter(bc[:, 0], bc[:, 1])
+
+# For a single world point produced by raster_to_world_point:
+pt_c = block_centers(world_pt)      # shape (2,)
+ax.scatter(pt_c[0], pt_c[1])
+
+# For a path produced by raster_to_world_path (shape P×2, columns x/z):
+path_c = block_centers(path_world)
+ax.plot(path_c[:, 0], path_c[:, 1])
+```
+
+---
+
+### Raster-Space Plots
+
+Axes show raster column `c` (horizontal) and raster row `r` (vertical,
+increasing downward because `origin='upper'`).
+
+**Rule 1 — always set `extent` on every `imshow` call:**
+
+```python
+# Wrong — default extent centres pixel (r,c) at (c, r);
+#          that is the lower-left corner of the block, not its centre.
+ax.imshow(mask, origin='upper')
+
+# Right — extent=[0, W, H, 0] makes pixel (r,c) occupy [c,c+1]×[r,r+1].
+ax.imshow(mask, origin='upper', extent=raster_imshow_extent(mask.shape))
+```
+
+`raster_imshow_extent(shape)` returns `[0, W, H, 0]` which maps to
+matplotlib's `[left, right, bottom, top]`.  With `origin='upper'`, row 0
+is at the visual top (`top=0`) and the last row is at the visual bottom
+(`bottom=H`).
+
+**Rule 2 — scatter / line coordinates must go through `block_centers`:**
+
+```python
+# Wrong — (col, row) is the pixel's data-coordinate after the extent shift,
+#          which is still the lower-left corner.
+ax.scatter(node.rc[1], node.rc[0])
+
+# Right — block_centers adds 0.5 to each dimension.
+nc = block_centers([node.rc[1], node.rc[0]])   # [col+0.5, row+0.5]
+ax.scatter(nc[0], nc[1])
+
+# For a pixel path (shape P×2, columns [row, col]):
+path_c = block_centers(path)
+ax.plot(path_c[:, 1], path_c[:, 0])            # plot(x=col+0.5, y=row+0.5)
+```
+
+The two rules are inseparable.  Applying only `extent` leaves scatter at
+pixel corners; applying only `block_centers` without `extent` shifts scatter
+to centres but the image is still half a pixel off.
+
+---
+
 ## Quick Reference
 
 ### Block extents and bounding boxes
@@ -185,6 +265,13 @@ This is why `_build_union_polygon` in `island_analysis/polygon.py` receives
 | `get_grid_extent` | `xs, zs → (min_x, max_x+1, min_z, max_z+1)` | Applies +1 rule |
 | `get_center_from_extent` | `BBox → (cx, cz)` | Midpoint of adjusted extent |
 | `get_block_centroid` | `xs, zs → (cx, cz)` | Weighted centroid, applies +0.5 |
+
+### Plotting helpers
+
+| Function | Signature | Notes |
+|---|---|---|
+| `block_centers` | `block_indices → ndarray (+0.5)` | World & raster scatter/lines |
+| `raster_imshow_extent` | `(H, W) → [0, W, H, 0]` | `extent=` arg for `imshow` |
 
 ### Block vertices for rendering
 
@@ -227,7 +314,8 @@ This is why `_build_union_polygon` in `island_analysis/polygon.py` receives
 ```
 common/geometry/
   __init__.py       public API, re-exports everything
-  coordinates.py    get_grid_extent, get_block_centroid, block_unit_square,
+  coordinates.py    get_grid_extent, get_block_centroid, block_centers,
+                    raster_imshow_extent, block_unit_square,
                     blocks_to_unit_squares, world_blocks_to_shapely
   transforms.py     CanonicalTransform, RasterMask,
                     raster_to_world_path, raster_to_world_point

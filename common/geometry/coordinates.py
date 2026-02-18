@@ -195,6 +195,45 @@ def block_centers(block_indices: _Array) -> np.ndarray:
     return np.asarray(block_indices, dtype=float) + 0.5
 
 
+def raster_imshow_extent(shape: Tuple[int, int]) -> List[float]:
+    """Return the ``extent`` argument for ``ax.imshow`` in raster space.
+
+    Matplotlib's default ``imshow`` extent ``[-0.5, W-0.5, H-0.5, -0.5]``
+    centres pixel ``(r, c)`` at data-coordinate ``(c, r)``.  That is
+    inconsistent with the block-corner convention: block at raster position
+    ``(r, c)`` occupies ``[c, c+1] × [r, r+1]``, so its centre is at
+    ``(c+0.5, r+0.5)``.
+
+    Passing the returned value as ``extent`` fixes this:
+
+    .. code-block:: python
+
+        ax.imshow(mask, origin='upper', extent=raster_imshow_extent(mask.shape))
+
+    With ``extent=[0, W, H, 0]`` and ``origin='upper'``:
+
+    * Pixel ``(r, c)`` occupies the rectangle ``[c, c+1] × [r, r+1]``.
+    * Scatter / line coordinates at ``block_centers([col, row])`` =
+      ``(col+0.5, row+0.5)`` land exactly at pixel centres.
+
+    The two changes — ``extent`` and :func:`block_centers` — are inseparable:
+    applying one without the other introduces a 0.5-block offset.
+
+    Args:
+        shape: ``(H, W)`` shape of the raster array (e.g. ``mask.shape``).
+
+    Returns:
+        ``[left, right, bottom, top]`` = ``[0, W, H, 0]`` as floats.
+
+    Examples::
+
+        >>> raster_imshow_extent((10, 20))
+        [0, 20, 10, 0]
+    """
+    H, W = shape
+    return [0, W, H, 0]
+
+
 def world_blocks_to_shapely(blocks: _Array):
     """Build a Shapely polygon from world-space block indices.
 
