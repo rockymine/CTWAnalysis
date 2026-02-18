@@ -1,24 +1,4 @@
-"""Block extent, vertex, and polygon utilities for the CTW analysis pipeline.
-
-See :mod:`common.geometry` (this package's ``__init__.py``) for the full
-coordinate-system overview, the conversion graph, the "+1 Rule", and the
-"Rotation of Extent" constraint.
-
-Functions in this module embody the "+1 Rule":
-  - :func:`get_grid_extent`         — the canonical bounding-box builder
-  - :func:`get_center_from_extent`  — midpoint of an already-adjusted extent
-  - :func:`get_block_centroid`      — per-block weighted centroid
-  - :func:`block_unit_square`       — single block → 4 corner vertices
-  - :func:`blocks_to_unit_squares`  — many blocks → (N, 4, 2) vertex array
-  - :func:`world_blocks_to_shapely` — world block indices → Shapely polygon
-
-Bounding Box Convention
------------------------
-``(min_x, max_x, min_z, max_z)`` where ``max_x`` and ``max_z`` are the
-*extent* upper bounds — already +1 relative to the highest block index.
-This is the convention used in ``Island.bounding_box``,
-``MapContext.bounding_box``, and all JSON exports.
-"""
+"""Block extent, vertex, and polygon utilities. See COORDINATE_SYSTEMS.md."""
 
 from __future__ import annotations
 
