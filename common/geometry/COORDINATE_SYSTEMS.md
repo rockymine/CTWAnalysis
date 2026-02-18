@@ -176,6 +176,110 @@ This is why `_build_union_polygon` in `island_analysis/polygon.py` receives
 
 ---
 
+## Data Invariants (Authoritative Definitions)
+
+This section gives precise, implementation-verified definitions of every
+implicit invariant that the pipeline relies on.  When adding code that
+touches any of these types, check here first.
+
+---
+
+### GraphNode.rc
+
+| Property | Value |
+|---|---|
+| Python type | `Tuple[int, int]` |
+| Shape | 2-tuple `(r, c)` |
+| Dtype | Non-negative Python `int` |
+| Semantics | **Cell indices** — raster row and column of the skeleton pixel |
+| Axis order | `rc[0]` = row `r` ↔ z-axis; `rc[1]` = column `c` ↔ x-axis |
+| Domain | `r ∈ [0, H)`, `c ∈ [0, W)` where `mask.shape == (H, W)` |
+
+`rc` identifies a **cell by its index**, not its centre.  The pixel occupies
+the unit square `[c, c+1] × [r, r+1]` in raster data coordinates.
+Use `block_centers([node.rc[1], node.rc[0]])` to get `(c+0.5, r+0.5)` for
+plotting.
+
+---
+
+### GraphEdge.pixel_path
+
+| Property | Value |
+|---|---|
+| NumPy shape | `(P, 2)`, P ≥ 2 |
+| NumPy dtype | `int32` |
+| Column order | `path[i] = (r, c)` — same axis order as `GraphNode.rc` |
+| Domain | All values are valid raster indices within the mask bounds |
+| Connectivity | 8-connected: `max(|Δr|, |Δc|) == 1` for all consecutive pairs |
+| Endpoints | `path[0]` and `path[-1]` are node pixels (degree ≠ 2) |
+| Interior pixels | `path[1:-1]` are degree-2 skeleton pixels |
+
+**`src`/`dst` vs path direction.**  `GraphEdge.src` is the lower `node_id`
+and `GraphEdge.dst` is the higher `node_id` — this is an arbitrary canonical
+ordering chosen for de-duplication, **not** the walk direction.  `path[0]`
+is the raster position of whichever of the two nodes happened to initiate
+the walk; it may correspond to either `src` or `dst`.  Treat every edge as
+**undirected**: never rely on `path[0] == node(src).rc`.
+
+---
+
+### CanonicalTransform — Rotation Convention
+
+**Rotation direction:** CCW (counter-clockwise) in mathematical convention,
+treating `(x, z)` as a standard right-hand 2-D plane where `z` is the
+second axis.  The exact formulas:
+
+| Degrees | Formula |
+|---|---|
+| 0° | `(x, z) → (x, z)` |
+| 90° | `(x, z) → (−z, x)` |
+| 180° | `(x, z) → (−x, −z)` |
+| 270° | `(x, z) → (z, −x)` |
+
+**Visual note:** Minecraft maps are displayed with `+z` pointing south
+(downward).  Because of this, a 90° CCW rotation in the mathematical
+sense *appears* as 90° **CW** on the rendered map.
+
+**Order of operations (forward, `to_canonical`):**
+
+1. Mirror — if `mirror=True`: `x → −x`
+2. Rotate — by `rotation` degrees CCW (formula above)
+3. Translate — add `translation` so that `min(x) = min(z) = 0`
+
+**Reverse (`to_original`)** applies the inverse in reverse order:
+subtract translation, rotate by `−rotation`, un-mirror.
+
+**Integer guarantees:** both `to_canonical` and `to_original` round all
+results to integers.  Intermediate arithmetic uses float, but inputs and
+outputs are treated as exact integer block indices.
+
+---
+
+### Axis Orientation — Domain Table
+
+| Space | Horiz. coord | Vert. coord | +horiz direction | +vert direction (data) | matplotlib setup |
+|---|---|---|---|---|---|
+| **World** | `world_x` | `world_z` | East (right) | South (down on map) | `ax.invert_yaxis()` |
+| **Canonical** | `can_x` | `can_z` | Right (post D4) | Down (post D4) | `ax.invert_yaxis()` |
+| **Raster** | `c` (column) | `r` (row) | Right | Down | `origin='upper'` |
+| **Shapely** | `x` | `y` (= z in our use) | Right | ↑ in math, ↓ in our data | `ax.invert_yaxis()` |
+
+**Why `invert_yaxis()` / `origin='upper'`:** In all four spaces the vertical
+axis (`z` or `r`) increases *southward / downward*.  Matplotlib's default y-axis
+increases upward, so world- and canonical-space axes need `invert_yaxis()`.
+Raster-space `imshow` uses `origin='upper'` instead, which has the same effect:
+row 0 is drawn at the visual top, row H−1 at the bottom.
+
+**Relationship between raster and canonical:**
+
+```
+c  ↔  can_x   (both increase rightward / eastward)
+r  ↔  can_z   (both increase downward / southward)
+mask[0, 0]  ↔  canonical origin  (−padding, −padding)
+```
+
+---
+
 ## Plotting Recipes
 
 Every plot in the pipeline falls into one of two modes depending on which
