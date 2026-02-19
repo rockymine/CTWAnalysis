@@ -28,6 +28,11 @@ def _expand_block_bounds(min_x, min_z, max_x, max_z):
       - Block (x, z) occupies [x, x+1] × [z, z+1]
       - XML rectangular regions specify *included* blocks via min/max
       - Convert to polygon extents by keeping min as-is and adding +1 to max
+
+    Returns ``(min_x, min_z, max_x+1, max_z+1)`` in Shapely box argument
+    order ``(minx, miny, maxx, maxy)``.  The equivalent pipeline utility for
+    bounding-box work is :func:`common.geometry.get_grid_extent`, which
+    returns ``(min_x, max_x+1, min_z, max_z+1)`` in ``BBox`` order.
     """
     return (min_x, min_z, max_x + 1, max_z + 1)
 

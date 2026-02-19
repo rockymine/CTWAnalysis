@@ -17,6 +17,10 @@ from typing import List, Dict, Optional
 
 from visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
+from common.geometry import (
+    raster_to_world_path, raster_to_world_point,
+    block_centers, raster_imshow_extent,
+)
 
 
 def plot_island_debug(
@@ -48,36 +52,41 @@ def plot_island_debug(
 
     # Panel 1: Island mask
     ax = axes[0, 0]
-    ax.imshow(mask, cmap='Greys', interpolation='nearest', origin='upper')
+    ax.imshow(mask, cmap='Greys', interpolation='nearest', origin='upper',
+              extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Island mask ({mask.sum()} blocks)")
     ax.set_xlabel("c (x)")
     ax.set_ylabel("r (z)")
 
     # Panel 2: Skeleton overlay
     ax = axes[0, 1]
-    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper')
+    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
+              extent=raster_imshow_extent(mask.shape))
     skel_display = np.zeros((*mask.shape, 4))
     skel_display[skel_mask] = [1, 0, 0, 1]  # Red skeleton
-    ax.imshow(skel_display, interpolation='nearest', origin='upper')
+    ax.imshow(skel_display, interpolation='nearest', origin='upper',
+              extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Skeleton ({skel_mask.sum()} pixels)")
     ax.set_xlabel("c (x)")
     ax.set_ylabel("r (z)")
 
     # Panel 3: Nodes on skeleton
     ax = axes[0 + 1, 0]
-    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper')
-    ax.imshow(skel_display, interpolation='nearest', origin='upper', alpha=0.5)
+    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
+              extent=raster_imshow_extent(mask.shape))
+    ax.imshow(skel_display, interpolation='nearest', origin='upper', alpha=0.5,
+              extent=raster_imshow_extent(mask.shape))
 
     endpoints = [(n.rc[1], n.rc[0]) for n in result.graph.nodes if n.node_type == 'endpoint']
     junctions = [(n.rc[1], n.rc[0]) for n in result.graph.nodes if n.node_type == 'junction']
 
     if endpoints:
-        ep_x, ep_y = zip(*endpoints)
-        ax.scatter(ep_x, ep_y, c='lime', s=40, zorder=5, edgecolors='black',
+        ep_c = block_centers(endpoints)
+        ax.scatter(ep_c[:, 0], ep_c[:, 1], c='lime', s=40, zorder=5, edgecolors='black',
                    linewidths=0.5, label=f"Endpoints ({len(endpoints)})")
     if junctions:
-        jn_x, jn_y = zip(*junctions)
-        ax.scatter(jn_x, jn_y, c='red', s=50, zorder=5, marker='s',
+        jn_c = block_centers(junctions)
+        ax.scatter(jn_c[:, 0], jn_c[:, 1], c='red', s=50, zorder=5, marker='s',
                    edgecolors='black', linewidths=0.5,
                    label=f"Junctions ({len(junctions)})")
 
@@ -88,22 +97,24 @@ def plot_island_debug(
 
     # Panel 4: Edges
     ax = axes[1, 1]
-    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper')
+    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
+              extent=raster_imshow_extent(mask.shape))
 
     # Color edges distinctly
     cmap = plt.cm.tab20
     for i, edge in enumerate(result.graph.edges):
         path = edge.pixel_path
+        path_c = block_centers(path)
         color = cmap(i % 20)
-        ax.plot(path[:, 1], path[:, 0], color=color, linewidth=1.5, alpha=0.8)
+        ax.plot(path_c[:, 1], path_c[:, 0], color=color, linewidth=1.5, alpha=0.8)
 
     # Draw nodes on top
     if endpoints:
-        ep_x, ep_y = zip(*endpoints)
-        ax.scatter(ep_x, ep_y, c='lime', s=30, zorder=5, edgecolors='black', linewidths=0.5)
+        ep_c = block_centers(endpoints)
+        ax.scatter(ep_c[:, 0], ep_c[:, 1], c='lime', s=30, zorder=5, edgecolors='black', linewidths=0.5)
     if junctions:
-        jn_x, jn_y = zip(*junctions)
-        ax.scatter(jn_x, jn_y, c='red', s=40, zorder=5, marker='s',
+        jn_c = block_centers(junctions)
+        ax.scatter(jn_c[:, 0], jn_c[:, 1], c='red', s=40, zorder=5, marker='s',
                    edgecolors='black', linewidths=0.5)
 
     ax.set_title(f"Edges ({len(result.graph.edges)} total)")
@@ -160,18 +171,21 @@ def plot_unique_islands(
         ax = axes[r, c]
 
         mask = result.raster.mask
-        ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper')
+        ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
+              extent=raster_imshow_extent(mask.shape))
 
         # Draw edges
         for edge in result.graph.edges:
             path = edge.pixel_path
-            ax.plot(path[:, 1], path[:, 0], color='steelblue', linewidth=1.5, alpha=0.8)
+            path_c = block_centers(path)
+            ax.plot(path_c[:, 1], path_c[:, 0], color='steelblue', linewidth=1.5, alpha=0.8)
 
         # Draw nodes
         for node in result.graph.nodes:
             color = 'lime' if node.node_type == 'endpoint' else 'red'
             marker = 'o' if node.node_type == 'endpoint' else 's'
-            ax.scatter(node.rc[1], node.rc[0], c=color, s=30, zorder=5,
+            nc = block_centers([node.rc[1], node.rc[0]])
+            ax.scatter(nc[0], nc[1], c=color, s=30, zorder=5,
                        marker=marker, edgecolors='black', linewidths=0.5)
 
         key = result.canonical.canonical_key[:8]
@@ -232,30 +246,28 @@ def plot_map_overview(
         transform = result.canonical.transform
         raster = result.raster
 
-        # Draw island blocks in world coords
+        # Draw island blocks in world coords (centred on each block).
         world_blocks = result.canonical.world_blocks
+        wbc = block_centers(world_blocks)
         ax.scatter(
-            world_blocks[:, 0], world_blocks[:, 1],
+            wbc[:, 0], wbc[:, 1],
             c=[color], s=1, alpha=0.2, rasterized=True
         )
 
-        # Transform skeleton edges to world coords and draw
+        # Transform skeleton edges to world coords and draw.
         for edge in result.graph.edges:
-            # Convert pixel path (r,c) -> canonical (x,z) -> world (x,z)
-            path_canonical = np.array([
-                raster.rc_to_canonical(r, c) for r, c in edge.pixel_path
-            ], dtype=float)
-            path_world = transform.to_original(path_canonical)
-            ax.plot(path_world[:, 0], path_world[:, 1],
+            path_world = raster_to_world_path(edge.pixel_path, raster, transform)
+            path_c = block_centers(path_world)
+            ax.plot(path_c[:, 0], path_c[:, 1],
                     color=color, linewidth=1.5, alpha=0.8)
 
-        # Transform nodes to world coords and draw
+        # Transform nodes to world coords and draw.
         for node in result.graph.nodes:
-            cx, cz = raster.rc_to_canonical(node.rc[0], node.rc[1])
-            world_pt = transform.to_original(np.array([[cx, cz]], dtype=float))[0]
+            world_pt = raster_to_world_point(node.rc, raster, transform)
+            pt_c = block_centers(world_pt)
             marker_color = 'lime' if node.node_type == 'endpoint' else 'red'
             marker = 'o' if node.node_type == 'endpoint' else 's'
-            ax.scatter(world_pt[0], world_pt[1], c=marker_color, s=20,
+            ax.scatter(pt_c[0], pt_c[1], c=marker_color, s=20,
                        zorder=5, marker=marker, edgecolors='black', linewidths=0.3)
 
     ax.set_aspect('equal')
@@ -421,24 +433,28 @@ def plot_island_poi_debug(
     skel_mask = result.skeleton.mask
 
     # Background mask
-    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper')
+    ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
+              extent=raster_imshow_extent(mask.shape))
 
     # Skeleton overlay (muted gray)
     skel_display = np.zeros((*mask.shape, 4))
     skel_display[skel_mask] = [0.5, 0.5, 0.5, 0.5]
-    ax.imshow(skel_display, interpolation='nearest', origin='upper')
+    ax.imshow(skel_display, interpolation='nearest', origin='upper',
+              extent=raster_imshow_extent(mask.shape))
 
     # Draw edges
     for edge in result.graph.edges:
         path = edge.pixel_path
-        ax.plot(path[:, 1], path[:, 0], color='steelblue', linewidth=1.5, alpha=0.6)
+        path_c = block_centers(path)
+        ax.plot(path_c[:, 1], path_c[:, 0], color='steelblue', linewidth=1.5, alpha=0.6)
 
     # Draw nodes with POI classification
     poi_spawn_nodes = []
     poi_wool_nodes = []
 
     for node in result.graph.nodes:
-        c, r = node.rc[1], node.rc[0]
+        nc = block_centers([node.rc[1], node.rc[0]])
+        c, r = nc[0], nc[1]
 
         if node.poi_type == 'spawn':
             color = _mc_color(node.poi_color, 'cyan')

@@ -15,6 +15,7 @@ from typing import List, Dict, Tuple, Optional
 
 from .datatypes import Island
 from .detection import find_island_holes
+from common.geometry import world_blocks_to_shapely
 
 
 def build_island_polygon(
@@ -150,23 +151,19 @@ def _build_union_polygon(
     """
     Build a simplified Shapely polygon from block coordinates.
 
-    Creates unit squares at each block position, unions them, optionally
-    smooths, and simplifies. Returns the polygon or None if fewer than
-    3 blocks.
+    Creates unit squares at each block position in world space, unions them,
+    optionally smooths, and simplifies. Returns the polygon or None if fewer
+    than 3 blocks.
+
+    Polygon construction is delegated to :func:`~common.geometry.world_blocks_to_shapely`
+    so that the "+1 extent" per block is applied exactly once, in world space.
     """
-    from shapely.geometry import box
-    from shapely.ops import unary_union
     from shapely.validation import make_valid
 
     if len(blocks) < 3:
         return None
 
-    squares = []
-    for x, z in blocks:
-        square = box(x, z, x + 1, z + 1)
-        squares.append(square)
-
-    polygon = unary_union(squares)
+    polygon = world_blocks_to_shapely(blocks)
 
     if not polygon.is_valid:
         polygon = make_valid(polygon)

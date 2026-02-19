@@ -10,6 +10,7 @@ from scipy.spatial import ConvexHull
 from collections import deque
 
 from .datatypes import Island
+from common.geometry import get_grid_extent, get_block_centroid
 
 
 def detect_islands(
@@ -83,12 +84,9 @@ def detect_islands(
         world_coords[:, 1] = island_positions[:, 0] + min_z  # z
 
         # Calculate properties
-        center = (world_coords[:, 0].mean() + 0.5, world_coords[:, 1].mean() + 0.5)
-        bbox = (
-            int(world_coords[:, 0].min()),
-            int(world_coords[:, 0].max()) + 1,
-            int(world_coords[:, 1].min()),
-            int(world_coords[:, 1].max()) + 1,
+        center = get_block_centroid(world_coords[:, 0], world_coords[:, 1])
+        bbox = tuple(
+            int(v) for v in get_grid_extent(world_coords[:, 0], world_coords[:, 1])
         )
 
         island = Island(

@@ -164,14 +164,17 @@ def _generate_skeleton_visuals(
 ):
     """Write island reports, skeleton debug images, and overview plots.
 
-    Essential outputs (always generated):
+    Always generated:
         - island_detail.png
         - unique_islands.png
 
-    Debug outputs (only when plots=True):
+    Only when plots=True (via create_island_report):
         - island_comparison.png, island_statistics.png, island_report.txt
         - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt
+
+    Note: create_island_report already calls plot_island_detail, so the
+    unconditional call is skipped in the plots=True path to avoid duplicates.
     """
     from island_analysis.visualization import plot_island_detail
     from skeleton_analysis.visualization import (
@@ -182,16 +185,16 @@ def _generate_skeleton_visuals(
 
     print(f"  Generating visualizations...")
 
-    # Essential: island polygon detail
-    plot_island_detail(
-        islands,
-        output_path=str(island_output_dir / 'island_detail.png'),
-    )
-
     if plots:
-        # Debug: full island report (comparison, statistics, text report)
+        # Debug: full island report (comparison, statistics, text report, island_detail)
         from island_analysis import create_island_report
         create_island_report(islands, stats, str(island_output_dir), map_name)
+    else:
+        # Essential: island polygon detail (create_island_report covers this when plots=True)
+        plot_island_detail(
+            islands,
+            output_path=str(island_output_dir / 'island_detail.png'),
+        )
 
     skeleton_output_dir = island_output_dir / 'skeleton'
     skeleton_output_dir.mkdir(exist_ok=True)

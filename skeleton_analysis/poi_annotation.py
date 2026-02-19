@@ -17,6 +17,7 @@ from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, UnionRegion,
     CuboidRegion, RectangleRegion,
 )
+from common.geometry import get_grid_extent, get_center_from_extent
 
 
 def extract_spawn_locations(map_data) -> List[Dict]:
@@ -197,12 +198,8 @@ def compute_map_center(layout_df) -> Tuple[float, float]:
     x_col = 'world_x' if 'world_x' in layout_df.columns else 'x'
     z_col = 'world_z' if 'world_z' in layout_df.columns else 'z'
 
-    min_x = layout_df[x_col].min()
-    max_x = layout_df[x_col].max()
-    min_z = layout_df[z_col].min()
-    max_z = layout_df[z_col].max()
-
-    return ((min_x + max_x + 1) / 2.0, (min_z + max_z + 1) / 2.0)
+    extent = get_grid_extent(layout_df[x_col], layout_df[z_col])
+    return get_center_from_extent(*extent)
 
 
 def classify_island_center(

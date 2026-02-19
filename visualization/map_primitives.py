@@ -18,6 +18,7 @@ import pandas as pd
 from matplotlib.collections import PolyCollection
 
 from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
+from common.geometry import blocks_to_unit_squares
 
 
 # ── Style dataclasses ────────────────────────────────────────────────
@@ -152,12 +153,7 @@ def draw_block_base(
     # Build 1×1 unit square vertices for each block
     xs = df['world_x'].values
     zs = df['world_z'].values
-    squares = np.stack([
-        np.column_stack([xs,       zs]),
-        np.column_stack([xs + 1,   zs]),
-        np.column_stack([xs + 1,   zs + 1]),
-        np.column_stack([xs,       zs + 1]),
-    ], axis=1)  # shape (N, 4, 2)
+    squares = blocks_to_unit_squares(xs, zs)  # shape (N, 4, 2)
 
     facecolors = [color_map.get(iid, NEUTRAL_COLOR) for iid in df['island_id']]
 

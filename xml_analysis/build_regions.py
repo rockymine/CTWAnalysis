@@ -19,9 +19,11 @@ from typing import List, Dict, Optional
 
 import numpy as np
 import pandas as pd
-from shapely.geometry import box, Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
+
+from common.geometry import world_blocks_to_shapely
 
 
 # Patterns in region IDs that should be excluded from buildable void.
@@ -244,15 +246,12 @@ def _extract_block36_region(y0_parquet_path: str):
     x_col = 'world_x' if 'world_x' in block36.columns else 'x'
     z_col = 'world_z' if 'world_z' in block36.columns else 'z'
 
-    squares = []
-    for _, row in block36.iterrows():
-        x, z = float(row[x_col]), float(row[z_col])
-        squares.append(box(x, z, x + 1, z + 1))
+    coords = list(zip(block36[x_col].astype(float), block36[z_col].astype(float)))
 
-    if not squares:
+    if not coords:
         return None
 
-    region = unary_union(squares)
+    region = world_blocks_to_shapely(coords)
     return _ensure_valid(region)
 
 
