@@ -6,7 +6,7 @@ and populates a MapContext dataclass.
 
 from typing import Dict, List, Optional, Tuple
 
-from ..map_analysis.datatypes import MapContext
+from .datatypes import MapContext
 from common.geometry import get_grid_extent
 
 

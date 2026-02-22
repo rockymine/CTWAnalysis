@@ -11,7 +11,7 @@ import re
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 
-from ..skeleton_analysis.datatypes import IslandResult
+from skeleton_analysis.datatypes import IslandResult
 from island_analysis.datatypes import Island
 from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, UnionRegion,

@@ -330,7 +330,7 @@ def _build_context(
 
     Returns the MapContext instance.
     """
-    from layout_analysis.builder import build_map_context
+    from map_analysis.builder import build_map_context
     from layout_analysis import exporter as map_context_exporter
     from skeleton_analysis.builder import build_skeleton_dicts
     from skeleton_analysis import exporter as map_graph_exporter
