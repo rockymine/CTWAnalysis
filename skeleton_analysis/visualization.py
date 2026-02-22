@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
 
-from common.visualization.map_primitives import draw_build_region, draw_island_outlines
+from common.visualization.map_primitives import draw_build_region, draw_island_outlines, draw_pois
 from .datatypes import IslandResult
 from common.geometry import (
     raster_to_world_path, raster_to_world_point,
@@ -231,11 +231,12 @@ def plot_map_overview(
 
     fig, ax = plt.subplots(figsize=(16, 12))
 
-    # Draw build region and island outlines from map_context (bottom layers)
+    # Draw build region, island outlines, and pois from map_context (bottom layers)
     has_build = False
     if map_context is not None:
         has_build = draw_build_region(ax, map_context)
         draw_island_outlines(ax, map_context)
+        draw_pois(ax, map_context)
 
     # Generate distinct colors per island
     cmap = plt.cm.Set2
