@@ -11,7 +11,7 @@ Public API:
 import json
 from typing import Dict, Any, List
 
-from json_export import save_json as _save_json
+from common.json_export import save_json as _save_json
 
 from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
 from .regions import (

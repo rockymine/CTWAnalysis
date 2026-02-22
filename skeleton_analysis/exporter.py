@@ -7,7 +7,7 @@ Public API:
 
 from pathlib import Path
 
-from json_export import save_json as _save_json
+from common.json_export import save_json as _save_json
 
 
 def to_dict(island_skeletons: list, map_name: str) -> dict:

@@ -7,7 +7,7 @@ Public API:
 from pathlib import Path
 from typing import Dict
 
-from json_export import save_json as _save_json
+from common.json_export import save_json as _save_json
 
 
 def save(result: Dict, output_path) -> Path:
