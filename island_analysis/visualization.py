@@ -213,7 +213,7 @@ def plot_island_comparison(
     # 1. Raw blocks
     ax1 = fig.add_subplot(gs[0, 0])
     if map_folder is not None and map_context is not None:
-        from visualization import draw_block_base, BlockBaseStyle
+        from common.visualization import draw_block_base, BlockBaseStyle
         draw_block_base(ax1, map_folder, map_context,
                         style=BlockBaseStyle(fill_alpha=0.5, linewidth=0.2))
         for i, island in enumerate(islands):

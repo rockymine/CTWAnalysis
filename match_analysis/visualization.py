@@ -13,7 +13,7 @@ import pandas as pd
 from matplotlib.collections import LineCollection
 from matplotlib.path import Path as MplPath
 
-from visualization import (
+from common.visualization import (
     draw_map_base,
     map_base_legend_handles,
     BuildRegionStyle,

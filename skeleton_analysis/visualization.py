@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
 
-from visualization.map_primitives import draw_build_region, draw_island_outlines
+from common.visualization.map_primitives import draw_build_region, draw_island_outlines
 from .datatypes import IslandResult
 from common.geometry import (
     raster_to_world_path, raster_to_world_point,
