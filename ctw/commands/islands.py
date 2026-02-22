@@ -30,7 +30,7 @@ def register(subparsers, map_parent):
 def handler(args):
     map_folder = resolve_map_folder(args.map)
 
-    from island_analysis.services import analyze_islands_step
+    from map_analysis.pipeline import analyze_islands_step
     map_output_dir = resolve_output_dir(map_folder, create=True)
     analyze_islands_step(
         map_folder,

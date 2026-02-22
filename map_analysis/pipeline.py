@@ -1,104 +1,22 @@
-"""Island detection and skeleton analysis orchestration."""
+"""Assembly pipeline for map analysis (Stages 3–7).
+
+This module is the rightful home for everything that requires importing from
+more than one analysis package.  It calls into island_analysis (Stages 1–2),
+skeleton_analysis (Stage 3), visualization helpers (Stage 4), POI annotation
+(Stage 5), MapContext + map_graph construction (Stage 6), and cleanup (Stage 7).
+
+Public API:
+    analyze_islands_step(map_folder, ...)  — drop-in replacement for the
+        function that used to live in island_analysis/services/islands_service.py
+"""
 
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import pandas as pd
 
-
-# ---------------------------------------------------------------------------
-# Layout type → filename mapping
-# ---------------------------------------------------------------------------
-
-LAYOUT_FILES = {
-    'bedrock': 'layout_bedrock.parquet',
-    'y0': 'layout_y0.parquet',
-    'top': 'layout_top_surface.parquet',
-    'density': 'layout_vertical_density.parquet',
-}
-
-
-# ---------------------------------------------------------------------------
-# Stage 1: Island detection
-# ---------------------------------------------------------------------------
-
-def _detect_and_label(
-    layout_file: Path,
-    df: pd.DataFrame,
-    connectivity: int = 8,
-    min_island_size: int = 10,
-) -> Tuple[pd.DataFrame, list]:
-    """Detect islands and write island_id back into the layout parquet.
-
-    Returns the updated DataFrame and the list of Island objects.
-    """
-    from island_analysis import detect_islands
-
-    print(f"  Detecting islands ({connectivity}-connectivity, min_size={min_island_size})...")
-    islands = detect_islands(
-        df,
-        x_col='world_x',
-        z_col='world_z',
-        connectivity=connectivity,
-        min_island_size=min_island_size,
-    )
-    print(f"    Found {len(islands)} islands")
-
-    # Add island_id column to layout parquet
-    island_assignments = []
-    for island in islands:
-        for x, z in island.blocks:
-            island_assignments.append({
-                'world_x': int(round(x)),
-                'world_z': int(round(z)),
-                'island_id': island.id,
-            })
-    if island_assignments:
-        island_df = pd.DataFrame(island_assignments)
-        df = df.drop(columns=['island_id'], errors='ignore')
-        df = df.merge(island_df, on=['world_x', 'world_z'], how='left')
-        df['island_id'] = df['island_id'].fillna(0).astype(int)
-        df.to_parquet(layout_file, index=False)
-        print(f"    Updated {layout_file.name} with island_id column")
-
-    return df, islands
-
-
-# ---------------------------------------------------------------------------
-# Stage 2: Polygon construction
-# ---------------------------------------------------------------------------
-
-def _build_polygons(
-    islands: list,
-    canonical: bool = False,
-    buffer_distance: float = 0.0,
-    simplify_tolerance: float = 1.0,
-    detect_holes: bool = True,
-) -> None:
-    """Build simplified polygons for all islands."""
-    from island_analysis import (
-        build_island_polygon,
-        build_island_polygons_canonical,
-    )
-
-    if canonical:
-        print(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
-        build_island_polygons_canonical(
-            islands,
-            buffer_distance=buffer_distance,
-            simplify_tolerance=simplify_tolerance,
-            detect_holes=detect_holes,
-        )
-    else:
-        print(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
-        for island in islands:
-            build_island_polygon(
-                island,
-                buffer_distance=buffer_distance,
-                simplify_tolerance=simplify_tolerance,
-                detect_holes=detect_holes,
-            )
+from island_analysis.pipeline import LAYOUT_FILES, detect_and_label, build_polygons
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +27,10 @@ def _compute_skeletons(
     islands: list,
     enable_canonicalization: bool = True,
     skeleton_connectivity: int = 8,
-) -> Tuple[list, dict]:
+):
     """Compute skeleton graphs for all islands.
 
-    Returns (skeleton_results, canonical_groups).
+    Returns (skeleton_results, canonical_groups, stats).
     """
     from skeleton_analysis import process_all_islands
     from island_analysis import compute_island_statistics, classify_islands
@@ -407,7 +325,7 @@ def _build_context(
 
 
 # ---------------------------------------------------------------------------
-# Legacy cleanup
+# Stage 7: Legacy cleanup
 # ---------------------------------------------------------------------------
 
 def _cleanup_legacy(island_output_dir: Path):
@@ -441,7 +359,7 @@ def analyze_islands_step(
     plots: bool = False,
 ):
     """
-    Step 2: Detect islands, build polygons, and compute skeletons.
+    Full island + map assembly pipeline (Stages 1–7).
 
     Args:
         map_folder: Path to map folder (read-only input).
@@ -491,7 +409,7 @@ def analyze_islands_step(
     df = pd.read_parquet(layout_file)
     print(f"    Loaded {len(df)} blocks")
 
-    df, islands = _detect_and_label(
+    df, islands = detect_and_label(
         layout_file, df, connectivity=connectivity, min_island_size=min_size,
     )
 
@@ -500,7 +418,7 @@ def analyze_islands_step(
         return island_output_dir
 
     # Stage 2: Build polygons
-    _build_polygons(
+    build_polygons(
         islands,
         canonical=canonical_polygons,
         buffer_distance=buffer_distance,

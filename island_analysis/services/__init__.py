@@ -1,1 +1,0 @@
-from .islands_service import analyze_islands_step

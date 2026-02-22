@@ -1,0 +1,106 @@
+"""Geometric pipeline for island analysis (Stages 1–2).
+
+This module owns the two structural stages that belong strictly within
+island_analysis: island detection (with parquet enrichment) and polygon
+construction.  Nothing from skeleton_analysis, xml_analysis, or
+map_analysis is imported here.
+"""
+
+from pathlib import Path
+from typing import List, Tuple
+
+import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Layout type → filename mapping
+# ---------------------------------------------------------------------------
+
+LAYOUT_FILES = {
+    'bedrock': 'layout_bedrock.parquet',
+    'y0': 'layout_y0.parquet',
+    'top': 'layout_top_surface.parquet',
+    'density': 'layout_vertical_density.parquet',
+}
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: Island detection
+# ---------------------------------------------------------------------------
+
+def detect_and_label(
+    layout_file: Path,
+    df: pd.DataFrame,
+    connectivity: int = 8,
+    min_island_size: int = 10,
+) -> Tuple[pd.DataFrame, list]:
+    """Detect islands and write island_id back into the layout parquet.
+
+    Returns the updated DataFrame and the list of Island objects.
+    """
+    from island_analysis import detect_islands
+
+    print(f"  Detecting islands ({connectivity}-connectivity, min_size={min_island_size})...")
+    islands = detect_islands(
+        df,
+        x_col='world_x',
+        z_col='world_z',
+        connectivity=connectivity,
+        min_island_size=min_island_size,
+    )
+    print(f"    Found {len(islands)} islands")
+
+    # Add island_id column to layout parquet
+    island_assignments = []
+    for island in islands:
+        for x, z in island.blocks:
+            island_assignments.append({
+                'world_x': int(round(x)),
+                'world_z': int(round(z)),
+                'island_id': island.id,
+            })
+    if island_assignments:
+        island_df = pd.DataFrame(island_assignments)
+        df = df.drop(columns=['island_id'], errors='ignore')
+        df = df.merge(island_df, on=['world_x', 'world_z'], how='left')
+        df['island_id'] = df['island_id'].fillna(0).astype(int)
+        df.to_parquet(layout_file, index=False)
+        print(f"    Updated {layout_file.name} with island_id column")
+
+    return df, islands
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: Polygon construction
+# ---------------------------------------------------------------------------
+
+def build_polygons(
+    islands: list,
+    canonical: bool = False,
+    buffer_distance: float = 0.0,
+    simplify_tolerance: float = 1.0,
+    detect_holes: bool = True,
+) -> None:
+    """Build simplified polygons for all islands (mutates each Island in-place)."""
+    from island_analysis import (
+        build_island_polygon,
+        build_island_polygons_canonical,
+    )
+
+    if canonical:
+        print(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
+        build_island_polygons_canonical(
+            islands,
+            buffer_distance=buffer_distance,
+            simplify_tolerance=simplify_tolerance,
+            detect_holes=detect_holes,
+        )
+    else:
+        print(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
+        for island in islands:
+            build_island_polygon(
+                island,
+                buffer_distance=buffer_distance,
+                simplify_tolerance=simplify_tolerance,
+                detect_holes=detect_holes,
+            )
