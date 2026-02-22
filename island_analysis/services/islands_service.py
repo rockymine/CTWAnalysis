@@ -242,7 +242,7 @@ def _annotate_pois(
     Returns (map_data_obj, poi_assignments, map_center_pt).
     map_data_obj and poi_assignments are None when XML is absent.
     """
-    from skeleton_analysis.poi_annotation import (
+    from map_analysis.poi_annotation import (
         annotate_skeleton_pois,
         compute_map_center,
         classify_island_center,
@@ -330,8 +330,8 @@ def _build_context(
 
     Returns the MapContext instance.
     """
-    from layout_analysis.builder import build_map_context
-    from layout_analysis import exporter as map_context_exporter
+    from map_analysis.builder import build_map_context
+    from map_analysis import exporter as map_context_exporter
     from skeleton_analysis.builder import build_skeleton_dicts
     from skeleton_analysis import exporter as map_graph_exporter
 
@@ -533,7 +533,7 @@ def analyze_islands_step(
 
     # Stage 7: Map overview (needs map_context for polygons + build regions)
     from skeleton_analysis.visualization import plot_map_overview
-    from layout_analysis import exporter as map_context_exporter
+    from map_analysis import exporter as map_context_exporter
     plot_map_overview(
         skeleton_results,
         str(skeleton_output_dir / 'map_overview.png'),

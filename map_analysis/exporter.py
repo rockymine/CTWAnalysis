@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 from common.json_export import save_json as _save_json
 
-from .datatypes import MapContext
+from map_analysis.datatypes import MapContext
 
 
 def to_dict(ctx: MapContext) -> dict:
