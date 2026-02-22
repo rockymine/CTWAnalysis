@@ -2,7 +2,7 @@
 
 Verifies that:
 - match_indexer stores POSIX paths (forward slashes) in the database
-- match_service normalizes legacy backslash paths on read
+- match_queries normalizes legacy backslash paths on read
 - match_processor normalizes legacy backslash paths on read
 """
 
@@ -71,7 +71,16 @@ class TestMatchIndexerPathStorage(unittest.TestCase):
             with patch('match_analysis.match_indexer.duckdb') as mock_duckdb:
                 mock_conn = MagicMock()
                 mock_duckdb.connect.return_value = mock_conn
-                mock_conn.execute.return_value.fetchone.return_value = None
+
+                def execute_side_effect(sql, *args, **kwargs):
+                    mock_result = MagicMock()
+                    if 'SELECT map_id FROM maps' in sql:
+                        mock_result.fetchone.return_value = (1,)
+                    else:
+                        mock_result.fetchone.return_value = None
+                    return mock_result
+
+                mock_conn.execute.side_effect = execute_side_effect
 
                 index_match_files(tmpdir)
 
@@ -89,17 +98,27 @@ class TestMatchIndexerPathStorage(unittest.TestCase):
 
 
 class TestMatchServicePathNormalization(unittest.TestCase):
-    """match_service.get_match_file should normalize backslash paths."""
+    """match_queries.get_match_file should normalize backslash paths."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, 'test.db')
         self.conn = duckdb.connect(self.db_path)
         self.conn.execute("""
+            CREATE TABLE maps (
+                map_id INTEGER PRIMARY KEY,
+                map_slug TEXT NOT NULL
+            )
+        """)
+        self.conn.execute(
+            "INSERT INTO maps (map_id, map_slug) VALUES (?, ?)",
+            [1, 'TestMap'],
+        )
+        self.conn.execute("""
             CREATE TABLE matches (
                 match_id INTEGER PRIMARY KEY,
                 match_file TEXT NOT NULL,
-                map_name TEXT NOT NULL,
+                map_id INTEGER NOT NULL,
                 match_start TIMESTAMP,
                 match_duration FLOAT,
                 player_count INTEGER,
@@ -111,13 +130,13 @@ class TestMatchServicePathNormalization(unittest.TestCase):
         """)
         # Insert with Windows-style backslash path (simulating legacy data)
         self.conn.execute(
-            "INSERT INTO matches (match_id, match_file, map_name) VALUES (?, ?, ?)",
-            [42, 'match_logs\\2026-01-01_00-00-00_42.parquet', 'TestMap'],
+            "INSERT INTO matches (match_id, match_file, map_id) VALUES (?, ?, ?)",
+            [42, 'match_logs\\2026-01-01_00-00-00_42.parquet', 1],
         )
         # Insert with POSIX path
         self.conn.execute(
-            "INSERT INTO matches (match_id, match_file, map_name) VALUES (?, ?, ?)",
-            [43, 'match_logs/2026-01-01_00-00-00_43.parquet', 'TestMap'],
+            "INSERT INTO matches (match_id, match_file, map_id) VALUES (?, ?, ?)",
+            [43, 'match_logs/2026-01-01_00-00-00_43.parquet', 1],
         )
         self.conn.close()
 
@@ -127,9 +146,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_normalizes_backslash_path(self):
         """Legacy backslash paths should be normalized to platform-native separators."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(42)
 
         self.assertEqual(map_name, 'TestMap')
@@ -139,9 +158,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_posix_path_unchanged(self):
         """POSIX paths should remain valid after normalization."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(43)
 
         self.assertEqual(map_name, 'TestMap')
@@ -149,9 +168,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_path_is_valid_pathlib(self):
         """Returned path should be usable as a pathlib Path on current platform."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, _ = get_match_file(42)
 
         # Should not raise

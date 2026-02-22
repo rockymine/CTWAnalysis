@@ -272,7 +272,7 @@ def main():
 
     # Load match data for trace images
     ensure_match_db()
-    from match_analysis.services import get_match_file, get_match_player_ids
+    from match_analysis.match_queries import get_match_file, get_match_player_ids
 
     match_file = None
     all_player_ids = []

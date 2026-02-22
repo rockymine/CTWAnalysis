@@ -20,7 +20,8 @@ from visualization import (
     IslandOutlineStyle,
     POIStyle,
 )
-from match_analysis.services import extract_player_life_segments, get_match_player_ids
+
+from match_analysis.match_queries import extract_player_life_segments, get_match_player_ids
 
 
 # Distinct colors for life segment traces
