@@ -331,7 +331,7 @@ def _build_context(
     Returns the MapContext instance.
     """
     from map_analysis.builder import build_map_context
-    from layout_analysis import exporter as map_context_exporter
+    from map_analysis import exporter as map_context_exporter
     from skeleton_analysis.builder import build_skeleton_dicts
     from skeleton_analysis import exporter as map_graph_exporter
 
@@ -533,7 +533,7 @@ def analyze_islands_step(
 
     # Stage 7: Map overview (needs map_context for polygons + build regions)
     from skeleton_analysis.visualization import plot_map_overview
-    from layout_analysis import exporter as map_context_exporter
+    from map_analysis import exporter as map_context_exporter
     plot_map_overview(
         skeleton_results,
         str(skeleton_output_dir / 'map_overview.png'),
