@@ -2,7 +2,7 @@
 
 Verifies that:
 - match_indexer stores POSIX paths (forward slashes) in the database
-- match_service normalizes legacy backslash paths on read
+- match_queries normalizes legacy backslash paths on read
 - match_processor normalizes legacy backslash paths on read
 """
 
@@ -89,7 +89,7 @@ class TestMatchIndexerPathStorage(unittest.TestCase):
 
 
 class TestMatchServicePathNormalization(unittest.TestCase):
-    """match_service.get_match_file should normalize backslash paths."""
+    """match_queries.get_match_file should normalize backslash paths."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -127,9 +127,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_normalizes_backslash_path(self):
         """Legacy backslash paths should be normalized to platform-native separators."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(42)
 
         self.assertEqual(map_name, 'TestMap')
@@ -139,9 +139,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_posix_path_unchanged(self):
         """POSIX paths should remain valid after normalization."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(43)
 
         self.assertEqual(map_name, 'TestMap')
@@ -149,9 +149,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_path_is_valid_pathlib(self):
         """Returned path should be usable as a pathlib Path on current platform."""
-        from match_analysis.services.match_service import get_match_file
+        from match_analysis.match_queries import get_match_file
 
-        with patch('match_analysis.services.match_service.DB_PATH', self.db_path):
+        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
             match_file, _ = get_match_file(42)
 
         # Should not raise

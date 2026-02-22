@@ -406,7 +406,7 @@ def _resolve_layout_dir(map_output_dir: Path, map_folder: Path) -> Path:
 
 def handle_trace(args):
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.services import (
+    from match_analysis.match_queries import (
         get_match_player_ids, resolve_match_ids, validate_match_ids,
     )
     from match_analysis.visualization import plot_player_traces
@@ -514,7 +514,7 @@ def handle_trace(args):
 
 def handle_kills(args):
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.services import (
+    from match_analysis.match_queries import (
         get_kill_death_pairs, resolve_match_ids, validate_match_ids,
     )
     from match_analysis.visualization import plot_kill_death_pairs

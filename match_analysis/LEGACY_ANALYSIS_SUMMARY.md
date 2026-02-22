@@ -401,5 +401,5 @@ event logs and a bedrock layout.  Since then the pipeline has added:
 
 After deletion, the `ctw match` command handler (`ctw/commands/match.py`)
 will also need to be updated — it currently imports from both
-`match_analysis.services` and `generate_path_networks` (which itself
+`match_analysis.match_queries` and `generate_path_networks` (which itself
 imports from `match_analysis_DEPRECATED`).
