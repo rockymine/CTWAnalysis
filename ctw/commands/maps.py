@@ -213,27 +213,51 @@ def _collect_map_row(map_dir: Path) -> dict | None:
 
 
 def _upsert_map(conn, row: dict):
-    """Insert or update a row in the maps table."""
-    # Delete dependent map_spawns first (foreign key constraint)
-    conn.execute("""
-        DELETE FROM map_spawns WHERE map_id IN (
-            SELECT map_id FROM maps WHERE map_slug = ?
-        )
-    """, [row['map_slug']])
-    conn.execute("""
-        DELETE FROM maps WHERE map_slug = ?
-    """, [row['map_slug']])
+    """Insert or update a row in the maps table.
 
-    conn.execute("""
-        INSERT INTO maps (
-            map_slug, map_name, max_build_height,
-            min_x, max_x, min_z, max_z,
-            center_x, center_z,
-            island_count, team_count, last_updated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
-        row['map_slug'], row['map_name'], row['max_build_height'],
-        row['min_x'], row['max_x'], row['min_z'], row['max_z'],
-        row['center_x'], row['center_z'],
-        row['island_count'], row['team_count'], row['last_updated'],
-    ])
+    If the map already exists (by map_slug), updates it in place so the
+    map_id PK is preserved and FK references in matches remain valid.
+    If it does not exist, inserts a new row.
+    Clears map_spawns in both cases since they may be stale after an update.
+    """
+    existing = conn.execute(
+        "SELECT map_id FROM maps WHERE map_slug = ?", [row['map_slug']]
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            "DELETE FROM map_spawns WHERE map_id = ?", [existing[0]]
+        )
+        conn.execute("""
+            UPDATE maps SET
+                map_name = ?,
+                max_build_height = ?,
+                min_x = ?, max_x = ?,
+                min_z = ?, max_z = ?,
+                center_x = ?, center_z = ?,
+                island_count = ?,
+                team_count = ?,
+                last_updated = ?
+            WHERE map_slug = ?
+        """, [
+            row['map_name'], row['max_build_height'],
+            row['min_x'], row['max_x'],
+            row['min_z'], row['max_z'],
+            row['center_x'], row['center_z'],
+            row['island_count'], row['team_count'], row['last_updated'],
+            row['map_slug'],
+        ])
+    else:
+        conn.execute("""
+            INSERT INTO maps (
+                map_slug, map_name, max_build_height,
+                min_x, max_x, min_z, max_z,
+                center_x, center_z,
+                island_count, team_count, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            row['map_slug'], row['map_name'], row['max_build_height'],
+            row['min_x'], row['max_x'], row['min_z'], row['max_z'],
+            row['center_x'], row['center_z'],
+            row['island_count'], row['team_count'], row['last_updated'],
+        ])
