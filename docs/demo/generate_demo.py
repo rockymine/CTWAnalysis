@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ctw.common import resolve_map_folder, resolve_output_dir, ensure_match_db
-from visualization.map_primitives import (
+from common.visualization.map_primitives import (
     draw_block_base,
     draw_build_region,
     draw_island_outlines,

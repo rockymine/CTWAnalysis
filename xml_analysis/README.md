@@ -184,7 +184,7 @@ This is a **second, independent parse** of `map.xml`, triggered by `islands_serv
 5. Unions the kept children, then computes `buildable_void = allowed - islands`
 6. Converts Shapely polygons to coordinate lists via `_geometry_to_coords()`
 
-The resolved coordinate lists are stored in `map_context.json` under `build_region.buildable_void`. The visualization (`map_primitives.draw_build_region()`) reads these pre-resolved coordinates directly — it has no knowledge of mirrors or references.
+The resolved coordinate lists are stored in `map_context.json` under `build_region.buildable_void`. The visualization (`common.visualization.map_primitives.draw_build_region()`) reads these pre-resolved coordinates directly — it has no knowledge of mirrors or references.
 
 ### Why two paths?
 
