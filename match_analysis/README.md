@@ -20,7 +20,7 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 If starting fresh or after schema changes, create the empty tables:
 
 ```bash
-python scripts/initialize_analysis_db.py
+python initialize_analysis_db.py
 ```
 
 This is idempotent — existing tables are not recreated.
@@ -133,7 +133,7 @@ To fully rebuild, delete the database file and start from Step 0:
 
 ```bash
 rm match_analysis/metadata.db
-python scripts/initialize_analysis_db.py
+python initialize_analysis_db.py
 ```
 
 ## Visualization
