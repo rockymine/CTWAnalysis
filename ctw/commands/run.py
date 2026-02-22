@@ -63,7 +63,7 @@ def _process_single_map(map_folder, args, output_override=None):
     """Run the full pipeline for a single map. Safe for multiprocessing."""
     from island_analysis.services import analyze_islands_step
     from ctw.commands.layout import analyze_layout
-    from xml_analysis.services import analyze_xml
+    from ctw.commands.xml import analyze_xml
 
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
 
