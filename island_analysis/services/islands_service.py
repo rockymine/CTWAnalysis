@@ -242,7 +242,7 @@ def _annotate_pois(
     Returns (map_data_obj, poi_assignments, map_center_pt).
     map_data_obj and poi_assignments are None when XML is absent.
     """
-    from skeleton_analysis.poi_annotation import (
+    from map_analysis.poi_annotation import (
         annotate_skeleton_pois,
         compute_map_center,
         classify_island_center,
