@@ -546,7 +546,7 @@ def run_island_geometry(
     map_output_dir: Optional[Path] = None,
     output_dir: Optional[Path] = None,
     plots: bool = False,
-):
+) -> Optional[IslandGeometryResult]:
     """Island geometry pipeline (Stages 1–4).
 
     Detects islands, builds polygons, computes skeleton graphs, generates
