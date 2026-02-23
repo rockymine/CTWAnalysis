@@ -18,6 +18,8 @@ import json
 import numpy as np
 from typing import Dict, List, Tuple
 
+from symmetry_analysis.datatypes import SymmetryResult
+
 
 # ---------------------------------------------------------------------------
 # Center classification
@@ -486,7 +488,8 @@ def _detect_global_symmetry(
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def detect_symmetry(islands_path: str) -> Dict:
+
+def detect_symmetry(islands_path: str) -> SymmetryResult:
     """Run geometric symmetry analysis on a map from its islands.json.
 
     Detects global symmetry types (mirror, rotation) from island pair
@@ -498,7 +501,7 @@ def detect_symmetry(islands_path: str) -> Dict:
         islands_path: Path to island_analysis/islands.json
 
     Returns:
-        Dict with: map_name, center, pair_analysis, global_symmetry
+        SymmetryResult with: map_name, center, pair_analysis, global_symmetry
     """
     with open(islands_path, "r") as f:
         data = json.load(f)
@@ -520,9 +523,9 @@ def detect_symmetry(islands_path: str) -> Dict:
         islands, center_x, center_z, pair_analysis,
     )
 
-    return {
-        "map_name": map_name,
-        "center": center_info,
-        "pair_analysis": pair_analysis,
-        "global_symmetry": global_symmetries,
-    }
+    return SymmetryResult(
+        map_name=map_name,
+        center=center_info,
+        pair_analysis=pair_analysis,
+        global_symmetry=global_symmetries,
+    )

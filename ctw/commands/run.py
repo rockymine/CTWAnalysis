@@ -72,9 +72,9 @@ def register(subparsers):
     p.set_defaults(func=handler)
 
 
-def _run_symmetry(map_output_dir: Path) -> None:
+def _run_symmetry(map_output_dir: Path) -> 'Optional[SymmetryResult]':
     """Run geometric symmetry analysis — reads islands.json, writes symmetry.json."""
-    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import detect_symmetry, SymmetryResult
     from symmetry_analysis import exporter as symmetry_exporter
 
     print(f"\n[3/6] Symmetry Analysis")
@@ -83,26 +83,27 @@ def _run_symmetry(map_output_dir: Path) -> None:
     islands_path = map_output_dir / 'island_analysis' / 'islands.json'
     if not islands_path.exists():
         print("  island_analysis/islands.json not found — skipping symmetry analysis")
-        return
+        return None
 
     result = detect_symmetry(str(islands_path))
 
     out_path = map_output_dir / 'symmetry.json'
     symmetry_exporter.save(result, out_path)
 
-    detected = [s for s in result['global_symmetry'] if s['detected']]
-    if detected:
-        primary = max(detected, key=lambda s: s['confidence'])
-        print(f"  Global: {primary['description']} "
-              f"(confidence: {primary['confidence']:.0%})")
+    if result.primary:
+        print(f"  Global: {result.primary['description']} "
+              f"(confidence: {result.primary['confidence']:.0%})")
     else:
         print("  Global: no symmetry detected")
+
+    return result
 
 
 def _run_assembly(
     map_folder: Path,
     geometry: 'IslandGeometryResult',
     map_output_dir: Path,
+    symmetry: 'Optional[SymmetryResult]' = None,
     xml_context=None,
     plots: bool = False,
 ) -> None:
@@ -113,6 +114,7 @@ def _run_assembly(
         map_folder=map_folder,
         geometry=geometry,
         map_output_dir=map_output_dir,
+        symmetry=symmetry,
         xml_context=xml_context,
         plots=plots,
     )
@@ -168,8 +170,9 @@ def _process_single_map(map_folder, args, output_override=None):
             print("\n[2/6] Island Analysis: SKIPPED")
 
         # [3/6] Symmetry (geometric only — reads islands.json)
+        symmetry = None
         if not args.no_symmetry:
-            _run_symmetry(map_output_dir)
+            symmetry = _run_symmetry(map_output_dir)
         else:
             print("\n[3/6] Symmetry Analysis: SKIPPED")
 
@@ -185,7 +188,7 @@ def _process_single_map(map_folder, args, output_override=None):
         if not args.no_assembly:
             if geometry is not None:
                 _run_assembly(map_folder, geometry, map_output_dir,
-                              xml_context=xml_context, plots=args.plots)
+                              symmetry=symmetry, xml_context=xml_context, plots=args.plots)
             elif (map_output_dir / 'island_analysis' / 'islands.json').exists():
                 print("\n[5/6] Map Assembly: SKIPPED (islands loaded from cache; "
                       "re-run without --no-islands to assemble)")

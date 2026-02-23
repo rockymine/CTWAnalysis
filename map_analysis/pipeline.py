@@ -26,6 +26,7 @@ import pandas as pd
 
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_label, build_polygons
 from map_analysis.datatypes import IslandGeometryResult
+from symmetry_analysis.datatypes import SymmetryResult
 
 
 # ---------------------------------------------------------------------------
@@ -295,11 +296,12 @@ def _assign_teams(
     island_dicts: list,
     map_data_obj,
     map_output_dir: Path,
+    symmetry: Optional[SymmetryResult] = None,
 ) -> Tuple[list, list]:
     """Assign islands to teams using symmetry + XML data.
 
-    Reads symmetry.json for the primary global symmetry type, then uses
-    the team assignment heuristics from map_analysis.team_assignment.
+    Uses a SymmetryResult when available (in-memory, no disk read), otherwise
+    falls back to reading symmetry.json from map_output_dir.
 
     Also calls detect_intra_team_symmetry and appends the result to
     symmetry.json.
@@ -318,19 +320,25 @@ def _assign_teams(
     if not teams:
         return teams, []
 
-    # Load symmetry results for team assignment
     sym_path = map_output_dir / 'symmetry.json'
-    if not sym_path.exists():
-        print(f"  No symmetry.json found, skipping team assignment")
-        return teams, []
 
-    with open(sym_path) as f:
-        sym_data = json.load(f)
-
-    global_symmetries = sym_data.get('global_symmetry', [])
-    center_info = sym_data.get('center', {})
-    center_x = center_info.get('center_x', 0.0)
-    center_z = center_info.get('center_z', 0.0)
+    if symmetry is not None:
+        global_symmetries = symmetry.global_symmetry
+        center_info = symmetry.center
+        center_x = symmetry.center_x
+        center_z = symmetry.center_z
+        sym_data = symmetry.to_dict()
+    else:
+        # Fallback: read from disk (handles --no-symmetry with cached file)
+        if not sym_path.exists():
+            print(f"  No symmetry.json found, skipping team assignment")
+            return teams, []
+        with open(sym_path) as f:
+            sym_data = json.load(f)
+        global_symmetries = sym_data.get('global_symmetry', [])
+        center_info = sym_data.get('center', {})
+        center_x = center_info.get('center_x', 0.0)
+        center_z = center_info.get('center_z', 0.0)
 
     detected = [s for s in global_symmetries if s.get('detected')]
     if not detected:
@@ -614,6 +622,7 @@ def assemble_map(
     map_folder: Path,
     geometry: IslandGeometryResult,
     map_output_dir: Path,
+    symmetry: Optional[SymmetryResult] = None,
     xml_context=None,
     plots: bool = False,
 ):
@@ -638,6 +647,9 @@ def assemble_map(
         map_folder: Path to map folder (for map.xml fallback).
         geometry: IslandGeometryResult from run_island_geometry().
         map_output_dir: Per-map output root (where map_context.json is written).
+        symmetry: SymmetryResult from the symmetry step. When supplied team
+            assignment uses the in-memory object; otherwise falls back to
+            reading symmetry.json from map_output_dir.
         xml_context: MapXmlContext from the XML analysis step. When supplied
             the assembly step uses map_data directly without re-parsing map.xml.
         plots: If True, generate POI debug plots.
@@ -680,8 +692,8 @@ def assemble_map(
         for island in islands
     ]
 
-    # Stage 6: Team assignment (reads symmetry.json, updates island objects)
-    _assign_teams(islands, island_dicts, map_data_obj, map_output_dir)
+    # Stage 6: Team assignment (uses in-memory symmetry or falls back to symmetry.json)
+    _assign_teams(islands, island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
 
     # Stage 7: Build MapContext + map_graph.json
     print(f"  Building map context...")

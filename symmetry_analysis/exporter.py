@@ -5,21 +5,21 @@ Public API:
 """
 
 from pathlib import Path
-from typing import Dict
 
 from common.json_export import save_json as _save_json
+from symmetry_analysis.datatypes import SymmetryResult
 
 
-def save(result: Dict, output_path) -> Path:
+def save(result: SymmetryResult, output_path) -> Path:
     """Save symmetry analysis results to JSON.
 
     Args:
-        result: Dict returned by :func:`detect_symmetry`.
+        result: SymmetryResult returned by :func:`detect_symmetry`.
         output_path: Destination file path.
 
     Returns:
         Path to the written file.
     """
-    path = _save_json(result, output_path)
+    path = _save_json(result.to_dict(), output_path)
     print(f"  Saved JSON: {path}")
     return path
