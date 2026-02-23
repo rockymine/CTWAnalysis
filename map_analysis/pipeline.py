@@ -40,19 +40,9 @@ def _compute_skeletons(
 ):
     """Compute skeleton graphs for all islands.
 
-    Returns (skeleton_results, canonical_groups, stats).
+    Returns (skeleton_results, canonical_groups).
     """
     from skeleton_analysis import process_all_islands
-    from island_analysis import compute_island_statistics, classify_islands
-
-    stats = compute_island_statistics(islands)
-
-    classifications = classify_islands(islands)
-    print(f"  Island classifications:")
-    for cls_name, cls_islands in classifications.items():
-        if cls_islands:
-            ids = [i.id for i in cls_islands]
-            print(f"    {cls_name}: {ids}")
 
     print(f"  Computing skeleton graphs...")
     skeleton_results, canonical_groups = process_all_islands(
@@ -74,7 +64,7 @@ def _compute_skeletons(
     print(f"    Edges: {total_edges}")
     print(f"    Unique canonical shapes: {len(canonical_groups)}")
 
-    return skeleton_results, canonical_groups, stats
+    return skeleton_results, canonical_groups
 
 
 # ---------------------------------------------------------------------------
@@ -83,21 +73,19 @@ def _compute_skeletons(
 
 def _generate_skeleton_visuals(
     islands: list,
-    stats: dict,
     skeleton_results: list,
     canonical_groups: dict,
     island_output_dir: Path,
     map_name: str,
     plots: bool = True,
 ):
-    """Write island reports, skeleton debug images, and overview plots.
+    """Write island and skeleton debug images.
 
     Always generated:
         - island_detail.png
         - unique_islands.png
 
-    Only when plots=True (via create_island_report):
-        - island_comparison.png, island_statistics.png, island_report.txt
+    Only when plots=True:
         - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt
     """
@@ -110,14 +98,10 @@ def _generate_skeleton_visuals(
 
     print(f"  Generating visualizations...")
 
-    if plots:
-        from island_analysis import create_island_report
-        create_island_report(islands, stats, str(island_output_dir), map_name)
-    else:
-        plot_island_detail(
-            islands,
-            output_path=str(island_output_dir / 'island_detail.png'),
-        )
+    plot_island_detail(
+        islands,
+        output_path=str(island_output_dir / 'island_detail.png'),
+    )
 
     skeleton_output_dir = island_output_dir / 'skeleton'
     skeleton_output_dir.mkdir(exist_ok=True)
@@ -557,7 +541,7 @@ def run_island_geometry(
     min_size: int = 10,
     detect_holes: bool = True,
     map_output_dir: Optional[Path] = None,
-    output_dir: Optional[str] = None,
+    output_dir: Optional[Path] = None,
     plots: bool = False,
 ):
     """Island geometry pipeline (Stages 1–4).
@@ -579,7 +563,7 @@ def run_island_geometry(
         min_size: Minimum island block count.
         detect_holes: If True, detect holes in islands during polygon construction.
         map_output_dir: Per-map output root. Defaults to map_folder.
-        output_dir: Override island_analysis subdir specifically.
+        output_dir: Override island_analysis subdir path specifically.
         plots: If True, generate debug plots.
 
     Returns:
@@ -588,9 +572,9 @@ def run_island_geometry(
     print(f"\n[2/6] Island Analysis: {map_folder.name}")
     print("=" * 70)
 
-    _map_output_dir = Path(map_output_dir) if map_output_dir else map_folder
+    _map_output_dir = map_output_dir or map_folder
     layout_dir = _map_output_dir
-    island_output_dir = Path(output_dir) if output_dir else _map_output_dir / 'island_analysis'
+    island_output_dir = output_dir or _map_output_dir / 'island_analysis'
 
     layout_filename = LAYOUT_FILES.get(layout_type, 'layout_bedrock.parquet')
     layout_file = layout_dir / layout_filename
@@ -629,13 +613,21 @@ def run_island_geometry(
         detect_holes=detect_holes,
     )
 
+    # Classify islands (island-level diagnostic, no XML)
+    from island_analysis import classify_islands
+    classifications = classify_islands(islands)
+    print(f"  Island classifications:")
+    for cls_name, cls_islands in classifications.items():
+        if cls_islands:
+            print(f"    {cls_name}: {[i.id for i in cls_islands]}")
+
     # Compute skeleton graphs
-    skeleton_results, canonical_groups, stats = _compute_skeletons(islands)
+    skeleton_results, canonical_groups = _compute_skeletons(islands)
 
     # Debug outputs (visualizations + islands.json) — skipped on cache hit
     if write_outputs:
         _generate_skeleton_visuals(
-            islands, stats, skeleton_results, canonical_groups,
+            islands, skeleton_results, canonical_groups,
             island_output_dir, map_folder.name, plots=plots,
         )
 

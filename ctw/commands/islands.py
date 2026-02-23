@@ -5,6 +5,8 @@ skeleton graphs, visualizations). Does not read map.xml or produce
 map_context.json — run 'ctw run' for the full pipeline including assembly.
 """
 
+from pathlib import Path
+
 from ctw.common import resolve_map_folder, resolve_output_dir
 
 
@@ -45,6 +47,6 @@ def handler(args):
         layout_type=args.layout,
         canonical_polygons=args.canonical_polygons,
         map_output_dir=map_output_dir,
-        output_dir=args.output,
+        output_dir=Path(args.output) if args.output else None,
         plots=args.plots,
     )
