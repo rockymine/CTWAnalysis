@@ -65,32 +65,31 @@ def handler(args):
 
 
 def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = None):
-    """
-    Step 3: Parse XML configuration and extract map data.
+    """Parse XML configuration and return a typed pipeline object.
+
+    Always parses map.xml and returns a MapXmlContext for downstream
+    pipeline stages.  The JSON artifact (map_data.json) is written as a
+    side-effect only when it does not already exist or force_rerun is set;
+    it is for human inspection and is not read back by any pipeline step.
 
     Args:
         map_folder: Path to map folder (read-only input).
-        force_rerun: If True, regenerate even if JSON file exists.
+        force_rerun: If True, overwrite map_data.json even if it exists.
         output_dir: Where to write map_data.json (default: map_folder).
 
     Returns:
-        Path: Path to generated JSON file
+        MapXmlContext on success, None if map.xml is missing or unparseable.
     """
+    from xml_analysis.datatypes import MapXmlContext
+
     out = Path(output_dir) if output_dir else map_folder
 
     print(f"\n[4/6] XML Analysis: {map_folder.name}")
     print("=" * 70)
 
-    # Define paths
     xml_file = map_folder / 'map.xml'
     json_file = out / 'map_data.json'
 
-    # Check if JSON already exists
-    if json_file.exists() and not force_rerun:
-        print(f"  Map data already exists: {json_file.name}")
-        return json_file
-
-    # Check if XML exists
     if not xml_file.exists():
         print(f"  [X] No XML file found at {xml_file}")
         return None
@@ -98,22 +97,23 @@ def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = 
     print(f"  Parsing XML: {xml_file.name}")
 
     try:
-        # Parse XML
         parser = MapXMLParser(str(xml_file))
         map_data = parser.parse()
         categories = parser.identify_region_categories(map_data)
-
-        # Save JSON
-        map_data_exporter.save(map_data, str(json_file), categories)
-
-        print(f"    [OK] Saved {json_file.name}")
-        print(f"      - Teams: {len(map_data.teams)}")
-        print(f"      - Spawns: {len(map_data.spawns)}")
-        print(f"      - Wools: {len(map_data.wools)}")
-        print(f"      - Regions: {len(map_data.regions)}")
-
-        return json_file
-
     except Exception as e:
         print(f"  [X] Failed to parse XML: {e}")
         return None
+
+    # Write JSON artifact (skip if already up-to-date)
+    if force_rerun or not json_file.exists():
+        map_data_exporter.save(map_data, str(json_file), categories)
+        print(f"    [OK] Saved {json_file.name}")
+    else:
+        print(f"  Map data already exists: {json_file.name}")
+
+    print(f"      - Teams: {len(map_data.teams)}")
+    print(f"      - Spawns: {len(map_data.spawns)}")
+    print(f"      - Wools: {len(map_data.wools)}")
+    print(f"      - Regions: {len(map_data.regions)}")
+
+    return MapXmlContext(map_data=map_data, region_categories=categories)

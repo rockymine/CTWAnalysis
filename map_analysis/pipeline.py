@@ -207,8 +207,13 @@ def _annotate_pois(
     skeleton_results: list,
     skeleton_output_dir: Path,
     plots: bool = True,
+    xml_context=None,
 ):
-    """Parse map.xml and annotate skeleton POIs.
+    """Annotate skeleton POIs from XML data.
+
+    Uses xml_context.map_data when provided by the pipeline (avoids a
+    second parse of map.xml).  Falls back to parsing map.xml from disk
+    when called standalone (e.g. ctw islands without a prior xml step).
 
     Returns (map_data_obj, poi_assignments).
     map_data_obj and poi_assignments are None when XML is absent.
@@ -220,12 +225,18 @@ def _annotate_pois(
     map_data_obj = None
     poi_assignments = None
 
-    if xml_file.exists():
+    if xml_context is not None:
+        map_data_obj = xml_context.map_data
+    elif xml_file.exists():
         try:
             from xml_analysis import MapXMLParser
             parser = MapXMLParser(str(xml_file))
             map_data_obj = parser.parse()
+        except Exception as e:
+            print(f"    [!] XML parse failed: {e}")
 
+    if map_data_obj is not None:
+        try:
             print(f"  Annotating POIs from XML...")
             poi_assignments = annotate_skeleton_pois(
                 islands, skeleton_results, map_data_obj,
@@ -269,7 +280,7 @@ def _annotate_pois(
         except Exception as e:
             print(f"    [!] POI annotation failed: {e}")
     else:
-        print(f"  No map.xml found, skipping POI annotation")
+        print(f"  No XML data available, skipping POI annotation")
 
     return map_data_obj, poi_assignments
 
@@ -602,6 +613,7 @@ def assemble_map(
     island_output_dir: Path,
     map_output_dir: Path,
     map_center_pt=None,
+    xml_context=None,
     plots: bool = False,
 ):
     """Map assembly pipeline (Stages 5–7).
@@ -611,8 +623,10 @@ def assemble_map(
     first (either in this session or a previous one, with results on disk).
 
     Reads:
-        - map.xml (from map_folder, optional)
         - symmetry.json (from map_output_dir, for team assignment)
+
+    Reads from xml_context when provided (preferred), otherwise falls back
+    to parsing map.xml from map_folder directly.
 
     Writes:
         - map_context.json
@@ -620,7 +634,7 @@ def assemble_map(
         - Updates symmetry.json with intra_team_symmetry (if applicable)
 
     Args:
-        map_folder: Path to map folder (for map.xml).
+        map_folder: Path to map folder (for map.xml fallback).
         islands: In-memory list of Island objects from run_island_geometry().
         skeleton_results: In-memory skeleton results from run_island_geometry().
         canonical_groups: Canonical group mapping from run_island_geometry().
@@ -628,6 +642,8 @@ def assemble_map(
         island_output_dir: Path to island_analysis/ output directory.
         map_output_dir: Per-map output root (where map_context.json is written).
         map_center_pt: Pre-computed map center from run_island_geometry().
+        xml_context: MapXmlContext from the XML analysis step. When supplied
+            the assembly step uses map_data directly without re-parsing map.xml.
         plots: If True, generate POI debug plots.
     """
     print(f"\n[5/6] Map Assembly: {map_folder.name}")
@@ -640,10 +656,11 @@ def assemble_map(
         from map_analysis.poi_annotation import compute_map_center
         map_center_pt = compute_map_center(df)
 
-    # Stage 5: POI annotation (reads map.xml)
+    # Stage 5: POI annotation
     map_data_obj, poi_assignments = _annotate_pois(
         map_folder, islands, skeleton_results, skeleton_output_dir,
         plots=plots,
+        xml_context=xml_context,
     )
 
     # Build island dicts for team assignment (includes XML-set island.team)

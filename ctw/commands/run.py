@@ -103,6 +103,7 @@ def _run_assembly(
     map_folder: Path,
     geometry_data: tuple,
     map_output_dir: Path,
+    xml_context=None,
     plots: bool = False,
 ) -> None:
     """Run map assembly — combines geometry + symmetry + XML into map model."""
@@ -119,6 +120,7 @@ def _run_assembly(
         island_output_dir=island_output_dir,
         map_output_dir=map_output_dir,
         map_center_pt=map_center_pt,
+        xml_context=xml_context,
         plots=plots,
     )
 
@@ -179,9 +181,10 @@ def _process_single_map(map_folder, args, output_override=None):
             print("\n[3/6] Symmetry Analysis: SKIPPED")
 
         # [4/6] XML Analysis
+        xml_context = None
         if not args.no_xml:
-            analyze_xml(map_folder, force_rerun=args.force,
-                        output_dir=map_output_dir)
+            xml_context = analyze_xml(map_folder, force_rerun=args.force,
+                                      output_dir=map_output_dir)
         else:
             print("\n[4/6] XML Analysis: SKIPPED")
 
@@ -189,7 +192,7 @@ def _process_single_map(map_folder, args, output_override=None):
         if not args.no_assembly:
             if geometry_data is not None and geometry_data[0] is not None:
                 _run_assembly(map_folder, geometry_data, map_output_dir,
-                              plots=args.plots)
+                              xml_context=xml_context, plots=args.plots)
             elif (map_output_dir / 'island_analysis' / 'islands.json').exists():
                 print("\n[5/6] Map Assembly: SKIPPED (islands loaded from cache; "
                       "re-run without --no-islands to assemble)")

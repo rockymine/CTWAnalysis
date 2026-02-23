@@ -58,3 +58,16 @@ class MapData:
     regions: Dict[str, Region] = field(default_factory=dict)
     apply_rules: List[ApplyRule] = field(default_factory=list)
     max_build_height: Optional[int] = None
+
+
+@dataclass
+class MapXmlContext:
+    """Pipeline result of the XML analysis step.
+
+    Passed between pipeline stages so downstream steps (assembly, POI
+    annotation) do not need to re-parse map.xml or read map_data.json.
+    The JSON file written by the xml step is an artifact for human
+    inspection only.
+    """
+    map_data: MapData
+    region_categories: Dict[str, List[str]] = field(default_factory=dict)
