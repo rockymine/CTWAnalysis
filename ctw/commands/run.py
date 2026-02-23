@@ -75,32 +75,6 @@ def register(subparsers):
     p.set_defaults(func=handler)
 
 
-def _run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]:
-    """Run geometric symmetry analysis — reads islands.json, writes symmetry.json."""
-    from symmetry_analysis import detect_symmetry, SymmetryResult
-    from symmetry_analysis import exporter as symmetry_exporter
-
-    print(f"\n[3/6] Symmetry Analysis")
-    print("=" * 70)
-
-    islands_path = map_output_dir / 'island_analysis' / 'islands.json'
-    if not islands_path.exists():
-        print("  island_analysis/islands.json not found — skipping symmetry analysis")
-        return None
-
-    result = detect_symmetry(str(islands_path))
-
-    out_path = map_output_dir / 'symmetry.json'
-    symmetry_exporter.save(result, out_path)
-
-    if result.primary:
-        print(f"  Global: {result.primary['description']} "
-              f"(confidence: {result.primary['confidence']:.0%})")
-    else:
-        print("  Global: no symmetry detected")
-
-    return result
-
 
 def _run_assembly(
     map_folder: Path,
@@ -125,7 +99,7 @@ def _run_assembly(
 
 def _process_single_map(map_folder, args, output_override=None):
     """Run the full pipeline for a single map. Safe for multiprocessing."""
-    from map_analysis.pipeline import run_island_geometry
+    from map_analysis.pipeline import run_island_geometry, run_symmetry
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
 
@@ -175,7 +149,7 @@ def _process_single_map(map_folder, args, output_override=None):
         # [3/6] Symmetry (geometric only — reads islands.json)
         symmetry = None
         if not args.no_symmetry:
-            symmetry = _run_symmetry(map_output_dir)
+            symmetry = run_symmetry(map_output_dir)
         else:
             print("\n[3/6] Symmetry Analysis: SKIPPED")
 

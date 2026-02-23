@@ -503,6 +503,46 @@ def _cleanup_legacy(island_output_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Public API: symmetry pipeline
+# ---------------------------------------------------------------------------
+
+def run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]:
+    """Symmetry analysis pipeline (Stage 3).
+
+    Reads island geometry from island_analysis/islands.json (written by
+    run_island_geometry) and writes symmetry.json to map_output_dir.
+
+    Note: detect_symmetry currently reads islands.json by path. A future
+    improvement would pass the IslandGeometryResult directly to avoid
+    the file round-trip.
+
+    Returns:
+        SymmetryResult on success, None if islands.json is missing.
+    """
+    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import exporter as symmetry_exporter
+
+    print(f"\n[3/6] Symmetry Analysis")
+    print("=" * 70)
+
+    islands_path = map_output_dir / 'island_analysis' / 'islands.json'
+    if not islands_path.exists():
+        print("  island_analysis/islands.json not found — skipping symmetry analysis")
+        return None
+
+    result = detect_symmetry(str(islands_path))
+    symmetry_exporter.save(result, map_output_dir / 'symmetry.json')
+
+    if result.primary:
+        print(f"  Global: {result.primary['description']} "
+              f"(confidence: {result.primary['confidence']:.0%})")
+    else:
+        print("  Global: no symmetry detected")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public API: geometry pipeline
 # ---------------------------------------------------------------------------
 
