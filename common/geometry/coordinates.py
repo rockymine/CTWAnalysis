@@ -1,18 +1,35 @@
 """Block extent, vertex, and polygon utilities. See COORDINATE_SYSTEMS.md."""
 
-from __future__ import annotations
-
 import numpy as np
-from typing import List, Sequence, Tuple, Union
+from typing import List, NamedTuple, Sequence, Tuple, Union
 
-# Type aliases for readability
 _Array = Union[Sequence, np.ndarray]
-BBox = Tuple[float, float, float, float]         # (min_x, max_x, min_z, max_z)
-Point2D = Tuple[float, float]                    # (x, z)
 UnitSquareVerts = List[Tuple[float, float]]      # 4 (x, z) corner pairs
 
 
-def get_grid_extent(xs: _Array, zs: _Array) -> BBox:
+class BoundingBox(NamedTuple):
+    """World-extent bounding box in (min_x, max_x, min_z, max_z) order.
+
+    max_x and max_z are already +1-adjusted (extent upper bounds), as
+    returned by get_grid_extent(). See COORDINATE_SYSTEMS.md § "+1 Rule".
+    """
+    min_x: float
+    max_x: float
+    min_z: float
+    max_z: float
+
+
+class Point2D(NamedTuple):
+    """A 2D world-space point (x, z)."""
+    x: float
+    z: float
+
+
+# Backward-compat alias
+BBox = BoundingBox
+
+
+def get_grid_extent(xs: _Array, zs: _Array) -> BoundingBox:
     """Compute the world-extent bounding box for a set of block indices.
 
     A block at integer index *x* occupies the continuous interval
@@ -39,16 +56,16 @@ def get_grid_extent(xs: _Array, zs: _Array) -> BBox:
     """
     xs_arr = np.asarray(xs, dtype=float)
     zs_arr = np.asarray(zs, dtype=float)
-    return (
-        float(xs_arr.min()),
-        float(xs_arr.max()) + 1.0,
-        float(zs_arr.min()),
-        float(zs_arr.max()) + 1.0,
+    return BoundingBox(
+        min_x=float(xs_arr.min()),
+        max_x=float(xs_arr.max()) + 1.0,
+        min_z=float(zs_arr.min()),
+        max_z=float(zs_arr.max()) + 1.0,
     )
 
 
 def get_center_from_extent(
-    min_x: float, max_x: float, min_z: float, max_z: float
+    min_x: float, max_x: float, min_z: float, max_z: float,
 ) -> Point2D:
     """Compute the geometric centre of a world-extent bounding box.
 
@@ -71,7 +88,7 @@ def get_center_from_extent(
         >>> get_center_from_extent(*get_grid_extent([10], [10]))
         (10.5, 10.5)
     """
-    return ((min_x + max_x) / 2.0, (min_z + max_z) / 2.0)
+    return Point2D(x=(min_x + max_x) / 2.0, z=(min_z + max_z) / 2.0)
 
 
 def get_block_centroid(xs: _Array, zs: _Array) -> Point2D:
@@ -104,7 +121,7 @@ def get_block_centroid(xs: _Array, zs: _Array) -> Point2D:
     """
     xs_arr = np.asarray(xs, dtype=float)
     zs_arr = np.asarray(zs, dtype=float)
-    return (float(xs_arr.mean()) + 0.5, float(zs_arr.mean()) + 0.5)
+    return Point2D(x=float(xs_arr.mean()) + 0.5, z=float(zs_arr.mean()) + 0.5)
 
 
 def block_unit_square(x: float, z: float) -> UnitSquareVerts:

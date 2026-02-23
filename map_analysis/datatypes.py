@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
+from common.geometry import BoundingBox, Point2D
 from island_analysis.datatypes import Island
 from skeleton_analysis.datatypes import IslandResult
 
@@ -23,7 +24,7 @@ class IslandGeometryResult:
     canonical_groups: Dict[str, List[int]]
     df: Any                                      # pd.DataFrame
     island_output_dir: Path
-    map_center_pt: Optional[Tuple[float, float]]
+    map_center_pt: Optional[Point2D]
 
 
 @dataclass
@@ -37,8 +38,8 @@ class MapContext:
     teams: List[Dict] = field(default_factory=list)
 
     # Layout info
-    bounding_box: Optional[Tuple[float, float, float, float]] = None  # min_x, max_x, min_z, max_z
-    map_center: Optional[Tuple[float, float]] = None
+    bounding_box: Optional[BoundingBox] = None
+    map_center: Optional[Point2D] = None
     total_blocks: int = 0
 
     # Islands summary

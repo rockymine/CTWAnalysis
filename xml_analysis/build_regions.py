@@ -22,7 +22,7 @@ from shapely.geometry import box, Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from common.geometry import world_blocks_to_shapely
+from common.geometry import BoundingBox, world_blocks_to_shapely
 
 
 # Patterns in region IDs that should be excluded from buildable void.
@@ -33,7 +33,7 @@ _EXCLUDED_VOID_CHILD_PATTERNS = frozenset(['spawn', 'wool', 'monument'])
 
 def extract_build_region(
     map_data,
-    map_bounds,
+    map_bounds: BoundingBox,
     y0_parquet_path: str,
     island_polygons: List,
 ) -> Optional[dict]:

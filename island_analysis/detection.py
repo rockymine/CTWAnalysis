@@ -85,9 +85,7 @@ def detect_islands(
 
         # Calculate properties
         center = get_block_centroid(world_coords[:, 0], world_coords[:, 1])
-        bbox = tuple(
-            int(v) for v in get_grid_extent(world_coords[:, 0], world_coords[:, 1])
-        )
+        bbox = get_grid_extent(world_coords[:, 0], world_coords[:, 1])
 
         island = Island(
             id=len(islands) + 1,

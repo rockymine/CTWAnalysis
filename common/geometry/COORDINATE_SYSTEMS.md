@@ -31,10 +31,10 @@ min_x, max_x, min_z, max_z = get_grid_extent(xs, zs)
 cx, cz = get_center_from_extent(min_x, max_x, min_z, max_z)
 ```
 
-**Bounding box convention:** `(min_x, max_x, min_z, max_z)` where `max_x` and
-`max_z` are the *extent* upper bounds — already `+1` relative to the highest
-block index. Used in `Island.bounding_box`, `MapContext.bounding_box`, and all
-JSON exports.
+**Bounding box convention:** `BoundingBox(min_x, max_x, min_z, max_z)` where
+`max_x` and `max_z` are the *extent* upper bounds — already `+1` relative to
+the highest block index. Used in `Island.bounding_box`, `MapContext.bounding_box`,
+and all JSON exports. `BBox` is a backward-compat alias for `BoundingBox`.
 
 ---
 
@@ -366,9 +366,9 @@ to centres but the image is still half a pixel off.
 
 | Function | Signature | Notes |
 |---|---|---|
-| `get_grid_extent` | `xs, zs → (min_x, max_x+1, min_z, max_z+1)` | Applies +1 rule |
-| `get_center_from_extent` | `BBox → (cx, cz)` | Midpoint of adjusted extent |
-| `get_block_centroid` | `xs, zs → (cx, cz)` | Weighted centroid, applies +0.5 |
+| `get_grid_extent` | `xs, zs → BoundingBox` | Applies +1 rule |
+| `get_center_from_extent` | `min_x, max_x, min_z, max_z → Point2D` | Midpoint of adjusted extent |
+| `get_block_centroid` | `xs, zs → Point2D` | Weighted centroid, applies +0.5 |
 
 ### Plotting helpers
 
@@ -418,7 +418,8 @@ to centres but the image is still half a pixel off.
 ```
 common/geometry/
   __init__.py       public API, re-exports everything
-  coordinates.py    get_grid_extent, get_block_centroid, block_centers,
+  coordinates.py    BoundingBox, Point2D, BBox (alias),
+                    get_grid_extent, get_block_centroid, block_centers,
                     raster_imshow_extent, block_unit_square,
                     blocks_to_unit_squares, world_blocks_to_shapely
   transforms.py     CanonicalTransform, RasterMask,

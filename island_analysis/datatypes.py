@@ -3,8 +3,10 @@ Island data types.
 """
 
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from dataclasses import dataclass, field
+
+from common.geometry import BoundingBox, Point2D
 
 
 @dataclass
@@ -12,9 +14,9 @@ class Island:
     """Represents a detected island in the map."""
     id: int
     blocks: np.ndarray  # Nx2 array of (x, z) coordinates
-    center: Tuple[float, float]  # Centroid
+    center: Point2D
     area: int  # Number of blocks
-    bounding_box: Tuple[int, int, int, int]  # (min_x, max_x, min_z, max_z)
+    bounding_box: BoundingBox
     hull_vertices: np.ndarray = None  # Convex hull vertices
     simplified_polygon: Optional[dict] = None  # {exterior: [[x,z],...], holes: [...]}
     holes: List[np.ndarray] = field(default_factory=list)  # Internal air pockets

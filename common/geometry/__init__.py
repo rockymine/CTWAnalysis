@@ -6,6 +6,9 @@ Rotation of Extent constraint.
 """
 
 from .coordinates import (
+    BoundingBox,
+    Point2D,
+    BBox,
     get_grid_extent,
     get_center_from_extent,
     get_block_centroid,
@@ -23,6 +26,10 @@ from .transforms import (
 )
 
 __all__ = [
+    # Named types
+    "BoundingBox",
+    "Point2D",
+    "BBox",
     # Block coordinate utilities
     "get_grid_extent",
     "get_center_from_extent",
