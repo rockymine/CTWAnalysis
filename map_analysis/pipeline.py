@@ -30,7 +30,7 @@ from symmetry_analysis.datatypes import SymmetryResult
 
 
 # ---------------------------------------------------------------------------
-# Stage 3: Skeleton computation
+# Skeleton computation
 # ---------------------------------------------------------------------------
 
 def _compute_skeletons(
@@ -78,7 +78,7 @@ def _compute_skeletons(
 
 
 # ---------------------------------------------------------------------------
-# Stage 4: Skeleton & island visualizations
+# Island & skeleton visualizations
 # ---------------------------------------------------------------------------
 
 def _generate_skeleton_visuals(
@@ -146,7 +146,7 @@ def _generate_skeleton_visuals(
 
 
 # ---------------------------------------------------------------------------
-# Stage 4b: Write islands.json (bridge to symmetry + assembly steps)
+# islands.json serialization (debug artifact + symmetry step input)
 # ---------------------------------------------------------------------------
 
 def _save_islands_json(
@@ -200,7 +200,7 @@ def _save_islands_json(
 
 
 # ---------------------------------------------------------------------------
-# Stage 5: POI annotation (requires XML)
+# POI annotation
 # ---------------------------------------------------------------------------
 
 def _annotate_pois(
@@ -288,7 +288,7 @@ def _annotate_pois(
 
 
 # ---------------------------------------------------------------------------
-# Stage 6: Team assignment (requires symmetry + XML teams)
+# Team assignment
 # ---------------------------------------------------------------------------
 
 def _assign_teams(
@@ -607,7 +607,7 @@ def run_island_geometry(
     if not write_outputs:
         print(f"  Cached debug output found — recomputing in-memory objects, skipping file writes.")
 
-    # Stage 1: Load and detect
+    # Load layout and detect islands
     print(f"  Loading layout data: {layout_file.name}")
     df = pd.read_parquet(layout_file)
     print(f"    Loaded {len(df)} blocks")
@@ -620,7 +620,7 @@ def run_island_geometry(
         print("  [X] No islands detected!")
         return None
 
-    # Stage 2: Build polygons
+    # Build polygons
     build_polygons(
         islands,
         canonical=canonical_polygons,
@@ -629,10 +629,10 @@ def run_island_geometry(
         detect_holes=detect_holes,
     )
 
-    # Stage 3: Skeleton computation
+    # Compute skeleton graphs
     skeleton_results, canonical_groups, stats = _compute_skeletons(islands)
 
-    # Stage 4: Debug outputs (visualizations + islands.json) — skipped on cache hit
+    # Debug outputs (visualizations + islands.json) — skipped on cache hit
     if write_outputs:
         _generate_skeleton_visuals(
             islands, stats, skeleton_results, canonical_groups,
@@ -715,7 +715,7 @@ def assemble_map(
         from map_analysis.poi_annotation import compute_map_center
         map_center_pt = compute_map_center(df)
 
-    # Stage 5: POI annotation
+    # POI annotation
     map_data_obj, poi_assignments = _annotate_pois(
         map_folder, islands, skeleton_results, skeleton_output_dir,
         plots=plots,
@@ -737,11 +737,11 @@ def assemble_map(
         for island in islands
     ]
 
-    # Stage 6: Team assignment + intra-team symmetry
+    # Team assignment + intra-team symmetry
     _assign_teams(islands, island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
     _update_intra_team_symmetry(island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
 
-    # Stage 7: Build MapContext
+    # Build MapContext
     from map_analysis.builder import build_map_context
     from map_analysis import exporter as map_context_exporter
     from skeleton_analysis.builder import build_skeleton_dicts

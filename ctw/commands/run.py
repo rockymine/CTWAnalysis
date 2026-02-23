@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from ctw.common import collect_map_folders, resolve_output_dir
-from map_analysis.datatypes import IslandGeometryResult, MapContext
+from map_analysis.datatypes import IslandGeometryResult
 from symmetry_analysis.datatypes import SymmetryResult
 
 
@@ -74,32 +74,9 @@ def register(subparsers):
                    help='Skip maps that already have output (map_context.json exists)')
     p.set_defaults(func=handler)
 
-
-
-def _run_assembly(
-    map_folder: Path,
-    geometry: IslandGeometryResult,
-    map_output_dir: Path,
-    symmetry: Optional[SymmetryResult] = None,
-    xml_context=None,
-    plots: bool = False,
-) -> Optional[MapContext]:
-    """Run map assembly — combines geometry + symmetry + XML into map model."""
-    from map_analysis.pipeline import assemble_map
-
-    return assemble_map(
-        map_folder=map_folder,
-        geometry=geometry,
-        map_output_dir=map_output_dir,
-        symmetry=symmetry,
-        xml_context=xml_context,
-        plots=plots,
-    )
-
-
 def _process_single_map(map_folder, args, output_override=None):
     """Run the full pipeline for a single map. Safe for multiprocessing."""
-    from map_analysis.pipeline import run_island_geometry, run_symmetry
+    from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
 
@@ -164,18 +141,15 @@ def _process_single_map(map_folder, args, output_override=None):
         # [5/6] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
             if geometry is not None:
-                _run_assembly(map_folder, geometry, map_output_dir,
-                              symmetry=symmetry, xml_context=xml_context, plots=args.plots)
+                assemble_map(map_folder, geometry, map_output_dir,
+                             symmetry=symmetry, xml_context=xml_context, plots=args.plots)
             else:
                 print("\n[5/6] Map Assembly: SKIPPED (no island geometry available)")
         else:
             print("\n[5/6] Map Assembly: SKIPPED")
 
         # [6/6] Match Analysis
-        if not args.no_matches:
-            print(f"\n[6/6] Match Analysis: Currently not supported")
-        else:
-            print("\n[6/6] Match Analysis: Currently not supported")
+        print("\n[6/6] Match Analysis: Currently not supported")
 
         return map_folder.name, True, None
 
