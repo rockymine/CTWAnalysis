@@ -18,7 +18,6 @@ Public API:
 """
 
 import json
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -491,22 +490,6 @@ def _attach_build_region(
 
 
 # ---------------------------------------------------------------------------
-# Legacy cleanup
-# ---------------------------------------------------------------------------
-
-def _cleanup_legacy(island_output_dir: Path):
-    """Remove legacy per-island CSV/JSON exports."""
-    legacy_exports = island_output_dir / 'skeleton' / 'exports'
-    if legacy_exports.exists():
-        shutil.rmtree(legacy_exports)
-        print(f"    Removed legacy exports directory")
-    legacy_paths = island_output_dir / 'pathfinding' / 'paths_analysis.json'
-    if legacy_paths.exists():
-        legacy_paths.unlink()
-        print(f"    Removed legacy paths_analysis.json")
-
-
-# ---------------------------------------------------------------------------
 # Public API: symmetry pipeline
 # ---------------------------------------------------------------------------
 
@@ -771,9 +754,6 @@ def assemble_map(
         str(skeleton_output_dir / 'map_overview.png'),
         map_context=map_context_exporter.to_dict(map_ctx),
     )
-
-    # Cleanup legacy files
-    _cleanup_legacy(island_output_dir)
 
     print(f"    [OK] map_context.json written")
     return map_ctx
