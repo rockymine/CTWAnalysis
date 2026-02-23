@@ -15,11 +15,10 @@ Core math:
 """
 
 import os
-from typing import List, Dict, Optional
+from typing import List, Optional
 
-import numpy as np
 import pandas as pd
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import box, Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -95,7 +94,7 @@ def extract_build_region(
 # XML-based extraction
 # ---------------------------------------------------------------------------
 
-def _extract_from_xml(map_data, shapely_bounds) -> Optional:
+def _extract_from_xml(map_data, shapely_bounds) -> Optional[Polygon]:
     """
     Find deny(void) apply rules, decompose the void-area region, and
     return only the structurally meaningful allowed children as
