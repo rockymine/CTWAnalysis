@@ -101,7 +101,7 @@ def _run_symmetry(map_output_dir: Path) -> None:
 
 def _run_assembly(
     map_folder: Path,
-    geometry_data: tuple,
+    geometry: 'IslandGeometryResult',
     map_output_dir: Path,
     xml_context=None,
     plots: bool = False,
@@ -109,17 +109,10 @@ def _run_assembly(
     """Run map assembly — combines geometry + symmetry + XML into map model."""
     from map_analysis.pipeline import assemble_map
 
-    islands, skeleton_results, canonical_groups, df, island_output_dir, map_center_pt = geometry_data
-
     assemble_map(
         map_folder=map_folder,
-        islands=islands,
-        skeleton_results=skeleton_results,
-        canonical_groups=canonical_groups,
-        df=df,
-        island_output_dir=island_output_dir,
+        geometry=geometry,
         map_output_dir=map_output_dir,
-        map_center_pt=map_center_pt,
         xml_context=xml_context,
         plots=plots,
     )
@@ -156,9 +149,9 @@ def _process_single_map(map_folder, args, output_override=None):
             print("\n[1/6] Layout Analysis: SKIPPED")
 
         # [2/6] Islands + Skeletons (geometry only)
-        geometry_data = None
+        geometry = None
         if not args.no_islands:
-            geometry_data = run_island_geometry(
+            geometry = run_island_geometry(
                 map_folder,
                 force_rerun=args.force,
                 layout_type=args.island_layout,
@@ -190,8 +183,8 @@ def _process_single_map(map_folder, args, output_override=None):
 
         # [5/6] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
-            if geometry_data is not None and geometry_data[0] is not None:
-                _run_assembly(map_folder, geometry_data, map_output_dir,
+            if geometry is not None:
+                _run_assembly(map_folder, geometry, map_output_dir,
                               xml_context=xml_context, plots=args.plots)
             elif (map_output_dir / 'island_analysis' / 'islands.json').exists():
                 print("\n[5/6] Map Assembly: SKIPPED (islands loaded from cache; "

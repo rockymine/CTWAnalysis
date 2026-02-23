@@ -25,6 +25,7 @@ from typing import Optional, Tuple
 import pandas as pd
 
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_label, build_polygons
+from map_analysis.datatypes import IslandGeometryResult
 
 
 # ---------------------------------------------------------------------------
@@ -531,9 +532,7 @@ def run_island_geometry(
         plots: If True, generate debug plots.
 
     Returns:
-        tuple: (islands, skeleton_results, canonical_groups, df,
-                island_output_dir, map_center_pt)
-        or (None, None, None, None, None, None) on failure.
+        IslandGeometryResult on success, None on cache hit or failure.
     """
     print(f"\n[2/6] Island Analysis: {map_folder.name}")
     print("=" * 70)
@@ -546,14 +545,14 @@ def run_island_geometry(
     layout_file = layout_dir / layout_filename
     if not layout_file.exists():
         print(f"  [X] Layout file not found: {layout_filename}. Run layout analysis first.")
-        return None, None, None, None, None, None
+        return None
 
     # Check for cached results
     islands_json = island_output_dir / 'islands.json'
     if islands_json.exists() and not force_rerun:
         print(f"  Island analysis already exists. Skipping.")
         print(f"    [OK] {island_output_dir.name}/")
-        return None, None, None, None, island_output_dir, None
+        return None
 
     island_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -568,7 +567,7 @@ def run_island_geometry(
 
     if not islands:
         print("  [X] No islands detected!")
-        return None, None, None, None, island_output_dir, None
+        return None
 
     # Stage 2: Build polygons
     build_polygons(
@@ -597,7 +596,14 @@ def run_island_geometry(
     _save_islands_json(islands, df, map_folder.name, island_output_dir)
 
     print(f"    [OK] Saved to: {island_output_dir.name}/")
-    return islands, skeleton_results, canonical_groups, df, island_output_dir, map_center_pt
+    return IslandGeometryResult(
+        islands=islands,
+        skeleton_results=skeleton_results,
+        canonical_groups=canonical_groups,
+        df=df,
+        island_output_dir=island_output_dir,
+        map_center_pt=map_center_pt,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -606,13 +612,8 @@ def run_island_geometry(
 
 def assemble_map(
     map_folder: Path,
-    islands: list,
-    skeleton_results: list,
-    canonical_groups: dict,
-    df: pd.DataFrame,
-    island_output_dir: Path,
+    geometry: IslandGeometryResult,
     map_output_dir: Path,
-    map_center_pt=None,
     xml_context=None,
     plots: bool = False,
 ):
@@ -620,7 +621,7 @@ def assemble_map(
 
     Combines island geometry, symmetry results, and XML data into the
     complete map model. Requires run_island_geometry() to have been called
-    first (either in this session or a previous one, with results on disk).
+    first and its IslandGeometryResult passed in.
 
     Reads:
         - symmetry.json (from map_output_dir, for team assignment)
@@ -635,23 +636,24 @@ def assemble_map(
 
     Args:
         map_folder: Path to map folder (for map.xml fallback).
-        islands: In-memory list of Island objects from run_island_geometry().
-        skeleton_results: In-memory skeleton results from run_island_geometry().
-        canonical_groups: Canonical group mapping from run_island_geometry().
-        df: Layout DataFrame from run_island_geometry().
-        island_output_dir: Path to island_analysis/ output directory.
+        geometry: IslandGeometryResult from run_island_geometry().
         map_output_dir: Per-map output root (where map_context.json is written).
-        map_center_pt: Pre-computed map center from run_island_geometry().
         xml_context: MapXmlContext from the XML analysis step. When supplied
             the assembly step uses map_data directly without re-parsing map.xml.
         plots: If True, generate POI debug plots.
     """
+    islands = geometry.islands
+    skeleton_results = geometry.skeleton_results
+    canonical_groups = geometry.canonical_groups
+    df = geometry.df
+    island_output_dir = geometry.island_output_dir
+    map_center_pt = geometry.map_center_pt
+
     print(f"\n[5/6] Map Assembly: {map_folder.name}")
     print("=" * 70)
 
     skeleton_output_dir = island_output_dir / 'skeleton'
 
-    # Recompute map center if not provided
     if map_center_pt is None:
         from map_analysis.poi_annotation import compute_map_center
         map_center_pt = compute_map_center(df)
