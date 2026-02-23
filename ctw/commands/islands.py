@@ -1,4 +1,9 @@
-"""'islands' subcommand — detect islands and compute skeleton graphs."""
+"""'islands' subcommand — detect islands and compute skeleton graphs.
+
+Runs the geometry pipeline only (island detection, polygon construction,
+skeleton graphs, visualizations). Does not read map.xml or produce
+map_context.json — run 'ctw run' for the full pipeline including assembly.
+"""
 
 from ctw.common import resolve_map_folder, resolve_output_dir
 
@@ -30,9 +35,9 @@ def register(subparsers, map_parent):
 def handler(args):
     map_folder = resolve_map_folder(args.map)
 
-    from map_analysis.pipeline import analyze_islands_step
+    from map_analysis.pipeline import run_island_geometry
     map_output_dir = resolve_output_dir(map_folder, create=True)
-    analyze_islands_step(
+    run_island_geometry(
         map_folder,
         force_rerun=args.force,
         simplify_tolerance=args.simplify,

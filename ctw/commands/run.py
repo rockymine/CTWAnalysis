@@ -1,4 +1,16 @@
-"""'run' subcommand — full analysis pipeline."""
+"""'run' subcommand — full analysis pipeline.
+
+Pipeline steps (in order):
+    [1/6] Layout        — extract blocks, produce parquets
+    [2/6] Islands       — detect islands, build polygons, compute skeletons
+                          (pure geometry, no XML) → islands.json
+    [3/6] Symmetry      — detect global symmetry from island geometry
+                          → symmetry.json
+    [4/6] XML Analysis  — parse map.xml → map_data.json
+    [5/6] Assembly      — combine geometry + symmetry + XML into the full
+                          map model → map_context.json, map_graph.json
+    [6/6] Match Analysis (not yet implemented)
+"""
 
 import argparse
 from pathlib import Path
@@ -22,6 +34,7 @@ def register(subparsers):
     p.add_argument('--no-islands', action='store_true', help='Skip island analysis')
     p.add_argument('--no-symmetry', action='store_true', help='Skip symmetry analysis')
     p.add_argument('--no-xml', action='store_true', help='Skip XML analysis')
+    p.add_argument('--no-assembly', action='store_true', help='Skip map assembly')
     p.add_argument('--no-matches', action='store_true', help='Skip match analysis')
     p.add_argument('--match-history', default='match_logs/match_history.txt',
                    help='Path to match history file')
@@ -59,9 +72,60 @@ def register(subparsers):
     p.set_defaults(func=handler)
 
 
+def _run_symmetry(map_output_dir: Path) -> None:
+    """Run geometric symmetry analysis — reads islands.json, writes symmetry.json."""
+    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import exporter as symmetry_exporter
+
+    print(f"\n[3/6] Symmetry Analysis")
+    print("=" * 70)
+
+    islands_path = map_output_dir / 'island_analysis' / 'islands.json'
+    if not islands_path.exists():
+        print("  island_analysis/islands.json not found — skipping symmetry analysis")
+        return
+
+    result = detect_symmetry(str(islands_path))
+
+    out_path = map_output_dir / 'symmetry.json'
+    symmetry_exporter.save(result, out_path)
+
+    detected = [s for s in result['global_symmetry'] if s['detected']]
+    if detected:
+        primary = max(detected, key=lambda s: s['confidence'])
+        print(f"  Global: {primary['description']} "
+              f"(confidence: {primary['confidence']:.0%})")
+    else:
+        print("  Global: no symmetry detected")
+
+
+def _run_assembly(
+    map_folder: Path,
+    geometry_data: tuple,
+    map_output_dir: Path,
+    plots: bool = False,
+) -> None:
+    """Run map assembly — combines geometry + symmetry + XML into map model."""
+    from map_analysis.pipeline import assemble_map
+
+    islands, skeleton_results, canonical_groups, df, island_output_dir, map_center_pt = geometry_data
+
+    assemble_map(
+        map_folder=map_folder,
+        islands=islands,
+        skeleton_results=skeleton_results,
+        canonical_groups=canonical_groups,
+        df=df,
+        island_output_dir=island_output_dir,
+        map_output_dir=map_output_dir,
+        map_center_pt=map_center_pt,
+        plots=plots,
+    )
+
+
 def _process_single_map(map_folder, args, output_override=None):
     """Run the full pipeline for a single map. Safe for multiprocessing."""
-    from map_analysis.pipeline import analyze_islands_step
+    from map_analysis.pipeline import run_island_geometry
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
 
@@ -73,6 +137,7 @@ def _process_single_map(map_folder, args, output_override=None):
     print(f"{'=' * 70}")
 
     try:
+        # [1/6] Layout
         if not args.no_layout:
             analyze_layout(
                 map_folder,
@@ -86,10 +151,12 @@ def _process_single_map(map_folder, args, output_override=None):
                 density_mode=args.density_mode,
             )
         else:
-            print("\n[1/5] Layout Analysis: SKIPPED")
+            print("\n[1/6] Layout Analysis: SKIPPED")
 
+        # [2/6] Islands + Skeletons (geometry only)
+        geometry_data = None
         if not args.no_islands:
-            analyze_islands_step(
+            geometry_data = run_island_geometry(
                 map_folder,
                 force_rerun=args.force,
                 layout_type=args.island_layout,
@@ -103,23 +170,39 @@ def _process_single_map(map_folder, args, output_override=None):
                 plots=args.plots,
             )
         else:
-            print("\n[2/5] Island Analysis: SKIPPED")
+            print("\n[2/6] Island Analysis: SKIPPED")
 
+        # [3/6] Symmetry (geometric only — reads islands.json)
         if not args.no_symmetry:
             _run_symmetry(map_output_dir)
         else:
-            print("\n[3/5] Symmetry Analysis: SKIPPED")
+            print("\n[3/6] Symmetry Analysis: SKIPPED")
 
+        # [4/6] XML Analysis
         if not args.no_xml:
             analyze_xml(map_folder, force_rerun=args.force,
                         output_dir=map_output_dir)
         else:
-            print("\n[4/5] XML Analysis: SKIPPED")
+            print("\n[4/6] XML Analysis: SKIPPED")
 
-        if not args.no_matches:
-            print(f"\n[5/5] Match Analysis: Currently not supported")
+        # [5/6] Map Assembly (combines geometry + symmetry + XML)
+        if not args.no_assembly:
+            if geometry_data is not None and geometry_data[0] is not None:
+                _run_assembly(map_folder, geometry_data, map_output_dir,
+                              plots=args.plots)
+            elif (map_output_dir / 'island_analysis' / 'islands.json').exists():
+                print("\n[5/6] Map Assembly: SKIPPED (islands loaded from cache; "
+                      "re-run without --no-islands to assemble)")
+            else:
+                print("\n[5/6] Map Assembly: SKIPPED (no island geometry available)")
         else:
-            print("\n[5/5] Match Analysis: Currently not supported")
+            print("\n[5/6] Map Assembly: SKIPPED")
+
+        # [6/6] Match Analysis
+        if not args.no_matches:
+            print(f"\n[6/6] Match Analysis: Currently not supported")
+        else:
+            print("\n[6/6] Match Analysis: Currently not supported")
 
         return map_folder.name, True, None
 
@@ -164,61 +247,17 @@ def handler(args):
             }
             for future in as_completed(futures):
                 results.append(future.result())
-
-        # Summary
-        succeeded = [r for r in results if r[1]]
-        failed = [r for r in results if not r[1]]
-        print(f"\n{'=' * 70}")
-        print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
-        if failed:
-            for name, _, err in failed:
-                print(f"  FAILED: {name}: {err}")
-        print(f"{'=' * 70}\n")
     else:
         results = []
         for map_folder in map_folders:
             result = _process_single_map(map_folder, args, args.output)
             results.append(result)
 
-        succeeded = [r for r in results if r[1]]
-        failed = [r for r in results if not r[1]]
-        print(f"\n{'=' * 70}")
-        print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
-        if failed:
-            for name, _, err in failed:
-                print(f"  FAILED: {name}: {err}")
-        print(f"{'=' * 70}\n")
-
-
-def _run_symmetry(map_output_dir: Path) -> None:
-    """Run symmetry analysis on a map's preprocessed geometry."""
-    from symmetry_analysis import detect_symmetry
-    from symmetry_analysis import exporter as symmetry_exporter
-
-    print(f"\n[3/5] Symmetry Analysis")
-    print("=" * 70)
-
-    ctx_path = map_output_dir / 'map_context.json'
-    if not ctx_path.exists():
-        print("  map_context.json not found — skipping symmetry analysis")
-        return
-
-    result = detect_symmetry(str(ctx_path))
-
-    # Save results
-    out_path = map_output_dir / 'symmetry.json'
-    symmetry_exporter.save(result, out_path)
-
-    # Print summary
-    detected = [s for s in result['global_symmetry'] if s['detected']]
-    if detected:
-        primary = max(detected, key=lambda s: s['confidence'])
-        print(f"  Global: {primary['description']} "
-              f"(confidence: {primary['confidence']:.0%})")
-    else:
-        print("  Global: no symmetry detected")
-
-    intra = result.get('intra_team_symmetry', [])
-    sym_teams = [t['team'] for t in intra if t.get('symmetry_detected')]
-    if sym_teams:
-        print(f"  Intra-team: detected for {', '.join(sym_teams)}")
+    succeeded = [r for r in results if r[1]]
+    failed = [r for r in results if not r[1]]
+    print(f"\n{'=' * 70}")
+    print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
+    if failed:
+        for name, _, err in failed:
+            print(f"  FAILED: {name}: {err}")
+    print(f"{'=' * 70}\n")

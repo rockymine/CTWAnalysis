@@ -156,7 +156,7 @@ def analyze_layout(
     out = Path(output_dir) if output_dir else map_folder
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n[1/5] Layout Analysis: {map_folder.name}")
+    print(f"\n[1/6] Layout Analysis: {map_folder.name}")
     print("=" * 70)
 
     # Define output paths for enabled extractors only
