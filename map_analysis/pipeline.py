@@ -275,16 +275,35 @@ def _annotate_pois(
 # Team assignment
 # ---------------------------------------------------------------------------
 
+def _build_island_dicts(islands: list) -> list:
+    """Build island attribute dicts for team assignment and symmetry detection.
+
+    Reflects the current state of island.team (including any XML-set values).
+    """
+    return [
+        {
+            'id': island.id,
+            'area': island.area,
+            'center': list(island.center),
+            'has_spawn': island.has_spawn,
+            'has_wool': island.has_wool,
+            'has_center': island.has_center,
+            'team': island.team,
+            'simplified_polygon': island.simplified_polygon,
+        }
+        for island in islands
+    ]
+
+
 def _assign_teams(
     islands: list,
-    island_dicts: list,
     map_data_obj,
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
 ) -> None:
     """Assign islands to teams using symmetry + XML data.
 
-    Mutates island.team and island_dicts[i]['team'] in-place.
+    Mutates island.team in-place.
     Uses a SymmetryResult when available (in-memory, no disk read), otherwise
     falls back to reading symmetry.json from map_output_dir.
     """
@@ -322,12 +341,13 @@ def _assign_teams(
         return
 
     primary_global = max(detected, key=lambda s: s['confidence'])
+    island_dicts = _build_island_dicts(islands)
 
     team_islands = assign_islands_to_teams(
         island_dicts, teams, center_x, center_z, primary_global,
     )
 
-    # Propagate assignments back to Island objects and island_dicts
+    # Propagate assignments back to Island objects
     assigned_map = {
         isl_dict['id']: tid
         for tid, t_isls in team_islands.items()
@@ -336,21 +356,20 @@ def _assign_teams(
     for island in islands:
         if island.team is None and island.id in assigned_map:
             island.team = assigned_map[island.id]
-            for isl_dict in island_dicts:
-                if isl_dict['id'] == island.id:
-                    isl_dict['team'] = island.team
 
 
 def _update_intra_team_symmetry(
-    island_dicts: list,
+    islands: list,
     map_data_obj,
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
 ) -> None:
     """Detect intra-team symmetry and append the result to symmetry.json.
 
-    Reads symmetry data from the in-memory SymmetryResult when available,
-    otherwise falls back to reading symmetry.json from map_output_dir.
+    Builds island dicts from the current state of islands (reflecting team
+    assignments already applied by _assign_teams). Reads symmetry data from
+    the in-memory SymmetryResult when available, otherwise falls back to
+    reading symmetry.json from map_output_dir.
     """
     from map_analysis.team_assignment import detect_intra_team_symmetry
 
@@ -382,6 +401,7 @@ def _update_intra_team_symmetry(
         center_x = center_info.get('center_x', 0.0)
         center_z = center_info.get('center_z', 0.0)
 
+    island_dicts = _build_island_dicts(islands)
     intra_team = detect_intra_team_symmetry(
         island_dicts, center_x, center_z, center_info, global_symmetries, teams,
     )
@@ -714,24 +734,9 @@ def assemble_map(
         xml_context=xml_context,
     )
 
-    # Build island dicts for team assignment (includes XML-set island.team)
-    island_dicts = [
-        {
-            'id': island.id,
-            'area': island.area,
-            'center': list(island.center),
-            'has_spawn': island.has_spawn,
-            'has_wool': island.has_wool,
-            'has_center': island.has_center,
-            'team': island.team,
-            'simplified_polygon': island.simplified_polygon,
-        }
-        for island in islands
-    ]
-
     # Team assignment + intra-team symmetry
-    _assign_teams(islands, island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
-    _update_intra_team_symmetry(island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
+    _assign_teams(islands, map_data_obj, map_output_dir, symmetry=symmetry)
+    _update_intra_team_symmetry(islands, map_data_obj, map_output_dir, symmetry=symmetry)
 
     # Build MapContext
     from map_analysis.builder import build_map_context
