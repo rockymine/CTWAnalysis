@@ -20,7 +20,7 @@ Public API:
 import json
 import shutil
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import pandas as pd
 
@@ -288,7 +288,7 @@ def _annotate_pois(
 
 
 # ---------------------------------------------------------------------------
-# Stage 6: Team assignment (requires symmetry.json + XML teams)
+# Stage 6: Team assignment (requires symmetry + XML teams)
 # ---------------------------------------------------------------------------
 
 def _assign_teams(
@@ -297,42 +297,34 @@ def _assign_teams(
     map_data_obj,
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
-) -> Tuple[list, list]:
+) -> None:
     """Assign islands to teams using symmetry + XML data.
 
+    Mutates island.team and island_dicts[i]['team'] in-place.
     Uses a SymmetryResult when available (in-memory, no disk read), otherwise
     falls back to reading symmetry.json from map_output_dir.
-
-    Also calls detect_intra_team_symmetry and appends the result to
-    symmetry.json.
-
-    Returns (teams, intra_team_symmetry).
     """
-    from map_analysis.team_assignment import assign_islands_to_teams, detect_intra_team_symmetry
+    from map_analysis.team_assignment import assign_islands_to_teams
 
     if map_data_obj is None:
-        return [], []
+        return
 
     teams = [
         {'id': t.id, 'color': t.color, 'name': t.name, 'max_players': t.max_players}
         for t in map_data_obj.teams
     ]
     if not teams:
-        return teams, []
-
-    sym_path = map_output_dir / 'symmetry.json'
+        return
 
     if symmetry is not None:
         global_symmetries = symmetry.global_symmetry
-        center_info = symmetry.center
         center_x = symmetry.center_x
         center_z = symmetry.center_z
-        sym_data = symmetry.to_dict()
     else:
-        # Fallback: read from disk (handles --no-symmetry with cached file)
+        sym_path = map_output_dir / 'symmetry.json'
         if not sym_path.exists():
             print(f"  No symmetry.json found, skipping team assignment")
-            return teams, []
+            return
         with open(sym_path) as f:
             sym_data = json.load(f)
         global_symmetries = sym_data.get('global_symmetry', [])
@@ -343,35 +335,69 @@ def _assign_teams(
     detected = [s for s in global_symmetries if s.get('detected')]
     if not detected:
         print(f"  No global symmetry detected, skipping geometric team assignment")
-        return teams, []
+        return
 
     primary_global = max(detected, key=lambda s: s['confidence'])
 
-    # Assign unassigned islands geometrically
     team_islands = assign_islands_to_teams(
         island_dicts, teams, center_x, center_z, primary_global,
     )
 
-    # Propagate geometric assignments back to Island objects
-    assigned_map = {}
-    for tid, t_isls in team_islands.items():
-        for isl_dict in t_isls:
-            assigned_map[isl_dict['id']] = tid
-
+    # Propagate assignments back to Island objects and island_dicts
+    assigned_map = {
+        isl_dict['id']: tid
+        for tid, t_isls in team_islands.items()
+        for isl_dict in t_isls
+    }
     for island in islands:
         if island.team is None and island.id in assigned_map:
             island.team = assigned_map[island.id]
-            # Also update the dict used for intra-team check
             for isl_dict in island_dicts:
                 if isl_dict['id'] == island.id:
                     isl_dict['team'] = island.team
 
-    # Rebuild team_islands with updated assignments
-    team_islands = assign_islands_to_teams(
-        island_dicts, teams, center_x, center_z, primary_global,
-    )
 
-    # Detect intra-team symmetry
+def _update_intra_team_symmetry(
+    island_dicts: list,
+    map_data_obj,
+    map_output_dir: Path,
+    symmetry: Optional[SymmetryResult] = None,
+) -> None:
+    """Detect intra-team symmetry and append the result to symmetry.json.
+
+    Reads symmetry data from the in-memory SymmetryResult when available,
+    otherwise falls back to reading symmetry.json from map_output_dir.
+    """
+    from map_analysis.team_assignment import detect_intra_team_symmetry
+
+    if map_data_obj is None:
+        return
+
+    teams = [
+        {'id': t.id, 'color': t.color, 'name': t.name, 'max_players': t.max_players}
+        for t in map_data_obj.teams
+    ]
+    if not teams:
+        return
+
+    sym_path = map_output_dir / 'symmetry.json'
+
+    if symmetry is not None:
+        global_symmetries = symmetry.global_symmetry
+        center_info = symmetry.center
+        center_x = symmetry.center_x
+        center_z = symmetry.center_z
+        sym_data = symmetry.to_dict()
+    else:
+        if not sym_path.exists():
+            return
+        with open(sym_path) as f:
+            sym_data = json.load(f)
+        global_symmetries = sym_data.get('global_symmetry', [])
+        center_info = sym_data.get('center', {})
+        center_x = center_info.get('center_x', 0.0)
+        center_z = center_info.get('center_z', 0.0)
+
     intra_team = detect_intra_team_symmetry(
         island_dicts, center_x, center_z, center_info, global_symmetries, teams,
     )
@@ -383,8 +409,6 @@ def _assign_teams(
         sym_teams = [t['team'] for t in intra_team if t.get('symmetry_detected')]
         if sym_teams:
             print(f"  Intra-team symmetry detected for: {', '.join(sym_teams)}")
-
-    return teams, intra_team
 
 
 # ---------------------------------------------------------------------------
@@ -673,8 +697,9 @@ def assemble_map(
         for island in islands
     ]
 
-    # Stage 6: Team assignment (uses in-memory symmetry or falls back to symmetry.json)
+    # Stage 6: Team assignment + intra-team symmetry
     _assign_teams(islands, island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
+    _update_intra_team_symmetry(island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
 
     # Stage 7: Build MapContext
     from map_analysis.builder import build_map_context
