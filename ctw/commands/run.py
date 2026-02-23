@@ -106,11 +106,11 @@ def _run_assembly(
     symmetry: 'Optional[SymmetryResult]' = None,
     xml_context=None,
     plots: bool = False,
-) -> None:
+) -> 'Optional[MapContext]':
     """Run map assembly — combines geometry + symmetry + XML into map model."""
     from map_analysis.pipeline import assemble_map
 
-    assemble_map(
+    return assemble_map(
         map_folder=map_folder,
         geometry=geometry,
         map_output_dir=map_output_dir,

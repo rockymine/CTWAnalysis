@@ -625,23 +625,24 @@ def assemble_map(
     symmetry: Optional[SymmetryResult] = None,
     xml_context=None,
     plots: bool = False,
-):
+) -> 'MapContext':
     """Map assembly pipeline (Stages 5–7).
 
     Combines island geometry, symmetry results, and XML data into the
     complete map model. Requires run_island_geometry() to have been called
     first and its IslandGeometryResult passed in.
 
-    Reads:
-        - symmetry.json (from map_output_dir, for team assignment)
-
     Reads from xml_context when provided (preferred), otherwise falls back
-    to parsing map.xml from map_folder directly.
+    to parsing map.xml from map_folder directly.  Reads symmetry.json from
+    map_output_dir when symmetry is None (--no-symmetry + cached file).
 
     Writes:
         - map_context.json
         - map_graph.json
         - Updates symmetry.json with intra_team_symmetry (if applicable)
+
+    Returns:
+        MapContext instance.
 
     Args:
         map_folder: Path to map folder (for map.xml fallback).
@@ -716,3 +717,4 @@ def assemble_map(
     _cleanup_legacy(island_output_dir)
 
     print(f"    [OK] map_context.json written")
+    return map_ctx
