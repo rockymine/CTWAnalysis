@@ -14,8 +14,11 @@ Pipeline steps (in order):
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
 from ctw.common import collect_map_folders, resolve_output_dir
+from map_analysis.datatypes import IslandGeometryResult, MapContext
+from symmetry_analysis.datatypes import SymmetryResult
 
 
 def register(subparsers):
@@ -72,7 +75,7 @@ def register(subparsers):
     p.set_defaults(func=handler)
 
 
-def _run_symmetry(map_output_dir: Path) -> 'Optional[SymmetryResult]':
+def _run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]:
     """Run geometric symmetry analysis — reads islands.json, writes symmetry.json."""
     from symmetry_analysis import detect_symmetry, SymmetryResult
     from symmetry_analysis import exporter as symmetry_exporter
@@ -101,12 +104,12 @@ def _run_symmetry(map_output_dir: Path) -> 'Optional[SymmetryResult]':
 
 def _run_assembly(
     map_folder: Path,
-    geometry: 'IslandGeometryResult',
+    geometry: IslandGeometryResult,
     map_output_dir: Path,
-    symmetry: 'Optional[SymmetryResult]' = None,
+    symmetry: Optional[SymmetryResult] = None,
     xml_context=None,
     plots: bool = False,
-) -> 'Optional[MapContext]':
+) -> Optional[MapContext]:
     """Run map assembly — combines geometry + symmetry + XML into map model."""
     from map_analysis.pipeline import assemble_map
 

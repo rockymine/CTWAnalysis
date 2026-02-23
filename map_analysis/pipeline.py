@@ -25,7 +25,7 @@ from typing import Optional, Tuple
 import pandas as pd
 
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_label, build_polygons
-from map_analysis.datatypes import IslandGeometryResult
+from map_analysis.datatypes import IslandGeometryResult, MapContext
 from symmetry_analysis.datatypes import SymmetryResult
 
 
@@ -625,7 +625,7 @@ def assemble_map(
     symmetry: Optional[SymmetryResult] = None,
     xml_context=None,
     plots: bool = False,
-) -> 'MapContext':
+) -> MapContext:
     """Map assembly pipeline (Stages 5–7).
 
     Combines island geometry, symmetry results, and XML data into the
