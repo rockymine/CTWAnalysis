@@ -24,7 +24,7 @@ from typing import Optional
 
 import pandas as pd
 
-from island_analysis.pipeline import LAYOUT_FILES, detect_and_label, build_polygons
+from island_analysis.pipeline import LAYOUT_FILES, detect_and_enrich, build_polygons
 from map_analysis.datatypes import IslandGeometryResult, MapContext
 from symmetry_analysis.datatypes import SymmetryResult
 
@@ -616,9 +616,12 @@ def run_island_geometry(
     df = pd.read_parquet(layout_file)
     print(f"    Loaded {len(df)} blocks")
 
-    df, islands = detect_and_label(
-        layout_file, df, connectivity=connectivity, min_island_size=min_size,
+    df, islands = detect_and_enrich(
+        df, connectivity=connectivity, min_island_size=min_size,
     )
+    if write_outputs:
+        df.to_parquet(layout_file, index=False)
+        print(f"    Updated {layout_file.name} with island_id column")
 
     if not islands:
         print("  [X] No islands detected!")

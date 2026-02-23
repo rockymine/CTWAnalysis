@@ -6,8 +6,7 @@ construction.  Nothing from skeleton_analysis, xml_analysis, or
 map_analysis is imported here.
 """
 
-from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import pandas as pd
 
@@ -28,15 +27,16 @@ LAYOUT_FILES = {
 # Stage 1: Island detection
 # ---------------------------------------------------------------------------
 
-def detect_and_label(
-    layout_file: Path,
+def detect_and_enrich(
     df: pd.DataFrame,
     connectivity: int = 8,
     min_island_size: int = 10,
 ) -> Tuple[pd.DataFrame, list]:
-    """Detect islands and write island_id back into the layout parquet.
+    """Detect islands and enrich the DataFrame with an island_id column.
 
-    Returns the updated DataFrame and the list of Island objects.
+    Returns the updated DataFrame (with island_id per block row) and the list
+    of Island objects. Does not write to disk — callers are responsible for
+    persisting the enriched DataFrame.
     """
     from island_analysis import detect_islands
 
@@ -50,7 +50,6 @@ def detect_and_label(
     )
     print(f"    Found {len(islands)} islands")
 
-    # Add island_id column to layout parquet
     island_assignments = []
     for island in islands:
         for x, z in island.blocks:
@@ -64,8 +63,6 @@ def detect_and_label(
         df = df.drop(columns=['island_id'], errors='ignore')
         df = df.merge(island_df, on=['world_x', 'world_z'], how='left')
         df['island_id'] = df['island_id'].fillna(0).astype(int)
-        df.to_parquet(layout_file, index=False)
-        print(f"    Updated {layout_file.name} with island_id column")
 
     return df, islands
 
