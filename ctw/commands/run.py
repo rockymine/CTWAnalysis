@@ -192,9 +192,6 @@ def _process_single_map(map_folder, args, output_override=None):
             if geometry is not None:
                 _run_assembly(map_folder, geometry, map_output_dir,
                               symmetry=symmetry, xml_context=xml_context, plots=args.plots)
-            elif (map_output_dir / 'island_analysis' / 'islands.json').exists():
-                print("\n[5/6] Map Assembly: SKIPPED (islands loaded from cache; "
-                      "re-run without --no-islands to assemble)")
             else:
                 print("\n[5/6] Map Assembly: SKIPPED (no island geometry available)")
         else:

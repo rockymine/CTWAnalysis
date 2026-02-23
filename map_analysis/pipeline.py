@@ -540,7 +540,7 @@ def run_island_geometry(
         plots: If True, generate debug plots.
 
     Returns:
-        IslandGeometryResult on success, None on cache hit or failure.
+        IslandGeometryResult on success, None on failure (missing layout or no islands).
     """
     print(f"\n[2/6] Island Analysis: {map_folder.name}")
     print("=" * 70)
@@ -555,14 +555,14 @@ def run_island_geometry(
         print(f"  [X] Layout file not found: {layout_filename}. Run layout analysis first.")
         return None
 
-    # Check for cached results
-    islands_json = island_output_dir / 'islands.json'
-    if islands_json.exists() and not force_rerun:
-        print(f"  Island analysis already exists. Skipping.")
-        print(f"    [OK] {island_output_dir.name}/")
-        return None
-
     island_output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine whether to write debug outputs (JSON, images).
+    # Computation always runs — JSON files are debug artifacts, not pipeline inputs.
+    islands_json = island_output_dir / 'islands.json'
+    write_outputs = not islands_json.exists() or force_rerun
+    if not write_outputs:
+        print(f"  Cached debug output found — recomputing in-memory objects, skipping file writes.")
 
     # Stage 1: Load and detect
     print(f"  Loading layout data: {layout_file.name}")
@@ -589,21 +589,22 @@ def run_island_geometry(
     # Stage 3: Skeleton computation
     skeleton_results, canonical_groups, stats = _compute_skeletons(islands)
 
-    # Stage 4: Skeleton & island visualizations
-    _generate_skeleton_visuals(
-        islands, stats, skeleton_results, canonical_groups,
-        island_output_dir, map_folder.name, plots=plots,
-    )
+    # Stage 4: Debug outputs (visualizations + islands.json) — skipped on cache hit
+    if write_outputs:
+        _generate_skeleton_visuals(
+            islands, stats, skeleton_results, canonical_groups,
+            island_output_dir, map_folder.name, plots=plots,
+        )
 
     # Classify island centers (geometry-only, no XML)
     from map_analysis.poi_annotation import compute_map_center, classify_island_center
     map_center_pt = compute_map_center(df)
     classify_island_center(islands, map_center_pt)
 
-    # Write islands.json for symmetry + assembly steps
-    _save_islands_json(islands, df, map_folder.name, island_output_dir)
+    if write_outputs:
+        _save_islands_json(islands, df, map_folder.name, island_output_dir)
+        print(f"    [OK] Saved to: {island_output_dir.name}/")
 
-    print(f"    [OK] Saved to: {island_output_dir.name}/")
     return IslandGeometryResult(
         islands=islands,
         skeleton_results=skeleton_results,
