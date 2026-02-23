@@ -388,99 +388,78 @@ def _assign_teams(
 
 
 # ---------------------------------------------------------------------------
-# Stage 7: Build MapContext + map_graph.json
+# Stage 7: MapContext enrichment helpers
 # ---------------------------------------------------------------------------
 
-def _build_context(
-    map_folder: Path,
-    islands: list,
-    df: pd.DataFrame,
-    skeleton_results: list,
-    canonical_groups: dict,
-    map_data_obj,
-    map_center_pt,
-    poi_assignments,
-    island_output_dir: Path,
-    map_output_dir: Path,
-):
-    """Build and save MapContext (with build-region) and map_graph.json.
-
-    Returns the MapContext instance.
-    """
-    from map_analysis.builder import build_map_context
-    from map_analysis import exporter as map_context_exporter
-    from skeleton_analysis.builder import build_skeleton_dicts
-    from skeleton_analysis import exporter as map_graph_exporter
-
-    map_ctx = build_map_context(
-        islands, skeleton_results, canonical_groups, df,
-        map_data=map_data_obj,
-        map_center=map_center_pt,
-        poi_assignments=poi_assignments,
-    )
-
-    # Y0 layer diagnostics
-    y0_path = map_output_dir / 'layout_y0.parquet'
-    if y0_path.exists():
-        y0_df = pd.read_parquet(y0_path)
-        if len(y0_df) == 0 or 'block_id' not in y0_df.columns:
-            print(f"    Y0 layer: empty (0 blocks)")
-        else:
-            block_counts = y0_df['block_id'].value_counts()
-            n_block36 = int(block_counts.get(36, 0))
-            total = len(y0_df)
-            if n_block36 > 0:
-                other = total - n_block36
-                if other == 0:
-                    print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
-                else:
-                    other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
-                    print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
-                          f"{other} other (ids: {other_ids})")
-            else:
-                ids = sorted(block_counts.index.tolist())
-                print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
-    else:
+def _log_y0_diagnostics(y0_path: Path) -> None:
+    """Print a summary of the Y0 layer parquet for build-region debugging."""
+    if not y0_path.exists():
         print(f"    Y0 layer: not found (skipped or not yet extracted)")
+        return
+    y0_df = pd.read_parquet(y0_path)
+    if len(y0_df) == 0 or 'block_id' not in y0_df.columns:
+        print(f"    Y0 layer: empty (0 blocks)")
+        return
+    block_counts = y0_df['block_id'].value_counts()
+    n_block36 = int(block_counts.get(36, 0))
+    total = len(y0_df)
+    if n_block36 > 0:
+        other = total - n_block36
+        if other == 0:
+            print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
+        else:
+            other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
+            print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
+                  f"{other} other (ids: {other_ids})")
+    else:
+        ids = sorted(block_counts.index.tolist())
+        print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
 
-    # Build region extraction
-    if map_data_obj is not None:
-        try:
-            from xml_analysis.build_regions import extract_build_region
-            from shapely.geometry import Polygon as ShapelyPolygon
 
-            island_shapely = []
-            for island in islands:
-                if island.simplified_polygon:
-                    ext = island.simplified_polygon['exterior']
-                    holes = island.simplified_polygon.get('holes', [])
-                    try:
-                        poly = ShapelyPolygon(ext, holes)
-                        if poly.is_valid:
-                            island_shapely.append(poly)
-                    except Exception:
-                        pass
-            build_result = extract_build_region(
-                map_data=map_data_obj,
-                map_bounds=map_ctx.bounding_box,
-                y0_parquet_path=str(y0_path),
-                island_polygons=island_shapely,
-            )
-            if build_result:
-                map_ctx.build_region = build_result
-                print(f"    Build region: source={build_result['source']}, "
-                      f"void_area={build_result['buildable_void_area']}")
-            else:
-                print(f"    No build region detected")
-        except Exception as e:
-            print(f"    [!] Build region extraction failed: {e}")
+# ---------------------------------------------------------------------------
 
-    map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
+def _attach_build_region(
+    map_ctx: MapContext,
+    map_data_obj,
+    islands: list,
+    y0_path: Path,
+) -> None:
+    """Extract build region from XML + Y0 data and attach it to map_ctx.
 
-    island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    map_graph_exporter.save(island_skeletons, map_ctx.map_name, map_output_dir)
+    Modifies map_ctx.build_region in-place. No-ops when map_data_obj is None.
+    """
+    if map_data_obj is None:
+        return
+    try:
+        from xml_analysis.build_regions import extract_build_region
+        from shapely.geometry import Polygon as ShapelyPolygon
 
-    return map_ctx
+        island_shapely = []
+        for island in islands:
+            if island.simplified_polygon:
+                ext = island.simplified_polygon['exterior']
+                holes = island.simplified_polygon.get('holes', [])
+                try:
+                    poly = ShapelyPolygon(ext, holes)
+                    if poly.is_valid:
+                        island_shapely.append(poly)
+                except Exception:
+                    pass
+
+        build_result = extract_build_region(
+            map_data=map_data_obj,
+            map_bounds=map_ctx.bounding_box,
+            y0_parquet_path=str(y0_path),
+            island_polygons=island_shapely,
+        )
+        if build_result:
+            map_ctx.build_region = build_result
+            print(f"    Build region: source={build_result['source']}, "
+                  f"void_area={build_result['buildable_void_area']}")
+        else:
+            print(f"    No build region detected")
+    except Exception as e:
+        print(f"    [!] Build region extraction failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -697,17 +676,31 @@ def assemble_map(
     # Stage 6: Team assignment (uses in-memory symmetry or falls back to symmetry.json)
     _assign_teams(islands, island_dicts, map_data_obj, map_output_dir, symmetry=symmetry)
 
-    # Stage 7: Build MapContext + map_graph.json
+    # Stage 7: Build MapContext
+    from map_analysis.builder import build_map_context
+    from map_analysis import exporter as map_context_exporter
+    from skeleton_analysis.builder import build_skeleton_dicts
+    from skeleton_analysis import exporter as map_graph_exporter
+
     print(f"  Building map context...")
-    map_ctx = _build_context(
-        map_folder, islands, df, skeleton_results, canonical_groups,
-        map_data_obj, map_center_pt, poi_assignments, island_output_dir,
-        map_output_dir=map_output_dir,
+    map_ctx = build_map_context(
+        islands, skeleton_results, canonical_groups, df,
+        map_data=map_data_obj,
+        map_center=map_center_pt,
+        poi_assignments=poi_assignments,
     )
+
+    y0_path = map_output_dir / 'layout_y0.parquet'
+    _log_y0_diagnostics(y0_path)
+    _attach_build_region(map_ctx, map_data_obj, islands, y0_path)
+
+    map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
+
+    island_skeletons = build_skeleton_dicts(islands, skeleton_results)
+    map_graph_exporter.save(island_skeletons, map_ctx.map_name, map_output_dir)
 
     # Map overview plot (needs map_context for polygons + build regions)
     from skeleton_analysis.visualization import plot_map_overview
-    from map_analysis import exporter as map_context_exporter
     plot_map_overview(
         skeleton_results,
         str(skeleton_output_dir / 'map_overview.png'),
