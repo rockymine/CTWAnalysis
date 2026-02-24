@@ -7,9 +7,10 @@ map_analysis is imported here.
 """
 
 import logging
-from typing import Tuple
 
 import pandas as pd
+
+from .datatypes import Island
 
 logger = logging.getLogger('ctw')
 
@@ -34,7 +35,7 @@ def detect_and_enrich(
     df: pd.DataFrame,
     connectivity: int = 8,
     min_island_size: int = 10,
-) -> Tuple[pd.DataFrame, list]:
+) -> tuple[pd.DataFrame, list[Island]]:
     """Detect islands and enrich the DataFrame with an island_id column.
 
     Returns the updated DataFrame (with island_id per block row) and the list
@@ -75,7 +76,7 @@ def detect_and_enrich(
 # ---------------------------------------------------------------------------
 
 def build_polygons(
-    islands: list,
+    islands: list[Island],
     canonical: bool = False,
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,

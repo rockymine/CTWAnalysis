@@ -3,7 +3,7 @@ Island data types.
 """
 
 import numpy as np
-from typing import List, Optional
+from typing import Optional
 from dataclasses import dataclass, field
 
 from common.geometry import BoundingBox, Point2D
@@ -17,9 +17,9 @@ class Island:
     center: Point2D
     area: int  # Number of blocks
     bounding_box: BoundingBox
-    hull_vertices: np.ndarray = None  # Convex hull vertices
+    hull_vertices: Optional[np.ndarray] = None  # Convex hull vertices
     simplified_polygon: Optional[dict] = None  # {exterior: [[x,z],...], holes: [...]}
-    holes: List[np.ndarray] = field(default_factory=list)  # Internal air pockets
+    holes: list[np.ndarray] = field(default_factory=list)  # Internal air pockets
     skeleton_result: Optional[object] = None  # IslandResult from skeleton pipeline
     has_spawn: bool = False
     has_wool: bool = False

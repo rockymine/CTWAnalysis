@@ -3,12 +3,12 @@ Island statistics and classification.
 """
 
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import Optional
 
 from .datatypes import Island
 
 
-def compute_island_statistics(islands: List[Island]) -> Dict:
+def compute_island_statistics(islands: list[Island]) -> dict:
     """
     Compute statistics about detected islands.
 
@@ -45,9 +45,9 @@ def compute_island_statistics(islands: List[Island]) -> Dict:
 
 
 def classify_islands(
-    islands: List[Island],
-    map_center: Tuple[float, float] = None
-) -> Dict[str, List[Island]]:
+    islands: list[Island],
+    map_center: Optional[tuple[float, float]] = None,
+) -> dict[str, list[Island]]:
     """
     Classify islands by their likely role in the map.
 
