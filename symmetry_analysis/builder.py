@@ -16,7 +16,6 @@ Coordinate convention:
 
 import json
 import numpy as np
-from typing import Dict, List, Tuple
 
 from symmetry_analysis.datatypes import SymmetryResult
 
@@ -25,7 +24,7 @@ from symmetry_analysis.datatypes import SymmetryResult
 # Center classification
 # ---------------------------------------------------------------------------
 
-def classify_center(bbox: Tuple[float, float, float, float]) -> Dict:
+def classify_center(bbox: tuple[float, float, float, float]) -> dict:
     """Classify the geometric map center based on bounding box dimensions.
 
     In Minecraft's block coordinate system, a block at integer (x, z) occupies
@@ -98,7 +97,7 @@ def classify_center(bbox: Tuple[float, float, float, float]) -> Dict:
 # Island pairing via canonical keys
 # ---------------------------------------------------------------------------
 
-def _build_canonical_pairs(islands: List[Dict]) -> List[Tuple[Dict, Dict]]:
+def _build_canonical_pairs(islands: list[dict]) -> list[tuple[dict, dict]]:
     """Group islands by area to find potential symmetric pairs.
 
     Islands with the same area are candidates for symmetric pairing.
@@ -126,10 +125,10 @@ def _build_canonical_pairs(islands: List[Dict]) -> List[Tuple[Dict, Dict]]:
 # ---------------------------------------------------------------------------
 
 def _detect_pair_transform(
-    a: Dict, b: Dict,
+    a: dict, b: dict,
     center_x: float, center_z: float,
     tolerance: float = 2.0,
-) -> List[str]:
+) -> list[str]:
     """Detect which global transforms map island A's center to island B's center.
 
     Tests:
@@ -183,21 +182,21 @@ def _detect_pair_transform(
 # Polygon-based symmetry verification
 # ---------------------------------------------------------------------------
 
-def _reflect_polygon_x(poly_coords: List[List[float]], center_x: float) -> np.ndarray:
+def _reflect_polygon_x(poly_coords: list[list[float]], center_x: float) -> np.ndarray:
     """Reflect polygon coordinates across x = center_x."""
     pts = np.array(poly_coords)
     pts[:, 0] = 2 * center_x - pts[:, 0]
     return pts
 
 
-def _reflect_polygon_z(poly_coords: List[List[float]], center_z: float) -> np.ndarray:
+def _reflect_polygon_z(poly_coords: list[list[float]], center_z: float) -> np.ndarray:
     """Reflect polygon coordinates across z = center_z."""
     pts = np.array(poly_coords)
     pts[:, 1] = 2 * center_z - pts[:, 1]
     return pts
 
 
-def _rotate_polygon_180(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
+def _rotate_polygon_180(poly_coords: list[list[float]], cx: float, cz: float) -> np.ndarray:
     """Rotate polygon coordinates 180 degrees around (cx, cz)."""
     pts = np.array(poly_coords)
     pts[:, 0] = 2 * cx - pts[:, 0]
@@ -205,7 +204,7 @@ def _rotate_polygon_180(poly_coords: List[List[float]], cx: float, cz: float) ->
     return pts
 
 
-def _rotate_polygon_90(poly_coords: List[List[float]], cx: float, cz: float) -> np.ndarray:
+def _rotate_polygon_90(poly_coords: list[list[float]], cx: float, cz: float) -> np.ndarray:
     """Rotate polygon coordinates 90 degrees CCW around (cx, cz)."""
     pts = np.array(poly_coords)
     dx = pts[:, 0] - cx
@@ -247,12 +246,12 @@ def _polygon_iou(poly_a_coords, poly_b_coords) -> float:
 
 
 def _verify_polygon_symmetry(
-    islands: List[Dict],
+    islands: list[dict],
     center_x: float,
     center_z: float,
     transform_name: str,
     iou_threshold: float = 0.85,
-) -> Tuple[float, List[Dict]]:
+) -> tuple[float, list[dict]]:
     """Verify a symmetry type using polygon geometry (IoU).
 
     Applies the specified transform to all island polygons and checks
@@ -349,11 +348,11 @@ def _verify_polygon_symmetry(
 # ---------------------------------------------------------------------------
 
 def _aggregate_pair_transforms(
-    islands: List[Dict],
+    islands: list[dict],
     center_x: float,
     center_z: float,
     tolerance: float = 3.0,
-) -> Dict:
+) -> dict:
     """Aggregate observed transforms across all canonical island pairs.
 
     Returns dict with:
@@ -390,11 +389,11 @@ def _aggregate_pair_transforms(
 # ---------------------------------------------------------------------------
 
 def _detect_global_symmetry(
-    islands: List[Dict],
+    islands: list[dict],
     center_x: float,
     center_z: float,
-    pair_analysis: Dict,
-) -> List[Dict]:
+    pair_analysis: dict,
+) -> list[dict]:
     """Detect global symmetry types combining pair transforms and polygon IoU.
 
     Pair support is computed with symmetry-group awareness:

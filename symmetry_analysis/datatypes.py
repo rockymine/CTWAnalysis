@@ -1,7 +1,7 @@
 """Data classes for symmetry analysis."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -16,9 +16,9 @@ class SymmetryResult:
     Fields mirror the top-level keys of the JSON output exactly.
     """
     map_name: str
-    center: Dict[str, Any]           # center_x, center_z, type, description, blocks
-    pair_analysis: Dict[str, Any]    # total_pairs, transform_counts, pairs
-    global_symmetry: List[Dict[str, Any]]  # per-candidate symmetry entries
+    center: dict[str, Any]           # center_x, center_z, type, description, blocks
+    pair_analysis: dict[str, Any]    # total_pairs, transform_counts, pairs
+    global_symmetry: list[dict[str, Any]]  # per-candidate symmetry entries
 
     # ------------------------------------------------------------------
     # Convenience accessors
@@ -33,7 +33,7 @@ class SymmetryResult:
         return self.center['center_z']
 
     @property
-    def primary(self) -> Optional[Dict[str, Any]]:
+    def primary(self) -> Optional[dict[str, Any]]:
         """Highest-confidence detected global symmetry entry, or None."""
         detected = [s for s in self.global_symmetry if s['detected']]
         return max(detected, key=lambda s: s['confidence']) if detected else None
@@ -42,7 +42,7 @@ class SymmetryResult:
     # Serialisation
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Return the plain dict used by symmetry_exporter.save()."""
         return {
             'map_name': self.map_name,

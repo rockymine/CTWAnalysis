@@ -13,7 +13,7 @@ from symmetry_analysis.datatypes import SymmetryResult
 logger = logging.getLogger('ctw')
 
 
-def save(result: SymmetryResult, output_path) -> Path:
+def save(result: SymmetryResult, output_path: str | Path) -> Path:
     """Save symmetry analysis results to JSON.
 
     Args:
