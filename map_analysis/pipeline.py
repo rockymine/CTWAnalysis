@@ -434,12 +434,11 @@ def _update_intra_team_symmetry(
 # Stage 7: MapContext enrichment helpers
 # ---------------------------------------------------------------------------
 
-def _log_y0_diagnostics(y0_path: Path) -> None:
-    """Print a summary of the Y0 layer parquet for build-region debugging."""
-    if not y0_path.exists():
+def _log_y0_diagnostics(y0_df: Optional[pd.DataFrame]) -> None:
+    """Print a summary of the Y0 layer DataFrame for build-region debugging."""
+    if y0_df is None:
         logger.debug("    Y0 layer: not found (skipped or not yet extracted)")
         return
-    y0_df = pd.read_parquet(y0_path)
     if len(y0_df) == 0 or 'block_id' not in y0_df.columns:
         logger.debug("    Y0 layer: empty (0 blocks)")
         return
@@ -465,11 +464,15 @@ def _attach_build_region(
     map_ctx: MapContext,
     map_data_obj: Optional[MapData],
     islands: list[Island],
-    y0_path: Path,
+    y0_df: Optional[pd.DataFrame],
 ) -> None:
     """Extract build region from XML + Y0 data and attach it to map_ctx.
 
     Modifies map_ctx.build_region in-place. No-ops when map_data_obj is None.
+
+    Args:
+        y0_df: Pre-loaded Y=0 layout DataFrame, or None if unavailable.
+            Used as fallback for block-36 build region detection.
     """
     if map_data_obj is None:
         return
@@ -492,8 +495,8 @@ def _attach_build_region(
         build_result = extract_build_region(
             map_data=map_data_obj,
             map_bounds=map_ctx.bounding_box,
-            y0_parquet_path=str(y0_path),
             island_polygons=island_shapely,
+            y0_df=y0_df,
         )
         if build_result:
             map_ctx.build_region = build_result
@@ -509,30 +512,65 @@ def _attach_build_region(
 # Public API: symmetry pipeline
 # ---------------------------------------------------------------------------
 
-def run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]:
+def run_symmetry(
+    map_output_dir: Path,
+    geometry: Optional[IslandGeometryResult] = None,
+) -> Optional[SymmetryResult]:
     """Symmetry analysis pipeline (Stage 3).
 
-    Reads island geometry from island_analysis/islands.json (written by
-    run_island_geometry) and writes symmetry.json to map_output_dir.
+    Detects global geometric symmetry from island data and writes
+    symmetry.json to map_output_dir.
 
-    Note: detect_symmetry currently reads islands.json by path. A future
-    improvement would pass the IslandGeometryResult directly to avoid
-    the file round-trip.
+    When geometry is provided (the normal case in the full pipeline),
+    island data is read directly from the in-memory IslandGeometryResult —
+    no disk round-trip through islands.json.
+
+    When geometry is None (islands step was skipped, e.g. --no-islands),
+    falls back to reading island_analysis/islands.json from disk.
+
+    Args:
+        map_output_dir: Per-map output root (symmetry.json written here).
+        geometry: IslandGeometryResult from run_island_geometry. When
+            provided, uses in-memory data; falls back to disk when None.
 
     Returns:
-        SymmetryResult on success, None if islands.json is missing.
+        SymmetryResult on success, None if island data is unavailable.
     """
-    from symmetry_analysis import detect_symmetry
+    from symmetry_analysis import detect_symmetry, detect_symmetry_from_data
     from symmetry_analysis import exporter as symmetry_exporter
 
     logger.debug("[3/6] Symmetry Analysis")
 
-    islands_path = map_output_dir / 'island_analysis' / 'islands.json'
-    if not islands_path.exists():
-        logger.debug("  island_analysis/islands.json not found — skipping symmetry analysis")
-        return None
+    if geometry is not None:
+        # Use in-memory island data — no disk round-trip through islands.json
+        from common.geometry import get_grid_extent
+        df = geometry.df
+        x_col = 'world_x' if 'world_x' in df.columns else 'x'
+        z_col = 'world_z' if 'world_z' in df.columns else 'z'
+        bbox = list(get_grid_extent(df[x_col], df[z_col]))
+        island_dicts = [
+            {
+                'id': isl.id,
+                'area': isl.area,
+                'center': list(isl.center),
+                'simplified_polygon': isl.simplified_polygon,
+            }
+            for isl in geometry.islands
+        ]
+        data = {
+            'map_name': map_output_dir.name,
+            'bounding_box': bbox,
+            'islands': island_dicts,
+        }
+        result = detect_symmetry_from_data(data)
+    else:
+        # Fallback: islands step was skipped — read cached islands.json from disk
+        islands_path = map_output_dir / 'island_analysis' / 'islands.json'
+        if not islands_path.exists():
+            logger.debug("  island_analysis/islands.json not found — skipping symmetry analysis")
+            return None
+        result = detect_symmetry(str(islands_path))
 
-    result = detect_symmetry(str(islands_path))
     symmetry_exporter.save(result, map_output_dir / 'symmetry.json')
 
     if result.primary:
@@ -752,8 +790,9 @@ def assemble_map(
     )
 
     y0_path = map_output_dir / 'layout_y0.parquet'
-    _log_y0_diagnostics(y0_path)
-    _attach_build_region(map_ctx, map_data_obj, islands, y0_path)
+    y0_df = pd.read_parquet(y0_path) if y0_path.exists() else None
+    _log_y0_diagnostics(y0_df)
+    _attach_build_region(map_ctx, map_data_obj, islands, y0_df)
 
     map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
 

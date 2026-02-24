@@ -14,7 +14,6 @@ Core math:
   buildable_void = union(kept_children) - island_blocks
 """
 
-import os
 from typing import Any, Optional
 
 import pandas as pd
@@ -36,8 +35,8 @@ _EXCLUDED_VOID_CHILD_PATTERNS = frozenset(['spawn', 'wool', 'monument'])
 def extract_build_region(
     map_data: MapData,
     map_bounds: BoundingBox,
-    y0_parquet_path: str,
     island_polygons: list[Any],
+    y0_df: Optional[pd.DataFrame] = None,
 ) -> Optional[dict]:
     """
     Extract the buildable void region for a map.
@@ -45,8 +44,9 @@ def extract_build_region(
     Args:
         map_data: Parsed MapData from XML (has .regions, .apply_rules)
         map_bounds: (min_x, max_x, min_z, max_z) bounding box
-        y0_parquet_path: Path to layout_y0.parquet for block-36 fallback
         island_polygons: List of Shapely polygons for each island
+        y0_df: Pre-loaded Y=0 layout DataFrame for block-36 fallback.
+            Pass None when layout_y0.parquet was not extracted.
 
     Returns:
         Dict with build region info, or None if no build region found.
@@ -67,7 +67,7 @@ def extract_build_region(
     source = "xml"
     if build_allowed is None or build_allowed.is_empty:
         # Fallback to block 36
-        build_allowed = _extract_block36_region(y0_parquet_path)
+        build_allowed = _extract_block36_region(y0_df)
         source = "block_36"
 
     if build_allowed is None or build_allowed.is_empty:
@@ -227,24 +227,22 @@ def _should_exclude_void_child(child: Region) -> bool:
 # Block 36 fallback
 # ---------------------------------------------------------------------------
 
-def _extract_block36_region(y0_parquet_path: str) -> Optional[Any]:
+def _extract_block36_region(y0_df: Optional[pd.DataFrame]) -> Optional[Any]:
     """
     Build a region from block 36 (invisible piston head) at y=0.
 
     Block 36 acts as an implicit build platform.
+
+    Args:
+        y0_df: Pre-loaded Y=0 layout DataFrame, or None if unavailable.
     """
-    if not os.path.exists(y0_parquet_path):
+    if y0_df is None:
         return None
 
-    try:
-        df = pd.read_parquet(y0_parquet_path)
-    except Exception:
+    if 'block_id' not in y0_df.columns:
         return None
 
-    if 'block_id' not in df.columns:
-        return None
-
-    block36 = df[df['block_id'] == 36]
+    block36 = y0_df[y0_df['block_id'] == 36]
     if block36.empty:
         return None
 

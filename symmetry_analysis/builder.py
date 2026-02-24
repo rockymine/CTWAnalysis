@@ -488,23 +488,22 @@ def _detect_global_symmetry(
 # ---------------------------------------------------------------------------
 
 
-def detect_symmetry(islands_path: str) -> SymmetryResult:
-    """Run geometric symmetry analysis on a map from its islands.json.
+def detect_symmetry_from_data(data: dict) -> SymmetryResult:
+    """Run geometric symmetry analysis from pre-parsed island data.
+
+    Accepts a dict with the same structure as islands.json:
+        - bounding_box: [min_x, max_x, min_z, max_z]
+        - islands: list of island dicts (id, area, center, simplified_polygon)
+        - map_name: str (optional, defaults to "Unknown")
 
     Detects global symmetry types (mirror, rotation) from island pair
     geometry. Does NOT include team assignment or intra-team symmetry —
     those are assembly-layer concerns handled by assemble_map() in
     map_analysis.pipeline.
 
-    Args:
-        islands_path: Path to island_analysis/islands.json
-
     Returns:
         SymmetryResult with: map_name, center, pair_analysis, global_symmetry
     """
-    with open(islands_path, "r") as f:
-        data = json.load(f)
-
     bbox = data["bounding_box"]
     islands = data["islands"]
     map_name = data.get("map_name", "Unknown")
@@ -528,3 +527,21 @@ def detect_symmetry(islands_path: str) -> SymmetryResult:
         pair_analysis=pair_analysis,
         global_symmetry=global_symmetries,
     )
+
+
+def detect_symmetry(islands_path: str) -> SymmetryResult:
+    """Run geometric symmetry analysis on a map from its islands.json.
+
+    Reads the JSON file at islands_path and delegates to
+    detect_symmetry_from_data. Prefer passing data directly via
+    detect_symmetry_from_data to avoid the disk round-trip.
+
+    Args:
+        islands_path: Path to island_analysis/islands.json
+
+    Returns:
+        SymmetryResult with: map_name, center, pair_analysis, global_symmetry
+    """
+    with open(islands_path, "r") as f:
+        data = json.load(f)
+    return detect_symmetry_from_data(data)

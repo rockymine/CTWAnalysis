@@ -5,6 +5,7 @@ Pipeline steps (in order):
     [2/6] Islands       — detect islands, build polygons, compute skeletons
                           (pure geometry, no XML) → islands.json
     [3/6] Symmetry      — detect global symmetry from island geometry
+                          (uses in-memory IslandGeometryResult when available)
                           → symmetry.json
     [4/6] XML Analysis  — parse map.xml → map_data.json
     [5/6] Assembly      — combine geometry + symmetry + XML into the full
@@ -132,10 +133,10 @@ def _process_single_map(map_folder, args, output_override=None):
         else:
             logger.info("  [2/6] Islands: skipped")
 
-        # [3/6] Symmetry (geometric only — reads islands.json)
+        # [3/6] Symmetry (geometric only — uses in-memory geometry when available)
         symmetry = None
         if not args.no_symmetry:
-            symmetry = run_symmetry(map_output_dir)
+            symmetry = run_symmetry(map_output_dir, geometry=geometry)
             if symmetry and symmetry.primary:
                 logger.info(f"  [3/6] Symmetry: {symmetry.primary['description']} "
                             f"({symmetry.primary['confidence']:.0%})")
