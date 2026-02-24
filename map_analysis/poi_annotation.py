@@ -20,7 +20,7 @@ from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, Region, UnionRegion,
     CuboidRegion, RectangleRegion,
 )
-from common.geometry import get_grid_extent, get_center_from_extent
+from common.geometry import Point2D, get_grid_extent, get_center_from_extent
 
 
 def extract_spawn_locations(map_data: MapData) -> list[dict]:
@@ -123,7 +123,7 @@ def extract_wool_locations(map_data: MapData) -> list[dict]:
 
 
 def find_containing_island(
-    point_xz: tuple[float, float],
+    point_xz: Point2D,
     islands: list[Island],
     tolerance: float = 5.0,
 ) -> Optional[Island]:
@@ -148,7 +148,7 @@ def find_containing_island(
 
 
 def find_nearest_node(
-    point_xz: tuple[float, float],
+    point_xz: Point2D,
     island_result: IslandResult,
     node_type: Optional[str] = None,
 ) -> Optional[int]:
@@ -188,7 +188,7 @@ def find_nearest_node(
     return best_id
 
 
-def compute_map_center(layout_df: pd.DataFrame) -> tuple[float, float]:
+def compute_map_center(layout_df: pd.DataFrame) -> Point2D:
     """
     Compute the geometric center of all blocks in the layout.
 
@@ -207,7 +207,7 @@ def compute_map_center(layout_df: pd.DataFrame) -> tuple[float, float]:
 
 def classify_island_center(
     islands: list[Island],
-    map_center: tuple[float, float],
+    map_center: Point2D,
 ) -> None:
     """
     Set has_center and distance_to_center on each island.
@@ -293,7 +293,7 @@ def annotate_skeleton_pois(
 
     # Annotate spawns
     for spawn in spawn_locs:
-        island = find_containing_island((spawn['x'], spawn['z']), islands)
+        island = find_containing_island(Point2D(spawn['x'], spawn['z']), islands)
         if island is None:
             assignments['spawns'].append({
                 **spawn, 'island_id': None, 'node_id': None,
@@ -303,7 +303,7 @@ def annotate_skeleton_pois(
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
-            node_id = find_nearest_node((spawn['x'], spawn['z']), ir)
+            node_id = find_nearest_node(Point2D(spawn['x'], spawn['z']), ir)
 
             if node_id is not None:
                 for node in ir.graph.nodes:
@@ -324,7 +324,7 @@ def annotate_skeleton_pois(
         wool_x, wool_z = wool['x'], wool['z']
         fallback = None
 
-        island = find_containing_island((wool_x, wool_z), islands)
+        island = find_containing_island(Point2D(wool_x, wool_z), islands)
 
         if island is None:
             # Wool location outside all islands — try wool-room region fallback
@@ -336,7 +336,7 @@ def annotate_skeleton_pois(
                     'room_region': room['region_id'],
                 }
                 wool_x, wool_z = room['x'], room['z']
-                island = find_containing_island((wool_x, wool_z), islands)
+                island = find_containing_island(Point2D(wool_x, wool_z), islands)
 
         if island is None:
             entry = {**wool, 'x': wool_x, 'z': wool_z,
@@ -349,7 +349,7 @@ def annotate_skeleton_pois(
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
-            node_id = find_nearest_node((wool_x, wool_z), ir)
+            node_id = find_nearest_node(Point2D(wool_x, wool_z), ir)
 
             if node_id is not None:
                 for node in ir.graph.nodes:

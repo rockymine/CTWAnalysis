@@ -13,7 +13,7 @@ from skeleton_analysis.datatypes import IslandResult
 from xml_analysis.datatypes import MapData
 
 from .datatypes import MapContext
-from common.geometry import get_grid_extent
+from common.geometry import BoundingBox, Point2D, get_grid_extent
 
 
 def build_map_context(
@@ -22,7 +22,7 @@ def build_map_context(
     canonical_groups: dict[str, list[int]],
     layout_df: pd.DataFrame,
     map_data: Optional[MapData] = None,
-    map_center: Optional[tuple[float, float]] = None,
+    map_center: Optional[Point2D] = None,
     poi_assignments: Optional[dict[str, list]] = None,
 ) -> MapContext:
     """Populate a MapContext from all analysis results.
