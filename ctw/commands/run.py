@@ -13,12 +13,15 @@ Pipeline steps (in order):
 """
 
 import argparse
+import logging
 from pathlib import Path
 from typing import Optional
 
 from ctw.common import collect_map_folders, resolve_output_dir
 from map_analysis.datatypes import IslandGeometryResult
 from symmetry_analysis.datatypes import SymmetryResult
+
+logger = logging.getLogger('ctw')
 
 
 def register(subparsers):
@@ -76,21 +79,21 @@ def register(subparsers):
 
 def _process_single_map(map_folder, args, output_override=None):
     """Run the full pipeline for a single map. Safe for multiprocessing."""
+    import traceback
+    from ctw.log import setup_map_file_logging
     from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
 
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
+    setup_map_file_logging(map_output_dir)
 
-    print(f"\n{'=' * 70}")
-    print(f"Processing: {map_folder.name}")
-    print(f"Output: {map_output_dir}")
-    print(f"{'=' * 70}")
+    logger.info(f"Processing: {map_folder.name}")
 
     try:
         # [1/6] Layout
         if not args.no_layout:
-            analyze_layout(
+            parquet_files = analyze_layout(
                 map_folder,
                 force_rerun=args.force,
                 output_dir=map_output_dir,
@@ -101,8 +104,10 @@ def _process_single_map(map_folder, args, output_override=None):
                 threshold=args.threshold,
                 density_mode=args.density_mode,
             )
+            n = len(parquet_files) if parquet_files else 0
+            logger.info(f"  [1/6] Layout: {n} parquet files")
         else:
-            print("\n[1/6] Layout Analysis: SKIPPED")
+            logger.info("  [1/6] Layout: skipped")
 
         # [2/6] Islands + Skeletons (geometry only)
         geometry = None
@@ -120,43 +125,56 @@ def _process_single_map(map_folder, args, output_override=None):
                 map_output_dir=map_output_dir,
                 plots=args.plots,
             )
+            if geometry:
+                logger.info(f"  [2/6] Islands: {len(geometry.islands)} islands")
+            else:
+                logger.info("  [2/6] Islands: failed (check log)")
         else:
-            print("\n[2/6] Island Analysis: SKIPPED")
+            logger.info("  [2/6] Islands: skipped")
 
         # [3/6] Symmetry (geometric only — reads islands.json)
         symmetry = None
         if not args.no_symmetry:
             symmetry = run_symmetry(map_output_dir)
+            if symmetry and symmetry.primary:
+                logger.info(f"  [3/6] Symmetry: {symmetry.primary['description']} "
+                            f"({symmetry.primary['confidence']:.0%})")
+            else:
+                logger.info("  [3/6] Symmetry: none detected")
         else:
-            print("\n[3/6] Symmetry Analysis: SKIPPED")
+            logger.info("  [3/6] Symmetry: skipped")
 
         # [4/6] XML Analysis
         xml_context = None
         if not args.no_xml:
             xml_context = analyze_xml(map_folder, force_rerun=args.force,
                                       output_dir=map_output_dir)
+            if xml_context:
+                md = xml_context.map_data
+                logger.info(f"  [4/6] XML: {len(md.teams)} teams, {len(md.wools)} wools")
+            else:
+                logger.info("  [4/6] XML: no map.xml")
         else:
-            print("\n[4/6] XML Analysis: SKIPPED")
+            logger.info("  [4/6] XML: skipped")
 
         # [5/6] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
             if geometry is not None:
                 assemble_map(map_folder, geometry, map_output_dir,
                              symmetry=symmetry, xml_context=xml_context, plots=args.plots)
+                logger.info("  [5/6] Assembly: done")
             else:
-                print("\n[5/6] Map Assembly: SKIPPED (no island geometry available)")
+                logger.info("  [5/6] Assembly: skipped (no geometry)")
         else:
-            print("\n[5/6] Map Assembly: SKIPPED")
+            logger.info("  [5/6] Assembly: skipped")
 
-        # [6/6] Match Analysis
-        print("\n[6/6] Match Analysis: Currently not supported")
+        logger.info("  [6/6] Match analysis: not supported")
 
         return map_folder.name, True, None
 
     except Exception as e:
-        import traceback
-        print(f"\n  ERROR processing {map_folder.name}: {e}")
-        traceback.print_exc()
+        logger.error(f"  Error: {e}")
+        logger.debug(traceback.format_exc())
         return map_folder.name, False, str(e)
 
 
@@ -171,17 +189,13 @@ def handler(args):
         ]
         skipped = total - len(map_folders)
         if skipped:
-            print(f"Skipping {skipped} maps with existing output")
+            logger.info(f"Skipping {skipped} maps with existing output")
 
-    print("=" * 70)
-    print("CTW ANALYSIS WORKFLOW")
-    print("=" * 70)
-    print(f"Maps to analyze: {len(map_folders)}")
+    logger.info(f"Maps to analyze: {len(map_folders)}")
     if args.workers > 1:
-        print(f"Workers: {args.workers}")
+        logger.info(f"Workers: {args.workers}")
     for folder in map_folders:
-        print(f"  - {folder.name}")
-    print()
+        logger.debug(f"  - {folder.name}")
 
     if args.workers > 1 and len(map_folders) > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -202,9 +216,7 @@ def handler(args):
 
     succeeded = [r for r in results if r[1]]
     failed = [r for r in results if not r[1]]
-    print(f"\n{'=' * 70}")
-    print(f"WORKFLOW COMPLETE: {len(succeeded)} succeeded, {len(failed)} failed")
+    logger.info(f"Complete: {len(succeeded)} succeeded, {len(failed)} failed")
     if failed:
         for name, _, err in failed:
-            print(f"  FAILED: {name}: {err}")
-    print(f"{'=' * 70}\n")
+            logger.warning(f"  Failed: {name}: {err}")

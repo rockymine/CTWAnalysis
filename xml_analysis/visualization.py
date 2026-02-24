@@ -4,6 +4,7 @@ Visualizer for Minecraft map regions and objectives.
 Creates 2D plots showing spawns, wool rooms, and other important regions.
 """
 
+import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import Rectangle, Circle
@@ -13,6 +14,8 @@ from typing import List, Dict, Optional
 
 from .datatypes import MapData, Spawn, Wool
 from .regions import Region, RectangleRegion, CuboidRegion, CircleRegion, CylinderRegion
+
+logger = logging.getLogger('ctw')
 
 
 class MapVisualizer:
@@ -75,7 +78,7 @@ class MapVisualizer:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         plt.close()
 
-        print(f"  Saved map visualization: {output_path}")
+        logger.debug(f"  Saved map visualization: {output_path}")
 
     def plot_by_category(self, output_dir: str, categories: Dict[str, List[str]]):
         """
@@ -116,7 +119,7 @@ class MapVisualizer:
             plt.savefig(plot_path, dpi=150, bbox_inches='tight')
             plt.close()
 
-            print(f"  Saved {category} plot: {plot_path}")
+            logger.debug(f"  Saved {category} plot: {plot_path}")
 
     def _plot_spawns(self, ax, alpha: float = 0.3):
         """Plot spawn regions."""

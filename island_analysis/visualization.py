@@ -4,6 +4,7 @@ Island Visualization
 Visualization functions for displaying detected islands and their polygons.
 """
 
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -13,6 +14,8 @@ from typing import List, Dict, Tuple, Optional
 import colorsys
 
 from common.geometry import block_centers
+
+logger = logging.getLogger('ctw')
 
 
 def generate_distinct_colors(n: int) -> List[Tuple[float, float, float]]:
@@ -280,7 +283,7 @@ def plot_island_comparison(
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island comparison saved to: {output_path}")
+        logger.debug(f"  Island comparison: {output_path}")
     else:
         plt.show()
 
@@ -395,7 +398,7 @@ Avg distance from center: {stats['avg_distance_from_center']:.1f} blocks
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island statistics saved to: {output_path}")
+        logger.debug(f"  Island statistics: {output_path}")
     else:
         plt.show()
 
@@ -463,7 +466,7 @@ def plot_island_detail(
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island detail saved to: {output_path}")
+        logger.debug(f"  Island detail: {output_path}")
     else:
         plt.show()
 
@@ -539,4 +542,4 @@ def create_island_report(
 
         f.write("=" * 70 + "\n")
 
-    print(f"Island report saved to: {report_path}")
+    logger.debug(f"  Island report: {report_path}")

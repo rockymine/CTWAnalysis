@@ -68,6 +68,9 @@ Examples:
 
 
 def main():
+    from ctw.log import setup_console_logging
+    setup_console_logging()
+
     os.chdir(PROJECT_ROOT)
     parser, subparsers = build_parser()
 

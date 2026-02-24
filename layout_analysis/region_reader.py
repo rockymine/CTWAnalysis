@@ -4,10 +4,13 @@ Region file reader for Minecraft Anvil format.
 Provides streaming access to chunks and sections without loading entire world into memory.
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Iterator, Tuple, Optional
 import anvil
+
+logger = logging.getLogger('ctw')
 
 
 class RegionReader:
@@ -61,7 +64,7 @@ class RegionReader:
             try:
                 region = anvil.Region.from_file(str(region_file))
             except Exception as e:
-                print(f"Warning: Failed to read region {region_file}: {e}")
+                logger.warning(f"Failed to read region {region_file}: {e}")
                 continue
 
             # Iterate over chunks in the region (32x32 grid)

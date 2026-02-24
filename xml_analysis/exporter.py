@@ -9,9 +9,12 @@ Public API:
 """
 
 import json
+import logging
 from typing import Dict, Any, List
 
 from common.json_export import save_json as _save_json
+
+logger = logging.getLogger('ctw')
 
 from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
 from .regions import (
@@ -80,7 +83,7 @@ def save(data: MapData, output_path: str, categories: Dict[str, List[str]] = Non
         categories: Optional region categories.
     """
     _save_json(to_dict(data, categories), output_path)
-    print(f"  Saved JSON: {output_path}")
+    logger.debug(f"  Saved: {output_path}")
 
 
 # ---------------------------------------------------------------------------

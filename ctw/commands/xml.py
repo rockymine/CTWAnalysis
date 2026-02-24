@@ -1,8 +1,11 @@
 """'xml' subcommand — parse map XML configuration."""
 
+import logging
 import sys
 
 from pathlib import Path
+
+logger = logging.getLogger('ctw')
 
 from xml_analysis import MapXMLParser
 from xml_analysis import exporter as map_data_exporter
@@ -57,7 +60,7 @@ def handler(args):
         if args.category_plots:
             visualizer.plot_by_category(str(output_dir), categories)
 
-        print(f"  Visualizations saved to: {output_dir}")
+        logger.debug(f"  Visualizations saved to: {output_dir}")
     else:
         map_output_dir = resolve_output_dir(map_folder, create=True)
         analyze_xml(map_folder, force_rerun=args.force,
@@ -84,36 +87,33 @@ def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = 
 
     out = Path(output_dir) if output_dir else map_folder
 
-    print(f"\n[4/6] XML Analysis: {map_folder.name}")
-    print("=" * 70)
+    logger.debug(f"[4/6] XML Analysis: {map_folder.name}")
 
     xml_file = map_folder / 'map.xml'
     json_file = out / 'map_data.json'
 
     if not xml_file.exists():
-        print(f"  [X] No XML file found at {xml_file}")
+        logger.debug(f"  No XML file found at {xml_file}")
         return None
 
-    print(f"  Parsing XML: {xml_file.name}")
+    logger.debug(f"  Parsing XML: {xml_file.name}")
 
     try:
         parser = MapXMLParser(str(xml_file))
         map_data = parser.parse()
         categories = parser.identify_region_categories(map_data)
     except Exception as e:
-        print(f"  [X] Failed to parse XML: {e}")
+        logger.warning(f"  Failed to parse XML: {e}")
         return None
 
     # Write JSON artifact (skip if already up-to-date)
     if force_rerun or not json_file.exists():
         map_data_exporter.save(map_data, str(json_file), categories)
-        print(f"    [OK] Saved {json_file.name}")
+        logger.debug(f"    Saved {json_file.name}")
     else:
-        print(f"  Map data already exists: {json_file.name}")
+        logger.debug(f"  Map data already exists: {json_file.name}")
 
-    print(f"      - Teams: {len(map_data.teams)}")
-    print(f"      - Spawns: {len(map_data.spawns)}")
-    print(f"      - Wools: {len(map_data.wools)}")
-    print(f"      - Regions: {len(map_data.regions)}")
+    logger.debug(f"  Teams: {len(map_data.teams)}, Spawns: {len(map_data.spawns)}, "
+                 f"Wools: {len(map_data.wools)}, Regions: {len(map_data.regions)}")
 
     return MapXmlContext(map_data=map_data, region_categories=categories)

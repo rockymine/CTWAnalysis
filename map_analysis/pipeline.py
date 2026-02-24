@@ -18,6 +18,7 @@ Public API:
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +27,8 @@ import pandas as pd
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_enrich, build_polygons
 from map_analysis.datatypes import IslandGeometryResult, MapContext
 from symmetry_analysis.datatypes import SymmetryResult
+
+logger = logging.getLogger('ctw')
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +46,7 @@ def _compute_skeletons(
     """
     from skeleton_analysis import process_all_islands
 
-    print(f"  Computing skeleton graphs...")
+    logger.debug("  Computing skeleton graphs...")
     skeleton_results, canonical_groups = process_all_islands(
         islands,
         enable_canonicalization=enable_canonicalization,
@@ -59,9 +62,9 @@ def _compute_skeletons(
         sum(1 for n in r.graph.nodes if n.node_type == 'junction')
         for r in skeleton_results
     )
-    print(f"    Nodes: {total_nodes} ({total_ep} endpoints, {total_jn} junctions)")
-    print(f"    Edges: {total_edges}")
-    print(f"    Unique canonical shapes: {len(canonical_groups)}")
+    logger.debug(f"    Nodes: {total_nodes} ({total_ep} endpoints, {total_jn} junctions)")
+    logger.debug(f"    Edges: {total_edges}")
+    logger.debug(f"    Unique canonical shapes: {len(canonical_groups)}")
 
     return skeleton_results, canonical_groups
 
@@ -95,7 +98,7 @@ def _generate_skeleton_visuals(
         generate_skeleton_report,
     )
 
-    print(f"  Generating visualizations...")
+    logger.debug("  Generating visualizations...")
 
     plot_island_detail(
         islands,
@@ -179,7 +182,7 @@ def _save_islands_json(
     out_path = island_output_dir / 'islands.json'
     with open(out_path, 'w') as f:
         json.dump(data, f, indent=2)
-    print(f"  Saved islands.json ({len(island_dicts)} islands)")
+    logger.debug(f"  Saved islands.json ({len(island_dicts)} islands)")
 
 
 # ---------------------------------------------------------------------------
@@ -218,11 +221,11 @@ def _annotate_pois(
             parser = MapXMLParser(str(xml_file))
             map_data_obj = parser.parse()
         except Exception as e:
-            print(f"    [!] XML parse failed: {e}")
+            logger.warning(f"    [!] XML parse failed: {e}")
 
     if map_data_obj is not None:
         try:
-            print(f"  Annotating POIs from XML...")
+            logger.debug("  Annotating POIs from XML...")
             poi_assignments = annotate_skeleton_pois(
                 islands, skeleton_results, map_data_obj,
             )
@@ -234,7 +237,7 @@ def _annotate_pois(
                 1 for w in poi_assignments.get('wools', [])
                 if w.get('node_id') is not None
             )
-            print(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
+            logger.debug(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
 
             for w in poi_assignments.get('wools', []):
                 fb = w.get('fallback')
@@ -243,16 +246,16 @@ def _annotate_pois(
                     orig = f"({fb['original_x']:.1f}, {fb['original_z']:.1f})"
                     room = fb['room_region']
                     if w.get('island_id') is not None:
-                        print(f"    [!] Wool '{color}' location {orig} outside map, "
-                              f"used room '{room}' centroid -> island {w['island_id']}")
+                        logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
+                                       f"used room '{room}' centroid -> island {w['island_id']}")
                     else:
-                        print(f"    [!] Wool '{color}' location {orig} outside map, "
-                              f"tried room '{room}' but still unmatched")
+                        logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
+                                       f"tried room '{room}' but still unmatched")
                 elif w.get('island_id') is None:
                     color = w.get('wool_color', '?')
                     loc = f"({w['x']:.1f}, {w['z']:.1f})"
-                    print(f"    [!] Wool '{color}' location {loc} outside map, "
-                          f"no matching wool-room region found")
+                    logger.warning(f"    [!] Wool '{color}' location {loc} outside map, "
+                                   f"no matching wool-room region found")
 
             if plots:
                 for result in skeleton_results:
@@ -263,9 +266,9 @@ def _annotate_pois(
                             str(skeleton_output_dir / f'island_{result.island_id}_poi.png'),
                         )
         except Exception as e:
-            print(f"    [!] POI annotation failed: {e}")
+            logger.warning(f"    [!] POI annotation failed: {e}")
     else:
-        print(f"  No XML data available, skipping POI annotation")
+        logger.debug("  No XML data available, skipping POI annotation")
 
     return map_data_obj, poi_assignments
 
@@ -325,7 +328,7 @@ def _assign_teams(
     else:
         sym_path = map_output_dir / 'symmetry.json'
         if not sym_path.exists():
-            print(f"  No symmetry.json found, skipping team assignment")
+            logger.debug("  No symmetry.json found, skipping team assignment")
             return
         with open(sym_path) as f:
             sym_data = json.load(f)
@@ -336,7 +339,7 @@ def _assign_teams(
 
     detected = [s for s in global_symmetries if s.get('detected')]
     if not detected:
-        print(f"  No global symmetry detected, skipping geometric team assignment")
+        logger.debug("  No global symmetry detected, skipping geometric team assignment")
         return
 
     primary_global = max(detected, key=lambda s: s['confidence'])
@@ -411,7 +414,7 @@ def _update_intra_team_symmetry(
             json.dump(sym_data, f, indent=2)
         sym_teams = [t['team'] for t in intra_team if t.get('symmetry_detected')]
         if sym_teams:
-            print(f"  Intra-team symmetry detected for: {', '.join(sym_teams)}")
+            logger.debug(f"  Intra-team symmetry detected for: {', '.join(sym_teams)}")
 
 
 # ---------------------------------------------------------------------------
@@ -421,11 +424,11 @@ def _update_intra_team_symmetry(
 def _log_y0_diagnostics(y0_path: Path) -> None:
     """Print a summary of the Y0 layer parquet for build-region debugging."""
     if not y0_path.exists():
-        print(f"    Y0 layer: not found (skipped or not yet extracted)")
+        logger.debug("    Y0 layer: not found (skipped or not yet extracted)")
         return
     y0_df = pd.read_parquet(y0_path)
     if len(y0_df) == 0 or 'block_id' not in y0_df.columns:
-        print(f"    Y0 layer: empty (0 blocks)")
+        logger.debug("    Y0 layer: empty (0 blocks)")
         return
     block_counts = y0_df['block_id'].value_counts()
     n_block36 = int(block_counts.get(36, 0))
@@ -433,14 +436,14 @@ def _log_y0_diagnostics(y0_path: Path) -> None:
     if n_block36 > 0:
         other = total - n_block36
         if other == 0:
-            print(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
+            logger.debug(f"    Y0 layer: {total} blocks, ALL block36 (piston extension)")
         else:
             other_ids = sorted(block_counts.drop(36, errors='ignore').index.tolist())
-            print(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
-                  f"{other} other (ids: {other_ids})")
+            logger.debug(f"    Y0 layer: {total} blocks, {n_block36} block36 + "
+                         f"{other} other (ids: {other_ids})")
     else:
         ids = sorted(block_counts.index.tolist())
-        print(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
+        logger.debug(f"    Y0 layer: {total} blocks, no block36 (ids: {ids})")
 
 
 # ---------------------------------------------------------------------------
@@ -481,12 +484,12 @@ def _attach_build_region(
         )
         if build_result:
             map_ctx.build_region = build_result
-            print(f"    Build region: source={build_result['source']}, "
-                  f"void_area={build_result['buildable_void_area']}")
+            logger.debug(f"    Build region: source={build_result['source']}, "
+                         f"void_area={build_result['buildable_void_area']}")
         else:
-            print(f"    No build region detected")
+            logger.debug("    No build region detected")
     except Exception as e:
-        print(f"    [!] Build region extraction failed: {e}")
+        logger.warning(f"    [!] Build region extraction failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -509,22 +512,21 @@ def run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]:
     from symmetry_analysis import detect_symmetry
     from symmetry_analysis import exporter as symmetry_exporter
 
-    print(f"\n[3/6] Symmetry Analysis")
-    print("=" * 70)
+    logger.debug("[3/6] Symmetry Analysis")
 
     islands_path = map_output_dir / 'island_analysis' / 'islands.json'
     if not islands_path.exists():
-        print("  island_analysis/islands.json not found — skipping symmetry analysis")
+        logger.debug("  island_analysis/islands.json not found — skipping symmetry analysis")
         return None
 
     result = detect_symmetry(str(islands_path))
     symmetry_exporter.save(result, map_output_dir / 'symmetry.json')
 
     if result.primary:
-        print(f"  Global: {result.primary['description']} "
-              f"(confidence: {result.primary['confidence']:.0%})")
+        logger.debug(f"  Global: {result.primary['description']} "
+                     f"(confidence: {result.primary['confidence']:.0%})")
     else:
-        print("  Global: no symmetry detected")
+        logger.debug("  Global: no symmetry detected")
 
     return result
 
@@ -572,8 +574,7 @@ def run_island_geometry(
     Returns:
         IslandGeometryResult on success, None on failure (missing layout or no islands).
     """
-    print(f"\n[2/6] Island Analysis: {map_folder.name}")
-    print("=" * 70)
+    logger.debug(f"[2/6] Island Analysis: {map_folder.name}")
 
     _map_output_dir = map_output_dir or map_folder
     layout_dir = _map_output_dir
@@ -582,7 +583,7 @@ def run_island_geometry(
     layout_filename = LAYOUT_FILES.get(layout_type, 'layout_bedrock.parquet')
     layout_file = layout_dir / layout_filename
     if not layout_file.exists():
-        print(f"  [X] Layout file not found: {layout_filename}. Run layout analysis first.")
+        logger.warning(f"  Layout file not found: {layout_filename}. Run layout analysis first.")
         return None
 
     island_output_dir.mkdir(parents=True, exist_ok=True)
@@ -592,22 +593,22 @@ def run_island_geometry(
     islands_json = island_output_dir / 'islands.json'
     write_outputs = not islands_json.exists() or force_rerun
     if not write_outputs:
-        print(f"  Cached debug output found — recomputing in-memory objects, skipping file writes.")
+        logger.debug("  Cached — recomputing in-memory, skipping file writes")
 
     # Load layout and detect islands
-    print(f"  Loading layout data: {layout_file.name}")
+    logger.debug(f"  Loading layout: {layout_file.name}")
     df = pd.read_parquet(layout_file)
-    print(f"    Loaded {len(df)} blocks")
+    logger.debug(f"    {len(df)} blocks")
 
     df, islands = detect_and_enrich(
         df, connectivity=connectivity, min_island_size=min_size,
     )
     if write_outputs:
         df.to_parquet(layout_file, index=False)
-        print(f"    Updated {layout_file.name} with island_id column")
+        logger.debug(f"    Updated {layout_file.name} with island_id")
 
     if not islands:
-        print("  [X] No islands detected!")
+        logger.warning("  No islands detected")
         return None
 
     # Build polygons
@@ -622,10 +623,10 @@ def run_island_geometry(
     # Classify islands (island-level diagnostic, no XML)
     from island_analysis import classify_islands
     classifications = classify_islands(islands)
-    print(f"  Island classifications:")
+    logger.debug("  Island classifications:")
     for cls_name, cls_islands in classifications.items():
         if cls_islands:
-            print(f"    {cls_name}: {[i.id for i in cls_islands]}")
+            logger.debug(f"    {cls_name}: {[i.id for i in cls_islands]}")
 
     # Compute skeleton graphs
     skeleton_results, canonical_groups = _compute_skeletons(islands)
@@ -644,7 +645,7 @@ def run_island_geometry(
 
     if write_outputs:
         _save_islands_json(islands, df, map_folder.name, island_output_dir)
-        print(f"    [OK] Saved to: {island_output_dir.name}/")
+        logger.debug(f"    Saved to {island_output_dir.name}/")
 
     return IslandGeometryResult(
         islands=islands,
@@ -704,8 +705,7 @@ def assemble_map(
     island_output_dir = geometry.island_output_dir
     map_center_pt = geometry.map_center_pt
 
-    print(f"\n[5/6] Map Assembly: {map_folder.name}")
-    print("=" * 70)
+    logger.debug(f"[5/6] Map Assembly: {map_folder.name}")
 
     skeleton_output_dir = island_output_dir / 'skeleton'
 
@@ -730,7 +730,7 @@ def assemble_map(
     from skeleton_analysis.builder import build_skeleton_dicts
     from skeleton_analysis import exporter as map_graph_exporter
 
-    print(f"  Building map context...")
+    logger.debug("  Building map context...")
     map_ctx = build_map_context(
         islands, skeleton_results, canonical_groups, df,
         map_data=map_data_obj,
@@ -755,5 +755,5 @@ def assemble_map(
         map_context=map_context_exporter.to_dict(map_ctx),
     )
 
-    print(f"    [OK] map_context.json written")
+    logger.debug("  map_context.json written")
     return map_ctx

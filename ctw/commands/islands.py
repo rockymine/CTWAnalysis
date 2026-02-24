@@ -35,10 +35,14 @@ def register(subparsers, map_parent):
 
 
 def handler(args):
+    import logging
+    from ctw.log import setup_map_file_logging
+
     map_folder = resolve_map_folder(args.map)
 
     from map_analysis.pipeline import run_island_geometry
     map_output_dir = resolve_output_dir(map_folder, create=True)
+    setup_map_file_logging(map_output_dir)
     run_island_geometry(
         map_folder,
         force_rerun=args.force,

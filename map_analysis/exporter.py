@@ -5,11 +5,14 @@ Public API:
     save(ctx, output_path)    — write MapContext to a JSON file
 """
 
+import logging
 from typing import Optional, Tuple
 
 from common.json_export import save_json as _save_json
 
 from map_analysis.datatypes import MapContext
+
+logger = logging.getLogger('ctw')
 
 
 def to_dict(ctx: MapContext) -> dict:
@@ -39,4 +42,4 @@ def to_dict(ctx: MapContext) -> dict:
 def save(ctx: MapContext, output_path: str) -> None:
     """Save MapContext to a JSON file."""
     _save_json(to_dict(ctx), output_path)
-    print(f"  Saved JSON: {output_path}")
+    logger.debug(f"  Saved: {output_path}")

@@ -6,9 +6,12 @@ construction.  Nothing from skeleton_analysis, xml_analysis, or
 map_analysis is imported here.
 """
 
+import logging
 from typing import Tuple
 
 import pandas as pd
+
+logger = logging.getLogger('ctw')
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +43,7 @@ def detect_and_enrich(
     """
     from island_analysis import detect_islands
 
-    print(f"  Detecting islands ({connectivity}-connectivity, min_size={min_island_size})...")
+    logger.debug(f"  Detecting islands ({connectivity}-connectivity, min_size={min_island_size})...")
     islands = detect_islands(
         df,
         x_col='world_x',
@@ -48,7 +51,7 @@ def detect_and_enrich(
         connectivity=connectivity,
         min_island_size=min_island_size,
     )
-    print(f"    Found {len(islands)} islands")
+    logger.debug(f"    Found {len(islands)} islands")
 
     island_assignments = []
     for island in islands:
@@ -85,7 +88,7 @@ def build_polygons(
     )
 
     if canonical:
-        print(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
+        logger.debug(f"  Building polygons (canonical mode, simplify={simplify_tolerance})...")
         build_island_polygons_canonical(
             islands,
             buffer_distance=buffer_distance,
@@ -93,7 +96,7 @@ def build_polygons(
             detect_holes=detect_holes,
         )
     else:
-        print(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
+        logger.debug(f"  Building polygons (union mode, simplify={simplify_tolerance})...")
         for island in islands:
             build_island_polygon(
                 island,

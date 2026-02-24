@@ -1,9 +1,12 @@
 """'layout' subcommand — extract layout data from Minecraft region files."""
 
+import logging
 import sys
 from pathlib import Path
 
 from ctw.common import resolve_map_folder, resolve_output_dir
+
+logger = logging.getLogger('ctw')
 
 from layout_analysis import (
     RegionReader,
@@ -53,9 +56,7 @@ def handler(args):
         output_dir = Path(args.output) if args.output else map_folder / 'layout_output'
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("=" * 70)
-        print(f"LAYOUT EXTRACTION: {map_folder.name}")
-        print("=" * 70)
+        logger.debug(f"Layout extraction: {map_folder.name}")
 
         reader = RegionReader(str(region_folder))
         results = {}
@@ -68,7 +69,7 @@ def handler(args):
                     density_modes.append(mode)
 
         if not args.skip_y0:
-            print("  Extracting Y=0 layer...")
+            logger.debug("  Extracting Y=0 layer...")
             df = Y0LayerExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'y0_layer_points.parquet'))
             results['y0'] = df
@@ -76,7 +77,7 @@ def handler(args):
             results['y0'] = pd.DataFrame()
 
         if not args.skip_surface:
-            print("  Extracting top surface...")
+            logger.debug("  Extracting top surface...")
             df = TopSurfaceExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'top_surface_points.parquet'))
             results['top_surface'] = df
@@ -85,14 +86,14 @@ def handler(args):
 
         density_results = {}
         for mode in density_modes:
-            print(f"  Extracting density ({mode})...")
+            logger.debug(f"  Extracting density ({mode})...")
             df = VerticalDensityExtractor(reader, threshold=args.threshold, mode=mode).extract()
             name = f"{mode}_N{args.threshold}"
             df.to_parquet(str(output_dir / f'density_{name}_points.parquet'))
             density_results[name] = df
 
         if not args.skip_bedrock:
-            print("  Extracting bedrock...")
+            logger.debug("  Extracting bedrock...")
             df = LowestBedrockExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'lowest_bedrock_points.parquet'))
             results['bedrock'] = df
@@ -100,7 +101,7 @@ def handler(args):
             results['bedrock'] = pd.DataFrame()
 
         if args.plots:
-            print("  Generating plots...")
+            logger.debug("  Generating plots...")
             save_all_plots(
                 y0_df=results.get('y0', pd.DataFrame()),
                 top_surface_df=results.get('top_surface', pd.DataFrame()),
@@ -109,7 +110,7 @@ def handler(args):
                 output_dir=str(output_dir),
             )
 
-        print(f"  Output saved to: {output_dir}")
+        logger.debug(f"  Output saved to: {output_dir}")
     else:
         # Simple workflow mode: parquets into output dir
         map_output_dir = resolve_output_dir(map_folder, create=True)
@@ -156,8 +157,7 @@ def analyze_layout(
     out = Path(output_dir) if output_dir else map_folder
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n[1/6] Layout Analysis: {map_folder.name}")
-    print("=" * 70)
+    logger.debug(f"[1/6] Layout Analysis: {map_folder.name}")
 
     # Define output paths for enabled extractors only
     parquet_files = {}
@@ -171,24 +171,24 @@ def analyze_layout(
         parquet_files['bedrock'] = out / 'layout_bedrock.parquet'
 
     if not parquet_files:
-        print("  All extractors skipped.")
+        logger.debug("  All extractors skipped.")
         return parquet_files
 
     # Check if files already exist
     all_exist = all(p.exists() for p in parquet_files.values())
     if all_exist and not force_rerun:
-        print("  Layout files already exist. Skipping extraction.")
+        logger.debug("  Layout files already exist. Skipping extraction.")
         for name, path in parquet_files.items():
-            print(f"    [OK] {path.name}")
+            logger.debug(f"    {path.name}")
         return parquet_files
 
     # Find region folder
     region_folder = map_folder / 'region'
     if not region_folder.exists():
-        print(f"  [X] No region folder found at {region_folder}")
+        logger.warning(f"  No region folder found at {region_folder}")
         return None
 
-    print(f"  Extracting layout from: {region_folder}")
+    logger.debug(f"  Extracting layout from: {region_folder}")
 
     # Initialize reader
     reader = RegionReader(str(region_folder))
@@ -196,37 +196,37 @@ def analyze_layout(
     # Extract Y=0 layer
     if 'y0_layer' in parquet_files:
         if not parquet_files['y0_layer'].exists() or force_rerun:
-            print("  Extracting Y=0 layer...")
+            logger.debug("  Extracting Y=0 layer...")
             extractor = Y0LayerExtractor(reader)
             df = extractor.extract()
             df.to_parquet(parquet_files['y0_layer'])
-            print(f"    [OK] Saved {parquet_files['y0_layer'].name} ({len(df)} blocks)")
+            logger.debug(f"    Saved {parquet_files['y0_layer'].name} ({len(df)} blocks)")
 
     # Extract top surface
     if 'top_surface' in parquet_files:
         if not parquet_files['top_surface'].exists() or force_rerun:
-            print("  Extracting top surface...")
+            logger.debug("  Extracting top surface...")
             extractor = TopSurfaceExtractor(reader)
             df = extractor.extract()
             df.to_parquet(parquet_files['top_surface'])
-            print(f"    [OK] Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
+            logger.debug(f"    Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
 
     # Extract vertical density
     if 'vertical_density' in parquet_files:
         if not parquet_files['vertical_density'].exists() or force_rerun:
-            print(f"  Extracting vertical density (mode={density_mode}, threshold={threshold})...")
+            logger.debug(f"  Extracting vertical density (mode={density_mode}, threshold={threshold})...")
             extractor = VerticalDensityExtractor(reader, threshold=threshold, mode=density_mode)
             df = extractor.extract()
             df.to_parquet(parquet_files['vertical_density'])
-            print(f"    [OK] Saved {parquet_files['vertical_density'].name} ({len(df)} columns)")
+            logger.debug(f"    Saved {parquet_files['vertical_density'].name} ({len(df)} columns)")
 
     # Extract bedrock
     if 'bedrock' in parquet_files:
         if not parquet_files['bedrock'].exists() or force_rerun:
-            print("  Extracting lowest bedrock...")
+            logger.debug("  Extracting lowest bedrock...")
             extractor = LowestBedrockExtractor(reader)
             df = extractor.extract()
             df.to_parquet(parquet_files['bedrock'])
-            print(f"    [OK] Saved {parquet_files['bedrock'].name} ({len(df)} blocks)")
+            logger.debug(f"    Saved {parquet_files['bedrock'].name} ({len(df)} blocks)")
 
     return parquet_files

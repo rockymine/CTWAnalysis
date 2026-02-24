@@ -7,6 +7,7 @@ Generates:
 3. Map overview (all islands in world orientation with polygons + build regions)
 """
 
+import logging
 import os
 import math
 import numpy as np
@@ -14,6 +15,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
 from typing import List, Dict, Optional
+
+logger = logging.getLogger('ctw')
 
 from common.visualization.map_primitives import draw_build_region, draw_island_outlines, draw_pois
 from .datatypes import IslandResult
@@ -125,7 +128,7 @@ def plot_island_debug(
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"Island debug image saved to: {output_path}")
+    logger.debug(f"  Island debug image: {output_path}")
 
 
 def plot_unique_islands(
@@ -208,7 +211,7 @@ def plot_unique_islands(
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"Unique islands overview saved to: {output_path}")
+    logger.debug(f"  Unique islands overview: {output_path}")
 
 
 def plot_map_overview(
@@ -292,7 +295,7 @@ def plot_map_overview(
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"Map overview saved to: {output_path}")
+    logger.debug(f"  Map overview: {output_path}")
 
 
 def generate_skeleton_report(
@@ -385,7 +388,7 @@ def generate_skeleton_report(
         f.write(f"Total edges: {total_edges}\n")
         f.write("=" * 70 + "\n")
 
-    print(f"Skeleton report saved to: {output_path}")
+    logger.debug(f"  Skeleton report: {output_path}")
 
 
 # Minecraft color name -> matplotlib color mapping
@@ -514,6 +517,6 @@ def plot_island_poi_debug(
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"POI debug image saved to: {output_path}")
+    logger.debug(f"  POI debug image: {output_path}")
 
 

@@ -7,9 +7,12 @@ Provides three extractors:
 3. VerticalDensityExtractor - Filters columns by density metrics
 """
 
+import logging
 from typing import List, Tuple, Literal
 import pandas as pd
 from .region_reader import RegionReader
+
+logger = logging.getLogger('ctw')
 
 
 class Y0LayerExtractor:
@@ -38,12 +41,12 @@ class Y0LayerExtractor:
         points = []
         chunk_count = 0
 
-        print("Extracting Y0 layer...")
+        logger.debug("Extracting Y0 layer...")
 
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                print(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
 
             # Iterate over all x,z positions in the chunk at y=0
             for local_x in range(16):
@@ -66,7 +69,7 @@ class Y0LayerExtractor:
                         # Block doesn't exist or error, skip
                         continue
 
-        print(f"Completed Y0 extraction: {chunk_count} chunks, {len(points)} matching points")
+        logger.debug(f"Completed Y0 extraction: {chunk_count} chunks, {len(points)} matching points")
 
         return pd.DataFrame(points)
 
@@ -97,12 +100,12 @@ class TopSurfaceExtractor:
         points = []
         chunk_count = 0
 
-        print("Extracting top surface...")
+        logger.debug("Extracting top surface...")
 
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                print(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
 
             # For each x,z column in the chunk, find the highest non-air block
             for local_x in range(16):
@@ -139,7 +142,7 @@ class TopSurfaceExtractor:
                             'block_data': highest_data,
                         })
 
-        print(f"Completed top surface extraction: {chunk_count} chunks, {len(points)} matching points")
+        logger.debug(f"Completed top surface extraction: {chunk_count} chunks, {len(points)} matching points")
 
         return pd.DataFrame(points)
 
@@ -183,12 +186,12 @@ class VerticalDensityExtractor:
         points = []
         chunk_count = 0
 
-        print(f"Extracting vertical density (mode={self.mode}, threshold={self.threshold})...")
+        logger.debug(f"Extracting vertical density (mode={self.mode}, threshold={self.threshold})...")
 
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                print(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
 
             # For each x,z column in the chunk, calculate the metric
             for local_x in range(16):
@@ -223,7 +226,7 @@ class VerticalDensityExtractor:
                             'metric': metric,
                         })
 
-        print(f"Completed density extraction: {chunk_count} chunks, {len(points)} matching points")
+        logger.debug(f"Completed density extraction: {chunk_count} chunks, {len(points)} matching points")
 
         return pd.DataFrame(points)
 
@@ -288,12 +291,12 @@ class LowestBedrockExtractor:
         points = []
         chunk_count = 0
 
-        print("Extracting lowest bedrock blocks...")
+        logger.debug("Extracting lowest bedrock blocks...")
 
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                print(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
 
             # For each x,z column in the chunk, find the lowest bedrock block
             for local_x in range(16):
@@ -327,6 +330,6 @@ class LowestBedrockExtractor:
                             'block_data': lowest_data,
                         })
 
-        print(f"Completed lowest bedrock extraction: {chunk_count} chunks, {len(points)} matching points")
+        logger.debug(f"Completed lowest bedrock extraction: {chunk_count} chunks, {len(points)} matching points")
 
         return pd.DataFrame(points)
