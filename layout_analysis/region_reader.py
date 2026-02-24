@@ -7,7 +7,7 @@ Provides streaming access to chunks and sections without loading entire world in
 import logging
 import os
 from pathlib import Path
-from typing import Iterator, Tuple, Optional
+from typing import Iterator, Optional
 import anvil
 
 logger = logging.getLogger('ctw')
@@ -38,7 +38,7 @@ class RegionReader:
         """
         return sorted(self.region_dir.glob("r.*.*.mca"))
 
-    def iter_chunks(self) -> Iterator[Tuple[anvil.Chunk, int, int]]:
+    def iter_chunks(self) -> Iterator[tuple[anvil.Chunk, int, int]]:
         """
         Iterate over all chunks in all region files.
 

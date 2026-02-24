@@ -5,7 +5,7 @@ Provides low-level functions for reading block data from chunk sections.
 """
 
 
-def nibble(arr, i):
+def nibble(arr: bytes, i: int) -> int:
     """
     Extract a nibble (4 bits) from a byte array.
 
@@ -25,7 +25,7 @@ def nibble(arr, i):
         return (byte_val >> 4) & 0x0F
 
 
-def decode_block_id(blocks_array, add_array, index):
+def decode_block_id(blocks_array: bytes, add_array: bytes | None, index: int) -> int:
     """
     Decode the full block ID from Blocks and Add arrays.
 
@@ -50,7 +50,7 @@ def decode_block_id(blocks_array, add_array, index):
         return low_bits
 
 
-def decode_block_data(data_array, index):
+def decode_block_data(data_array: bytes, index: int) -> int:
     """
     Decode block metadata from the Data array.
 
@@ -64,7 +64,7 @@ def decode_block_data(data_array, index):
     return nibble(data_array, index)
 
 
-def get_block_index(x, y, z):
+def get_block_index(x: int, y: int, z: int) -> int:
     """
     Calculate the array index for a block at local coordinates.
 

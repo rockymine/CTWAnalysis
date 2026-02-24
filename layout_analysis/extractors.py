@@ -8,7 +8,7 @@ Provides three extractors:
 """
 
 import logging
-from typing import List, Tuple, Literal
+from typing import Literal
 import pandas as pd
 from .region_reader import RegionReader
 
@@ -230,7 +230,7 @@ class VerticalDensityExtractor:
 
         return pd.DataFrame(points)
 
-    def _calculate_max_run(self, column_blocks: List[int]) -> int:
+    def _calculate_max_run(self, column_blocks: list[int]) -> int:
         """
         Calculate the maximum consecutive run length of non-air blocks.
 
@@ -252,7 +252,7 @@ class VerticalDensityExtractor:
 
         return max_run
 
-    def _calculate_count(self, column_blocks: List[int]) -> int:
+    def _calculate_count(self, column_blocks: list[int]) -> int:
         """
         Calculate the total count of non-air blocks.
 

@@ -17,9 +17,9 @@ def save_point_plot(
     df: pd.DataFrame,
     output_path: str,
     title: str,
-    use_binned: bool = None,
+    use_binned: bool | None = None,
     bin_size: int = 1
-):
+) -> None:
     """
     Save a 2D plot of world_x vs world_z points.
 
@@ -96,10 +96,10 @@ def save_point_plot(
 def save_all_plots(
     y0_df: pd.DataFrame,
     top_surface_df: pd.DataFrame,
-    density_dfs: dict,
+    density_dfs: dict[str, pd.DataFrame],
     bedrock_df: pd.DataFrame,
     output_dir: str
-):
+) -> None:
     """
     Save all plots to the output directory.
 
