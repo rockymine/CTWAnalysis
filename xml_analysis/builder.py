@@ -7,7 +7,7 @@ returning a populated MapData dataclass.
 
 import xml.etree.ElementTree as ET
 import re
-from typing import List, Dict, Tuple, Optional
+from typing import Optional
 
 from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
 from .regions import (
@@ -106,7 +106,7 @@ class MapXMLParser:
             for child in new_children:
                 element.append(child)
 
-    def _parse_teams(self) -> List[Team]:
+    def _parse_teams(self) -> list[Team]:
         """Parse team elements."""
         teams = []
         teams_elem = self.root.find('teams')
@@ -125,7 +125,7 @@ class MapXMLParser:
 
         return teams
 
-    def _parse_spawns(self) -> List[Spawn]:
+    def _parse_spawns(self) -> list[Spawn]:
         """Parse spawn elements."""
         spawns = []
         spawns_elem = self.root.find('spawns')
@@ -163,7 +163,7 @@ class MapXMLParser:
             if isinstance(spawn.region, RegionReference) and spawn.region.ref_id in data.regions:
                 spawn.region = data.regions[spawn.region.ref_id]
 
-    def _parse_wools(self) -> List[Wool]:
+    def _parse_wools(self) -> list[Wool]:
         """Parse wool elements."""
         wools = []
         wools_elem = self.root.find('wools')
@@ -187,7 +187,7 @@ class MapXMLParser:
 
         return wools
 
-    def _collect_wool_elements(self, parent, inherited_team: str = '') -> list:
+    def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""
         results = []
         for child in parent:
@@ -198,7 +198,7 @@ class MapXMLParser:
                 results.extend(self._collect_wool_elements(child, team))
         return results
 
-    def _parse_regions(self) -> Tuple[Dict[str, Region], List[ApplyRule]]:
+    def _parse_regions(self) -> tuple[dict[str, Region], list[ApplyRule]]:
         """Parse regions and apply elements."""
         regions = {}
         apply_rules = []
@@ -221,7 +221,7 @@ class MapXMLParser:
         return regions, apply_rules
 
     @staticmethod
-    def _register_nested_regions(regions: Dict[str, 'Region']):
+    def _register_nested_regions(regions: dict[str, Region]) -> None:
         """Walk region tree and register all named sub-regions into the flat dict."""
         def walk(region):
             if region.id and region.id not in regions:
@@ -292,7 +292,7 @@ class MapXMLParser:
 
         return None
 
-    def _parse_coords(self, coord_str: str) -> Tuple[float, float, float]:
+    def _parse_coords(self, coord_str: str) -> tuple[float, float, float]:
         """Parse coordinate string 'x,y,z'."""
         parts = coord_str.split(',')
         if len(parts) >= 3:
@@ -303,7 +303,7 @@ class MapXMLParser:
             )
         return (0, 0, 0)
 
-    def _parse_coords_2d(self, coord_str: str) -> Tuple[float, float]:
+    def _parse_coords_2d(self, coord_str: str) -> tuple[float, float]:
         """Parse 2D coordinate string 'x,z'."""
         parts = coord_str.split(',')
         if len(parts) >= 2:
@@ -532,7 +532,7 @@ class MapXMLParser:
                 break
         return rule
 
-    def identify_region_categories(self, data: MapData) -> Dict[str, List[str]]:
+    def identify_region_categories(self, data: MapData) -> dict[str, list[str]]:
         """
         Identify region categories using regex patterns on region IDs.
 

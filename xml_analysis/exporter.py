@@ -10,7 +10,7 @@ Public API:
 
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Any, Optional
 
 from common.json_export import save_json as _save_json
 
@@ -29,7 +29,7 @@ from .regions import (
 # Public API
 # ---------------------------------------------------------------------------
 
-def to_dict(data: MapData, categories: Dict[str, List[str]] = None) -> Dict[str, Any]:
+def to_dict(data: MapData, categories: Optional[dict[str, list[str]]] = None) -> dict[str, Any]:
     """Convert MapData to a JSON-serializable dictionary.
 
     Args:
@@ -60,7 +60,7 @@ def to_dict(data: MapData, categories: Dict[str, List[str]] = None) -> Dict[str,
     return result
 
 
-def to_json(data: MapData, categories: Dict[str, List[str]] = None, indent: int = 2) -> str:
+def to_json(data: MapData, categories: Optional[dict[str, list[str]]] = None, indent: int = 2) -> str:
     """Convert MapData to a JSON string.
 
     Args:
@@ -74,7 +74,7 @@ def to_json(data: MapData, categories: Dict[str, List[str]] = None, indent: int 
     return json.dumps(to_dict(data, categories), indent=indent, sort_keys=False)
 
 
-def save(data: MapData, output_path: str, categories: Dict[str, List[str]] = None):
+def save(data: MapData, output_path: str, categories: Optional[dict[str, list[str]]] = None) -> None:
     """Save MapData to a JSON file.
 
     Args:
@@ -90,7 +90,7 @@ def save(data: MapData, output_path: str, categories: Dict[str, List[str]] = Non
 # Internal encoders
 # ---------------------------------------------------------------------------
 
-def _encode_region(region: Region) -> Dict[str, Any]:
+def _encode_region(region: Region) -> dict[str, Any]:
     """Convert a region to JSON-serializable dictionary."""
     base = {
         'id': region.id,
@@ -165,7 +165,7 @@ def _encode_region(region: Region) -> Dict[str, Any]:
     return base
 
 
-def _encode_team(team: Team) -> Dict[str, Any]:
+def _encode_team(team: Team) -> dict[str, Any]:
     """Convert team to dictionary."""
     return {
         'id': team.id,
@@ -176,7 +176,7 @@ def _encode_team(team: Team) -> Dict[str, Any]:
     }
 
 
-def _encode_spawn(spawn: Spawn) -> Dict[str, Any]:
+def _encode_spawn(spawn: Spawn) -> dict[str, Any]:
     """Convert spawn to dictionary."""
     result = {
         'team': spawn.team,
@@ -190,7 +190,7 @@ def _encode_spawn(spawn: Spawn) -> Dict[str, Any]:
     return result
 
 
-def _encode_wool(wool: Wool) -> Dict[str, Any]:
+def _encode_wool(wool: Wool) -> dict[str, Any]:
     """Convert wool to dictionary."""
     return {
         'team': wool.team,
@@ -208,7 +208,7 @@ def _encode_wool(wool: Wool) -> Dict[str, Any]:
     }
 
 
-def _encode_apply_rule(rule: ApplyRule) -> Dict[str, Any]:
+def _encode_apply_rule(rule: ApplyRule) -> dict[str, Any]:
     """Convert an apply rule to dictionary."""
     result = {}
     if rule.block_filter:

@@ -1,7 +1,7 @@
 """Data classes for parsed map XML data."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from .regions import Region
 
@@ -30,8 +30,8 @@ class Wool:
     """Wool objective information."""
     team: str
     color: str
-    location: Tuple[float, float, float]
-    monument: Tuple[float, float, float]
+    location: tuple[float, float, float]
+    monument: tuple[float, float, float]
 
 
 @dataclass
@@ -52,11 +52,11 @@ class MapData:
     name: str = ""
     version: str = ""
     objective: str = ""
-    teams: List[Team] = field(default_factory=list)
-    spawns: List[Spawn] = field(default_factory=list)
-    wools: List[Wool] = field(default_factory=list)
-    regions: Dict[str, Region] = field(default_factory=dict)
-    apply_rules: List[ApplyRule] = field(default_factory=list)
+    teams: list[Team] = field(default_factory=list)
+    spawns: list[Spawn] = field(default_factory=list)
+    wools: list[Wool] = field(default_factory=list)
+    regions: dict[str, Region] = field(default_factory=dict)
+    apply_rules: list[ApplyRule] = field(default_factory=list)
     max_build_height: Optional[int] = None
 
 
@@ -70,4 +70,4 @@ class MapXmlContext:
     inspection only.
     """
     map_data: MapData
-    region_categories: Dict[str, List[str]] = field(default_factory=dict)
+    region_categories: dict[str, list[str]] = field(default_factory=dict)
