@@ -3,7 +3,6 @@
 import re
 import csv
 from pathlib import Path
-from typing import Optional
 
 
 HEADER_RE = re.compile(
@@ -31,7 +30,7 @@ def parse_match_log(input_path: Path) -> list[dict]:
         lines = [ln.strip() for ln in f]
 
     rows = []
-    pending_map: Optional[str] = None
+    pending_map: str | None = None
 
     for line in lines:
         if not line:
@@ -94,7 +93,7 @@ def scan_match_folder(folder: Path) -> list[dict]:
     return rows
 
 
-def write_csv(rows: list[dict], output_path: Path):
+def write_csv(rows: list[dict], output_path: Path) -> None:
     """Write parsed rows to CSV with columns parquet_file,map_name."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

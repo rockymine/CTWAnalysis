@@ -21,7 +21,7 @@ from match_analysis.team_extractor import (
 
 
 def _bulk_insert(conn, table: str, match_id: int, df: pd.DataFrame,
-                  columns: list[str], nullable_int_cols: list[str] = ()):
+                  columns: list[str], nullable_int_cols: list[str] = ()) -> int:
     """Delete previous rows for match_id, then bulk-insert df into table.
 
     Args:
@@ -46,7 +46,7 @@ def _bulk_insert(conn, table: str, match_id: int, df: pd.DataFrame,
     return len(df)
 
 
-def _get_classifier(map_slug: str):
+def _get_classifier(map_slug: str) -> 'PositionClassifier | None':
     """Build a PositionClassifier for the given map, or None if data missing."""
     context_path = Path(f'output/{map_slug}/map_context.json')
     graph_path = Path(f'output/{map_slug}/map_graph.json')
@@ -63,7 +63,7 @@ def _get_classifier(map_slug: str):
     return PositionClassifier(map_context, map_graph)
 
 
-def process_match(match_id: int):
+def process_match(match_id: int) -> None:
     """Process a single match: extract all events and insert into DuckDB.
 
     Reads the raw parquet once, runs all extractors (life segments, combat,

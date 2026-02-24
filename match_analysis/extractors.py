@@ -5,6 +5,8 @@ wool events, and a segment lookup helper. All functions accept a pre-read
 DataFrame rather than a file path.
 """
 
+from typing import Callable
+
 import pandas as pd
 
 
@@ -112,18 +114,20 @@ def extract_life_segments(df: pd.DataFrame) -> pd.DataFrame:
                      'position_count', 'kill_count', 'wool_touches', 'wool_captures']]
 
 
-def build_segment_lookup(life_segments_df: pd.DataFrame):
+def build_segment_lookup(
+    life_segments_df: pd.DataFrame,
+) -> Callable[[int, int], int | None]:
     """Build a lookup function that maps (player_id, timestamp) to segment_idx.
 
     Returns a callable: find_segment_idx(player_id, timestamp) -> int | None
     """
-    seg_lookup = {}
+    seg_lookup: dict[int, list[tuple[int, int, int]]] = {}
     for row in life_segments_df.itertuples():
         seg_lookup.setdefault(row.player_id, []).append(
             (row.start_timestamp, row.end_timestamp, row.segment_idx)
         )
 
-    def find_segment_idx(player_id, ts):
+    def find_segment_idx(player_id: int, ts: int) -> int | None:
         for start, end, idx in seg_lookup.get(player_id, []):
             if start <= ts <= end:
                 return idx
@@ -133,7 +137,7 @@ def build_segment_lookup(life_segments_df: pd.DataFrame):
 
 
 def extract_combat_events(
-    df: pd.DataFrame, find_segment_idx,
+    df: pd.DataFrame, find_segment_idx: Callable[[int, int], int | None],
 ) -> pd.DataFrame:
     """Extract kill and death events, each assigned to a life segment.
 
@@ -165,7 +169,7 @@ def extract_combat_events(
 
 
 def extract_position_events(
-    df: pd.DataFrame, find_segment_idx,
+    df: pd.DataFrame, find_segment_idx: Callable[[int, int], int | None],
 ) -> pd.DataFrame:
     """Extract position events (type 5), each assigned to a life segment.
 
@@ -191,7 +195,7 @@ def extract_position_events(
 
 
 def extract_wool_events(
-    df: pd.DataFrame, find_segment_idx,
+    df: pd.DataFrame, find_segment_idx: Callable[[int, int], int | None],
 ) -> pd.DataFrame:
     """Extract wool touch/capture events (types 6/7), each assigned to a life segment.
 

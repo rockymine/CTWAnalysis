@@ -5,7 +5,7 @@ import duckdb
 from pathlib import Path
 
 
-def initialize_database():
+def initialize_database() -> None:
     """Create DuckDB metadata database with required tables."""
     db_path = Path('match_analysis/metadata.db')
     db_path.parent.mkdir(parents=True, exist_ok=True)
