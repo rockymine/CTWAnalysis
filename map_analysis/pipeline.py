@@ -35,6 +35,23 @@ logger = logging.getLogger('ctw')
 # Skeleton computation
 # ---------------------------------------------------------------------------
 
+def _log_skeleton_stats(skeleton_results: list, canonical_groups: dict) -> None:
+    """Log a summary of skeleton graph metrics across all islands."""
+    total_nodes = sum(len(r.graph.nodes) for r in skeleton_results)
+    total_edges = sum(len(r.graph.edges) for r in skeleton_results)
+    total_ep = sum(
+        sum(1 for n in r.graph.nodes if n.node_type == 'endpoint')
+        for r in skeleton_results
+    )
+    total_jn = sum(
+        sum(1 for n in r.graph.nodes if n.node_type == 'junction')
+        for r in skeleton_results
+    )
+    logger.debug(f"    Nodes: {total_nodes} ({total_ep} endpoints, {total_jn} junctions)")
+    logger.debug(f"    Edges: {total_edges}")
+    logger.debug(f"    Unique canonical shapes: {len(canonical_groups)}")
+
+
 def _compute_skeletons(
     islands: list,
     enable_canonicalization: bool = True,
@@ -52,19 +69,7 @@ def _compute_skeletons(
         enable_canonicalization=enable_canonicalization,
         skeleton_connectivity=skeleton_connectivity,
     )
-    total_nodes = sum(len(r.graph.nodes) for r in skeleton_results)
-    total_edges = sum(len(r.graph.edges) for r in skeleton_results)
-    total_ep = sum(
-        sum(1 for n in r.graph.nodes if n.node_type == 'endpoint')
-        for r in skeleton_results
-    )
-    total_jn = sum(
-        sum(1 for n in r.graph.nodes if n.node_type == 'junction')
-        for r in skeleton_results
-    )
-    logger.debug(f"    Nodes: {total_nodes} ({total_ep} endpoints, {total_jn} junctions)")
-    logger.debug(f"    Edges: {total_edges}")
-    logger.debug(f"    Unique canonical shapes: {len(canonical_groups)}")
+    _log_skeleton_stats(skeleton_results, canonical_groups)
 
     return skeleton_results, canonical_groups
 
@@ -189,6 +194,37 @@ def _save_islands_json(
 # POI annotation
 # ---------------------------------------------------------------------------
 
+def _log_poi_annotations(poi_assignments: dict) -> None:
+    """Log POI assignment summary and any wool fallback warnings."""
+    n_spawn = sum(
+        1 for s in poi_assignments.get('spawns', [])
+        if s.get('node_id') is not None
+    )
+    n_wool = sum(
+        1 for w in poi_assignments.get('wools', [])
+        if w.get('node_id') is not None
+    )
+    logger.debug(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
+
+    for w in poi_assignments.get('wools', []):
+        fb = w.get('fallback')
+        if fb:
+            color = w.get('wool_color', '?')
+            orig = f"({fb['original_x']:.1f}, {fb['original_z']:.1f})"
+            room = fb['room_region']
+            if w.get('island_id') is not None:
+                logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
+                               f"used room '{room}' centroid -> island {w['island_id']}")
+            else:
+                logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
+                               f"tried room '{room}' but still unmatched")
+        elif w.get('island_id') is None:
+            color = w.get('wool_color', '?')
+            loc = f"({w['x']:.1f}, {w['z']:.1f})"
+            logger.warning(f"    [!] Wool '{color}' location {loc} outside map, "
+                           f"no matching wool-room region found")
+
+
 def _annotate_pois(
     map_folder: Path,
     islands: list,
@@ -229,33 +265,7 @@ def _annotate_pois(
             poi_assignments = annotate_skeleton_pois(
                 islands, skeleton_results, map_data_obj,
             )
-            n_spawn = sum(
-                1 for s in poi_assignments.get('spawns', [])
-                if s.get('node_id') is not None
-            )
-            n_wool = sum(
-                1 for w in poi_assignments.get('wools', [])
-                if w.get('node_id') is not None
-            )
-            logger.debug(f"    Spawns assigned: {n_spawn}, Wools assigned: {n_wool}")
-
-            for w in poi_assignments.get('wools', []):
-                fb = w.get('fallback')
-                if fb:
-                    color = w.get('wool_color', '?')
-                    orig = f"({fb['original_x']:.1f}, {fb['original_z']:.1f})"
-                    room = fb['room_region']
-                    if w.get('island_id') is not None:
-                        logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
-                                       f"used room '{room}' centroid -> island {w['island_id']}")
-                    else:
-                        logger.warning(f"    [!] Wool '{color}' location {orig} outside map, "
-                                       f"tried room '{room}' but still unmatched")
-                elif w.get('island_id') is None:
-                    color = w.get('wool_color', '?')
-                    loc = f"({w['x']:.1f}, {w['z']:.1f})"
-                    logger.warning(f"    [!] Wool '{color}' location {loc} outside map, "
-                                   f"no matching wool-room region found")
+            _log_poi_annotations(poi_assignments)
 
             if plots:
                 for result in skeleton_results:
