@@ -20,13 +20,16 @@ Public API:
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
+from island_analysis.datatypes import Island
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_enrich, build_polygons
 from map_analysis.datatypes import IslandGeometryResult, MapContext
+from skeleton_analysis.datatypes import IslandResult
 from symmetry_analysis.datatypes import SymmetryResult
+from xml_analysis.datatypes import MapData, MapXmlContext
 
 logger = logging.getLogger('ctw')
 
@@ -35,7 +38,7 @@ logger = logging.getLogger('ctw')
 # Skeleton computation
 # ---------------------------------------------------------------------------
 
-def _log_skeleton_stats(skeleton_results: list, canonical_groups: dict) -> None:
+def _log_skeleton_stats(skeleton_results: list[IslandResult], canonical_groups: dict[str, list[int]]) -> None:
     """Log a summary of skeleton graph metrics across all islands."""
     total_nodes = sum(len(r.graph.nodes) for r in skeleton_results)
     total_edges = sum(len(r.graph.edges) for r in skeleton_results)
@@ -53,10 +56,10 @@ def _log_skeleton_stats(skeleton_results: list, canonical_groups: dict) -> None:
 
 
 def _compute_skeletons(
-    islands: list,
+    islands: list[Island],
     enable_canonicalization: bool = True,
     skeleton_connectivity: int = 8,
-):
+) -> tuple[list[IslandResult], dict[str, list[int]]]:
     """Compute skeleton graphs for all islands.
 
     Returns (skeleton_results, canonical_groups).
@@ -79,13 +82,13 @@ def _compute_skeletons(
 # ---------------------------------------------------------------------------
 
 def _generate_skeleton_visuals(
-    islands: list,
-    skeleton_results: list,
-    canonical_groups: dict,
+    islands: list[Island],
+    skeleton_results: list[IslandResult],
+    canonical_groups: dict[str, list[int]],
     island_output_dir: Path,
     map_name: str,
     plots: bool = True,
-):
+) -> None:
     """Write island and skeleton debug images.
 
     Always generated:
@@ -141,7 +144,7 @@ def _generate_skeleton_visuals(
 # ---------------------------------------------------------------------------
 
 def _save_islands_json(
-    islands: list,
+    islands: list[Island],
     df: pd.DataFrame,
     map_name: str,
     island_output_dir: Path,
@@ -194,7 +197,7 @@ def _save_islands_json(
 # POI annotation
 # ---------------------------------------------------------------------------
 
-def _log_poi_annotations(poi_assignments: dict) -> None:
+def _log_poi_annotations(poi_assignments: dict[str, list]) -> None:
     """Log POI assignment summary and any wool fallback warnings."""
     n_spawn = sum(
         1 for s in poi_assignments.get('spawns', [])
@@ -227,12 +230,12 @@ def _log_poi_annotations(poi_assignments: dict) -> None:
 
 def _annotate_pois(
     map_folder: Path,
-    islands: list,
-    skeleton_results: list,
+    islands: list[Island],
+    skeleton_results: list[IslandResult],
     skeleton_output_dir: Path,
     plots: bool = True,
-    xml_context=None,
-):
+    xml_context: Optional[MapXmlContext] = None,
+) -> tuple[Optional[MapData], Optional[dict[str, list]]]:
     """Annotate skeleton POIs from XML data.
 
     Uses xml_context.map_data when provided by the pipeline (avoids a
@@ -287,7 +290,7 @@ def _annotate_pois(
 # Team assignment
 # ---------------------------------------------------------------------------
 
-def _build_island_dicts(islands: list) -> list:
+def _build_island_dicts(islands: list[Island]) -> list[dict[str, Any]]:
     """Build island attribute dicts for team assignment and symmetry detection.
 
     Reflects the current state of island.team (including any XML-set values).
@@ -308,8 +311,8 @@ def _build_island_dicts(islands: list) -> list:
 
 
 def _assign_teams(
-    islands: list,
-    map_data_obj,
+    islands: list[Island],
+    map_data_obj: Optional[MapData],
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
 ) -> None:
@@ -371,8 +374,8 @@ def _assign_teams(
 
 
 def _update_intra_team_symmetry(
-    islands: list,
-    map_data_obj,
+    islands: list[Island],
+    map_data_obj: Optional[MapData],
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
 ) -> None:
@@ -460,8 +463,8 @@ def _log_y0_diagnostics(y0_path: Path) -> None:
 
 def _attach_build_region(
     map_ctx: MapContext,
-    map_data_obj,
-    islands: list,
+    map_data_obj: Optional[MapData],
+    islands: list[Island],
     y0_path: Path,
 ) -> None:
     """Extract build region from XML + Y0 data and attach it to map_ctx.
@@ -676,7 +679,7 @@ def assemble_map(
     geometry: IslandGeometryResult,
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
-    xml_context=None,
+    xml_context: Optional[MapXmlContext] = None,
     plots: bool = False,
 ) -> MapContext:
     """Map assembly pipeline (Stages 5–7).
