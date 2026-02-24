@@ -6,7 +6,7 @@ until reaching another node pixel. No pathfinding, no shortest-path search.
 """
 
 import numpy as np
-from typing import List, Tuple, Optional, Set, Dict, FrozenSet
+from typing import Optional
 
 from .datatypes import SkeletonPixels, GraphNode, GraphEdge
 from .nodes import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
@@ -15,9 +15,9 @@ from .nodes import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 def extract_edges(
     skeleton: SkeletonPixels,
     degree_map: np.ndarray,
-    nodes: List[GraphNode],
-    connectivity: int = 8
-) -> List[GraphEdge]:
+    nodes: list[GraphNode],
+    connectivity: int = 8,
+) -> list[GraphEdge]:
     """
     Extract edges by deterministic walking along skeleton pixels.
 
@@ -42,14 +42,14 @@ def extract_edges(
 
     # Build lookup structures
     skeleton_set = set(map(tuple, skeleton.pixel_coords))
-    node_positions: Set[Tuple[int, int]] = {n.rc for n in nodes}
-    node_at: Dict[Tuple[int, int], int] = {n.rc: n.node_id for n in nodes}
+    node_positions: set[tuple[int, int]] = {n.rc for n in nodes}
+    node_at: dict[tuple[int, int], int] = {n.rc: n.node_id for n in nodes}
 
     mask = skeleton.mask
     h, w = mask.shape
 
     # Track discovered edges: frozenset(src_id, dst_id) -> (path, edge_id)
-    discovered: Dict[FrozenSet[int], Tuple[np.ndarray, int]] = {}
+    discovered: dict[frozenset[int], tuple[np.ndarray, int]] = {}
     edge_id = 0
 
     # Walk from each node
@@ -111,13 +111,13 @@ def extract_edges(
 
 
 def _walk_edge(
-    start_rc: Tuple[int, int],
-    first_step_rc: Tuple[int, int],
-    skeleton_set: Set[Tuple[int, int]],
-    node_positions: Set[Tuple[int, int]],
-    offsets: List[Tuple[int, int]],
-    mask_shape: Tuple[int, int]
-) -> Tuple[Optional[Tuple[int, int]], List[Tuple[int, int]]]:
+    start_rc: tuple[int, int],
+    first_step_rc: tuple[int, int],
+    skeleton_set: set[tuple[int, int]],
+    node_positions: set[tuple[int, int]],
+    offsets: list[tuple[int, int]],
+    mask_shape: tuple[int, int],
+) -> tuple[Optional[tuple[int, int]], list[tuple[int, int]]]:
     """
     Walk along skeleton from a node through a first step pixel,
     following degree-2 continuation until reaching another node or dead-end.

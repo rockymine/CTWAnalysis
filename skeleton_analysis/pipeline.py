@@ -3,9 +3,9 @@ Pipeline orchestrator: runs all skeleton analysis steps for islands.
 """
 
 import numpy as np
-from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
 
+from island_analysis.datatypes import Island
 from .datatypes import (
     IslandResult, SkeletonGraph, CanonicalTransform, CanonicalIsland
 )
@@ -106,7 +106,7 @@ def process_island(
 
 
 def process_all_islands(
-    islands,
+    islands: list[Island],
     skeleton_connectivity: int = 8,
     skeleton_method: str = 'thinning',
     padding: int = 1,
@@ -115,7 +115,7 @@ def process_all_islands(
     min_island_size: int = 10,
     prune_max_length: int = 5,
     prune_min_graph_nodes: int = 5,
-) -> Tuple[List[IslandResult], Dict[str, List[int]]]:
+) -> tuple[list[IslandResult], dict[str, list[int]]]:
     """
     Process all islands through the skeleton pipeline.
 
@@ -137,7 +137,7 @@ def process_all_islands(
           - Dict mapping canonical_key -> list of island_ids (for symmetry groups)
     """
     results = []
-    canonical_groups: Dict[str, List[int]] = defaultdict(list)
+    canonical_groups: dict[str, list[int]] = defaultdict(list)
 
     for island in islands:
         if island.area < min_island_size:

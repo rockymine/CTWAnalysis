@@ -7,18 +7,17 @@ from small features (tiny T-shapes, bumps) and add noise to the graph.
 This module removes such branches.
 """
 
-from typing import List, Tuple, Dict, Set
 from collections import defaultdict
 
 from .datatypes import GraphNode, GraphEdge
 
 
 def prune_short_branches(
-    nodes: List[GraphNode],
-    edges: List[GraphEdge],
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
     max_length: int = 5,
     min_graph_nodes: int = 5,
-) -> Tuple[List[GraphNode], List[GraphEdge]]:
+) -> tuple[list[GraphNode], list[GraphEdge]]:
     """
     Remove endpoint branches shorter than max_length pixels from a junction.
 
@@ -41,7 +40,7 @@ def prune_short_branches(
         return nodes, edges
 
     # Build adjacency: node_id -> list of (edge, neighbor_id)
-    adjacency: Dict[int, List[Tuple[GraphEdge, int]]] = defaultdict(list)
+    adjacency: dict[int, list[tuple[GraphEdge, int]]] = defaultdict(list)
     for edge in edges:
         adjacency[edge.src].append((edge, edge.dst))
         adjacency[edge.dst].append((edge, edge.src))
@@ -49,8 +48,8 @@ def prune_short_branches(
     node_by_id = {n.node_id: n for n in nodes}
 
     # Find endpoints to prune
-    endpoints_to_remove: Set[int] = set()
-    edges_to_remove: Set[int] = set()
+    endpoints_to_remove: set[int] = set()
+    edges_to_remove: set[int] = set()
 
     for node in nodes:
         if node.node_type != 'endpoint':
@@ -89,8 +88,8 @@ def prune_short_branches(
     kept_edges = [e for e in edges if e.edge_id not in edges_to_remove]
 
     # Re-number nodes sequentially (endpoints first, then junctions, sorted by rc)
-    old_to_new: Dict[int, int] = {}
-    final_nodes: List[GraphNode] = []
+    old_to_new: dict[int, int] = {}
+    final_nodes: list[GraphNode] = []
     new_id = 0
 
     for ntype in ('endpoint', 'junction'):
@@ -110,7 +109,7 @@ def prune_short_branches(
             new_id += 1
 
     # Re-number edges
-    final_edges: List[GraphEdge] = []
+    final_edges: list[GraphEdge] = []
     for eid, edge in enumerate(sorted(kept_edges, key=lambda e: (e.src, e.dst))):
         new_src = old_to_new[edge.src]
         new_dst = old_to_new[edge.dst]

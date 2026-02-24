@@ -14,7 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.collections import LineCollection
-from typing import List, Dict, Optional
+from typing import Optional
 
 logger = logging.getLogger('ctw')
 
@@ -132,9 +132,9 @@ def plot_island_debug(
 
 
 def plot_unique_islands(
-    results: List[IslandResult],
-    canonical_groups: Dict[str, List[int]],
-    output_path: str
+    results: list[IslandResult],
+    canonical_groups: dict[str, list[int]],
+    output_path: str,
 ) -> None:
     """
     Grid of unique canonical islands (one per canonical_key).
@@ -215,7 +215,7 @@ def plot_unique_islands(
 
 
 def plot_map_overview(
-    results: List[IslandResult],
+    results: list[IslandResult],
     output_path: str,
     map_context: Optional[dict] = None,
 ) -> None:
@@ -299,10 +299,10 @@ def plot_map_overview(
 
 
 def generate_skeleton_report(
-    results: List[IslandResult],
-    canonical_groups: Dict[str, List[int]],
+    results: list[IslandResult],
+    canonical_groups: dict[str, list[int]],
     output_path: str,
-    map_name: str = "Unknown"
+    map_name: str = "Unknown",
 ) -> None:
     """
     Generate a text report summarizing skeleton analysis results.

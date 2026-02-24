@@ -13,7 +13,7 @@ from common.json_export import save_json as _save_json
 logger = logging.getLogger('ctw')
 
 
-def to_dict(island_skeletons: list, map_name: str) -> dict:
+def to_dict(island_skeletons: list[dict], map_name: str) -> dict:
     """Build the complete map_graph.json structure.
 
     Args:
@@ -48,7 +48,7 @@ def to_dict(island_skeletons: list, map_name: str) -> dict:
     }
 
 
-def save(island_skeletons: list, map_name: str, output_dir: Path) -> None:
+def save(island_skeletons: list[dict], map_name: str, output_dir: Path) -> None:
     """Save map_graph.json containing island skeleton data.
 
     Downstream consumers (match analysis / PositionClassifier) read

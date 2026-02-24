@@ -4,7 +4,6 @@ Converts IslandResult objects (canonical-space skeletons) into
 world-coordinate JSON-serializable dictionaries.
 """
 
-from typing import List
 
 import numpy as np
 
@@ -13,9 +12,9 @@ from .datatypes import IslandResult
 
 
 def build_skeleton_dicts(
-    islands: List[Island],
-    skeleton_results: List[IslandResult],
-) -> List[dict]:
+    islands: list[Island],
+    skeleton_results: list[IslandResult],
+) -> list[dict]:
     """Build per-island skeleton dicts for map_graph.json.
 
     Returns:

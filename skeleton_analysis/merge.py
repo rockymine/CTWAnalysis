@@ -7,7 +7,6 @@ merges each cluster into one representative node and remaps edges accordingly.
 """
 
 import numpy as np
-from typing import List, Tuple, Dict, Set
 from collections import deque
 
 from .datatypes import GraphNode, GraphEdge
@@ -15,10 +14,10 @@ from .nodes import NEIGHBOR_OFFSETS_8, NEIGHBOR_OFFSETS_4
 
 
 def merge_junction_blobs(
-    nodes: List[GraphNode],
-    edges: List[GraphEdge],
-    connectivity: int = 8
-) -> Tuple[List[GraphNode], List[GraphEdge]]:
+    nodes: list[GraphNode],
+    edges: list[GraphEdge],
+    connectivity: int = 8,
+) -> tuple[list[GraphNode], list[GraphEdge]]:
     """
     Merge clusters of adjacent junction pixels into single nodes.
 
@@ -50,8 +49,8 @@ def merge_junction_blobs(
     clusters = _cluster_junctions(junctions, connectivity)
 
     # Step 2: Build old_id -> representative_id mapping
-    id_remap: Dict[int, int] = {}
-    merged_junctions: List[GraphNode] = []
+    id_remap: dict[int, int] = {}
+    merged_junctions: list[GraphNode] = []
 
     for cluster in clusters:
         rep_rc = _pick_representative(cluster)
@@ -86,7 +85,7 @@ def merge_junction_blobs(
     temp_to_merged = {id(mn): mn for mn in merged_junctions}
 
     # Step 3: Assign final sequential IDs
-    all_nodes: List[GraphNode] = []
+    all_nodes: list[GraphNode] = []
     final_id = 0
 
     # Endpoints first (sorted by rc for determinism)
@@ -119,10 +118,10 @@ def merge_junction_blobs(
         final_id += 1
 
     # Build node_id -> rc lookup for the final nodes
-    node_rc: Dict[int, Tuple[int, int]] = {n.node_id: n.rc for n in all_nodes}
+    node_rc: dict[int, tuple[int, int]] = {n.node_id: n.rc for n in all_nodes}
 
     # Step 4: Remap edges, drop intra-cluster, de-duplicate
-    seen_pairs: Dict[frozenset, GraphEdge] = {}
+    seen_pairs: dict[frozenset, GraphEdge] = {}
 
     for edge in edges:
         new_src = id_remap.get(edge.src, edge.src)
@@ -148,7 +147,7 @@ def merge_junction_blobs(
             )
 
     # Assign final sequential edge IDs
-    merged_edges: List[GraphEdge] = []
+    merged_edges: list[GraphEdge] = []
     edge_id = 0
     for pair in sorted(seen_pairs.keys(), key=lambda s: tuple(sorted(s))):
         e = seen_pairs[pair]
@@ -164,9 +163,9 @@ def merge_junction_blobs(
 
 
 def _cluster_junctions(
-    junctions: List[GraphNode],
-    connectivity: int = 8
-) -> List[List[GraphNode]]:
+    junctions: list[GraphNode],
+    connectivity: int = 8,
+) -> list[list[GraphNode]]:
     """
     Find connected components of junction pixels using flood fill.
 
@@ -183,16 +182,16 @@ def _cluster_junctions(
     offsets = NEIGHBOR_OFFSETS_8 if connectivity == 8 else NEIGHBOR_OFFSETS_4
 
     # Build position -> node lookup
-    pos_to_node: Dict[Tuple[int, int], GraphNode] = {n.rc: n for n in junctions}
-    visited: Set[Tuple[int, int]] = set()
-    clusters: List[List[GraphNode]] = []
+    pos_to_node: dict[tuple[int, int], GraphNode] = {n.rc: n for n in junctions}
+    visited: set[tuple[int, int]] = set()
+    clusters: list[list[GraphNode]] = []
 
     for node in junctions:
         if node.rc in visited:
             continue
 
         # BFS flood fill
-        cluster: List[GraphNode] = []
+        cluster: list[GraphNode] = []
         queue = deque([node.rc])
         visited.add(node.rc)
 
@@ -216,7 +215,7 @@ def _fix_path_endpoints(
     pixel_path: np.ndarray,
     src_id: int,
     dst_id: int,
-    node_rc: Dict[int, Tuple[int, int]]
+    node_rc: dict[int, tuple[int, int]],
 ) -> np.ndarray:
     """
     Ensure pixel_path starts at the src node's rc and ends at the dst node's rc.
@@ -260,7 +259,7 @@ def _fix_path_endpoints(
     return path
 
 
-def _pick_representative(cluster: List[GraphNode]) -> Tuple[int, int]:
+def _pick_representative(cluster: list[GraphNode]) -> tuple[int, int]:
     """
     Pick the pixel in the cluster closest to the cluster centroid.
 

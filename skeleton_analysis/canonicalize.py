@@ -9,8 +9,6 @@ All operations use integer arithmetic to avoid rounding errors.
 
 import hashlib
 import numpy as np
-from typing import Tuple
-
 from .datatypes import CanonicalIsland, CanonicalTransform
 
 
