@@ -6,7 +6,6 @@ Public API:
 """
 
 import logging
-from typing import Optional, Tuple
 
 from common.json_export import save_json as _save_json
 

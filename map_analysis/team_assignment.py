@@ -15,20 +15,20 @@ Public API:
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 
 # ---------------------------------------------------------------------------
 # Shapely geometry helpers (used by intra-team polygon splitting)
 # ---------------------------------------------------------------------------
 
-def _reflect_shapely_geom_x(geom, center_x: float):
+def _reflect_shapely_geom_x(geom: Any, center_x: float) -> Any:
     """Reflect a Shapely geometry across x = center_x."""
     from shapely import affinity
     return affinity.affine_transform(geom, [-1, 0, 0, 1, 2 * center_x, 0])
 
 
-def _reflect_shapely_geom_z(geom, center_z: float):
+def _reflect_shapely_geom_z(geom: Any, center_z: float) -> Any:
     """Reflect a Shapely geometry across z = center_z.
 
     Maps z → 2·center_z − z, keeps x unchanged.
@@ -43,8 +43,8 @@ def _reflect_shapely_geom_z(geom, center_z: float):
 # ---------------------------------------------------------------------------
 
 def _determine_intra_axis(
-    primary_global: Dict,
-    team_island: Dict,
+    primary_global: dict,
+    team_island: dict,
     center_x: float,
     center_z: float,
 ) -> Optional[str]:
@@ -86,11 +86,11 @@ def _determine_intra_axis(
 # ---------------------------------------------------------------------------
 
 def _split_polygon_along_axis(
-    exterior: List[List[float]],
+    exterior: list[list[float]],
     axis: str,
     axis_value: float,
-    center_info: Dict,
-) -> Tuple[Optional[object], Optional[object]]:
+    center_info: dict,
+) -> tuple[Any, Any]:
     """Split a polygon into two halves along a symmetry axis.
 
     For even dimensions (2x2 or 2x1/1x2 along this axis) the split falls
@@ -159,11 +159,11 @@ def _split_polygon_along_axis(
 
 
 def _verify_intra_team_symmetry(
-    team_islands: List[Dict],
+    team_islands: list[dict],
     axis: str,
     axis_value: float,
-    center_info: Dict,
-) -> Tuple[float, str]:
+    center_info: dict,
+) -> tuple[float, str]:
     """Verify intra-team symmetry by splitting all territory polygons along
     the axis and comparing the two halves via IoU.
 
@@ -215,10 +215,10 @@ def _verify_intra_team_symmetry(
 # ---------------------------------------------------------------------------
 
 def _check_canonical_coverage(
-    islands: List[Dict],
-    teams: List[Dict],
-    team_islands: Dict[str, List[Dict]],
-) -> List[Dict]:
+    islands: list[dict],
+    teams: list[dict],
+    team_islands: dict[str, list[dict]],
+) -> list[dict]:
     """Check that each team gets exactly 1 island from each canonical group.
 
     For rot_90 (4-team) maps, intra-team mirror symmetry is not meaningful
@@ -275,12 +275,12 @@ def _check_canonical_coverage(
 # ---------------------------------------------------------------------------
 
 def assign_islands_to_teams(
-    islands: List[Dict],
-    teams: List[Dict],
+    islands: list[dict],
+    teams: list[dict],
     center_x: float,
     center_z: float,
-    primary_global: Dict,
-) -> Dict[str, List[Dict]]:
+    primary_global: dict,
+) -> dict[str, list[dict]]:
     """Assign island dicts to teams by explicit team field or geometric fallback.
 
     First pass: islands that already have a "team" field (set by XML POI
@@ -350,13 +350,13 @@ def assign_islands_to_teams(
 
 
 def detect_intra_team_symmetry(
-    islands: List[Dict],
+    islands: list[dict],
     center_x: float,
     center_z: float,
-    center_info: Dict,
-    global_symmetries: List[Dict],
-    teams: List[Dict],
-) -> List[Dict]:
+    center_info: dict,
+    global_symmetries: list[dict],
+    teams: list[dict],
+) -> list[dict]:
     """Detect symmetry within each team's territory.
 
     Strategy depends on global symmetry type:

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from common.geometry import BoundingBox, Point2D
 from island_analysis.datatypes import Island
@@ -19,9 +19,9 @@ class IslandGeometryResult:
     The islands.json artifact written by run_island_geometry is for human
     inspection and for the symmetry step only.
     """
-    islands: List[Island]
-    skeleton_results: List[IslandResult]
-    canonical_groups: Dict[str, List[int]]
+    islands: list[Island]
+    skeleton_results: list[IslandResult]
+    canonical_groups: dict[str, list[int]]
     df: Any                                      # pd.DataFrame
     island_output_dir: Path
     map_center_pt: Optional[Point2D]
@@ -35,7 +35,7 @@ class MapContext:
     map_name: str = ""
     map_version: str = ""
     objective: str = ""
-    teams: List[Dict] = field(default_factory=list)
+    teams: list[dict] = field(default_factory=list)
 
     # Layout info
     bounding_box: Optional[BoundingBox] = None
@@ -44,7 +44,7 @@ class MapContext:
 
     # Islands summary
     island_count: int = 0
-    islands: List[Dict] = field(default_factory=list)
+    islands: list[dict] = field(default_factory=list)
 
     # Skeleton summary
     total_nodes: int = 0
@@ -54,7 +54,7 @@ class MapContext:
     unique_canonical_shapes: int = 0
 
     # POI summary
-    poi_assignments: Dict = field(default_factory=dict)
+    poi_assignments: dict = field(default_factory=dict)
 
     # Build region
-    build_region: Optional[Dict] = None
+    build_region: Optional[dict] = None
