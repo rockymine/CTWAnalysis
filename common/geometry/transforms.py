@@ -57,18 +57,14 @@ class CanonicalTransform:
     The **reverse** transform (:meth:`to_original`) undoes these steps in
     reverse order: subtract translation, counter-rotate, un-mirror.
 
-    ``world_center`` is unused and kept at zeros for API compatibility.
-
     Attributes:
         rotation: Rotation angle in degrees (0, 90, 180, or 270).
         mirror:   Whether the X axis is flipped before rotation.
         translation: 2-vector added after rotation (equals ``-min_vals``).
-        world_center: Unused; kept at zeros for compatibility.
     """
     rotation: int                    # 0, 90, 180, 270 degrees
     mirror: bool                     # Whether X is flipped before rotation
     translation: np.ndarray          # 2-vector added after rotation (= -min_vals)
-    world_center: np.ndarray         # unused, kept for compatibility (zeros)
 
     def to_canonical(self, points: np.ndarray) -> np.ndarray:
         """Transform world (x, z) block indices to canonical space.

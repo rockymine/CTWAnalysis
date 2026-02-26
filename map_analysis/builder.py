@@ -9,7 +9,7 @@ from typing import Any, Optional
 import pandas as pd
 
 from island_analysis.datatypes import Island
-from skeleton_analysis.datatypes import IslandResult
+from skeleton_analysis.datatypes import IslandSkeleton
 from xml_analysis.datatypes import MapData
 
 from .datatypes import MapContext
@@ -18,7 +18,7 @@ from common.geometry import BoundingBox, Point2D, get_grid_extent
 
 def build_map_context(
     islands: list[Island],
-    skeleton_results: list[IslandResult],
+    skeleton_results: list[IslandSkeleton],
     canonical_groups: dict[str, list[int]],
     layout_df: pd.DataFrame,
     map_data: Optional[MapData] = None,
@@ -28,8 +28,8 @@ def build_map_context(
     """Populate a MapContext from all analysis results.
 
     Args:
-        islands: List of Island objects.
-        skeleton_results: List of IslandResult objects.
+        islands: List of fully contextualized Island objects.
+        skeleton_results: List of IslandSkeleton objects.
         canonical_groups: canonical_key -> island_ids mapping.
         layout_df: Layout DataFrame with world_x/world_z columns.
         map_data: Parsed MapData from XML (optional).

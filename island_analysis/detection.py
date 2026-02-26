@@ -8,7 +8,7 @@ from scipy import ndimage
 from scipy.spatial import ConvexHull
 from collections import deque
 
-from .datatypes import Island
+from .datatypes import IslandPolygon
 from common.geometry import get_grid_extent, get_block_centroid
 
 
@@ -19,7 +19,7 @@ def detect_islands(
     ignore_y: bool = True,
     connectivity: int = 8,
     min_island_size: int = 10
-) -> list[Island]:
+) -> list[IslandPolygon]:
     """
     Detect connected islands of blocks using connected component analysis.
 
@@ -32,7 +32,7 @@ def detect_islands(
         min_island_size: Minimum blocks to count as an island
 
     Returns:
-        List of Island objects sorted by size (largest first)
+        List of IslandPolygon objects sorted by size (largest first)
     """
     # Extract unique 2D positions
     if ignore_y:
@@ -86,7 +86,7 @@ def detect_islands(
         center = get_block_centroid(world_coords[:, 0], world_coords[:, 1])
         bbox = get_grid_extent(world_coords[:, 0], world_coords[:, 1])
 
-        island = Island(
+        island = IslandPolygon(
             id=len(islands) + 1,
             blocks=world_coords,
             center=center,
@@ -115,14 +115,14 @@ def detect_islands(
 
 
 def find_island_holes(
-    island: Island,
+    island: IslandPolygon,
     grid_resolution: float = 1.0
 ) -> list[np.ndarray]:
     """
     Find internal holes (air pockets) within an island's bounding box.
 
     Args:
-        island: Island object
+        island: IslandPolygon object
         grid_resolution: Resolution for hole detection grid
 
     Returns:

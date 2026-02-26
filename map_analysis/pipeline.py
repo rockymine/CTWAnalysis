@@ -6,15 +6,17 @@ run_island_geometry()  — Layer 2+3: pure geometry.
     Detect islands, build polygons, compute skeleton graphs, generate
     visualizations, classify island centers relative to the map center.
     Does NOT read map.xml.  Writes island_analysis/islands.json.
+    Returns IslandAnalysis with islands: list[IslandPolygon] (no XML fields).
 
 assemble_map()         — Layer 4: semantic enrichment + final assembly.
-    Combines island geometry (islands.json), symmetry results
+    Combines island geometry (IslandAnalysis), symmetry results
     (symmetry.json), and XML data (map.xml) into the complete map model.
+    Constructs fully contextualized Island objects from IslandPolygon + XML.
     Writes map_context.json and map_graph.json.
 
 Public API:
     run_island_geometry(map_folder, ...)  — geometry pipeline
-    assemble_map(map_folder, islands, ...) — assembly pipeline
+    assemble_map(map_folder, analysis, ...) — assembly pipeline
 """
 
 import json
@@ -24,10 +26,10 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from island_analysis.datatypes import Island
+from island_analysis.datatypes import Island, IslandPolygon
 from island_analysis.pipeline import LAYOUT_FILES, detect_and_enrich, build_polygons
-from map_analysis.datatypes import IslandGeometryResult, MapContext
-from skeleton_analysis.datatypes import IslandResult
+from map_analysis.datatypes import IslandAnalysis, IslandGeometryResult, MapContext
+from skeleton_analysis.datatypes import IslandSkeleton
 from symmetry_analysis.datatypes import SymmetryResult
 from xml_analysis.datatypes import MapData, MapXmlContext
 
@@ -38,7 +40,7 @@ logger = logging.getLogger('ctw')
 # Skeleton computation
 # ---------------------------------------------------------------------------
 
-def _log_skeleton_stats(skeleton_results: list[IslandResult], canonical_groups: dict[str, list[int]]) -> None:
+def _log_skeleton_stats(skeleton_results: list[IslandSkeleton], canonical_groups: dict[str, list[int]]) -> None:
     """Log a summary of skeleton graph metrics across all islands."""
     total_nodes = sum(len(r.graph.nodes) for r in skeleton_results)
     total_edges = sum(len(r.graph.edges) for r in skeleton_results)
@@ -56,25 +58,25 @@ def _log_skeleton_stats(skeleton_results: list[IslandResult], canonical_groups: 
 
 
 def _compute_skeletons(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     enable_canonicalization: bool = True,
     skeleton_connectivity: int = 8,
-) -> tuple[list[IslandResult], dict[str, list[int]]]:
+) -> tuple[list[IslandSkeleton], dict[str, list[int]]]:
     """Compute skeleton graphs for all islands.
 
-    Returns (skeleton_results, canonical_groups).
+    Returns (skeletons, canonical_groups).
     """
     from skeleton_analysis import process_all_islands
 
     logger.debug("  Computing skeleton graphs...")
-    skeleton_results, canonical_groups = process_all_islands(
+    skeletons, canonical_groups = process_all_islands(
         islands,
         enable_canonicalization=enable_canonicalization,
         skeleton_connectivity=skeleton_connectivity,
     )
-    _log_skeleton_stats(skeleton_results, canonical_groups)
+    _log_skeleton_stats(skeletons, canonical_groups)
 
-    return skeleton_results, canonical_groups
+    return skeletons, canonical_groups
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +84,8 @@ def _compute_skeletons(
 # ---------------------------------------------------------------------------
 
 def _generate_skeleton_visuals(
-    islands: list[Island],
-    skeleton_results: list[IslandResult],
+    islands: list[IslandPolygon],
+    skeletons: list[IslandSkeleton],
     canonical_groups: dict[str, list[int]],
     island_output_dir: Path,
     map_name: str,
@@ -117,7 +119,7 @@ def _generate_skeleton_visuals(
     skeleton_output_dir.mkdir(exist_ok=True)
 
     if plots:
-        result_by_id = {r.island_id: r for r in skeleton_results}
+        result_by_id = {r.island_id: r for r in skeletons}
         for key, ids in canonical_groups.items():
             rep_id = min(ids)
             if rep_id in result_by_id:
@@ -127,13 +129,13 @@ def _generate_skeleton_visuals(
                 )
 
     plot_unique_islands(
-        skeleton_results, canonical_groups,
+        skeletons, canonical_groups,
         str(skeleton_output_dir / 'unique_islands.png'),
     )
 
     if plots:
         generate_skeleton_report(
-            skeleton_results, canonical_groups,
+            skeletons, canonical_groups,
             str(skeleton_output_dir / 'skeleton_report.txt'),
             map_name=map_name,
         )
@@ -144,7 +146,7 @@ def _generate_skeleton_visuals(
 # ---------------------------------------------------------------------------
 
 def _save_islands_json(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     df: pd.DataFrame,
     map_name: str,
     island_output_dir: Path,
@@ -230,27 +232,30 @@ def _log_poi_annotations(poi_assignments: dict[str, list]) -> None:
 
 def _annotate_pois(
     map_folder: Path,
-    islands: list[Island],
-    skeleton_results: list[IslandResult],
+    islands: list[IslandPolygon],
+    skeletons: list[IslandSkeleton],
     skeleton_output_dir: Path,
     plots: bool = True,
     xml_context: Optional[MapXmlContext] = None,
-) -> tuple[Optional[MapData], Optional[dict[str, list]]]:
+) -> tuple[Optional[MapData], dict, dict]:
     """Annotate skeleton POIs from XML data.
 
     Uses xml_context.map_data when provided by the pipeline (avoids a
     second parse of map.xml).  Falls back to parsing map.xml from disk
     when called standalone (e.g. ctw islands without a prior xml step).
 
-    Returns (map_data_obj, poi_assignments).
-    map_data_obj and poi_assignments are None when XML is absent.
+    Returns (map_data_obj, island_annotations, node_annotations_by_island).
+    island_annotations: {island_id: {'has_spawn': bool, 'has_wool': bool, 'team': str|None}}
+    node_annotations_by_island: {island_id: {node_id: NodeAnnotation}}
+    All are empty dicts when XML is absent.
     """
     from map_analysis.poi_annotation import annotate_skeleton_pois
     from skeleton_analysis.visualization import plot_island_poi_debug
 
     xml_file = map_folder / 'map.xml'
     map_data_obj = None
-    poi_assignments = None
+    island_annotations: dict = {}
+    node_annotations: dict = {}
 
     if xml_context is not None:
         map_data_obj = xml_context.map_data
@@ -265,25 +270,26 @@ def _annotate_pois(
     if map_data_obj is not None:
         try:
             logger.debug("  Annotating POIs from XML...")
-            poi_assignments = annotate_skeleton_pois(
-                islands, skeleton_results, map_data_obj,
+            island_annotations, node_annotations, poi_assignments = annotate_skeleton_pois(
+                islands, skeletons, map_data_obj,
             )
             _log_poi_annotations(poi_assignments)
 
             if plots:
-                for result in skeleton_results:
-                    has_poi = any(n.poi_type is not None for n in result.graph.nodes)
-                    if has_poi:
+                for skel in skeletons:
+                    island_node_anns = node_annotations.get(skel.island_id, {})
+                    if island_node_anns:
                         plot_island_poi_debug(
-                            result,
-                            str(skeleton_output_dir / f'island_{result.island_id}_poi.png'),
+                            skel,
+                            island_node_anns,
+                            str(skeleton_output_dir / f'island_{skel.island_id}_poi.png'),
                         )
         except Exception as e:
             logger.warning(f"    [!] POI annotation failed: {e}")
     else:
         logger.debug("  No XML data available, skipping POI annotation")
 
-    return map_data_obj, poi_assignments
+    return map_data_obj, island_annotations, node_annotations
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +520,7 @@ def _attach_build_region(
 
 def run_symmetry(
     map_output_dir: Path,
-    geometry: Optional[IslandGeometryResult] = None,
+    geometry: Optional[IslandAnalysis] = None,
 ) -> Optional[SymmetryResult]:
     """Symmetry analysis pipeline (Stage 3).
 
@@ -522,7 +528,7 @@ def run_symmetry(
     symmetry.json to map_output_dir.
 
     When geometry is provided (the normal case in the full pipeline),
-    island data is read directly from the in-memory IslandGeometryResult —
+    island data is read directly from the in-memory IslandAnalysis —
     no disk round-trip through islands.json.
 
     When geometry is None (islands step was skipped, e.g. --no-islands),
@@ -530,7 +536,7 @@ def run_symmetry(
 
     Args:
         map_output_dir: Per-map output root (symmetry.json written here).
-        geometry: IslandGeometryResult from run_island_geometry. When
+        geometry: IslandAnalysis from run_island_geometry. When
             provided, uses in-memory data; falls back to disk when None.
 
     Returns:
@@ -599,7 +605,7 @@ def run_island_geometry(
     map_output_dir: Optional[Path] = None,
     output_dir: Optional[Path] = None,
     plots: bool = False,
-) -> Optional[IslandGeometryResult]:
+) -> Optional[IslandAnalysis]:
     """Island geometry pipeline (Stages 1–4).
 
     Detects islands, builds polygons, computes skeleton graphs, generates
@@ -607,6 +613,7 @@ def run_island_geometry(
 
     Does NOT read map.xml and does NOT produce map_context.json.
     Writes island_analysis/islands.json for downstream steps.
+    Returns IslandAnalysis with islands: list[IslandPolygon] (pure geometry).
 
     Args:
         map_folder: Path to map folder (read-only input).
@@ -623,7 +630,7 @@ def run_island_geometry(
         plots: If True, generate debug plots.
 
     Returns:
-        IslandGeometryResult on success, None on failure (missing layout or no islands).
+        IslandAnalysis on success, None on failure (missing layout or no islands).
     """
     logger.debug(f"[2/6] Island Analysis: {map_folder.name}")
 
@@ -680,12 +687,12 @@ def run_island_geometry(
             logger.debug(f"    {cls_name}: {[i.id for i in cls_islands]}")
 
     # Compute skeleton graphs
-    skeleton_results, canonical_groups = _compute_skeletons(islands)
+    skeletons, canonical_groups = _compute_skeletons(islands)
 
     # Debug outputs (visualizations + islands.json) — skipped on cache hit
     if write_outputs:
         _generate_skeleton_visuals(
-            islands, skeleton_results, canonical_groups,
+            islands, skeletons, canonical_groups,
             island_output_dir, map_folder.name, plots=plots,
         )
 
@@ -698,9 +705,9 @@ def run_island_geometry(
         _save_islands_json(islands, df, map_folder.name, island_output_dir)
         logger.debug(f"    Saved to {island_output_dir.name}/")
 
-    return IslandGeometryResult(
+    return IslandAnalysis(
         islands=islands,
-        skeleton_results=skeleton_results,
+        skeletons=skeletons,
         canonical_groups=canonical_groups,
         df=df,
         island_output_dir=island_output_dir,
@@ -714,7 +721,7 @@ def run_island_geometry(
 
 def assemble_map(
     map_folder: Path,
-    geometry: IslandGeometryResult,
+    geometry: IslandAnalysis,
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
     xml_context: Optional[MapXmlContext] = None,
@@ -724,11 +731,14 @@ def assemble_map(
 
     Combines island geometry, symmetry results, and XML data into the
     complete map model. Requires run_island_geometry() to have been called
-    first and its IslandGeometryResult passed in.
+    first and its IslandAnalysis passed in.
 
     Reads from xml_context when provided (preferred), otherwise falls back
     to parsing map.xml from map_folder directly.  Reads symmetry.json from
     map_output_dir when symmetry is None (--no-symmetry + cached file).
+
+    Constructs fully contextualized Island objects from the IslandPolygon
+    objects in geometry.islands combined with XML annotation data.
 
     Writes:
         - map_context.json
@@ -740,7 +750,7 @@ def assemble_map(
 
     Args:
         map_folder: Path to map folder (for map.xml fallback).
-        geometry: IslandGeometryResult from run_island_geometry().
+        geometry: IslandAnalysis from run_island_geometry().
         map_output_dir: Per-map output root (where map_context.json is written).
         symmetry: SymmetryResult from the symmetry step. When supplied team
             assignment uses the in-memory object; otherwise falls back to
@@ -749,8 +759,8 @@ def assemble_map(
             the assembly step uses map_data directly without re-parsing map.xml.
         plots: If True, generate POI debug plots.
     """
-    islands = geometry.islands
-    skeleton_results = geometry.skeleton_results
+    island_polygons = geometry.islands
+    skeletons = geometry.skeletons
     canonical_groups = geometry.canonical_groups
     df = geometry.df
     island_output_dir = geometry.island_output_dir
@@ -764,26 +774,64 @@ def assemble_map(
         from map_analysis.poi_annotation import compute_map_center
         map_center_pt = compute_map_center(df)
 
-    # POI annotation
-    map_data_obj, poi_assignments = _annotate_pois(
-        map_folder, islands, skeleton_results, skeleton_output_dir,
+    # POI annotation — returns annotation dicts, does NOT mutate geometry
+    map_data_obj, island_annotations, node_annotations = _annotate_pois(
+        map_folder, island_polygons, skeletons, skeleton_output_dir,
         plots=plots,
         xml_context=xml_context,
     )
 
-    # Team assignment + intra-team symmetry
-    _assign_teams(islands, map_data_obj, map_output_dir, symmetry=symmetry)
-    _update_intra_team_symmetry(islands, map_data_obj, map_output_dir, symmetry=symmetry)
+    # Construct fully contextualized Island objects from IslandPolygon + annotations
+    final_islands = []
+    for ip in island_polygons:
+        ann = island_annotations.get(ip.id, {})
+        final_islands.append(Island(
+            id=ip.id,
+            blocks=ip.blocks,
+            center=ip.center,
+            area=ip.area,
+            bounding_box=ip.bounding_box,
+            hull_vertices=ip.hull_vertices,
+            simplified_polygon=ip.simplified_polygon,
+            holes=ip.holes,
+            has_center=ip.has_center,
+            distance_to_center=ip.distance_to_center,
+            has_spawn=ann.get('has_spawn', False),
+            has_wool=ann.get('has_wool', False),
+            team=ann.get('team'),
+        ))
+
+    # Team assignment + intra-team symmetry (mutates final_islands[].team)
+    _assign_teams(final_islands, map_data_obj, map_output_dir, symmetry=symmetry)
+    _update_intra_team_symmetry(final_islands, map_data_obj, map_output_dir, symmetry=symmetry)
 
     # Build MapContext
     from map_analysis.builder import build_map_context
     from map_analysis import exporter as map_context_exporter
-    from skeleton_analysis.builder import build_skeleton_dicts
+    from skeleton_analysis.builder import build_island_graphs
     from skeleton_analysis import exporter as map_graph_exporter
+
+    # Collect poi_assignments for the MapContext POI summary
+    poi_assignments: Optional[dict] = None
+    if map_data_obj is not None:
+        # Reconstruct assignments summary from annotations for the context log
+        spawns = [
+            {'island_id': iid, 'node_id': nid}
+            for iid, nmap in node_annotations.items()
+            for nid, ann in nmap.items()
+            if ann.poi_type == 'spawn'
+        ]
+        wools = [
+            {'island_id': iid, 'node_id': nid}
+            for iid, nmap in node_annotations.items()
+            for nid, ann in nmap.items()
+            if ann.poi_type == 'wool'
+        ]
+        poi_assignments = {'spawns': spawns, 'wools': wools}
 
     logger.debug("  Building map context...")
     map_ctx = build_map_context(
-        islands, skeleton_results, canonical_groups, df,
+        final_islands, skeletons, canonical_groups, df,
         map_data=map_data_obj,
         map_center=map_center_pt,
         poi_assignments=poi_assignments,
@@ -792,17 +840,17 @@ def assemble_map(
     y0_path = map_output_dir / 'layout_y0.parquet'
     y0_df = pd.read_parquet(y0_path) if y0_path.exists() else None
     _log_y0_diagnostics(y0_df)
-    _attach_build_region(map_ctx, map_data_obj, islands, y0_df)
+    _attach_build_region(map_ctx, map_data_obj, final_islands, y0_df)
 
     map_context_exporter.save(map_ctx, str(map_output_dir / 'map_context.json'))
 
-    island_skeletons = build_skeleton_dicts(islands, skeleton_results)
-    map_graph_exporter.save(island_skeletons, map_ctx.map_name, map_output_dir)
+    island_graphs = build_island_graphs(final_islands, skeletons, node_annotations)
+    map_graph_exporter.save(island_graphs, map_ctx.map_name, map_output_dir)
 
     # Map overview plot (needs map_context for polygons + build regions)
     from skeleton_analysis.visualization import plot_map_overview
     plot_map_overview(
-        skeleton_results,
+        skeletons,
         str(skeleton_output_dir / 'map_overview.png'),
         map_context=map_context_exporter.to_dict(map_ctx),
     )

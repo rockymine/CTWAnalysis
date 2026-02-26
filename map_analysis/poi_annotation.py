@@ -3,8 +3,8 @@ POI-aware skeleton graph annotation.
 
 Classifies skeleton nodes as spawn, wool, or none by matching XML map data
 (spawn regions, wool locations) to the nearest skeleton endpoint on the
-appropriate island. Also sets island-level flags (has_spawn, has_wool,
-has_center, distance_to_center, team).
+appropriate island. Returns annotation dicts rather than mutating graph nodes
+or island objects.
 """
 
 import re
@@ -13,8 +13,8 @@ from typing import Optional
 
 import pandas as pd
 
-from island_analysis.datatypes import Island
-from skeleton_analysis.datatypes import IslandResult
+from island_analysis.datatypes import IslandPolygon
+from skeleton_analysis.datatypes import IslandSkeleton, NodeAnnotation
 from xml_analysis.datatypes import MapData, Team
 from xml_analysis.regions import (
     CylinderRegion, PointRegion, BlockRegion, Region, UnionRegion,
@@ -124,9 +124,9 @@ def extract_wool_locations(map_data: MapData) -> list[dict]:
 
 def find_containing_island(
     point_xz: Point2D,
-    islands: list[Island],
+    islands: list[IslandPolygon],
     tolerance: float = 5.0,
-) -> Optional[Island]:
+) -> Optional[IslandPolygon]:
     """
     Find the island whose bounding box contains the given (x, z) point.
 
@@ -136,7 +136,7 @@ def find_containing_island(
         tolerance: Extra padding around bounding box
 
     Returns:
-        The matching Island, or None
+        The matching island, or None
     """
     x, z = point_xz
     for island in islands:
@@ -149,7 +149,7 @@ def find_containing_island(
 
 def find_nearest_node(
     point_xz: Point2D,
-    island_result: IslandResult,
+    island_result: IslandSkeleton,
     node_type: Optional[str] = None,
 ) -> Optional[int]:
     """
@@ -160,7 +160,7 @@ def find_nearest_node(
 
     Args:
         point_xz: Target world coordinate
-        island_result: IslandResult containing graph and transform info
+        island_result: IslandSkeleton containing graph and transform info
         node_type: If set, only consider nodes of this type ('endpoint'/'junction')
 
     Returns:
@@ -206,7 +206,7 @@ def compute_map_center(layout_df: pd.DataFrame) -> Point2D:
 
 
 def classify_island_center(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     map_center: Point2D,
 ) -> None:
     """
@@ -268,24 +268,29 @@ def classify_island_center(
 
 
 def annotate_skeleton_pois(
-    islands: list[Island],
-    skeleton_results: list[IslandResult],
+    islands: list[IslandPolygon],
+    skeleton_results: list[IslandSkeleton],
     map_data: MapData,
-) -> dict[str, list]:
+) -> tuple[dict, dict, dict]:
     """
-    Main annotation function. Sets node.poi_type/poi_color and
-    island.has_spawn/has_wool/team based on XML map data.
+    Main annotation function. Returns annotation dicts rather than mutating
+    graph nodes or island objects.
 
     Args:
-        islands: List of Island objects
-        skeleton_results: List of IslandResult objects
+        islands: List of IslandPolygon objects (geometry only)
+        skeleton_results: List of IslandSkeleton objects
         map_data: Parsed MapData from XML
 
     Returns:
-        Dict with 'spawns' and 'wools' lists of assignment info
+        Tuple of:
+          island_annotations: {island_id: {'has_spawn': bool, 'has_wool': bool, 'team': str|None}}
+          node_annotations: {island_id: {node_id: NodeAnnotation}}
+          poi_assignments: {'spawns': [...], 'wools': [...]} (for logging)
     """
     result_by_id = {r.island_id: r for r in skeleton_results}
-    assignments = {'spawns': [], 'wools': []}
+    island_annotations: dict[int, dict] = {}
+    node_annotations: dict[int, dict] = {}
+    poi_assignments = {'spawns': [], 'wools': []}
 
     # Extract POI locations from XML
     spawn_locs = extract_spawn_locations(map_data)
@@ -295,7 +300,7 @@ def annotate_skeleton_pois(
     for spawn in spawn_locs:
         island = find_containing_island(Point2D(spawn['x'], spawn['z']), islands)
         if island is None:
-            assignments['spawns'].append({
+            poi_assignments['spawns'].append({
                 **spawn, 'island_id': None, 'node_id': None,
             })
             continue
@@ -304,18 +309,22 @@ def annotate_skeleton_pois(
         node_id = None
         if ir is not None:
             node_id = find_nearest_node(Point2D(spawn['x'], spawn['z']), ir)
-
             if node_id is not None:
-                for node in ir.graph.nodes:
-                    if node.node_id == node_id:
-                        node.poi_type = 'spawn'
-                        node.poi_color = spawn['team_color']
-                        break
+                if island.id not in node_annotations:
+                    node_annotations[island.id] = {}
+                node_annotations[island.id][node_id] = NodeAnnotation(
+                    node_id=node_id,
+                    poi_type='spawn',
+                    poi_color=spawn['team_color'],
+                )
 
-        island.has_spawn = True
-        island.team = spawn['team']
+        ann = island_annotations.setdefault(island.id, {
+            'has_spawn': False, 'has_wool': False, 'team': None,
+        })
+        ann['has_spawn'] = True
+        ann['team'] = spawn['team']
 
-        assignments['spawns'].append({
+        poi_assignments['spawns'].append({
             **spawn, 'island_id': island.id, 'node_id': node_id,
         })
 
@@ -343,30 +352,34 @@ def annotate_skeleton_pois(
                      'island_id': None, 'node_id': None}
             if fallback:
                 entry['fallback'] = fallback
-            assignments['wools'].append(entry)
+            poi_assignments['wools'].append(entry)
             continue
 
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
             node_id = find_nearest_node(Point2D(wool_x, wool_z), ir)
-
             if node_id is not None:
-                for node in ir.graph.nodes:
-                    if node.node_id == node_id:
-                        node.poi_type = 'wool'
-                        node.poi_color = wool['wool_color']
-                        break
+                if island.id not in node_annotations:
+                    node_annotations[island.id] = {}
+                node_annotations[island.id][node_id] = NodeAnnotation(
+                    node_id=node_id,
+                    poi_type='wool',
+                    poi_color=wool['wool_color'],
+                )
 
-        island.has_wool = True
+        ann = island_annotations.setdefault(island.id, {
+            'has_spawn': False, 'has_wool': False, 'team': None,
+        })
+        ann['has_wool'] = True
 
         entry = {**wool, 'x': wool_x, 'z': wool_z,
                  'island_id': island.id, 'node_id': node_id}
         if fallback:
             entry['fallback'] = fallback
-        assignments['wools'].append(entry)
+        poi_assignments['wools'].append(entry)
 
-    return assignments
+    return island_annotations, node_annotations, poi_assignments
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +404,7 @@ def _get_region_center_xz(region: Region) -> tuple[Optional[float], Optional[flo
 def _find_wool_room_center(
     wool_color: str,
     map_data: MapData,
-    islands: list[Island],
+    islands: list[IslandPolygon],
 ) -> Optional[dict]:
     """Find a wool-room region matching the wool color and return its centroid.
 

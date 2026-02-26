@@ -4,8 +4,9 @@ Islands sub-package.
 Island detection, polygon construction, statistics, classification, and visualization.
 """
 
-from .datatypes import Island
+from .datatypes import Island, IslandPolygon, IslandBlocks, CanonicalIsland
 from .detection import detect_islands, find_island_holes
+from .canonicalize import canonicalize_island
 from .polygon import build_island_polygon, build_island_polygons_canonical
 from .statistics import compute_island_statistics, classify_islands
 from .visualization import (
@@ -20,9 +21,14 @@ from .visualization import (
 __all__ = [
     # Datatypes
     "Island",
+    "IslandPolygon",
+    "IslandBlocks",
+    "CanonicalIsland",
     # Detection
     "detect_islands",
     "find_island_holes",
+    # Canonicalization
+    "canonicalize_island",
     # Polygon construction
     "build_island_polygon",
     "build_island_polygons_canonical",

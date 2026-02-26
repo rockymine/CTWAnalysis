@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from ctw.common import collect_map_folders, resolve_output_dir
-from map_analysis.datatypes import IslandGeometryResult
+from map_analysis.datatypes import IslandAnalysis
 from symmetry_analysis.datatypes import SymmetryResult
 
 logger = logging.getLogger('ctw')
