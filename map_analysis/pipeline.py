@@ -237,17 +237,18 @@ def _annotate_pois(
     skeleton_output_dir: Path,
     plots: bool = True,
     xml_context: Optional[MapXmlContext] = None,
-) -> tuple[Optional[MapData], dict, dict]:
+) -> tuple[Optional[MapData], dict, dict, Optional[dict]]:
     """Annotate skeleton POIs from XML data.
 
     Uses xml_context.map_data when provided by the pipeline (avoids a
     second parse of map.xml).  Falls back to parsing map.xml from disk
     when called standalone (e.g. ctw islands without a prior xml step).
 
-    Returns (map_data_obj, island_annotations, node_annotations_by_island).
+    Returns (map_data_obj, island_annotations, node_annotations_by_island, poi_assignments).
     island_annotations: {island_id: {'has_spawn': bool, 'has_wool': bool, 'team': str|None}}
     node_annotations_by_island: {island_id: {node_id: NodeAnnotation}}
-    All are empty dicts when XML is absent.
+    poi_assignments: {'spawns': [...], 'wools': [...]} with x/z/team_color etc. for rendering
+    All are empty dicts / None when XML is absent.
     """
     from map_analysis.poi_annotation import annotate_skeleton_pois
     from skeleton_analysis.visualization import plot_island_poi_debug
@@ -256,6 +257,7 @@ def _annotate_pois(
     map_data_obj = None
     island_annotations: dict = {}
     node_annotations: dict = {}
+    poi_assignments: Optional[dict] = None
 
     if xml_context is not None:
         map_data_obj = xml_context.map_data
@@ -289,7 +291,7 @@ def _annotate_pois(
     else:
         logger.debug("  No XML data available, skipping POI annotation")
 
-    return map_data_obj, island_annotations, node_annotations
+    return map_data_obj, island_annotations, node_annotations, poi_assignments
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +777,7 @@ def assemble_map(
         map_center_pt = compute_map_center(df)
 
     # POI annotation — returns annotation dicts, does NOT mutate geometry
-    map_data_obj, island_annotations, node_annotations = _annotate_pois(
+    map_data_obj, island_annotations, node_annotations, poi_assignments = _annotate_pois(
         map_folder, island_polygons, skeletons, skeleton_output_dir,
         plots=plots,
         xml_context=xml_context,
@@ -810,24 +812,6 @@ def assemble_map(
     from map_analysis import exporter as map_context_exporter
     from skeleton_analysis.builder import build_island_graphs
     from skeleton_analysis import exporter as map_graph_exporter
-
-    # Collect poi_assignments for the MapContext POI summary
-    poi_assignments: Optional[dict] = None
-    if map_data_obj is not None:
-        # Reconstruct assignments summary from annotations for the context log
-        spawns = [
-            {'island_id': iid, 'node_id': nid}
-            for iid, nmap in node_annotations.items()
-            for nid, ann in nmap.items()
-            if ann.poi_type == 'spawn'
-        ]
-        wools = [
-            {'island_id': iid, 'node_id': nid}
-            for iid, nmap in node_annotations.items()
-            for nid, ann in nmap.items()
-            if ann.poi_type == 'wool'
-        ]
-        poi_assignments = {'spawns': spawns, 'wools': wools}
 
     logger.debug("  Building map context...")
     map_ctx = build_map_context(
