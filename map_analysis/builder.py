@@ -4,20 +4,26 @@ Takes islands, skeleton results, layout data, and XML metadata
 and populates a MapContext dataclass.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Optional
+
+import pandas as pd
+
+from island_analysis.datatypes import Island
+from skeleton_analysis.datatypes import IslandResult
+from xml_analysis.datatypes import MapData
 
 from .datatypes import MapContext
-from common.geometry import get_grid_extent
+from common.geometry import BoundingBox, Point2D, get_grid_extent
 
 
 def build_map_context(
-    islands,
-    skeleton_results,
-    canonical_groups: Dict[str, List[int]],
-    layout_df,
-    map_data=None,
-    map_center: Optional[Tuple[float, float]] = None,
-    poi_assignments: Optional[Dict] = None,
+    islands: list[Island],
+    skeleton_results: list[IslandResult],
+    canonical_groups: dict[str, list[int]],
+    layout_df: pd.DataFrame,
+    map_data: Optional[MapData] = None,
+    map_center: Optional[Point2D] = None,
+    poi_assignments: Optional[dict[str, list]] = None,
 ) -> MapContext:
     """Populate a MapContext from all analysis results.
 

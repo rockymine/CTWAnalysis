@@ -5,7 +5,6 @@ Computes pixel degree and classifies skeleton pixels as endpoints or junctions.
 """
 
 import numpy as np
-from typing import List
 
 from .datatypes import SkeletonPixels, GraphNode
 
@@ -59,7 +58,7 @@ def compute_pixel_degrees(
 def extract_nodes(
     skeleton: SkeletonPixels,
     degree_map: np.ndarray
-) -> List[GraphNode]:
+) -> list[GraphNode]:
     """
     Extract graph nodes from skeleton pixels.
 

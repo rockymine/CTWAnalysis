@@ -38,7 +38,6 @@ def handler(args):
         'map_data.json': 'XML Data',
         'map_graph.json': 'Map Graph',
         'map_context.json': 'Map Context',
-        'island_analysis/island_report.txt': 'Island Report',
     }
 
     ctx_path = _find_file('map_context.json')

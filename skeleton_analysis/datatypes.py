@@ -13,7 +13,7 @@ backward compatibility.
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional, Dict
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Re-export coordinate transforms from the canonical location so that all
@@ -50,7 +50,7 @@ class SkeletonPixels:
 class GraphNode:
     """A node in the skeleton graph."""
     node_id: int
-    rc: Tuple[int, int]              # (r, c) position in mask space
+    rc: tuple[int, int]              # (r, c) position in mask space
     degree: int                      # Pixel degree in skeleton
     node_type: str                   # 'endpoint' or 'junction'
     poi_type: Optional[str] = None   # 'spawn', 'wool', or None
@@ -69,8 +69,8 @@ class GraphEdge:
 @dataclass
 class SkeletonGraph:
     """Complete skeleton graph for one island."""
-    nodes: List[GraphNode]
-    edges: List[GraphEdge]
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
     skeleton_pixels: SkeletonPixels  # Reference to underlying skeleton
 
 

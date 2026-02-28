@@ -7,7 +7,7 @@ Each region can be converted to a Shapely 2D geometry via to_shapely_2d().
 """
 
 import math
-from typing import List, Tuple, Optional, Dict
+from typing import Optional
 from dataclasses import dataclass, field
 
 
@@ -84,12 +84,12 @@ class Region:
             return 0.0
         return float(value)
 
-    def get_bounds_2d(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    def get_bounds_2d(self) -> Optional[tuple[tuple[float, float], tuple[float, float]]]:
         """Get 2D bounding box (x_min, z_min), (x_max, z_max)."""
         return None
 
-    def to_shapely_2d(self, bounds: Tuple[float, float, float, float],
-                      registry: Dict[str, 'Region'] = None):
+    def to_shapely_2d(self, bounds: tuple[float, float, float, float],
+                      registry: Optional[dict[str, 'Region']] = None):
         """
         Convert to a Shapely 2D geometry.
 
@@ -116,7 +116,7 @@ class RectangleRegion(Region):
     max_z: float = 0.0
     region_type: str = "rectangle"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (
             (min(self.min_x, self.max_x), min(self.min_z, self.max_z)),
             (max(self.min_x, self.max_x), max(self.min_z, self.max_z)),
@@ -137,7 +137,7 @@ class CuboidRegion(Region):
     max_z: float = 0.0
     region_type: str = "cuboid"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (
             (min(self.min_x, self.max_x), min(self.min_z, self.max_z)),
             (max(self.min_x, self.max_x), max(self.min_z, self.max_z)),
@@ -157,7 +157,7 @@ class CylinderRegion(Region):
     height: float = 0.0
     region_type: str = "cylinder"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (
             (self.base_x - self.radius, self.base_z - self.radius),
             (self.base_x + self.radius, self.base_z + self.radius)
@@ -177,7 +177,7 @@ class CircleRegion(Region):
     radius: float = 0.0
     region_type: str = "circle"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (
             (self.center_x - self.radius, self.center_z - self.radius),
             (self.center_x + self.radius, self.center_z + self.radius)
@@ -198,7 +198,7 @@ class SphereRegion(Region):
     radius: float = 0.0
     region_type: str = "sphere"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (
             (self.origin_x - self.radius, self.origin_z - self.radius),
             (self.origin_x + self.radius, self.origin_z + self.radius)
@@ -218,7 +218,7 @@ class BlockRegion(Region):
     z: float = 0.0
     region_type: str = "block"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (self.x, self.z), (self.x, self.z)
 
     def to_shapely_2d(self, bounds, registry=None):
@@ -236,7 +236,7 @@ class PointRegion(Region):
     z: float = 0.0
     region_type: str = "point"
 
-    def get_bounds_2d(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
         return (self.x, self.z), (self.x, self.z)
 
     def to_shapely_2d(self, bounds, registry=None):
@@ -250,10 +250,10 @@ class PointRegion(Region):
 @dataclass
 class UnionRegion(Region):
     """Union of multiple regions."""
-    children: List[Region] = field(default_factory=list)
+    children: list[Region] = field(default_factory=list)
     region_type: str = "union"
 
-    def get_bounds_2d(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    def get_bounds_2d(self) -> Optional[tuple[tuple[float, float], tuple[float, float]]]:
         if not self.children:
             return None
         bounds_list = [child.get_bounds_2d() for child in self.children if child.get_bounds_2d()]
@@ -273,10 +273,10 @@ class UnionRegion(Region):
 @dataclass
 class NegativeRegion(Region):
     """Negative/inverted region: universe minus union of all children."""
-    children: List[Region] = field(default_factory=list)
+    children: list[Region] = field(default_factory=list)
     region_type: str = "negative"
 
-    def get_bounds_2d(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    def get_bounds_2d(self) -> Optional[tuple[tuple[float, float], tuple[float, float]]]:
         if self.children:
             return self.children[0].get_bounds_2d()
         return None
@@ -293,10 +293,10 @@ class NegativeRegion(Region):
 @dataclass
 class ComplementRegion(Region):
     """Complement region: first child minus all subsequent children."""
-    children: List[Region] = field(default_factory=list)
+    children: list[Region] = field(default_factory=list)
     region_type: str = "complement"
 
-    def get_bounds_2d(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    def get_bounds_2d(self) -> Optional[tuple[tuple[float, float], tuple[float, float]]]:
         if self.children:
             return self.children[0].get_bounds_2d()
         return None
@@ -316,10 +316,10 @@ class ComplementRegion(Region):
 @dataclass
 class IntersectRegion(Region):
     """Intersection of multiple regions."""
-    children: List[Region] = field(default_factory=list)
+    children: list[Region] = field(default_factory=list)
     region_type: str = "intersect"
 
-    def get_bounds_2d(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    def get_bounds_2d(self) -> Optional[tuple[tuple[float, float], tuple[float, float]]]:
         if self.children:
             return self.children[0].get_bounds_2d()
         return None

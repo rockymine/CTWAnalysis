@@ -4,7 +4,7 @@ Classifies player position events against map geometry (islands, build regions, 
 and optionally snaps positions to nearest skeleton edge pixels.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -20,11 +20,11 @@ class PositionClassifier:
     """
 
     def __init__(self, map_context: dict, map_graph: dict):
-        self._island_polygons: List[Tuple[int, Polygon]] = []
-        self._build_polygons: List[Polygon] = []
-        self._node_list: List[dict] = []
+        self._island_polygons: list[tuple[int, Polygon]] = []
+        self._build_polygons: list[Polygon] = []
+        self._node_list: list[dict] = []
         self._node_coords: Optional[np.ndarray] = None
-        self._edge_pixels_by_island: Dict[int, np.ndarray] = {}
+        self._edge_pixels_by_island: dict[int, np.ndarray] = {}
 
         self._build_island_polygons(map_context)
         self._build_region_polygons(map_context)

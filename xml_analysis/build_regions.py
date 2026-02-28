@@ -15,15 +15,16 @@ Core math:
 """
 
 import os
-from typing import List, Dict, Optional
+from typing import Any, Optional
 
-import numpy as np
 import pandas as pd
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import box, Polygon, MultiPolygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from common.geometry import world_blocks_to_shapely
+from common.geometry import BoundingBox, world_blocks_to_shapely
+from .datatypes import MapData, ApplyRule
+from .regions import Region
 
 
 # Patterns in region IDs that should be excluded from buildable void.
@@ -33,10 +34,10 @@ _EXCLUDED_VOID_CHILD_PATTERNS = frozenset(['spawn', 'wool', 'monument'])
 
 
 def extract_build_region(
-    map_data,
-    map_bounds,
+    map_data: MapData,
+    map_bounds: BoundingBox,
     y0_parquet_path: str,
-    island_polygons: List,
+    island_polygons: list[Any],
 ) -> Optional[dict]:
     """
     Extract the buildable void region for a map.
@@ -95,7 +96,7 @@ def extract_build_region(
 # XML-based extraction
 # ---------------------------------------------------------------------------
 
-def _extract_from_xml(map_data, shapely_bounds) -> Optional:
+def _extract_from_xml(map_data: MapData, shapely_bounds: tuple[float, float, float, float]) -> Optional[Polygon]:
     """
     Find deny(void) apply rules, decompose the void-area region, and
     return only the structurally meaningful allowed children as
@@ -127,7 +128,7 @@ def _extract_from_xml(map_data, shapely_bounds) -> Optional:
     return _ensure_valid(build_allowed)
 
 
-def _find_deny_void_rules(apply_rules) -> List:
+def _find_deny_void_rules(apply_rules: list[ApplyRule]) -> list[ApplyRule]:
     """Return apply rules whose filters reference 'void'."""
     void_rules = []
     for rule in apply_rules:
@@ -139,7 +140,7 @@ def _find_deny_void_rules(apply_rules) -> List:
     return void_rules
 
 
-def _resolve_rule_to_region(rule, regions_dict):
+def _resolve_rule_to_region(rule: ApplyRule, regions_dict: dict[str, Region]) -> Optional[Region]:
     """Resolve an apply rule to its Region object (not geometry)."""
     if rule.inline_region is not None:
         return rule.inline_region
@@ -148,7 +149,11 @@ def _resolve_rule_to_region(rule, regions_dict):
     return None
 
 
-def _extract_allowed_from_void_region(region, regions_dict, shapely_bounds):
+def _extract_allowed_from_void_region(
+    region: Region,
+    regions_dict: dict[str, Region],
+    shapely_bounds: tuple[float, float, float, float],
+) -> Optional[Any]:
     """
     Extract the build-allowed geometry from a void-deny region.
 
@@ -191,7 +196,7 @@ def _extract_allowed_from_void_region(region, regions_dict, shapely_bounds):
 # Void-child filtering
 # ---------------------------------------------------------------------------
 
-def _child_region_ids(child) -> List[str]:
+def _child_region_ids(child: Region) -> list[str]:
     """Collect all IDs associated with a region child for pattern matching."""
     ids = []
     if child.id:
@@ -203,7 +208,7 @@ def _child_region_ids(child) -> List[str]:
     return ids
 
 
-def _should_exclude_void_child(child) -> bool:
+def _should_exclude_void_child(child: Region) -> bool:
     """
     Check if a child of a void-area region should be excluded.
 
@@ -222,7 +227,7 @@ def _should_exclude_void_child(child) -> bool:
 # Block 36 fallback
 # ---------------------------------------------------------------------------
 
-def _extract_block36_region(y0_parquet_path: str):
+def _extract_block36_region(y0_parquet_path: str) -> Optional[Any]:
     """
     Build a region from block 36 (invisible piston head) at y=0.
 
@@ -259,7 +264,7 @@ def _extract_block36_region(y0_parquet_path: str):
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
-def _safe_union(geoms) -> Polygon:
+def _safe_union(geoms: list[Any]) -> Polygon:
     """Union a list of geometries, skipping empty/invalid ones."""
     valid = [g for g in geoms if g is not None and not g.is_empty]
     if not valid:
@@ -268,7 +273,7 @@ def _safe_union(geoms) -> Polygon:
     return _ensure_valid(result)
 
 
-def _ensure_valid(geom):
+def _ensure_valid(geom: Any) -> Any:
     """Ensure geometry is valid."""
     if geom is None:
         return Polygon()
@@ -277,7 +282,7 @@ def _ensure_valid(geom):
     return geom
 
 
-def _geometry_to_coords(geom) -> list:
+def _geometry_to_coords(geom: Any) -> list[dict]:
     """Convert Shapely geometry to list of polygon coord dicts."""
     from shapely.geometry import GeometryCollection
 

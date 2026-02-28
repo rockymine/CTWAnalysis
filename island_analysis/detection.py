@@ -4,7 +4,6 @@ Island detection using connected component analysis, and hole detection.
 
 import numpy as np
 import pandas as pd
-from typing import List
 from scipy import ndimage
 from scipy.spatial import ConvexHull
 from collections import deque
@@ -20,7 +19,7 @@ def detect_islands(
     ignore_y: bool = True,
     connectivity: int = 8,
     min_island_size: int = 10
-) -> List[Island]:
+) -> list[Island]:
     """
     Detect connected islands of blocks using connected component analysis.
 
@@ -85,9 +84,7 @@ def detect_islands(
 
         # Calculate properties
         center = get_block_centroid(world_coords[:, 0], world_coords[:, 1])
-        bbox = tuple(
-            int(v) for v in get_grid_extent(world_coords[:, 0], world_coords[:, 1])
-        )
+        bbox = get_grid_extent(world_coords[:, 0], world_coords[:, 1])
 
         island = Island(
             id=len(islands) + 1,
@@ -120,7 +117,7 @@ def detect_islands(
 def find_island_holes(
     island: Island,
     grid_resolution: float = 1.0
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """
     Find internal holes (air pockets) within an island's bounding box.
 

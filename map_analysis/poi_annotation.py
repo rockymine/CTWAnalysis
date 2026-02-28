@@ -9,18 +9,21 @@ has_center, distance_to_center, team).
 
 import re
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import Optional
 
-from skeleton_analysis.datatypes import IslandResult
+import pandas as pd
+
 from island_analysis.datatypes import Island
+from skeleton_analysis.datatypes import IslandResult
+from xml_analysis.datatypes import MapData, Team
 from xml_analysis.regions import (
-    CylinderRegion, PointRegion, BlockRegion, UnionRegion,
+    CylinderRegion, PointRegion, BlockRegion, Region, UnionRegion,
     CuboidRegion, RectangleRegion,
 )
-from common.geometry import get_grid_extent, get_center_from_extent
+from common.geometry import Point2D, get_grid_extent, get_center_from_extent
 
 
-def extract_spawn_locations(map_data) -> List[Dict]:
+def extract_spawn_locations(map_data: MapData) -> list[dict]:
     """
     Extract spawn (x, z) locations from map data.
 
@@ -101,7 +104,7 @@ def extract_spawn_locations(map_data) -> List[Dict]:
     return spawns
 
 
-def extract_wool_locations(map_data) -> List[Dict]:
+def extract_wool_locations(map_data: MapData) -> list[dict]:
     """
     Extract wool (x, z) locations from map_data.wools.
 
@@ -120,8 +123,8 @@ def extract_wool_locations(map_data) -> List[Dict]:
 
 
 def find_containing_island(
-    point_xz: Tuple[float, float],
-    islands: List[Island],
+    point_xz: Point2D,
+    islands: list[Island],
     tolerance: float = 5.0,
 ) -> Optional[Island]:
     """
@@ -145,7 +148,7 @@ def find_containing_island(
 
 
 def find_nearest_node(
-    point_xz: Tuple[float, float],
+    point_xz: Point2D,
     island_result: IslandResult,
     node_type: Optional[str] = None,
 ) -> Optional[int]:
@@ -185,7 +188,7 @@ def find_nearest_node(
     return best_id
 
 
-def compute_map_center(layout_df) -> Tuple[float, float]:
+def compute_map_center(layout_df: pd.DataFrame) -> Point2D:
     """
     Compute the geometric center of all blocks in the layout.
 
@@ -203,8 +206,8 @@ def compute_map_center(layout_df) -> Tuple[float, float]:
 
 
 def classify_island_center(
-    islands: List[Island],
-    map_center: Tuple[float, float],
+    islands: list[Island],
+    map_center: Point2D,
 ) -> None:
     """
     Set has_center and distance_to_center on each island.
@@ -265,10 +268,10 @@ def classify_island_center(
 
 
 def annotate_skeleton_pois(
-    islands: List[Island],
-    skeleton_results: List[IslandResult],
-    map_data,
-) -> Dict[str, list]:
+    islands: list[Island],
+    skeleton_results: list[IslandResult],
+    map_data: MapData,
+) -> dict[str, list]:
     """
     Main annotation function. Sets node.poi_type/poi_color and
     island.has_spawn/has_wool/team based on XML map data.
@@ -290,7 +293,7 @@ def annotate_skeleton_pois(
 
     # Annotate spawns
     for spawn in spawn_locs:
-        island = find_containing_island((spawn['x'], spawn['z']), islands)
+        island = find_containing_island(Point2D(spawn['x'], spawn['z']), islands)
         if island is None:
             assignments['spawns'].append({
                 **spawn, 'island_id': None, 'node_id': None,
@@ -300,7 +303,7 @@ def annotate_skeleton_pois(
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
-            node_id = find_nearest_node((spawn['x'], spawn['z']), ir)
+            node_id = find_nearest_node(Point2D(spawn['x'], spawn['z']), ir)
 
             if node_id is not None:
                 for node in ir.graph.nodes:
@@ -321,7 +324,7 @@ def annotate_skeleton_pois(
         wool_x, wool_z = wool['x'], wool['z']
         fallback = None
 
-        island = find_containing_island((wool_x, wool_z), islands)
+        island = find_containing_island(Point2D(wool_x, wool_z), islands)
 
         if island is None:
             # Wool location outside all islands — try wool-room region fallback
@@ -333,7 +336,7 @@ def annotate_skeleton_pois(
                     'room_region': room['region_id'],
                 }
                 wool_x, wool_z = room['x'], room['z']
-                island = find_containing_island((wool_x, wool_z), islands)
+                island = find_containing_island(Point2D(wool_x, wool_z), islands)
 
         if island is None:
             entry = {**wool, 'x': wool_x, 'z': wool_z,
@@ -346,7 +349,7 @@ def annotate_skeleton_pois(
         ir = result_by_id.get(island.id)
         node_id = None
         if ir is not None:
-            node_id = find_nearest_node((wool_x, wool_z), ir)
+            node_id = find_nearest_node(Point2D(wool_x, wool_z), ir)
 
             if node_id is not None:
                 for node in ir.graph.nodes:
@@ -370,7 +373,7 @@ def annotate_skeleton_pois(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _get_region_center_xz(region) -> Tuple[Optional[float], Optional[float]]:
+def _get_region_center_xz(region: Region) -> tuple[Optional[float], Optional[float]]:
     """Extract (x, z) center from a region object."""
     if isinstance(region, CylinderRegion):
         return region.base_x, region.base_z
@@ -387,9 +390,9 @@ def _get_region_center_xz(region) -> Tuple[Optional[float], Optional[float]]:
 
 def _find_wool_room_center(
     wool_color: str,
-    map_data,
-    islands: List[Island],
-) -> Optional[Dict]:
+    map_data: MapData,
+    islands: list[Island],
+) -> Optional[dict]:
     """Find a wool-room region matching the wool color and return its centroid.
 
     Used as a fallback when the wool's declared location is outside the map.
@@ -436,7 +439,7 @@ def _find_wool_room_center(
     return None
 
 
-def _extract_team_from_id(region_id: str, teams) -> str:
+def _extract_team_from_id(region_id: str, teams: list[Team]) -> str:
     """Extract team id from a region id like 'blue-spawn-point'.
 
     Tries matching by full team id first, then by team color or name.

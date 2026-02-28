@@ -230,7 +230,7 @@ def get_kill_death_pairs(
     return result
 
 
-def resolve_match_ids(match_arg, map_slug: str) -> list[int] | None:
+def resolve_match_ids(match_arg: str | list[int], map_slug: str) -> list[int] | None:
     """Resolve a match CLI argument to a list of match IDs.
 
     Handles the 'ALL' sentinel (queries DB for all processed matches on the

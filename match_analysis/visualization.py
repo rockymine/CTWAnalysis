@@ -90,7 +90,7 @@ _SWORD = MplPath(
 
 def _resolve_team_color(
     spawn_x: float, spawn_z: float,
-    classifier, map_context: dict,
+    classifier: 'PositionClassifier', map_context: dict,
 ) -> str:
     """Classify spawn position to determine team, return hex color."""
     result = classifier.classify_position(spawn_x, spawn_z)
@@ -112,7 +112,7 @@ def plot_player_traces(
     match_id: int,
     player_ids: list[int],
     output_path: Path,
-    map_graph: dict = None,
+    map_graph: dict | None = None,
     show_deaths: bool = True,
     show_kills: bool = True,
     show_wool: bool = True,
@@ -122,8 +122,8 @@ def plot_player_traces(
     show_title: bool = True,
     color_mode: str = 'life',
     map_base: str = 'outline',
-    map_folder: Path = None,
-    match_ids: list[int] = None,
+    map_folder: Path | None = None,
+    match_ids: list[int] | None = None,
 ) -> None:
     """Plot life segments for one or more players on the map base layer.
 
@@ -410,7 +410,7 @@ def _team_to_color(team: str) -> str:
     return _TEAM_TRACE_COLORS.get(key, _TEAM_TRACE_COLORS['gray'])
 
 
-def _distance_to_color(dist: float, max_dist: float) -> tuple:
+def _distance_to_color(dist: float, max_dist: float) -> tuple[float, float, float, float]:
     """Map distance to a green→yellow→red gradient."""
     if max_dist <= 0:
         return (0.2, 0.8, 0.2, 1.0)
@@ -427,16 +427,16 @@ def _distance_to_color(dist: float, max_dist: float) -> tuple:
 
 def plot_kill_death_pairs(
     map_context: dict,
-    pairs_df,
+    pairs_df: pd.DataFrame,
     output_path: Path,
     match_id: int | None = None,
     match_ids: list[int] | None = None,
-    map_graph: dict = None,
+    map_graph: dict | None = None,
     show_legend: bool = True,
     show_stats: bool = True,
     color_mode: str = 'team',
     map_base: str = 'outline',
-    map_folder: Path = None,
+    map_folder: Path | None = None,
 ) -> None:
     """Plot kill-death pairs as connected marker pairs on the map.
 

@@ -66,7 +66,7 @@ def _load_history(history_csv: str) -> dict[str, str]:
         return {row['parquet_file']: row['map_name'].lower() for row in reader}
 
 
-def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str = None):
+def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | None = None) -> tuple[int, int]:
     """Index all match files in the database.
 
     Reads basic metadata from each parquet file and inserts into matches table.

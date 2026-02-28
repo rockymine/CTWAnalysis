@@ -11,7 +11,7 @@ Provides two modes:
 """
 
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import Any, Optional
 
 from .datatypes import Island
 from .detection import find_island_holes
@@ -61,7 +61,7 @@ def build_island_polygon(
 
 
 def build_island_polygons_canonical(
-    islands: List[Island],
+    islands: list[Island],
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,
     detect_holes: bool = True,
@@ -84,7 +84,7 @@ def build_island_polygons_canonical(
     from skeleton_analysis.canonicalize import canonicalize_island
 
     # Step 1: Canonicalize all islands and group by canonical_key
-    groups: Dict[str, List[Tuple[Island, object]]] = {}
+    groups: dict[str, list[tuple[Island, Any]]] = {}
 
     for island in islands:
         if len(island.blocks) < 3:
@@ -126,7 +126,7 @@ def build_island_polygons_canonical(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _extract_polygon_coords(polygon) -> dict:
+def _extract_polygon_coords(polygon: Any) -> dict:
     """
     Extract exterior and hole coordinates from a Shapely Polygon.
 
@@ -146,8 +146,8 @@ def _extract_polygon_coords(polygon) -> dict:
 def _build_union_polygon(
     blocks: np.ndarray,
     buffer_distance: float,
-    simplify_tolerance: float
-):
+    simplify_tolerance: float,
+) -> Optional[Any]:
     """
     Build a simplified Shapely polygon from block coordinates.
 

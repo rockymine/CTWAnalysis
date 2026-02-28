@@ -4,18 +4,22 @@ Island Visualization
 Visualization functions for displaying detected islands and their polygons.
 """
 
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection, PolyCollection
-from typing import List, Dict, Tuple, Optional
+from typing import Any, Optional
 import colorsys
 
 from common.geometry import block_centers
+from island_analysis.datatypes import Island
+
+logger = logging.getLogger('ctw')
 
 
-def generate_distinct_colors(n: int) -> List[Tuple[float, float, float]]:
+def generate_distinct_colors(n: int) -> list[tuple[float, float, float]]:
     """Generate n visually distinct colors."""
     colors = []
     for i in range(n):
@@ -28,16 +32,16 @@ def generate_distinct_colors(n: int) -> List[Tuple[float, float, float]]:
 
 
 def plot_islands(
-    islands: List,
-    ax=None,
+    islands: list[Island],
+    ax: Optional[Any] = None,
     title: str = "Detected Islands",
     show_blocks: bool = False,
     show_hulls: bool = True,
     show_labels: bool = True,
     show_centers: bool = True,
     alpha: float = 0.5,
-    figsize: Tuple[int, int] = (14, 10)
-):
+    figsize: tuple[int, int] = (14, 10),
+) -> tuple[Any, Any]:
     """
     Plot detected islands with various visualization options.
 
@@ -110,14 +114,14 @@ def plot_islands(
 
 
 def plot_island_polygons(
-    islands: List,
-    ax=None,
+    islands: list[Island],
+    ax: Optional[Any] = None,
     title: str = "Island Polygons",
     show_blocks: bool = True,
     show_holes: bool = True,
     alpha: float = 0.6,
-    figsize: Tuple[int, int] = (14, 10)
-):
+    figsize: tuple[int, int] = (14, 10),
+) -> tuple[Any, Any]:
     """
     Plot island polygon outlines with optional hole visualization.
 
@@ -191,12 +195,12 @@ def plot_island_polygons(
 
 
 def plot_island_comparison(
-    islands: List,
-    output_path: str = None,
-    figsize: Tuple[int, int] = (20, 15),
-    map_folder=None,
-    map_context: dict = None,
-):
+    islands: list[Island],
+    output_path: Optional[str] = None,
+    figsize: tuple[int, int] = (20, 15),
+    map_folder: Optional[Any] = None,
+    map_context: Optional[dict] = None,
+) -> Any:
     """
     Create a comprehensive comparison plot showing different island visualizations.
 
@@ -280,7 +284,7 @@ def plot_island_comparison(
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island comparison saved to: {output_path}")
+        logger.debug(f"  Island comparison: {output_path}")
     else:
         plt.show()
 
@@ -289,11 +293,11 @@ def plot_island_comparison(
 
 
 def plot_island_statistics(
-    islands: List,
-    stats: Dict,
-    output_path: str = None,
-    figsize: Tuple[int, int] = (16, 10)
-):
+    islands: list[Island],
+    stats: dict,
+    output_path: Optional[str] = None,
+    figsize: tuple[int, int] = (16, 10),
+) -> Any:
     """
     Create statistical overview of detected islands.
 
@@ -395,7 +399,7 @@ Avg distance from center: {stats['avg_distance_from_center']:.1f} blocks
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island statistics saved to: {output_path}")
+        logger.debug(f"  Island statistics: {output_path}")
     else:
         plt.show()
 
@@ -404,11 +408,11 @@ Avg distance from center: {stats['avg_distance_from_center']:.1f} blocks
 
 
 def plot_island_detail(
-    islands: List,
-    output_path: str = None,
-    figsize: Tuple[int, int] = (20, 16),
-    cols: int = 3
-):
+    islands: list[Island],
+    output_path: Optional[str] = None,
+    figsize: tuple[int, int] = (20, 16),
+    cols: int = 3,
+) -> Any:
     """
     Create detailed view of each island's polygon.
 
@@ -463,7 +467,7 @@ def plot_island_detail(
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        print(f"Island detail saved to: {output_path}")
+        logger.debug(f"  Island detail: {output_path}")
     else:
         plt.show()
 
@@ -472,13 +476,13 @@ def plot_island_detail(
 
 
 def create_island_report(
-    islands: List,
-    stats: Dict,
+    islands: list[Island],
+    stats: dict,
     output_dir: str,
     map_name: str = "Unknown",
-    map_folder=None,
-    map_context: dict = None,
-):
+    map_folder: Optional[Any] = None,
+    map_context: Optional[dict] = None,
+) -> None:
     """
     Generate complete island analysis report with multiple visualizations.
 
@@ -539,4 +543,4 @@ def create_island_report(
 
         f.write("=" * 70 + "\n")
 
-    print(f"Island report saved to: {report_path}")
+    logger.debug(f"  Island report: {report_path}")

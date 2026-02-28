@@ -4,19 +4,22 @@ Plotting functions for visualizing extracted layout data.
 Provides 2D scatter and pixel-based plots for point sets.
 """
 
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import pandas as pd
+
+logger = logging.getLogger('ctw')
 
 
 def save_point_plot(
     df: pd.DataFrame,
     output_path: str,
     title: str,
-    use_binned: bool = None,
+    use_binned: bool | None = None,
     bin_size: int = 1
-):
+) -> None:
     """
     Save a 2D plot of world_x vs world_z points.
 
@@ -28,7 +31,7 @@ def save_point_plot(
         bin_size: Size of bins in blocks (for binned plots)
     """
     if df.empty:
-        print(f"Warning: No points to plot for {title}")
+        logger.warning(f"No points to plot for {title}")
         # Create an empty plot
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.text(0.5, 0.5, 'No data points', ha='center', va='center', fontsize=16)
@@ -87,16 +90,16 @@ def save_point_plot(
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f"  Saved plot: {output_path}")
+    logger.debug(f"  Saved plot: {output_path}")
 
 
 def save_all_plots(
     y0_df: pd.DataFrame,
     top_surface_df: pd.DataFrame,
-    density_dfs: dict,
+    density_dfs: dict[str, pd.DataFrame],
     bedrock_df: pd.DataFrame,
     output_dir: str
-):
+) -> None:
     """
     Save all plots to the output directory.
 
@@ -111,7 +114,7 @@ def save_all_plots(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    print("\nGenerating plots...")
+    logger.debug("Generating plots...")
 
     # Y0 layer plot
     save_point_plot(
@@ -142,4 +145,4 @@ def save_all_plots(
         'Lowest Bedrock - Lowest bedrock block per column'
     )
 
-    print("All plots saved successfully!")
+    logger.debug("All plots saved successfully!")

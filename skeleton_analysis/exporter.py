@@ -5,12 +5,15 @@ Public API:
     save(island_skeletons, map_name, output_dir)  — write map_graph.json
 """
 
+import logging
 from pathlib import Path
 
 from common.json_export import save_json as _save_json
 
+logger = logging.getLogger('ctw')
 
-def to_dict(island_skeletons: list, map_name: str) -> dict:
+
+def to_dict(island_skeletons: list[dict], map_name: str) -> dict:
     """Build the complete map_graph.json structure.
 
     Args:
@@ -45,7 +48,7 @@ def to_dict(island_skeletons: list, map_name: str) -> dict:
     }
 
 
-def save(island_skeletons: list, map_name: str, output_dir: Path) -> None:
+def save(island_skeletons: list[dict], map_name: str, output_dir: Path) -> None:
     """Save map_graph.json containing island skeleton data.
 
     Downstream consumers (match analysis / PositionClassifier) read
@@ -53,4 +56,4 @@ def save(island_skeletons: list, map_name: str, output_dir: Path) -> None:
     """
     output_path = output_dir / 'map_graph.json'
     _save_json(to_dict(island_skeletons, map_name), output_path)
-    print(f"  Saved JSON: {output_path}")
+    logger.debug(f"  Saved: {output_path}")
