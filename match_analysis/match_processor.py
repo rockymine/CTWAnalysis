@@ -126,8 +126,8 @@ def process_match(match_id: int) -> None:
         combat_df = extract_combat_events(raw_df, find_segment_idx)
         n = _bulk_insert(conn, 'combat_events', match_id, combat_df,
                          ['match_id', 'timestamp', 'event_type', 'player_id',
-                          'victim_id', 'x', 'y', 'z', 'segment_idx'],
-                         nullable_int_cols=['segment_idx', 'victim_id'])
+                          'victim_id', 'x', 'y', 'z', 'held_item', 'segment_idx'],
+                         nullable_int_cols=['segment_idx', 'victim_id', 'held_item'])
         print(f"Inserted {n} combat events into database")
 
         # Extract and insert wool events

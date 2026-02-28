@@ -109,6 +109,7 @@ def initialize_database() -> None:
             x INTEGER,
             y INTEGER,
             z INTEGER,
+            held_item INTEGER,
             segment_idx INTEGER,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )

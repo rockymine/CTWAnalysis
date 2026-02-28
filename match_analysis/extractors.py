@@ -154,7 +154,7 @@ def extract_combat_events(
     if len(combat) == 0:
         return pd.DataFrame(columns=[
             'player_id', 'timestamp', 'event_type',
-            'victim_id', 'x', 'y', 'z', 'segment_idx',
+            'victim_id', 'x', 'y', 'z', 'held_item', 'segment_idx',
         ])
 
     combat['segment_idx'] = combat.apply(
@@ -163,9 +163,12 @@ def extract_combat_events(
     # Ensure victim_id column exists (some parquet schemas omit it)
     if 'victim_id' not in combat.columns:
         combat['victim_id'] = None
+    # held_item is only present on kill events (type 3); death events (type 4) have no held_item
+    if 'held_item' not in combat.columns:
+        combat['held_item'] = None
 
     return combat[['player_id', 'timestamp', 'event_type',
-                    'victim_id', 'x', 'y', 'z', 'segment_idx']]
+                    'victim_id', 'x', 'y', 'z', 'held_item', 'segment_idx']]
 
 
 def extract_position_events(
