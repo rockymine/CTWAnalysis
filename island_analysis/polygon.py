@@ -13,13 +13,13 @@ Provides two modes:
 import numpy as np
 from typing import Any, Optional
 
-from .datatypes import Island
+from .datatypes import IslandPolygon
 from .detection import find_island_holes
 from common.geometry import world_blocks_to_shapely
 
 
 def build_island_polygon(
-    island: Island,
+    island: IslandPolygon,
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,
     detect_holes: bool = True
@@ -36,7 +36,7 @@ def build_island_polygon(
     Sets island.simplified_polygon and island.hull_vertices.
 
     Args:
-        island: Island object
+        island: IslandPolygon object
         buffer_distance: Buffer distance for smoothing (0 = no smoothing)
         simplify_tolerance: Tolerance for Douglas-Peucker simplification
         detect_holes: Whether to preserve internal holes
@@ -61,7 +61,7 @@ def build_island_polygon(
 
 
 def build_island_polygons_canonical(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     buffer_distance: float = 0.0,
     simplify_tolerance: float = 1.0,
     detect_holes: bool = True,
@@ -74,17 +74,17 @@ def build_island_polygons_canonical(
     together.  Polygons are built from world-space blocks for each island.
 
     Args:
-        islands: List of Island objects
+        islands: List of IslandPolygon objects
         buffer_distance: Buffer distance for smoothing (0 = no smoothing)
         simplify_tolerance: Tolerance for Douglas-Peucker simplification
         detect_holes: Whether to preserve internal holes
         allow_mirror: Allow mirror in D4 canonicalization
     """
     from shapely.geometry import Polygon
-    from skeleton_analysis.canonicalize import canonicalize_island
+    from .canonicalize import canonicalize_island
 
     # Step 1: Canonicalize all islands and group by canonical_key
-    groups: dict[str, list[tuple[Island, Any]]] = {}
+    groups: dict[str, list[tuple[IslandPolygon, Any]]] = {}
 
     for island in islands:
         if len(island.blocks) < 3:

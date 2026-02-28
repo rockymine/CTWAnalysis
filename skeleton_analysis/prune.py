@@ -103,8 +103,6 @@ def prune_short_branches(
                 rc=node.rc,
                 degree=node.degree,
                 node_type=node.node_type,
-                poi_type=node.poi_type,
-                poi_color=node.poi_color,
             ))
             new_id += 1
 

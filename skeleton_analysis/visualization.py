@@ -19,7 +19,7 @@ from typing import Optional
 logger = logging.getLogger('ctw')
 
 from common.visualization.map_primitives import draw_build_region, draw_island_outlines, draw_pois
-from .datatypes import IslandResult
+from .datatypes import IslandSkeleton, NodeAnnotation
 from common.geometry import (
     raster_to_world_path, raster_to_world_point,
     block_centers, raster_imshow_extent,
@@ -27,7 +27,7 @@ from common.geometry import (
 
 
 def plot_island_debug(
-    result: IslandResult,
+    result: IslandSkeleton,
     output_path: str
 ) -> None:
     """
@@ -40,7 +40,7 @@ def plot_island_debug(
       Bottom-right: Edges with pixel paths (colored)
 
     Args:
-        result: IslandResult for one island
+        result: IslandSkeleton for one island
         output_path: Path to save the image
     """
     fig, axes = plt.subplots(2, 2, figsize=(14, 14))
@@ -132,7 +132,7 @@ def plot_island_debug(
 
 
 def plot_unique_islands(
-    results: list[IslandResult],
+    results: list[IslandSkeleton],
     canonical_groups: dict[str, list[int]],
     output_path: str,
 ) -> None:
@@ -142,7 +142,7 @@ def plot_unique_islands(
     Shows skeleton graph with nodes and edges for each unique island shape.
 
     Args:
-        results: List of IslandResult
+        results: List of IslandSkeleton
         canonical_groups: canonical_key -> list of island_ids
         output_path: Path to save the image
     """
@@ -215,7 +215,7 @@ def plot_unique_islands(
 
 
 def plot_map_overview(
-    results: list[IslandResult],
+    results: list[IslandSkeleton],
     output_path: str,
     map_context: Optional[dict] = None,
 ) -> None:
@@ -225,7 +225,7 @@ def plot_map_overview(
     with island polygon outlines and build regions from map_context.
 
     Args:
-        results: List of IslandResult
+        results: List of IslandSkeleton
         output_path: Path to save the image
         map_context: Parsed map_context dict (for island outlines + build regions)
     """
@@ -299,7 +299,7 @@ def plot_map_overview(
 
 
 def generate_skeleton_report(
-    results: list[IslandResult],
+    results: list[IslandSkeleton],
     canonical_groups: dict[str, list[int]],
     output_path: str,
     map_name: str = "Unknown",
@@ -308,7 +308,7 @@ def generate_skeleton_report(
     Generate a text report summarizing skeleton analysis results.
 
     Args:
-        results: List of IslandResult
+        results: List of IslandSkeleton
         canonical_groups: canonical_key -> island_ids mapping
         output_path: Path to save the report
         map_name: Name of the map
@@ -414,7 +414,8 @@ def _mc_color(color_name: str, fallback: str = 'gray') -> str:
 
 
 def plot_island_poi_debug(
-    result: IslandResult,
+    skeleton: IslandSkeleton,
+    node_annotations: dict,
     output_path: str,
 ) -> None:
     """
@@ -428,13 +429,14 @@ def plot_island_poi_debug(
     - All nodes labeled with ID text
 
     Args:
-        result: IslandResult for one island
+        skeleton: IslandSkeleton for one island
+        node_annotations: {node_id: NodeAnnotation} mapping for this island
         output_path: Path to save the image
     """
     fig, ax = plt.subplots(figsize=(12, 12))
 
-    mask = result.raster.mask
-    skel_mask = result.skeleton.mask
+    mask = skeleton.raster.mask
+    skel_mask = skeleton.skeleton.mask
 
     # Background mask
     ax.imshow(mask, cmap='Greys', interpolation='nearest', alpha=0.3, origin='upper',
@@ -447,7 +449,7 @@ def plot_island_poi_debug(
               extent=raster_imshow_extent(mask.shape))
 
     # Draw edges
-    for edge in result.graph.edges:
+    for edge in skeleton.graph.edges:
         path = edge.pixel_path
         path_c = block_centers(path)
         ax.plot(path_c[:, 1], path_c[:, 0], color='steelblue', linewidth=1.5, alpha=0.6)
@@ -456,18 +458,22 @@ def plot_island_poi_debug(
     poi_spawn_nodes = []
     poi_wool_nodes = []
 
-    for node in result.graph.nodes:
+    for node in skeleton.graph.nodes:
         nc = block_centers([node.rc[1], node.rc[0]])
         c, r = nc[0], nc[1]
+        ann = node_annotations.get(node.node_id)
 
-        if node.poi_type == 'spawn':
-            color = _mc_color(node.poi_color, 'cyan')
+        poi_type = ann.poi_type if ann else None
+        poi_color = ann.poi_color if ann else None
+
+        if poi_type == 'spawn':
+            color = _mc_color(poi_color, 'cyan')
             ax.scatter([c], [r], c=color, s=200, zorder=6, marker='*',
                        edgecolors='black', linewidths=1.0)
             bg_color = color
             poi_spawn_nodes.append(node)
-        elif node.poi_type == 'wool':
-            color = _mc_color(node.poi_color, 'gold')
+        elif poi_type == 'wool':
+            color = _mc_color(poi_color, 'gold')
             ax.scatter([c], [r], c=color, s=150, zorder=6, marker='D',
                        edgecolors='black', linewidths=1.0)
             bg_color = color
@@ -483,8 +489,8 @@ def plot_island_poi_debug(
 
         # Node ID label
         label = str(node.node_id)
-        if node.poi_type:
-            label = f"{node.node_id} ({node.poi_type})"
+        if poi_type:
+            label = f"{node.node_id} ({poi_type})"
 
         ax.text(c + 1.5, r - 1.5, label, fontsize=7, ha='left', va='bottom',
                 color='white', fontweight='bold', zorder=7,
@@ -506,8 +512,8 @@ def plot_island_poi_debug(
 
     n_poi = len(poi_spawn_nodes) + len(poi_wool_nodes)
     ax.set_title(
-        f"Island {result.island_id} POI Skeleton "
-        f"({len(result.graph.nodes)} nodes, {n_poi} POIs)",
+        f"Island {skeleton.island_id} POI Skeleton "
+        f"({len(skeleton.graph.nodes)} nodes, {n_poi} POIs)",
         fontsize=13
     )
     ax.set_xlabel("c (x)")
@@ -518,5 +524,3 @@ def plot_island_poi_debug(
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     logger.debug(f"  POI debug image: {output_path}")
-
-

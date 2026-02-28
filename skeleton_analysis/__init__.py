@@ -13,7 +13,10 @@ from .datatypes import (
     GraphNode,
     GraphEdge,
     SkeletonGraph,
-    IslandResult,
+    IslandSkeleton,
+    IslandResult,   # backward-compat alias for IslandSkeleton
+    NodeAnnotation,
+    IslandGraph,
 )
 
 from .canonicalize import canonicalize_island
@@ -34,7 +37,10 @@ __all__ = [
     "GraphNode",
     "GraphEdge",
     "SkeletonGraph",
+    "IslandSkeleton",
     "IslandResult",
+    "NodeAnnotation",
+    "IslandGraph",
     # Modules
     "builder",
     "exporter",

@@ -5,9 +5,9 @@ Pipeline orchestrator: runs all skeleton analysis steps for islands.
 import numpy as np
 from collections import defaultdict
 
-from island_analysis.datatypes import Island
+from island_analysis.datatypes import IslandPolygon
 from .datatypes import (
-    IslandResult, SkeletonGraph, CanonicalTransform, CanonicalIsland
+    IslandSkeleton, SkeletonGraph, CanonicalTransform, CanonicalIsland
 )
 from .canonicalize import canonicalize_island
 from .rasterize import rasterize_island
@@ -28,7 +28,7 @@ def process_island(
     allow_mirror: bool = True,
     prune_max_length: int = 5,
     prune_min_graph_nodes: int = 5,
-) -> IslandResult:
+) -> IslandSkeleton:
     """
     Full skeleton pipeline for a single island.
 
@@ -41,7 +41,7 @@ def process_island(
       6. Walk edges deterministically
       7. Merge adjacent junction blobs into single nodes
       8. Prune short endpoint branches
-      9. Return IslandResult
+      9. Return IslandSkeleton
 
     Args:
         island_id: Island identifier
@@ -56,7 +56,7 @@ def process_island(
         prune_min_graph_nodes: Only prune on graphs with more than this many nodes
 
     Returns:
-        IslandResult with all pipeline outputs
+        IslandSkeleton with all pipeline outputs
     """
     # Step 1: Canonicalize
     if enable_canonicalization:
@@ -96,7 +96,7 @@ def process_island(
         skeleton_pixels=skeleton
     )
 
-    return IslandResult(
+    return IslandSkeleton(
         island_id=island_id,
         canonical=canonical,
         raster=raster,
@@ -106,7 +106,7 @@ def process_island(
 
 
 def process_all_islands(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     skeleton_connectivity: int = 8,
     skeleton_method: str = 'thinning',
     padding: int = 1,
@@ -115,12 +115,12 @@ def process_all_islands(
     min_island_size: int = 10,
     prune_max_length: int = 5,
     prune_min_graph_nodes: int = 5,
-) -> tuple[list[IslandResult], dict[str, list[int]]]:
+) -> tuple[list[IslandSkeleton], dict[str, list[int]]]:
     """
     Process all islands through the skeleton pipeline.
 
     Args:
-        islands: List of Island objects (must have .id and .blocks attributes)
+        islands: List of IslandPolygon objects (must have .id, .area, .blocks)
         skeleton_connectivity: 4 or 8
         skeleton_method: 'thinning' or 'medial_axis'
         padding: Mask padding
@@ -133,7 +133,7 @@ def process_all_islands(
 
     Returns:
         Tuple of:
-          - List of IslandResult (one per island)
+          - List of IslandSkeleton (one per island)
           - Dict mapping canonical_key -> list of island_ids (for symmetry groups)
     """
     results = []
@@ -158,9 +158,6 @@ def process_all_islands(
         results.append(result)
         canonical_groups[result.canonical.canonical_key].append(island.id)
 
-        # Attach result to island object
-        island.skeleton_result = result
-
     return results, dict(canonical_groups)
 
 
@@ -178,7 +175,6 @@ def _identity_canonical(island_id: int, blocks: np.ndarray) -> CanonicalIsland:
         rotation=0,
         mirror=False,
         translation=-min_vals.astype(float),
-        world_center=np.zeros(2)
     )
 
     return CanonicalIsland(

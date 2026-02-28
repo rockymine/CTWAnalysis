@@ -32,7 +32,7 @@ def _make_transform(rotation=0, mirror=False, translation=(0, 0)):
         rotation=rotation,
         mirror=mirror,
         translation=np.array(translation, dtype=float),
-        world_center=np.zeros(2),
+
     )
 
 

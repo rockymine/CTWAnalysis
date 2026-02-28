@@ -5,15 +5,15 @@ Island statistics and classification.
 import numpy as np
 from typing import Optional
 
-from .datatypes import Island
+from .datatypes import IslandPolygon
 
 
-def compute_island_statistics(islands: list[Island]) -> dict:
+def compute_island_statistics(islands: list[IslandPolygon]) -> dict:
     """
     Compute statistics about detected islands.
 
     Args:
-        islands: List of Island objects
+        islands: List of IslandPolygon objects
 
     Returns:
         Dictionary with statistics
@@ -45,14 +45,14 @@ def compute_island_statistics(islands: list[Island]) -> dict:
 
 
 def classify_islands(
-    islands: list[Island],
+    islands: list[IslandPolygon],
     map_center: Optional[tuple[float, float]] = None,
-) -> dict[str, list[Island]]:
+) -> dict[str, list[IslandPolygon]]:
     """
     Classify islands by their likely role in the map.
 
     Args:
-        islands: List of Island objects
+        islands: List of IslandPolygon objects
         map_center: Optional map center (auto-calculated if None)
 
     Returns:

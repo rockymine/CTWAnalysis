@@ -138,7 +138,7 @@ Pure geometry pipeline — no XML knowledge. Reads a layout parquet, detects dis
 **`write_outputs` behaviour**: computation always runs in full. File writes (visualizations, `islands.json`) are skipped when `islands.json` already exists and `force_rerun=False`. This means the returned `IslandGeometryResult` always contains fresh in-memory objects even on a cache hit.
 
 **Outputs** (in `output/<map>/island_analysis/`):
-- `islands.json` — island geometry data (debug artifact; also read by `run_symmetry`)
+- `islands.json` — island geometry data (debug artifact; read by `run_symmetry` only as a fallback when `--no-islands` was used)
 - `island_detail.png` — island layout overview (always generated)
 - `skeleton/unique_islands.png` — canonical shape comparison (always generated)
 - `skeleton/map_overview.png` — skeleton graph with polygons + build regions (written by `assemble_map`)
@@ -163,11 +163,11 @@ class IslandGeometryResult:
 ### Step 3 — Symmetry (`run_symmetry`)
 
 **Module**: `map_analysis/pipeline.py`
-**Public function**: `run_symmetry(map_output_dir: Path) -> Optional[SymmetryResult]`
+**Public function**: `run_symmetry(map_output_dir: Path, geometry: Optional[IslandGeometryResult] = None) -> Optional[SymmetryResult]`
 
-Detects global geometric symmetry of the map from island geometry. Currently reads `island_analysis/islands.json` from disk (written by step 2). A future improvement would accept an `IslandGeometryResult` directly to avoid the file round-trip.
+Detects global geometric symmetry of the map from island geometry. When `geometry` is passed (the normal case in the full pipeline), island data is consumed directly from the in-memory `IslandGeometryResult` via `detect_symmetry_from_data` — no disk round-trip through `islands.json`. Falls back to reading `island_analysis/islands.json` from disk only when `geometry` is `None` (islands step skipped with `--no-islands`).
 
-**Returns** `None` when `islands.json` is missing (step 2 was skipped or failed).
+**Returns** `None` when island data is unavailable (step 2 was skipped and no cached `islands.json` exists).
 
 **Output** (in `output/<map>/`):
 - `symmetry.json` — detected symmetry axes, confidence scores, center point
@@ -323,7 +323,7 @@ Input files remain in `map_folders/<map>/` (read-only, never modified).
 
 Pipeline steps communicate exclusively through typed in-memory objects. JSON files (`islands.json`, `symmetry.json`, `map_data.json`, `map_context.json`) are written as side effects for human inspection and are **never read back as pipeline inputs** within a single run.
 
-The one current exception is `run_symmetry`, which reads `island_analysis/islands.json` by path. This is a known limitation and will be resolved when `detect_symmetry` is updated to accept an `IslandGeometryResult` directly.
+The one deliberate exception is the fallback path in `run_symmetry` and `assemble_map`: when an upstream step is skipped (`--no-islands`, `--no-symmetry`), the downstream step may read the cached JSON artifact from a previous run. This is intentional and documented — it allows partial re-runs without recomputing all steps.
 
 ### Cache Hit Behaviour
 
