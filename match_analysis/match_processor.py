@@ -111,6 +111,12 @@ def process_match(match_id: int) -> None:
 
         print(f"Saved life segment metadata to {output_file}")
 
+        # Delete child tables first to avoid FK constraint violations when
+        # re-inserting life_segments (child tables reference segment_id FK)
+        conn.execute("DELETE FROM life_segment_features WHERE segment_id IN "
+                     "(SELECT segment_id FROM life_segments WHERE match_id = ?)", [match_id])
+        conn.execute("DELETE FROM life_segment_region_visits WHERE match_id = ?", [match_id])
+
         n = _bulk_insert(conn, 'life_segments', match_id, life_segments_df,
                          ['match_id', 'player_id', 'segment_idx',
                           'start_timestamp', 'end_timestamp', 'duration',
@@ -144,7 +150,8 @@ def process_match(match_id: int) -> None:
         # Spatial annotation via PositionClassifier
         spatial_cols = ['location_type', 'island_id',
                         'nearest_node_1', 'nearest_node_2',
-                        'nearest_island_1', 'nearest_island_2']
+                        'nearest_island_1', 'nearest_island_2',
+                        'nearest_graph_node']
         classifier = _get_classifier(map_slug)
         if classifier is not None and len(position_df) > 0:
             import numpy as np
@@ -167,10 +174,12 @@ def process_match(match_id: int) -> None:
             ['match_id', 'timestamp', 'player_id', 'x', 'y', 'z',
              'segment_idx', 'location_type', 'island_id',
              'nearest_node_1', 'nearest_node_2',
-             'nearest_island_1', 'nearest_island_2'],
+             'nearest_island_1', 'nearest_island_2',
+             'nearest_graph_node'],
             nullable_int_cols=['segment_idx', 'island_id',
                                'nearest_node_1', 'nearest_node_2',
-                               'nearest_island_1', 'nearest_island_2'])
+                               'nearest_island_1', 'nearest_island_2',
+                               'nearest_graph_node'])
         print(f"Inserted {n} position events into database")
 
         # Extract and insert team segments

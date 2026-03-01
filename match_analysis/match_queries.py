@@ -97,7 +97,7 @@ def extract_player_life_segments(
 
         # Fetch all position events for this player+match in one query
         all_positions = conn.execute(
-            "SELECT timestamp, x, z, segment_idx "
+            "SELECT timestamp, x, z, segment_idx, nearest_graph_node "
             "FROM position_events "
             "WHERE match_id = ? AND player_id = ? "
             "ORDER BY timestamp",
@@ -287,6 +287,43 @@ def validate_match_ids(match_ids: list[int], map_slug: str) -> list[int]:
             continue
         valid.append(match_id)
     return valid
+
+
+def get_region_visits_with_paths(
+    match_id: int,
+    segment_id: int | None = None,
+) -> pd.DataFrame:
+    """Return life_segment_region_visits with node path data for a match.
+
+    Includes entry_node, exit_node, bridge_node_1/2, and node_path parsed
+    from JSON to Python lists.
+
+    Args:
+        match_id: Match ID in the database.
+        segment_id: Optional segment ID to filter to a single segment.
+
+    Returns:
+        DataFrame with all visit columns.
+    """
+    import json as _json
+    conn = duckdb.connect(DB_PATH, read_only=True)
+    try:
+        where = "WHERE match_id = ?"
+        params: list = [match_id]
+        if segment_id is not None:
+            where += " AND segment_id = ?"
+            params.append(segment_id)
+        df = conn.execute(
+            f"SELECT * FROM life_segment_region_visits {where} ORDER BY segment_id, visit_idx",
+            params,
+        ).fetchdf()
+    finally:
+        conn.close()
+    if 'node_path' in df.columns:
+        df['node_path'] = df['node_path'].apply(
+            lambda v: _json.loads(v) if v is not None else []
+        )
+    return df
 
 
 def get_match_player_ids(match_id: int) -> list[int]:

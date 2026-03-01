@@ -187,10 +187,11 @@ def _run_length_encode(rows: list[tuple]) -> list[dict]:
     """RLE non-void position rows into visits.
 
     Each input row: (timestamp, location_type, island_id,
-                     nearest_island_1, nearest_island_2)
+                     nearest_island_1, nearest_island_2, nearest_graph_node)
     Returns list of dicts with keys:
         location_type, island_id, bridge_island_1, bridge_island_2,
-        entry_timestamp, exit_timestamp, ticks
+        entry_timestamp, exit_timestamp, ticks,
+        entry_node, exit_node, node_path
     """
     visits: list[dict] = []
     if not rows:
@@ -200,30 +201,45 @@ def _run_length_encode(rows: list[tuple]) -> list[dict]:
     visit_start_ts = rows[0][0]
     visit_end_ts = rows[0][0]
     tick_count = 1
+    # Accumulate deduplicated nearest_graph_node sequence for this run
+    node_seq: list[int] = []
+    first_ngn = rows[0][5] if len(rows[0]) > 5 else None
+    if first_ngn is not None:
+        node_seq.append(first_ngn)
 
     for row in rows[1:]:
         key = _region_key(row)
         ts = row[0]
+        ngn = row[5] if len(row) > 5 else None
         if key == current_key:
             visit_end_ts = ts
             tick_count += 1
+            # Append to node_seq only when node changes
+            if ngn is not None and (not node_seq or node_seq[-1] != ngn):
+                node_seq.append(ngn)
         else:
             if tick_count >= MIN_VISIT_TICKS:
-                visits.append(_make_visit(current_key, visit_start_ts, visit_end_ts, tick_count))
+                visits.append(_make_visit(current_key, visit_start_ts, visit_end_ts, tick_count, list(node_seq)))
             current_key = key
             visit_start_ts = ts
             visit_end_ts = ts
             tick_count = 1
+            node_seq = [ngn] if ngn is not None else []
 
     # flush last run
     if tick_count >= MIN_VISIT_TICKS:
-        visits.append(_make_visit(current_key, visit_start_ts, visit_end_ts, tick_count))
+        visits.append(_make_visit(current_key, visit_start_ts, visit_end_ts, tick_count, list(node_seq)))
+
+    # Second pass: annotate build_region visits with bridge_node_1/2 from adjacent island visits
+    _annotate_bridge_nodes(visits)
 
     return visits
 
 
-def _make_visit(key: tuple, entry_ts: int, exit_ts: int, ticks: int) -> dict:
+def _make_visit(key: tuple, entry_ts: int, exit_ts: int, ticks: int, node_seq: list[int]) -> dict:
     loc, island_id, bi1, bi2 = key
+    entry_node = node_seq[0] if node_seq else None
+    exit_node = node_seq[-1] if node_seq else None
     return {
         'location_type': loc,
         'island_id': island_id,
@@ -233,7 +249,31 @@ def _make_visit(key: tuple, entry_ts: int, exit_ts: int, ticks: int) -> dict:
         'exit_timestamp': exit_ts,
         'duration_ms': float(exit_ts - entry_ts),
         'ticks': ticks,
+        'entry_node': entry_node,
+        'exit_node': exit_node,
+        'node_path': node_seq,
     }
+
+
+def _annotate_bridge_nodes(visits: list[dict]) -> None:
+    """In-place: set bridge_node_1/2 for build_region visits from adjacent island visits."""
+    for i, visit in enumerate(visits):
+        if visit['location_type'] != _LOC_BUILD:
+            continue
+        bridge_node_1 = None
+        bridge_node_2 = None
+        # bridge_node_1: exit_node of the nearest preceding island visit
+        for j in range(i - 1, -1, -1):
+            if visits[j]['location_type'] == _LOC_ISLAND and visits[j]['exit_node'] is not None:
+                bridge_node_1 = visits[j]['exit_node']
+                break
+        # bridge_node_2: entry_node of the nearest succeeding island visit
+        for j in range(i + 1, len(visits)):
+            if visits[j]['location_type'] == _LOC_ISLAND and visits[j]['entry_node'] is not None:
+                bridge_node_2 = visits[j]['entry_node']
+                break
+        visit['bridge_node_1'] = bridge_node_1
+        visit['bridge_node_2'] = bridge_node_2
 
 
 def build_region_visits(
@@ -322,7 +362,7 @@ def build_region_visits(
         pos_rows = conn.execute(
             """
             SELECT timestamp, location_type, island_id,
-                   nearest_island_1, nearest_island_2
+                   nearest_island_1, nearest_island_2, nearest_graph_node
             FROM position_events
             WHERE match_id = ? AND player_id = ? AND segment_idx = ?
               AND location_type != ?
@@ -379,14 +419,16 @@ def build_region_visits(
             # was_death: last visit of a life that ended in death
             was_death = (visit_idx == last_visit_idx and outcome == 'death')
 
+            node_path_json = json.dumps(visit['node_path']) if visit.get('node_path') else None
             conn.execute(
                 """
                 INSERT INTO life_segment_region_visits (
                     segment_id, match_id, player_id, visit_idx,
                     location_type, island_id, bridge_island_1, bridge_island_2,
                     entry_timestamp, exit_timestamp, duration_ms,
-                    is_home_island, is_enemy_island, kill_count, was_death
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_home_island, is_enemy_island, kill_count, was_death,
+                    entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     segment_id, match_id, player_id, visit_idx,
@@ -394,6 +436,9 @@ def build_region_visits(
                     visit['bridge_island_1'], visit['bridge_island_2'],
                     entry_ts, exit_ts, visit['duration_ms'],
                     is_home, is_enemy, visit_kills, was_death,
+                    visit.get('entry_node'), visit.get('exit_node'),
+                    visit.get('bridge_node_1'), visit.get('bridge_node_2'),
+                    node_path_json,
                 ],
             )
             total_visits += 1

@@ -31,8 +31,12 @@ def to_dict(island_graphs: list[IslandGraph], map_name: str) -> dict:
     map_node_id = 0
     islands_out = []
 
+    # Cache skeleton dicts so we only compute each once
+    skeleton_dicts: list[tuple[IslandGraph, dict | None]] = []
+
     for ig in island_graphs:
         skeleton_dict = _skeleton_to_dict(ig.skeleton) if ig.skeleton else None
+        skeleton_dicts.append((ig, skeleton_dict))
 
         node_annotations_dict = {
             str(nid): {'poi_type': ann.poi_type, 'poi_color': ann.poi_color}
@@ -47,22 +51,45 @@ def to_dict(island_graphs: list[IslandGraph], map_name: str) -> dict:
             'pathfinding': None,
         })
 
-        # Enrich map_graph.nodes with team/poi context for all endpoints
-        if skeleton_dict is not None:
-            for node in skeleton_dict.get('nodes', []):
-                if node.get('type') == 'endpoint':
-                    local_id = node['node_id']
-                    ann = ig.node_annotations.get(local_id)
-                    map_nodes.append({
-                        'map_node_id': map_node_id,
-                        'island_id': ig.island_id,
-                        'local_node_id': local_id,
-                        'coords': [node['x'], node['z']],
-                        'team': ig.team,
-                        'poi_type': ann.poi_type if ann else None,
-                        'poi_color': ann.poi_color if ann else None,
-                    })
-                    map_node_id += 1
+    # Pass 1: endpoints first — preserves existing map_node_id values (0-based, endpoints only)
+    for ig, skeleton_dict in skeleton_dicts:
+        if skeleton_dict is None:
+            continue
+        for node in skeleton_dict.get('nodes', []):
+            if node.get('type') == 'endpoint':
+                local_id = node['node_id']
+                ann = ig.node_annotations.get(local_id)
+                map_nodes.append({
+                    'map_node_id': map_node_id,
+                    'island_id': ig.island_id,
+                    'local_node_id': local_id,
+                    'node_type': 'endpoint',
+                    'coords': [node['x'], node['z']],
+                    'team': ig.team,
+                    'poi_type': ann.poi_type if ann else None,
+                    'poi_color': ann.poi_color if ann else None,
+                })
+                map_node_id += 1
+
+    # Pass 2: junctions — new entries with globally unique IDs continuing from endpoints
+    for ig, skeleton_dict in skeleton_dicts:
+        if skeleton_dict is None:
+            continue
+        for node in skeleton_dict.get('nodes', []):
+            if node.get('type') == 'junction':
+                local_id = node['node_id']
+                ann = ig.node_annotations.get(local_id)
+                map_nodes.append({
+                    'map_node_id': map_node_id,
+                    'island_id': ig.island_id,
+                    'local_node_id': local_id,
+                    'node_type': 'junction',
+                    'coords': [node['x'], node['z']],
+                    'team': ig.team,
+                    'poi_type': ann.poi_type if ann else None,
+                    'poi_color': ann.poi_color if ann else None,
+                })
+                map_node_id += 1
 
     return {
         'map_name': map_name,

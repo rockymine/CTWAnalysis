@@ -155,6 +155,7 @@ def initialize_database() -> None:
             nearest_node_2 INTEGER,
             nearest_island_1 INTEGER,
             nearest_island_2 INTEGER,
+            nearest_graph_node INTEGER,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
     """)
@@ -232,6 +233,11 @@ def initialize_database() -> None:
             is_enemy_island BOOLEAN,
             kill_count INTEGER NOT NULL DEFAULT 0,
             was_death BOOLEAN NOT NULL DEFAULT FALSE,
+            entry_node INTEGER,
+            exit_node INTEGER,
+            bridge_node_1 INTEGER,
+            bridge_node_2 INTEGER,
+            node_path TEXT,
             FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id),
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )

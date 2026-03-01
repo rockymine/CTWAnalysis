@@ -25,10 +25,14 @@ class PositionClassifier:
         self._node_list: list[dict] = []
         self._node_coords: Optional[np.ndarray] = None
         self._edge_pixels_by_island: dict[int, np.ndarray] = {}
+        # Per-island index covering all node types (endpoints + junctions)
+        self._island_node_lists: dict[int, list[dict]] = {}
+        self._island_node_coords: dict[int, np.ndarray] = {}
 
         self._build_island_polygons(map_context)
         self._build_region_polygons(map_context)
         self._build_node_index(map_graph)
+        self._build_island_node_index(map_graph)
         self._build_edge_pixel_index(map_graph)
 
     def _build_island_polygons(self, map_context: dict) -> None:
@@ -66,15 +70,37 @@ class PositionClassifier:
                 pass
 
     def _build_node_index(self, map_graph: dict) -> None:
-        """Extract map graph nodes into a list + numpy coords array."""
+        """Extract map graph endpoint nodes into a list + numpy coords array.
+
+        Only endpoints are used for nearest_node_1/2 (global corridor context).
+        Junctions are handled by _build_island_node_index for within-island lookup.
+        """
         graph_section = map_graph.get('map_graph', {})
-        self._node_list = graph_section.get('nodes', [])
+        all_nodes = graph_section.get('nodes', [])
+        # nearest_node_1/2 remain endpoint-only for bridge/corridor context
+        self._node_list = [
+            n for n in all_nodes if n.get('node_type', 'endpoint') == 'endpoint'
+        ]
         if self._node_list:
             self._node_coords = np.array(
                 [n['coords'] for n in self._node_list], dtype=np.float64,
             )
         else:
             self._node_coords = np.empty((0, 2), dtype=np.float64)
+
+    def _build_island_node_index(self, map_graph: dict) -> None:
+        """Build per-island node coordinate arrays including all node types."""
+        graph_section = map_graph.get('map_graph', {})
+        all_nodes = graph_section.get('nodes', [])
+        by_island: dict[int, list[dict]] = {}
+        for node in all_nodes:
+            iid = node['island_id']
+            by_island.setdefault(iid, []).append(node)
+        for iid, nodes in by_island.items():
+            self._island_node_lists[iid] = nodes
+            self._island_node_coords[iid] = np.array(
+                [n['coords'] for n in nodes], dtype=np.float64,
+            )
 
     def _build_edge_pixel_index(self, map_graph: dict) -> None:
         """Build per-island flat numpy arrays of all edge pixel coords."""
@@ -99,7 +125,8 @@ class PositionClassifier:
 
         Returns dict with: location_type, island_id,
             nearest_node_1, nearest_node_2,
-            nearest_island_1, nearest_island_2
+            nearest_island_1, nearest_island_2,
+            nearest_graph_node
         """
         point = Point(x, z)
 
@@ -119,7 +146,7 @@ class PositionClassifier:
                     location_type = 'build_region'
                     break
 
-        # Find two nearest map graph nodes
+        # Find two nearest endpoint nodes (global corridor context)
         nearest_node_1 = None
         nearest_node_2 = None
         nearest_island_1 = None
@@ -139,6 +166,15 @@ class PositionClassifier:
             nearest_node_1 = self._node_list[0]['map_node_id']
             nearest_island_1 = self._node_list[0]['island_id']
 
+        # Find nearest skeleton node within the player's current island (all types)
+        nearest_graph_node = None
+        if location_type == 'island' and island_id is not None:
+            coords = self._island_node_coords.get(island_id)
+            nodes = self._island_node_lists.get(island_id)
+            if coords is not None and len(coords) > 0:
+                dists = np.hypot(coords[:, 0] - x, coords[:, 1] - z)
+                nearest_graph_node = nodes[int(np.argmin(dists))]['map_node_id']
+
         return {
             'location_type': location_type,
             'island_id': island_id,
@@ -146,6 +182,7 @@ class PositionClassifier:
             'nearest_node_2': nearest_node_2,
             'nearest_island_1': nearest_island_1,
             'nearest_island_2': nearest_island_2,
+            'nearest_graph_node': nearest_graph_node,
         }
 
     def classify_bulk(
@@ -221,6 +258,24 @@ class PositionClassifier:
             nearest_node_1[:] = self._node_list[0]['map_node_id']
             nearest_island_1[:] = self._node_list[0]['island_id']
 
+        # Nearest skeleton node within current island (all node types), island-scoped
+        nearest_graph_node = np.full(n, None, dtype=object)
+        unique_island_ids = {iid for iid in island_id if iid is not None}
+        for iid in unique_island_ids:
+            iid_int = int(iid)
+            coords = self._island_node_coords.get(iid_int)
+            nodes = self._island_node_lists.get(iid_int)
+            if coords is None or len(coords) == 0:
+                continue
+            mask = island_id == iid
+            pos_idx = np.where(mask)[0]
+            dx = coords[:, 0, np.newaxis] - xs[np.newaxis, pos_idx]
+            dz = coords[:, 1, np.newaxis] - zs[np.newaxis, pos_idx]
+            dists = np.hypot(dx, dz)
+            best = np.argmin(dists, axis=0)
+            for k, global_k in enumerate(pos_idx):
+                nearest_graph_node[global_k] = nodes[best[k]]['map_node_id']
+
         return {
             'location_type': location_type,
             'island_id': island_id,
@@ -228,6 +283,7 @@ class PositionClassifier:
             'nearest_node_2': nearest_node_2,
             'nearest_island_1': nearest_island_1,
             'nearest_island_2': nearest_island_2,
+            'nearest_graph_node': nearest_graph_node,
         }
 
     def classify_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -241,7 +297,8 @@ class PositionClassifier:
         if len(df) == 0:
             for col in ['location_type', 'island_id',
                          'nearest_node_1', 'nearest_node_2',
-                         'nearest_island_1', 'nearest_island_2']:
+                         'nearest_island_1', 'nearest_island_2',
+                         'nearest_graph_node']:
                 out[col] = pd.Series(dtype=object)
             return out
 
