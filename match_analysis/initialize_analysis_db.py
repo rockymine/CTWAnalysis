@@ -194,6 +194,78 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table 9: Wool spawn baselines (post-processing)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS wool_spawn_baselines (
+            map_id INTEGER NOT NULL,
+            team TEXT NOT NULL,
+            wool_id INTEGER NOT NULL,
+            spawn_x FLOAT NOT NULL,
+            spawn_z FLOAT NOT NULL,
+            wool_x FLOAT NOT NULL,
+            wool_z FLOAT NOT NULL,
+            baseline_distance FLOAT NOT NULL,
+            PRIMARY KEY (map_id, team, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table 10: Life segment region visits (post-processing)
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_visit_id START 1
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_region_visits (
+            visit_id INTEGER PRIMARY KEY DEFAULT nextval('seq_visit_id'),
+            segment_id INTEGER NOT NULL,
+            match_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            visit_idx INTEGER NOT NULL,
+            location_type TEXT NOT NULL,
+            island_id INTEGER,
+            bridge_island_1 INTEGER,
+            bridge_island_2 INTEGER,
+            entry_timestamp BIGINT NOT NULL,
+            exit_timestamp BIGINT NOT NULL,
+            duration_ms FLOAT NOT NULL,
+            is_home_island BOOLEAN,
+            is_enemy_island BOOLEAN,
+            kill_count INTEGER NOT NULL DEFAULT 0,
+            was_death BOOLEAN NOT NULL DEFAULT FALSE,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id),
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+    # Table 11: Life segment features (post-processing)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_features (
+            segment_id INTEGER PRIMARY KEY,
+            n_islands_visited INTEGER,
+            n_build_regions_visited INTEGER,
+            n_transitions INTEGER,
+            frac_time_home_island FLOAT,
+            frac_time_enemy_island FLOAT,
+            frac_time_neutral_island FLOAT,
+            frac_time_build FLOAT,
+            max_attack_depth FLOAT,
+            target_wool_id INTEGER,
+            ended_on_enemy_island BOOLEAN,
+            ended_in_build BOOLEAN,
+            duration_ms FLOAT,
+            time_to_first_departure_ms FLOAT,
+            kills INTEGER,
+            deaths INTEGER,
+            kill_in_build INTEGER,
+            kill_on_enemy_island INTEGER,
+            wool_touches INTEGER,
+            wool_captures INTEGER,
+            cluster_id INTEGER,
+            cluster_label TEXT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
     conn.close()
     print(f"Database initialized at {db_path}")
 
