@@ -45,6 +45,7 @@ Actions:
   list         List matches in the database
   stats        Show database statistics
   reset        Reset processing state (clears trajectory files)
+  post-process Build life_segment_features from processed matches
   trace        Visualize player traces on map
   kills        Visualize kill-death pairs on map
 
@@ -65,6 +66,8 @@ Examples:
   python ctw.py matches kills --map Ingwaz --match 406
   python ctw.py matches kills --map Ingwaz --match ALL --overlay
   python ctw.py matches kills --map Ingwaz --match ALL --overlay --color-mode distance
+  python ctw.py matches post-process --match 1
+  python ctw.py matches post-process --all
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -157,6 +160,22 @@ Examples:
                    help='Overlay all matches onto a single plot '
                         '(use with --match ALL)')
     p.set_defaults(func=handle_trace)
+
+    # matches post-process
+    p = matches_sub.add_parser(
+        'post-process',
+        help='Run post-processing to build life segment features',
+    )
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        '--match', type=int, metavar='ID',
+        help='Post-process a specific match by ID',
+    )
+    group.add_argument(
+        '--all', action='store_true',
+        help='Post-process all processed matches',
+    )
+    p.set_defaults(func=handle_post_process)
 
     # matches kills
     p = matches_sub.add_parser('kills', help='Visualize kill-death pairs on map')
@@ -351,6 +370,31 @@ def handle_reset(args):
         print(f"Reset all matches. Deleted {count} trajectory files.")
 
     conn.close()
+
+
+def handle_post_process(args):
+    ensure_match_db()
+    import duckdb
+    from match_analysis.post_processor import run_post_processing
+
+    conn = duckdb.connect('match_analysis/metadata.db')
+
+    try:
+        if getattr(args, 'all', False):
+            rows = conn.execute(
+                "SELECT match_id FROM matches WHERE processed = TRUE ORDER BY match_id"
+            ).fetchall()
+            if not rows:
+                print("No processed matches found. Run 'ctw matches process' first.")
+                conn.close()
+                return
+            print(f"Post-processing {len(rows)} match(es)...")
+            for (match_id,) in rows:
+                run_post_processing(conn, match_id)
+        else:
+            run_post_processing(conn, args.match)
+    finally:
+        conn.close()
 
 
 def _find_map_file(map_output_dir: Path, map_folder: Path, rel_path: str):
