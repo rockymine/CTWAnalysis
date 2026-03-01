@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -53,6 +54,57 @@ def _load_map_context(map_slug: str) -> dict:
         )
     with open(path) as f:
         return json.load(f)
+
+
+def _load_map_graph(map_slug: str) -> dict:
+    path = Path('output') / map_slug / 'map_graph.json'
+    if not path.exists():
+        raise FileNotFoundError(
+            f"map_graph.json not found at {path}. "
+            f"Run 'ctw run --map <folder>' first."
+        )
+    with open(path) as f:
+        return json.load(f)
+
+
+def _build_node_lookup(map_graph: dict) -> dict[int, dict]:
+    """Build global map_node_id -> {'type': str, 'degree': int} from map_graph.json.
+
+    Degree is stored only in the per-island skeleton nodes (keyed by local_node_id).
+    The flat map_graph.nodes section carries global map_node_id and local_node_id,
+    so we cross-reference to attach the degree to each global ID.
+    """
+    # Step 1: (island_id, local_node_id) -> degree from per-island skeleton
+    local_degree: dict[tuple[int, int], int] = {}
+    for isl in map_graph.get('islands', []):
+        isl_id = isl['island_id']
+        for n in isl['skeleton']['nodes']:
+            local_degree[(isl_id, n['node_id'])] = n['degree']
+
+    # Step 2: build global lookup
+    lookup: dict[int, dict] = {}
+    for n in map_graph.get('map_graph', {}).get('nodes', []):
+        gid = n['map_node_id']
+        isl_id = n['island_id']
+        local_id = n['local_node_id']
+        degree = local_degree.get((isl_id, local_id), 1)
+        lookup[gid] = {
+            'type': n.get('node_type', 'endpoint'),
+            'degree': degree,
+        }
+    return lookup
+
+
+def _shannon_entropy(counts: Counter) -> float:
+    """Shannon entropy in bits from a Counter of node visit counts."""
+    total = sum(counts.values())
+    if total == 0:
+        return 0.0
+    return -sum(
+        (c / total) * math.log2(c / total)
+        for c in counts.values()
+        if c > 0
+    )
 
 
 def _euclidean_2d(x1: float, z1: float, x2: float, z2: float) -> float:
@@ -483,6 +535,8 @@ def build_life_features(
     map_slug = _get_map_slug(conn, match_id)
     map_id = _get_map_id(conn, match_id)
     ctx = _load_map_context(map_slug)
+    map_graph = _load_map_graph(map_slug)
+    node_lookup = _build_node_lookup(map_graph)
     wools = _assign_wool_ids(ctx.get('poi_assignments', {}).get('wools', []))
 
     # Team → list of enemy wools (wool that team must capture)
@@ -582,13 +636,14 @@ def build_life_features(
             player_id, start_ts, team_segments_by_player
         )
 
-        # Fetch visits for this segment
+        # Fetch visits for this segment (includes node-path columns)
         visit_rows = conn.execute(
             """
             SELECT visit_idx, location_type, island_id,
                    bridge_island_1, bridge_island_2,
                    entry_timestamp, exit_timestamp, duration_ms,
-                   is_home_island, is_enemy_island, kill_count, was_death
+                   is_home_island, is_enemy_island, kill_count, was_death,
+                   entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
             FROM life_segment_region_visits
             WHERE segment_id = ?
             ORDER BY visit_idx
@@ -611,6 +666,16 @@ def build_life_features(
         ended_on_enemy = False
         ended_in_build = False
 
+        # --- Node-path metrics ---
+        island_visits_total = 0
+        island_visits_with_junction = 0
+        max_degree_visited = 0
+        traversal_count = 0
+        total_unique_node_path_len = 0
+        all_node_counts: Counter = Counter()
+        unique_corridors: set[tuple] = set()
+        died_at_endpoint: bool | None = None
+
         home_island_id = (
             _get_home_island_id(player_team, ctx)
             if player_team else None
@@ -618,7 +683,9 @@ def build_life_features(
 
         for vr in visit_rows:
             (vidx, loc, v_isl, bi1, bi2, ent_ts, ex_ts, dur,
-             is_home, is_enemy, vkills, vdeath) = vr
+             is_home, is_enemy, vkills, vdeath,
+             entry_node, exit_node, bridge_node_1, bridge_node_2,
+             node_path_json) = vr
             total_dur += dur or 0.0
 
             if loc == _LOC_ISLAND and v_isl is not None:
@@ -633,6 +700,53 @@ def build_life_features(
                 # First departure = first visit that is NOT home island
                 if not is_home and first_departure_ts is None:
                     first_departure_ts = ent_ts
+
+                # --- Node-path analysis for island visits ---
+                island_visits_total += 1
+
+                node_path: list[int] = (
+                    json.loads(node_path_json) if node_path_json else []
+                )
+                # Unique ordered nodes (preserves traversal order, collapses repeats)
+                seen: set[int] = set()
+                unique_nodes: list[int] = []
+                for n in node_path:
+                    if n not in seen:
+                        seen.add(n)
+                        unique_nodes.append(n)
+
+                # Junction presence
+                has_junction = any(
+                    node_lookup.get(n, {}).get('degree', 1) >= 3
+                    for n in unique_nodes
+                )
+                if has_junction:
+                    island_visits_with_junction += 1
+
+                # Max degree across all nodes touched in this life
+                for n in unique_nodes:
+                    d = node_lookup.get(n, {}).get('degree', 1)
+                    if d > max_degree_visited:
+                        max_degree_visited = d
+
+                # Traversal: player moved across enough ground to shift closest node
+                if (entry_node is not None
+                        and exit_node is not None
+                        and entry_node != exit_node):
+                    traversal_count += 1
+
+                # Path length (unique nodes touched in this visit)
+                total_unique_node_path_len += len(unique_nodes)
+
+                # Position entropy: count every node appearance (not just unique)
+                for n in node_path:
+                    all_node_counts[n] += 1
+
+                # Death position: was the final node an endpoint or junction?
+                if vdeath and exit_node is not None:
+                    exit_info = node_lookup.get(exit_node, {})
+                    died_at_endpoint = (exit_info.get('type', 'endpoint') == 'endpoint')
+
             elif loc == _LOC_BUILD:
                 dur_build += dur or 0.0
                 kill_in_build += vkills or 0
@@ -642,7 +756,37 @@ def build_life_features(
                 if first_departure_ts is None:
                     first_departure_ts = ent_ts
 
+                # Node-level corridor tracking (8x more granular than island pairs)
+                if bridge_node_1 is not None and bridge_node_2 is not None:
+                    corridor = (
+                        min(bridge_node_1, bridge_node_2),
+                        max(bridge_node_1, bridge_node_2),
+                    )
+                    unique_corridors.add(corridor)
+
         n_transitions = len(visit_rows)
+
+        # --- Aggregate node-path metrics ---
+        visited_junction = max_degree_visited >= 3
+        frac_visits_with_junction = (
+            island_visits_with_junction / island_visits_total
+            if island_visits_total > 0 else 0.0
+        )
+        traversal_rate = (
+            traversal_count / island_visits_total
+            if island_visits_total > 0 else 0.0
+        )
+        avg_nodes_per_island_visit = (
+            total_unique_node_path_len / island_visits_total
+            if island_visits_total > 0 else 0.0
+        )
+        position_entropy = _shannon_entropy(all_node_counts)
+        total_node_visits = sum(all_node_counts.values())
+        dominant_node_frac = (
+            max(all_node_counts.values()) / total_node_visits
+            if total_node_visits > 0 else 1.0
+        )
+        n_unique_corridors = len(unique_corridors)
 
         # --- Progression ---
         last_visit = visit_rows[-1] if visit_rows else None
@@ -683,7 +827,11 @@ def build_life_features(
                 ended_on_enemy_island, ended_in_build,
                 duration_ms, time_to_first_departure_ms,
                 kills, deaths, kill_in_build, kill_on_enemy_island,
-                wool_touches, wool_captures
+                wool_touches, wool_captures,
+                visited_junction, frac_island_visits_with_junction,
+                max_node_degree_visited, traversal_rate,
+                avg_nodes_per_island_visit, died_at_endpoint,
+                n_unique_corridors, position_entropy, dominant_node_frac
             ) VALUES (
                 ?,
                 ?, ?, ?,
@@ -692,7 +840,8 @@ def build_life_features(
                 ?, ?,
                 ?, ?,
                 ?, ?, ?, ?,
-                ?, ?
+                ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             [
@@ -704,6 +853,10 @@ def build_life_features(
                 life_dur, time_to_first_dep,
                 kills, deaths, kill_in_build, kill_on_enemy_island,
                 wool_touches, wool_captures,
+                visited_junction, frac_visits_with_junction,
+                max_degree_visited, traversal_rate,
+                avg_nodes_per_island_visit, died_at_endpoint,
+                n_unique_corridors, position_entropy, dominant_node_frac,
             ],
         )
         total += 1
@@ -774,8 +927,13 @@ def run_post_processing(
       2. build_region_visits            (per-match)
       3. build_life_features            (per-match)
     """
+    from match_analysis.initialize_analysis_db import migrate_node_path_columns
+
     map_slug = _get_map_slug(conn, match_id)
     print(f"Post-processing match {match_id} (map: {map_slug})")
+
+    print("Step 0/3: migrate node-path columns if needed")
+    migrate_node_path_columns()
 
     print("Step 1/3: wool spawn baselines")
     populate_wool_spawn_baselines(conn, map_slug)

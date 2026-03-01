@@ -266,6 +266,16 @@ def initialize_database() -> None:
             kill_on_enemy_island INTEGER,
             wool_touches INTEGER,
             wool_captures INTEGER,
+            -- Node-path metrics (require life_segment_region_visits.node_path)
+            visited_junction BOOLEAN,
+            frac_island_visits_with_junction FLOAT,
+            max_node_degree_visited INTEGER,
+            traversal_rate FLOAT,
+            avg_nodes_per_island_visit FLOAT,
+            died_at_endpoint BOOLEAN,
+            n_unique_corridors INTEGER,
+            position_entropy FLOAT,
+            dominant_node_frac FLOAT,
             cluster_id INTEGER,
             cluster_label TEXT,
             FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
@@ -274,6 +284,35 @@ def initialize_database() -> None:
 
     conn.close()
     print(f"Database initialized at {db_path}")
+
+
+def migrate_node_path_columns(db_path: str | None = None) -> None:
+    """Add node-path feature columns to an existing life_segment_features table.
+
+    Safe to run on an already-migrated database — DuckDB silently skips
+    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    new_columns = [
+        ("visited_junction", "BOOLEAN"),
+        ("frac_island_visits_with_junction", "FLOAT"),
+        ("max_node_degree_visited", "INTEGER"),
+        ("traversal_rate", "FLOAT"),
+        ("avg_nodes_per_island_visit", "FLOAT"),
+        ("died_at_endpoint", "BOOLEAN"),
+        ("n_unique_corridors", "INTEGER"),
+        ("position_entropy", "FLOAT"),
+        ("dominant_node_frac", "FLOAT"),
+    ]
+    for col_name, col_type in new_columns:
+        conn.execute(
+            f"ALTER TABLE life_segment_features "
+            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+        )
+    conn.close()
+    print(f"Node-path columns migrated in {db_path}")
 
 
 if __name__ == "__main__":
