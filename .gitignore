@@ -89,3 +89,6 @@ Thumbs.db
 
 #DuckDB
 match_analysis/metadata.db
+
+# Executed notebook outputs (generated artifacts)
+notebooks/*_executed.ipynb
