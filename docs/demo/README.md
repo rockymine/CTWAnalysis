@@ -178,3 +178,72 @@ The tumbleweed match shows a high proportion of attackers and bridge-fighters,
 consistent with its long central corridor design encouraging sustained mid-map combat.
 
 ![Archetype Distribution](assets/tumbleweed/08_archetypes.png)
+
+---
+
+## Wool Dynamics
+
+Deep analysis of objective play from the `wool_dynamics` notebook.  Four views
+examine how each wool was contested throughout the match — from raw node coverage
+to reconstructed carry attempts.
+
+> Regenerate with:
+> ```
+> jupyter nbconvert --to notebook --execute notebooks/wool_dynamics.ipynb
+> ```
+
+### Per-Wool Node Coverage
+
+For each of the four wool objectives, defender and attacker tick-counts at the
+wool's skeleton node are plotted per 60-second bucket.  Triangles (▲) mark wool
+touches; stars (★) mark captures.
+
+The asymmetric defence pattern is clear: **lime** and **orange** wools (bottom
+half) were captured early (~t=200–250 s) because attacker ticks vastly
+outnumbered defender ticks.  **Cyan** (top) had heavy blue-team coverage the
+entire match and was never captured.  **Yellow** was held until the final minutes
+when blue finally overwhelmed the defence.
+
+![Wool Node Coverage](assets/tumbleweed/09_wool_coverage.png)
+
+### Y-Level Phase Detection
+
+Rolling 5-minute median player Y per team reveals the transition from ground-level
+play to skybridge-level play.  The left panel shows both teams trending upward from
+Y ≈ 10 (ground) toward the skybridge threshold (Y = 22, dashed) late in the match.
+Blue's median Y crosses the threshold ~t = 3500 s, roughly 60 minutes in.
+
+The right panel confirms bimodality: the early-game Y distribution peaks at Y ≈ 10
+(ground layer), while the late-game distribution develops a second peak at Y = 29
+(max build height) — the skybridge itself.
+
+![Y-Level Phase](assets/tumbleweed/10_y_phase.png)
+
+### Per-Wool Attack Depth
+
+Attack depth measures how close attacking players are to each wool objective
+independently (`depth = 1 − dist / baseline`), averaged per 60-second bucket.
+
+Both series sit well below 0.5 for most of the match, reflecting the long travel
+distance from spawn to wool.  The slight upward trend for **yellow wool** (blue
+attacks, top panel) toward the end of the match corresponds to the late skybridge
+push that eventually secured the capture.
+
+![Per-Wool Attack Depth](assets/tumbleweed/11_wool_depth.png)
+
+### Wool Carry Chain Timeline
+
+Gantt chart of every reconstructed carry wave.  Each bar spans the first touch to
+capture/loss, coloured by the carrying team (blue / red), hatched by outcome.
+Annotation shows handoff count (+N↔) and approach type (sky / gnd).
+
+| Wool | Carrier | Outcome | t (s) | Handoffs | Approach |
+|---|---|---|---|---|---|
+| orange | blue | captured ★ | ~250 | 3 | ground |
+| lime | red | captured ★ | ~200 | 9 | ground |
+| yellow | blue | captured ★ | ~4 450 | 9 | ground |
+
+All three captures in this match were ground-level approaches — the skybridge was
+constructed but used for map control rather than as a direct wool-room entry route.
+
+![Carry Chain Timeline](assets/tumbleweed/12_carry_chains.png)
