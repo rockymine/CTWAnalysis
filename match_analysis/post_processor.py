@@ -7,6 +7,7 @@ Tables produced:
   - wool_spawn_baselines        (once per map)
   - life_segment_region_visits  (once per match)
   - life_segment_features       (once per match)
+  - wool_carry_chains           (once per match)
 """
 
 from __future__ import annotations
@@ -25,6 +26,15 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 MIN_VISIT_TICKS = 1           # minimum consecutive ticks to count as a visit
 ATTACK_DEPTH_CLAMP_MAX = 1.0  # clamp ceiling for normalised attack depth
+
+# Y-level thresholds for skybridge detection.
+# A player at Y >= SKYBRIDGE_Y_THRESHOLD is considered to be on or near the
+# skybridge (built at max_build_height).  Values from ~22 upward are elevated.
+SKYBRIDGE_Y_THRESHOLD = 22
+
+# Maximum gap in seconds between consecutive wool touches of the same wool
+# before we treat them as separate carry attempts ("waves").
+CARRY_WAVE_GAP_S = 120
 
 # location_type values written by the position classifier
 _LOC_ISLAND = 'island'
@@ -913,6 +923,217 @@ def _compute_attack_depth(
 
 
 # ---------------------------------------------------------------------------
+# Step 4 — Y-level features per life segment
+# ---------------------------------------------------------------------------
+
+def build_y_features(
+    conn: '_duckdb.DuckDBPyConnection',
+    match_id: int,
+) -> None:
+    """Populate y_avg, y_max, frac_time_elevated in life_segment_features.
+
+    Reads from position_events for each life segment and updates the row
+    that was already inserted by build_life_features.  Idempotent.
+    """
+    rows = conn.execute("""
+        SELECT ls.segment_id, ls.player_id, ls.start_timestamp, ls.end_timestamp
+        FROM life_segments ls
+        WHERE ls.match_id = ?
+        ORDER BY ls.segment_id
+    """, [match_id]).fetchall()
+
+    updated = 0
+    for seg_id, player_id, start_ts, end_ts in rows:
+        result = conn.execute("""
+            SELECT
+                AVG(y)::FLOAT                                   AS y_avg,
+                MAX(y)                                          AS y_max,
+                AVG(CASE WHEN y >= ? THEN 1.0 ELSE 0.0 END)::FLOAT AS frac_elev
+            FROM position_events
+            WHERE match_id = ?
+              AND player_id = ?
+              AND timestamp BETWEEN ? AND ?
+        """, [SKYBRIDGE_Y_THRESHOLD, match_id, player_id, start_ts, end_ts]).fetchone()
+
+        if result is None or result[0] is None:
+            continue
+
+        conn.execute("""
+            UPDATE life_segment_features
+            SET y_avg = ?, y_max = ?, frac_time_elevated = ?
+            WHERE segment_id = ?
+        """, [result[0], result[1], result[2], seg_id])
+        updated += 1
+
+    print(f"  life_segment_features (Y): updated {updated} rows for match {match_id}")
+
+
+# ---------------------------------------------------------------------------
+# Step 5 — Wool carry chain reconstruction
+# ---------------------------------------------------------------------------
+
+def build_wool_carry_chains(
+    conn: '_duckdb.DuckDBPyConnection',
+    match_id: int,
+) -> None:
+    """Reconstruct wool carry chains from wool_events and combat_events.
+
+    Each "chain" (wave) covers one coordinated carry attempt per wool:
+    from the first touch in a burst through either capture, void-death loss,
+    or the end of the match.  A new wave starts when more than
+    CARRY_WAVE_GAP_S seconds pass without any touch of that wool_id.
+
+    Idempotent — deletes existing rows for the match before inserting.
+    """
+    from match_analysis.initialize_analysis_db import _ensure_wool_carry_chains_table
+    _ensure_wool_carry_chains_table(conn)
+
+    conn.execute("DELETE FROM wool_carry_chains WHERE match_id = ?", [match_id])
+
+    # --- load wool events ---------------------------------------------------
+    we_rows = conn.execute("""
+        SELECT we.timestamp, we.event_type, we.player_id,
+               we.wool_id, we.x, we.y, we.z, pts.team
+        FROM wool_events we
+        LEFT JOIN player_team_segments pts
+            ON  pts.player_id  = we.player_id
+            AND pts.match_id   = we.match_id
+            AND pts.start_timestamp <= we.timestamp
+            AND (pts.end_timestamp IS NULL OR pts.end_timestamp >= we.timestamp)
+        WHERE we.match_id = ?
+        ORDER BY we.wool_id, we.timestamp
+    """, [match_id]).fetchall()
+
+    # --- load deaths for void-loss detection --------------------------------
+    death_rows = conn.execute("""
+        SELECT timestamp, player_id, y
+        FROM combat_events
+        WHERE match_id = ? AND event_type = 4
+        ORDER BY timestamp
+    """, [match_id]).fetchall()
+    # {player_id: sorted list of (timestamp, y)}
+    deaths_by_player: dict[int, list[tuple]] = {}
+    for ts, pid, y in death_rows:
+        deaths_by_player.setdefault(pid, []).append((ts, y))
+
+    # --- load match duration for 'incomplete' detection ---------------------
+    match_dur = conn.execute(
+        "SELECT match_duration FROM matches WHERE match_id = ?", [match_id]
+    ).fetchone()
+    match_duration_s = float(match_dur[0]) if match_dur else None
+
+    # --- group events by wool_id -------------------------------------------
+    from collections import defaultdict
+    by_wool: dict[int, list[tuple]] = defaultdict(list)
+    for row in we_rows:
+        wool_id = row[3]
+        by_wool[wool_id].append(row)
+
+    inserted = 0
+    for wool_id, events in by_wool.items():
+        touches   = [e for e in events if e[1] == 6]  # event_type 6
+        captures  = {e[0] for e in events if e[1] == 7}  # timestamps of captures
+
+        if not touches:
+            continue
+
+        # --- split touches into waves (gap > CARRY_WAVE_GAP_S) ------------
+        waves: list[list[tuple]] = []
+        current_wave: list[tuple] = []
+        for touch in touches:
+            if not current_wave:
+                current_wave.append(touch)
+            elif touch[0] - current_wave[-1][0] <= CARRY_WAVE_GAP_S:
+                current_wave.append(touch)
+            else:
+                waves.append(current_wave)
+                current_wave = [touch]
+        if current_wave:
+            waves.append(current_wave)
+
+        for wave_idx, wave in enumerate(waves):
+            first = wave[0]
+            last  = wave[-1]
+
+            # carriers in order (deduplicated run-length to count handoffs)
+            carriers: list[int] = []
+            for t in wave:
+                if not carriers or t[2] != carriers[-1]:
+                    carriers.append(t[2])
+            n_handoffs = len(carriers) - 1
+            n_carriers = len(set(carriers))
+            attacking_team = first[7]  # team of first carrier
+
+            start_ts = first[0]
+            first_x, first_y, first_z = first[4], first[5], first[6]
+            final_x, final_y, final_z = last[4], last[5], last[6]
+
+            # max Y of the first carrier in the 60s window before first touch
+            carrier_deaths = deaths_by_player.get(first[2], [])
+            pre_touch_y = conn.execute("""
+                SELECT MAX(y)
+                FROM position_events
+                WHERE match_id = ? AND player_id = ?
+                  AND timestamp BETWEEN ? AND ?
+            """, [match_id, first[2], max(0, start_ts - 60), start_ts]).fetchone()
+            max_y_before = int(pre_touch_y[0]) if pre_touch_y and pre_touch_y[0] is not None else None
+            approach_type = None
+            if max_y_before is not None:
+                approach_type = 'skybridge' if max_y_before >= SKYBRIDGE_Y_THRESHOLD else 'ground'
+
+            # Determine outcome
+            outcome = 'incomplete'
+            end_ts = last[0]
+
+            # Was there a capture event shortly after the last touch?
+            wave_end_cap = min(
+                (c for c in captures if c >= start_ts),
+                default=None,
+            )
+            if wave_end_cap is not None:
+                outcome = 'captured'
+                end_ts = wave_end_cap
+                final_x_cap = conn.execute(
+                    "SELECT x, y, z FROM wool_events "
+                    "WHERE match_id = ? AND event_type = 7 AND timestamp = ? AND wool_id = ?",
+                    [match_id, wave_end_cap, wool_id]
+                ).fetchone()
+                if final_x_cap:
+                    final_x, final_y, final_z = final_x_cap
+            else:
+                # Check if last carrier died in void
+                last_carrier = carriers[-1]
+                for d_ts, d_y in deaths_by_player.get(last_carrier, []):
+                    if d_ts >= start_ts:
+                        end_ts = d_ts
+                        outcome = 'dropped_void' if d_y < 0 else 'dropped_land'
+                        break
+
+            duration_s = float(end_ts - start_ts) if end_ts else None
+
+            conn.execute("""
+                INSERT INTO wool_carry_chains (
+                    match_id, wool_id, wave_idx,
+                    attacking_team, n_carriers, n_handoffs,
+                    start_timestamp, end_timestamp, duration_s, outcome,
+                    first_x, first_y, first_z,
+                    final_x, final_y, final_z,
+                    max_y_before_touch, approach_type
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, [
+                match_id, wool_id, wave_idx,
+                attacking_team, n_carriers, n_handoffs,
+                start_ts, end_ts, duration_s, outcome,
+                first_x, first_y, first_z,
+                final_x, final_y, final_z,
+                max_y_before, approach_type,
+            ])
+            inserted += 1
+
+    print(f"  wool_carry_chains: inserted {inserted} rows for match {match_id}")
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -923,25 +1144,38 @@ def run_post_processing(
     """Run all post-processing steps for a match in order.
 
     Steps:
+      0. Schema migrations (node-path columns, Y columns, carry-chains table)
       1. populate_wool_spawn_baselines  (idempotent, per-map)
       2. build_region_visits            (per-match)
       3. build_life_features            (per-match)
+      4. build_y_features               (per-match)
+      5. build_wool_carry_chains        (per-match)
     """
-    from match_analysis.initialize_analysis_db import migrate_node_path_columns
+    from match_analysis.initialize_analysis_db import (
+        migrate_node_path_columns,
+        migrate_y_columns,
+    )
 
     map_slug = _get_map_slug(conn, match_id)
     print(f"Post-processing match {match_id} (map: {map_slug})")
 
-    print("Step 0/3: migrate node-path columns if needed")
+    print("Step 0/5: migrate schema columns if needed")
     migrate_node_path_columns()
+    migrate_y_columns()
 
-    print("Step 1/3: wool spawn baselines")
+    print("Step 1/5: wool spawn baselines")
     populate_wool_spawn_baselines(conn, map_slug)
 
-    print("Step 2/3: region visits")
+    print("Step 2/5: region visits")
     build_region_visits(conn, match_id)
 
-    print("Step 3/3: life segment features")
+    print("Step 3/5: life segment features")
     build_life_features(conn, match_id)
+
+    print("Step 4/5: Y-level features")
+    build_y_features(conn, match_id)
+
+    print("Step 5/5: wool carry chains")
+    build_wool_carry_chains(conn, match_id)
 
     print(f"Post-processing complete for match {match_id}")

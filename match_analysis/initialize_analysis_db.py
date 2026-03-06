@@ -286,6 +286,51 @@ def initialize_database() -> None:
     print(f"Database initialized at {db_path}")
 
 
+def _ensure_wool_carry_chains_table(conn) -> None:
+    """Create wool_carry_chains table if it does not exist yet."""
+    conn.execute("CREATE SEQUENCE IF NOT EXISTS seq_chain_id START 1")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS wool_carry_chains (
+            chain_id    INTEGER PRIMARY KEY DEFAULT nextval('seq_chain_id'),
+            match_id    INTEGER NOT NULL,
+            wool_id     INTEGER NOT NULL,
+            wave_idx    INTEGER NOT NULL,
+            attacking_team TEXT,
+            n_carriers  INTEGER NOT NULL DEFAULT 1,
+            n_handoffs  INTEGER NOT NULL DEFAULT 0,
+            start_timestamp BIGINT NOT NULL,
+            end_timestamp   BIGINT,
+            duration_s  FLOAT,
+            outcome     TEXT,
+            first_x     INTEGER, first_y INTEGER, first_z INTEGER,
+            final_x     INTEGER, final_y INTEGER, final_z INTEGER,
+            max_y_before_touch INTEGER,
+            approach_type TEXT,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+
+def migrate_y_columns(db_path: str | None = None) -> None:
+    """Add Y-level feature columns to life_segment_features and create
+    wool_carry_chains table if missing."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    for col_name, col_type in [
+        ("y_avg", "FLOAT"),
+        ("y_max", "INTEGER"),
+        ("frac_time_elevated", "FLOAT"),
+    ]:
+        conn.execute(
+            f"ALTER TABLE life_segment_features "
+            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+        )
+    _ensure_wool_carry_chains_table(conn)
+    conn.close()
+    print(f"Y-level columns and wool_carry_chains migrated in {db_path}")
+
+
 def migrate_node_path_columns(db_path: str | None = None) -> None:
     """Add node-path feature columns to an existing life_segment_features table.
 
