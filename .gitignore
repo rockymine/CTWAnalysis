@@ -32,8 +32,12 @@ env/
 !03_skeleton.png
 !04_outline.png
 !05_connectivity.png
+!05_trace_single.png
 !06_trace_single.png
+!06_trace_team.png
 !07_trace_team.png
+!07_timeseries.png
+!08_archetypes.png
 !map_folders/tumbleweed/map.png
 !map_folders/annealing_iv/map.png
 !map_folders/outback_outback_edition/map.png
@@ -47,11 +51,13 @@ layout_data/
 xml_data/
 xml_examples/
 
-# Match logs
-match_logs/
+# Match logs — exclude all but tumbleweed for demo
+match_logs/annealing_iv/
+match_logs/outback_outback_edition/
 
 # Parquet files (layout exports, density maps, etc.)
 *.parquet
+!match_logs/tumbleweed/*.parquet
 
 # Analysis output
 output/
