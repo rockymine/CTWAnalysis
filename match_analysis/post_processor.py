@@ -299,7 +299,7 @@ def _make_visit(key: tuple, entry_ts: int, exit_ts: int, ticks: int, node_seq: l
         'bridge_island_2': bi2,
         'entry_timestamp': entry_ts,
         'exit_timestamp': exit_ts,
-        'duration_ms': float(exit_ts - entry_ts),
+        'duration_s': float(exit_ts - entry_ts),
         'ticks': ticks,
         'entry_node': entry_node,
         'exit_node': exit_node,
@@ -477,7 +477,7 @@ def build_region_visits(
                 INSERT INTO life_segment_region_visits (
                     segment_id, match_id, player_id, visit_idx,
                     location_type, island_id, bridge_island_1, bridge_island_2,
-                    entry_timestamp, exit_timestamp, duration_ms,
+                    entry_timestamp, exit_timestamp, duration_s,
                     is_home_island, is_enemy_island, kill_count, was_death,
                     entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -486,7 +486,7 @@ def build_region_visits(
                     segment_id, match_id, player_id, visit_idx,
                     loc, v_island_id,
                     visit['bridge_island_1'], visit['bridge_island_2'],
-                    entry_ts, exit_ts, visit['duration_ms'],
+                    entry_ts, exit_ts, visit['duration_s'],
                     is_home, is_enemy, visit_kills, was_death,
                     visit.get('entry_node'), visit.get('exit_node'),
                     visit.get('bridge_node_1'), visit.get('bridge_node_2'),
@@ -641,7 +641,7 @@ def build_life_features(
             """
             SELECT visit_idx, location_type, island_id,
                    bridge_island_1, bridge_island_2,
-                   entry_timestamp, exit_timestamp, duration_ms,
+                   entry_timestamp, exit_timestamp, duration_s,
                    is_home_island, is_enemy_island, kill_count, was_death,
                    entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
             FROM life_segment_region_visits
@@ -825,7 +825,7 @@ def build_life_features(
                 frac_time_neutral_island, frac_time_build,
                 max_attack_depth, target_wool_id,
                 ended_on_enemy_island, ended_in_build,
-                duration_ms, time_to_first_departure_ms,
+                duration_s, time_to_first_departure_s,
                 kills, deaths, kill_in_build, kill_on_enemy_island,
                 wool_touches, wool_captures,
                 visited_junction, frac_island_visits_with_junction,
