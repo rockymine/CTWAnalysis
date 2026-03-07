@@ -37,17 +37,18 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Actions:
-  parse        Parse a structured match log file into a history CSV
-  scan         Scan a <map>/<files>.parquet folder tree into a history CSV
-  index        Index all match parquet files into the database
-  process      Process a specific match by ID
-  process-all  Process all unprocessed matches
-  list         List matches in the database
-  stats        Show database statistics
-  reset        Reset processing state (clears trajectory files)
-  post-process Build life_segment_features from processed matches
-  trace        Visualize player traces on map
-  kills        Visualize kill-death pairs on map
+  parse          Parse a structured match log file into a history CSV
+  scan           Scan a <map>/<files>.parquet folder tree into a history CSV
+  index          Index all match parquet files into the database
+  process        Process a specific match by ID
+  process-all    Process all unprocessed matches
+  list           List matches in the database
+  stats          Show database statistics
+  reset          Reset processing state (clears trajectory files)
+  post-process   Build life_segment_features from processed matches
+  trace          Visualize player traces on map
+  kills          Visualize kill-death pairs on map
+  traffic-graph  Build data-driven traffic graph from player position traces
 
 Examples:
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
@@ -200,6 +201,23 @@ Examples:
                    help='Map base layer: outline (polygon outlines) or '
                         'blocks (individual blocks from layout parquet)')
     p.set_defaults(func=handle_kills, color_mode='team')
+
+    # matches traffic-graph
+    p = matches_sub.add_parser(
+        'traffic-graph',
+        help='Build data-driven traffic graph from player position traces',
+    )
+    p.add_argument('--map-name', required=True,
+                   help='Map slug (e.g. tumbleweed) to build the graph for')
+    p.add_argument('--grid-size', type=int, default=5,
+                   help='Block-side of each grid cell (default: 5)')
+    p.add_argument('--min-occupation', type=int, default=5,
+                   help='Min position ticks to keep a node (default: 5)')
+    p.add_argument('--min-transitions', type=int, default=2,
+                   help='Min crossings to keep an edge (default: 2)')
+    p.add_argument('--force', action='store_true',
+                   help='Overwrite existing traffic_graph.json')
+    p.set_defaults(func=handle_traffic_graph)
 
 
 def handle_parse(args):
@@ -650,6 +668,54 @@ def handle_kills(args):
 
     if len(valid_match_ids) > 1:
         print(f"\nPlotted kills for {plotted}/{len(valid_match_ids)} matches.")
+
+
+def handle_traffic_graph(args):
+    import logging
+    import duckdb
+    from ctw.common import resolve_output_dir, resolve_map_folder
+    from match_analysis.traffic_graph import (
+        build_traffic_graph, save_traffic_graph, plot_traffic_graph,
+    )
+
+    ensure_match_db()
+    logging.basicConfig(level=logging.INFO)
+
+    map_folder     = resolve_map_folder(args.map_name)
+    map_slug       = map_folder.name
+    map_output_dir = resolve_output_dir(map_folder, create=True)
+
+    out_json = map_output_dir / "traffic_graph.json"
+    out_png  = map_output_dir / "traffic_graph.png"
+
+    if out_json.exists() and not getattr(args, 'force', False):
+        print(f"traffic_graph.json already exists at {out_json}")
+        print("Use --force to rebuild.")
+    else:
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        try:
+            graph = build_traffic_graph(
+                map_slug,
+                conn,
+                output_dir      = map_output_dir,
+                grid_size       = args.grid_size,
+                min_occupation  = args.min_occupation,
+                min_transitions = args.min_transitions,
+            )
+        finally:
+            conn.close()
+
+        save_traffic_graph(graph, out_json)
+        print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
+
+    # Always (re-)render the plot
+    import json
+    with open(out_json) as f:
+        graph = json.load(f)
+
+    map_context = _load_map_context(map_output_dir, map_folder)
+    plot_traffic_graph(graph, map_context, out_png)
+    print(f"Saved: {out_png}")
 
 
 def handle_list(args):
