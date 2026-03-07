@@ -435,41 +435,47 @@ Once labels are in the database they can be joined against any event table:
 Where clustering characterises individual lives, the time series notebook looks
 at the **continuous evolution of the match as a whole**.
 
-### Attack depth over time
+### Pusher count over time
 
-The match is divided into 60-second time buckets. For every position sample in
-a bucket, attack depth is computed as above (maximum over enemy wools,
-normalised by baseline distance). The bucket value is the **mean attack depth
-across all samples from all players of that team in that minute**, with a
-±1-standard-deviation band showing spread.
+The match is divided into 60-second time buckets. Rather than averaging depth
+over all team members (which conflates active attackers with home defenders and
+produces a low, noisy signal), the notebook counts **distinct players above a
+graph-depth threshold** (`PUSH_DEPTH_THRESHOLD`, default 0.65) per wool per
+bucket. This is called the *pusher count*.
 
-The resulting series answers: "how much collective pressure did this team
-sustain on the enemy objective each minute?" Rising depth signals a push;
-falling depth signals retreat or attrition. Wool touch and capture events are
-overlaid as markers so that objective plays can be correlated with pressure
-spikes.
+**Graph depth** is computed using the island skeleton graph rather than
+Euclidean distance. For each position sample the notebook finds the player's
+`nearest_graph_node` and looks up its Dijkstra distance to the wool node within
+the per-island skeleton graph. The result is normalised by the maximum
+intra-island graph distance so that 0 = island boundary and 1 = wool room.
+Critically, this metric is **self-selective**: depth is non-zero only when the
+player is physically on the wool's island (`location_type = 'island'`,
+`island_id` matches the wool's island). Players on their home island, on
+bridges, or in void corridors always score 0 — no filter on defending players
+is needed.
 
-Because positions are only sampled every 2 seconds and deduplicated by block,
-each bucket typically contains on the order of one sample per active player per
-~2–3 seconds. The mean smooths over individual player variation; the shading
-band captures team-level disagreement (some players pushing, others hanging
-back).
+The pusher count series answers: "how many players were simultaneously deep
+enough to threaten the wool room this minute?" A pusher count of ≥ 2
+(`PUSH_MIN_PLAYERS`) in the same bucket signals a **coordinated push** — two
+or more team-mates attacking together, which substantially increases capture
+probability compared with solo runs. Wool touch and capture events are overlaid
+as markers so that objective plays can be correlated with pressure spikes.
 
 ### Aggregate view across multiple matches
 
 When multiple matches on the same map are available, the notebook normalises
 time to `[0, 1]` and overlays all matches simultaneously. Individual match
 traces appear as faint lines; the bold line is the per-bucket median; the band
-is the 25th–75th percentile. This shows the *typical* pressure trajectory for
-each team on a given map — whether pressure tends to build monotonically,
+is the 25th–75th percentile. This shows the *typical* pusher-count trajectory
+for each team on a given map — whether pressure tends to build monotonically,
 whether there is a characteristic mid-match dip, or whether one team
 consistently dominates throughout.
 
 ### Push-pull score
 
 For each match the notebook computes the **Pearson correlation** between Team
-A's and Team B's mean attack-depth series over normalised time. This single
-number summarises the macro dynamic of the match:
+A's and Team B's total pusher count (summed over enemy wools) over normalised
+time. This single number summarises the macro dynamic of the match:
 
 - **Negative** — the teams are anti-correlated: one surges when the other
   retreats. Classic alternating push-and-defend. Higher absolute negative
@@ -484,6 +490,38 @@ The push-pull score is a lightweight map-quality heuristic: a map with
 consistently negative scores is generating dynamic, interactive matches.
 A map with scores near zero may have a structural issue encouraging passive play
 — perhaps defense is too easy, or the path to the enemy is too long.
+
+### Coordinated push analysis (Section 4)
+
+Section 4 zooms into a single match to dissect **when** and **where**
+coordinated pushes happened.
+
+**Push timeline** — per-wool pusher count over match time with shaded bands
+marking every coordinated push window (bucket where pusher count ≥
+`PUSH_MIN_PLAYERS`). Thin vertical lines mark wool touches; bold lines mark
+captures, making it immediately visible whether captures followed on the back of
+coordinated windows.
+
+**Attack flow map** — the full skeleton graph plotted at true world coordinates.
+Two layers of data are drawn on top of the structural skeleton:
+
+- *Node rings*: for each skeleton node, a team-coloured ring whose area is
+  proportional to the number of attacker position ticks at that node *during
+  coordinated push windows only*. Nodes the attacking team congregated around
+  become visually prominent.
+- *Flow edges*: edges between nodes are drawn in team colour with line width
+  proportional to the number of player transitions along that edge during push
+  windows. Thick edges highlight the actual paths the team used when they were
+  coordinating, rather than all movement across the match.
+
+Wool room nodes are marked with diamonds, spawn nodes with squares, both
+coloured by their semantic role. This makes it possible to read the map's
+choke-point structure and see where the attacking team converged.
+
+**Push efficiency table** — printed below the figure, one row per
+`(team, wool)` pair: number of push windows, wool touches and captures that
+occurred inside a push window vs. total, and the single most-occupied skeleton
+node during pushes.
 
 ---
 
@@ -533,23 +571,20 @@ is in provides context for interpreting the carry chain timeline.
 The `max_attack_depth` in `life_segment_features` takes the maximum over *all*
 enemy wools. When a team faces two wools they must capture, this feature
 obscures *which* one is under pressure. The wool dynamics notebook computes
-independent depth series for each objective:
+independent **pusher count** series for each objective using the same
+graph-depth metric as the time series notebook (see above): a player
+contributes to a wool's count only when they are physically on that wool's
+island and their graph depth exceeds `PUSH_DEPTH_THRESHOLD`. This makes the
+two wools' series directly comparable without any normalisation.
 
-```
-depth_W(t) = clip(1 − dist(player, wool_W) / baseline_W, 0, 1)
-```
-
-averaged over all position samples from all players of the attacking team in
-each 60-second bucket.
-
-When the two depth series for the same attacking team diverge — one high and
-sustained, one near zero — it reveals the **forced single defence** dynamic:
-the defending team has concentrated all their players on one wool entrance,
-leaving the other structurally exposed. Defenders face a genuine dilemma when
-they do not have enough players to hold both wool rooms simultaneously. Seeing
-this divergence emerge and then watching whether it correlates with a capture
-on the neglected wool is one of the more revealing patterns the notebook
-exposes.
+When the two pusher-count series for the same attacking team diverge — one
+high and sustained, one near zero — it reveals the **forced single defence**
+dynamic: the defending team has concentrated all their players on one wool
+entrance, leaving the other structurally exposed. Defenders face a genuine
+dilemma when they do not have enough players to hold both wool rooms
+simultaneously. Seeing this divergence emerge and then watching whether it
+correlates with a capture on the neglected wool is one of the more revealing
+patterns the notebook exposes.
 
 ### Carry chain timeline
 
