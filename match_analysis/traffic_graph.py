@@ -75,6 +75,20 @@ def build_traffic_graph(
     position_count = len(pos_df)
     logger.debug("Loaded %d positions from %d match(es)", position_count, match_count)
 
+    # ── 1b. Drop void positions ────────────────────────────────────────────
+    # 'void' = outside all island and build-region polygons in 2D.
+    # These positions are off the map footprint and must not become graph nodes
+    # or contribute to edge transitions.
+    # Note: players falling straight down (y < 0) while within an island polygon
+    # are classified as 'island' because y is not stored in position_events.
+    n_void = int((pos_df["location_type"] == "void").sum())
+    if n_void:
+        pos_df = pos_df[pos_df["location_type"] != "void"].copy()
+        logger.debug(
+            "Dropped %d void positions (%.1f%% of total)",
+            n_void, 100.0 * n_void / position_count,
+        )
+
     # ── 2. Discretise to grid cells ────────────────────────────────────────
     pos_df["cx"] = (pos_df["x"] // grid_size * grid_size).astype(int)
     pos_df["cz"] = (pos_df["z"] // grid_size * grid_size).astype(int)
@@ -371,8 +385,8 @@ def build_traffic_topology(graph: dict) -> dict:
                     e["src"], e["dst"], weight=w, transitions=e["transitions"]
                 )
 
-    wool_nodes  = [n for n in graph["nodes"] if n.get("poi_type") == "wool"]
-    spawn_nodes = [n for n in graph["nodes"] if n.get("poi_type") == "spawn"]
+    wool_nodes  = [n for n in node_info.values() if n.get("poi_type") == "wool"]
+    spawn_nodes = [n for n in node_info.values() if n.get("poi_type") == "spawn"]
 
     # Dijkstra from each wool node within the FULL graph (traversal can cross build regions)
     dijkstra_dists: dict[int, dict[int, float]] = {}
