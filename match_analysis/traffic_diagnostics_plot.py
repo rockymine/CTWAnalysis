@@ -278,6 +278,7 @@ def plot_life_segment_diagnostic(
     has_wool_event: bool = False,
     label: str = "",
     simplification_method: str = "consecutive_dedup",
+    reconstruction_mode: str = "dense",
     tortuosity: float | None = None,
     output_path: Optional[Path] = None,
 ) -> plt.Figure:
@@ -383,7 +384,7 @@ def plot_life_segment_diagnostic(
 
     # ── Panel D — reconstructed path (unpruned, inferred) ─────────────────
     _style_ax(ax_d, xmin, xmax, zmin, zmax,
-              "D — Reconstructed path (shortest, unpruned)\n"
+              f"D — Reconstructed path ({reconstruction_mode} mode)\n"
               "⚠ inferred layer — not directly observed")
     _draw_graph_background(ax_d, node_info, G_full, map_context,
                            node_alpha=0.12, edge_alpha=0.10)
@@ -431,6 +432,7 @@ def plot_life_segment_diagnostic(
         ("Span (start→end)",  f"{span_m:.0f} blocks"),
         ("Tortuosity",        f"{tortuosity:.2f}" if tortuosity is not None else "—"),
         ("Reconstructed",     str(len(path_nodes))),
+        ("Recon mode",        reconstruction_mode),
         ("Simplified",        str(len(simplified_sequence))),
         ("Wool touched",      "YES" if has_wool_event else "no"),
         ("",                  ""),

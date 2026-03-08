@@ -399,6 +399,7 @@ def run(map_slug: str, output_root: Path) -> None:
     node_info   = topology["node_info"]
     G_full      = topology["full_graph"]
     dijkstra    = topology["dijkstra_dists"]
+    grid_size   = float(graph.get("grid_size", 5.0))
 
     map_context = _load_map_context(output_dir)
 
@@ -459,8 +460,8 @@ def run(map_slug: str, output_root: Path) -> None:
             & (positions_all["segment_idx"] == seg_idx)
         ].sort_values("timestamp").reset_index(drop=True)
 
-        # Reconstruct path (shortest)
-        recon_path = reconstruct_full_path(snapped_seq, G_full, mode="shortest")
+        # Reconstruct path (dense-hop: penalises long edges with dist²/grid_size)
+        recon_path = reconstruct_full_path(snapped_seq, G_full, mode="dense", grid_size=grid_size)
 
         # Simplified sequence
         simplified = simplify_sequence(snapped_seq, method="consecutive_dedup")
@@ -483,6 +484,7 @@ def run(map_slug: str, output_root: Path) -> None:
             has_wool_event=meta["has_wool_event"],
             label=label,
             simplification_method="consecutive_dedup",
+            reconstruction_mode="dense",
             tortuosity=meta.get("tortuosity"),
             output_path=out_path,
         )
