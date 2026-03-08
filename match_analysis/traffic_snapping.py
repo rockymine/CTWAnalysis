@@ -96,7 +96,8 @@ def reconstruct_path(
     G: nx.Graph,
     src: int,
     dst: int,
-    mode: str = "shortest",
+    mode: str = "dense",
+    grid_size: float = 5.0,
 ) -> list[int] | None:
     """Find a path between two nodes on the traffic graph.
 
@@ -108,9 +109,25 @@ def reconstruct_path(
     src, dst:
         Source and destination node ids.
     mode:
-        ``"shortest"`` — minimise total Euclidean distance (uses ``weight`` attr).
+        ``"dense"`` *(default)* — penalises long edges quadratically:
+            effective weight = distance² / grid_size.
+            A single 30-block edge costs 180 (30²/5); six 5-block hops cost 30
+            (6 × 5²/5 = 30).  Forces routing through the dense short-hop
+            neighbourhood rather than taking void-crossing shortcuts.
+
+        ``"shortest"`` — minimise total Euclidean distance (uses ``weight``
+            attr directly).  May take void-crossing shortcuts when a long direct
+            edge is shorter in Euclidean terms than going around.
+
         ``"traffic_weighted"`` — prefer high-traffic edges; effective weight =
             distance / (transitions + 1), so popular edges are cheaper.
+
+        ``"traffic_dense"`` — combines both penalties: prefers short, high-traffic
+            edges.  Effective weight = distance² / (grid_size × (transitions + 1)).
+    grid_size:
+        Grid cell side length in blocks (default 5).  Used by ``"dense"`` and
+        ``"traffic_dense"`` modes to normalise the quadratic penalty so that
+        adjacent-cell edges (distance ≈ grid_size) still have unit weight.
 
     Returns
     -------
@@ -124,13 +141,27 @@ def reconstruct_path(
     if src not in G or dst not in G:
         return None
 
-    if mode == "traffic_weighted":
+    if mode == "dense":
+        _gs = grid_size
+        def _weight(u, v, data):
+            dist = data.get("weight", 1.0)
+            return (dist * dist) / _gs
+        weight_arg: str | None = _weight  # type: ignore[assignment]
+    elif mode == "traffic_weighted":
         def _weight(u, v, data):
             dist = data.get("weight", 1.0)
             trans = data.get("transitions", 1)
             return dist / (trans + 1)
-        weight_arg: str | None = _weight  # type: ignore[assignment]
+        weight_arg = _weight
+    elif mode == "traffic_dense":
+        _gs = grid_size
+        def _weight(u, v, data):
+            dist  = data.get("weight", 1.0)
+            trans = data.get("transitions", 1)
+            return (dist * dist) / (_gs * (trans + 1))
+        weight_arg = _weight
     else:
+        # "shortest" — plain Euclidean distance
         weight_arg = "weight"
 
     try:
@@ -144,7 +175,8 @@ def reconstruct_path(
 def reconstruct_full_path(
     snapped_sequence: list[int],
     G: nx.Graph,
-    mode: str = "shortest",
+    mode: str = "dense",
+    grid_size: float = 5.0,
 ) -> tuple[list[int], list[bool]]:
     """Reconstruct the full graph path for a snapped node sequence.
 
@@ -159,6 +191,8 @@ def reconstruct_full_path(
         Traffic graph (networkx).
     mode:
         Passed through to :func:`reconstruct_path`.
+    grid_size:
+        Passed through to :func:`reconstruct_path` (used by ``"dense"`` modes).
 
     Returns
     -------
@@ -188,7 +222,7 @@ def reconstruct_full_path(
             is_anchor.append(True)
             continue
 
-        segment = reconstruct_path(G, prev_id, curr_id, mode=mode)
+        segment = reconstruct_path(G, prev_id, curr_id, mode=mode, grid_size=grid_size)
 
         if segment is None or len(segment) == 0:
             # No path found — jump directly to next anchor
