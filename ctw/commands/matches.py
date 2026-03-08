@@ -673,7 +673,7 @@ def handle_kills(args):
 def handle_traffic_graph(args):
     import logging
     import duckdb
-    from ctw.common import resolve_output_dir, resolve_map_folder
+    from ctw.common import DEFAULT_OUTPUT_ROOT
     from match_analysis.traffic_graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
     )
@@ -681,9 +681,19 @@ def handle_traffic_graph(args):
     ensure_match_db()
     logging.basicConfig(level=logging.INFO)
 
-    map_folder     = resolve_map_folder(args.map_name)
-    map_slug       = map_folder.name
-    map_output_dir = resolve_output_dir(map_folder, create=True)
+    # Resolve map slug and output dir without requiring a map_folder to exist.
+    # If a map_folder exists, use it; otherwise fall back to output/<slug>.
+    map_slug = args.map_name
+    map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
+    if not map_folder_candidate.is_dir():
+        map_folder_candidate = None
+
+    map_output_dir = DEFAULT_OUTPUT_ROOT / map_slug
+    if not map_output_dir.is_dir():
+        print(f"Error: No output directory found for '{map_slug}' at {map_output_dir}")
+        print("Run 'ctw run --map ...' first, or ensure the map has been processed.")
+        return
+    map_output_dir.mkdir(parents=True, exist_ok=True)
 
     out_json = map_output_dir / "traffic_graph.json"
     out_png  = map_output_dir / "traffic_graph.png"
@@ -713,7 +723,8 @@ def handle_traffic_graph(args):
     with open(out_json) as f:
         graph = json.load(f)
 
-    map_context = _load_map_context(map_output_dir, map_folder)
+    fallback = map_folder_candidate if map_folder_candidate else map_output_dir
+    map_context = _load_map_context(map_output_dir, fallback)
     plot_traffic_graph(graph, map_context, out_png)
     print(f"Saved: {out_png}")
 
