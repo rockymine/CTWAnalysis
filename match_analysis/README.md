@@ -15,7 +15,8 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 5. Index matches            ctw matches index ...
 6. Process matches          ctw matches process-all
 7. Post-process features    (runs automatically inside step 6)
-8. Cluster archetypes       notebooks/life_segment_clustering.ipynb
+8. Build traffic graph      ctw matches traffic-graph --map-name <name>
+9. Cluster archetypes       notebooks/life_segment_clustering.ipynb
 ```
 
 ### Step 0: Initialize the database
@@ -129,7 +130,37 @@ The function runs four internal steps in order:
    `life_segment_features`, computing both region-level time fractions and the nine
    node-path skeleton metrics.
 
-### Step 8: Cluster archetypes
+### Step 8: Build traffic graph
+
+Build a data-driven navigation graph from aggregated player position traces.
+This is used as the default graph for Section 4 of `match_time_series.ipynb`
+and produces a standalone visualisation:
+
+```bash
+ctw matches traffic-graph --map-name tumbleweed
+ctw matches traffic-graph --map-name tumbleweed --force    # rebuild if exists
+ctw matches traffic-graph --map-name tumbleweed --grid-size 3   # finer grid
+```
+
+Output files:
+- `output/<map_slug>/traffic_graph.json` — nodes, edges, aggregate statistics
+- `output/<map_slug>/traffic_graph.png` — visualisation with island fills and edge heatmap
+
+The graph is built from all processed matches for the map. See
+`docs/analysis_overview.md` § *The skeleton graph and the traffic graph* for a
+full description of the construction process and how it differs from the
+geometric skeleton graph.
+
+Parameters:
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--grid-size` | 5 | Grid cell side length in blocks (spatial resolution of nodes) |
+| `--min-occupation` | 5 | Minimum position samples to keep a node |
+| `--min-transitions` | 2 | Minimum crossings to keep an edge |
+| `--force` | off | Rebuild even if `traffic_graph.json` already exists |
+
+### Step 9: Cluster archetypes
 
 Open and run the Jupyter notebook (see [Clustering Notebook](#clustering-notebook) below).
 
@@ -370,7 +401,7 @@ are available for match-level and aggregate analysis.
 | **1 — Single Match Inspector** | Per-team pusher count (players above `PUSH_DEPTH_THRESHOLD` graph depth) per enemy wool over absolute match time. Death rate on right axis. Touch/capture markers. |
 | **2 — Aggregate Per-Map View** | All matches on a map overlaid on normalised time `[0, 1]`. Median and 25–75th percentile band. Wool-capture rug marks. Match duration histogram. |
 | **3 — Push-Pull Summary** | Pearson correlation between Team A's and Team B's total pusher-count series over normalised time. Negative = back-and-forth; near zero = stagnant; positive = simultaneous escalation. |
-| **4 — Coordinated Push Analysis** | Push window timeline with shaded coordinated windows; Minard-style attack flow map showing skeleton graph with node size ∝ attacker ticks and edge width ∝ transitions during push windows; push efficiency table. |
+| **4 — Coordinated Push Analysis** | Push window timeline with shaded coordinated windows; attack flow map using the traffic graph (falls back to skeleton graph if not built) with island polygon fills, node size ∝ attacker ticks during push windows, directed flow arrows ∝ transitions, dashed inter-island crossing edges; push efficiency table. |
 
 Key tunables in the setup cell: `BUCKET_SIZE_S`, `PUSH_DEPTH_THRESHOLD`,
 `PUSH_MIN_PLAYERS`.

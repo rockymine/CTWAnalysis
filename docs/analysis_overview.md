@@ -141,6 +141,132 @@ semantic geography of the map.
 
 ---
 
+## The skeleton graph and the traffic graph
+
+Two different navigation graphs are available for spatial analysis. They serve
+complementary roles and are used in different parts of the pipeline.
+
+### Skeleton graph
+
+The skeleton graph is **geometry-first**: it is derived entirely from the map's
+XML definition and block layout, with no match data required. The pipeline
+(`ctw run`) traces the navigable surface of each island, prunes it to a sparse
+skeleton, and classifies nodes by their topological role:
+
+- **Endpoint nodes** (degree 1) sit at the outermost reachable edge of an
+  island — the first landmark an attacker reaches after stepping off a bridge
+  and the last defensible ground before the interior.
+- **Junction nodes** (degree ≥ 3) are interior branching points where paths
+  diverge. Reaching one means the player has moved past the island entrance
+  and committed toward the wool room.
+
+Edges connect adjacent skeleton landmarks with weights equal to Euclidean
+distance. Dijkstra distances from each wool node give a normalised *depth*
+value — 0 at the island boundary, 1 at the wool — that is consistently
+interpretable across maps of different sizes.
+
+The skeleton graph's strength is precision and interpretability: every node has
+a clear geometric meaning, the graph exists before any matches are played, and
+the depth metric is well-scaled. Its weakness is sparsity in open areas:
+wide frontlines or large build-region corridors connecting many islands may
+have very few skeleton nodes, making nearest-node assignment coarse and missing
+the nuance of where players actually move within those spaces.
+
+### Traffic graph
+
+The traffic graph is **data-first**: it is built from the aggregated movement
+traces of all players across every processed match on the map. It captures
+*where players actually went*, not where the geometry says they could go.
+
+#### Why it exists
+
+For maps with large open build regions shared between many islands, the skeleton
+graph cannot adequately represent player movement — those areas are treated as
+featureless traversal space with no navigational landmarks. The traffic graph
+fills this gap by placing nodes wherever players actually spend time, and edges
+wherever players actually walk, regardless of whether the skeleton considered
+that area structurally significant.
+
+#### Construction
+
+The `matches traffic-graph` command (`ctw.py matches traffic-graph --map-name
+<slug>`) builds the graph in six steps.
+
+**1. Load and filter positions.** All `position_events` rows for the map are
+loaded from the database across every processed match. Void positions — those
+classified as outside all island and build-region polygons — are dropped. These
+arise when players fall into the void or reach unrecognised areas.
+
+**2. Grid discretisation.** Each continuous world coordinate `(x, z)` is
+snapped to a **grid cell** by flooring to the nearest multiple of `grid_size`:
+
+```
+cell_x = x // grid_size * grid_size
+cell_z = z // grid_size * grid_size
+```
+
+A cell with the default `grid_size = 5` covers a 5×5 block area — roughly one
+typical room or corridor width. All positions within that area count as visits
+to the same node. This discretisation converts a dense point cloud into a
+sparse, meaningful graph.
+
+**`grid_size` controls spatial resolution.** A smaller value (e.g. 3) produces
+more nodes and finer coverage but requires more match data to survive pruning.
+A larger value (e.g. 10) is coarser and generalises from smaller datasets but
+may merge tactically distinct positions into one node. The default of 5 blocks
+balances resolution against data requirements for maps with 20–100 players.
+
+**3. Occupation counting.** Each cell's *occupation* is the total number of
+position samples that landed in it across all loaded matches. Cells with fewer
+than `min_occupation` (default 5) visits are pruned as noise.
+
+**4. Transition counting within life segments.** For each player, for each life
+segment, consecutive position samples are compared. When two consecutive samples
+land in different cells, a **transition** is recorded between those cells.
+
+Transitions are strictly scoped to **life segments**: they connect only samples
+from the same player within the same life. This prevents death/respawn
+teleportation from generating spurious long-range edges. A player who dies at
+the enemy wool room and immediately reappears at their own spawn does not
+produce an edge spanning the map. The `max_gap_s` guard (default 30 s) also
+drops any timestamp jumps within a life that suggest a stale record. Transitions
+are accumulated as undirected edge counts and edges with fewer than
+`min_transitions` (default 2) crossings are pruned.
+
+**5. Fixed anchor nodes.** Wool and spawn locations from `map_graph.json` are
+injected as fixed nodes regardless of observed traffic. This ensures that the
+key objective locations are always present in the graph, even if players rarely
+dwelt in exactly those cells. When a fixed position coincides with an existing
+cell, that cell is annotated with the POI type; when it falls in an empty cell,
+a new node is added and connected to its three nearest neighbours.
+
+**6. Output.** The graph is written to `output/<map_slug>/traffic_graph.json`
+with aggregate statistics: match count, total participations (sum of
+`player_count` across processed matches), total positions, and aggregate
+playtime across all lives. A visualisation (`traffic_graph.png`) plots the
+graph overlaid on team-coloured island polygon fills, with edge colour
+indicating transition frequency (yellow → red, YlOrRd) and node size
+proportional to occupation.
+
+#### Skeleton graph vs. traffic graph
+
+| | Skeleton graph | Traffic graph |
+|---|---|---|
+| **Source** | Map XML + block geometry | Player position events |
+| **Requires match data** | No | Yes |
+| **Node placement** | Geometric landmarks (endpoints, junctions) | High-traffic 5×5-block grid cells |
+| **Build region coverage** | None — treated as featureless traversal | Full — all navigable areas players used |
+| **Density** | Sparse; fixed by topology | Denser in active areas, absent in dead zones |
+| **Depth metric** | Dijkstra on per-island subgraph | Dijkstra on full graph (can traverse build regions) |
+| **Baseline normalisation** | Max intra-island skeleton distance | Max intra-island traffic distance |
+| **Best for** | Feature computation; maps with clear island structure | Flow visualisation; maps with large shared build regions |
+
+Section 4 of `match_time_series.ipynb` uses the traffic graph by default when
+`traffic_graph.json` exists for the map, and falls back to the skeleton graph
+otherwise.
+
+---
+
 ## Post-processing: building derived features
 
 After a match is processed, `run_post_processing` runs automatically (and can
@@ -502,21 +628,26 @@ marking every coordinated push window (bucket where pusher count ≥
 captures, making it immediately visible whether captures followed on the back of
 coordinated windows.
 
-**Attack flow map** — the full skeleton graph plotted at true world coordinates.
-Two layers of data are drawn on top of the structural skeleton:
+**Attack flow map** — the navigation graph plotted at true world coordinates,
+with team-coloured island polygon fills providing map context behind the graph.
+The notebook uses the **traffic graph** by default when one exists for the map,
+falling back to the skeleton graph otherwise (labelled in the panel title).
+Two layers of data are drawn on top of the structural graph:
 
-- *Node rings*: for each skeleton node, a team-coloured ring whose area is
+- *Node occupation discs*: for each node, a team-coloured disc whose area is
   proportional to the number of attacker position ticks at that node *during
   coordinated push windows only*. Nodes the attacking team congregated around
   become visually prominent.
-- *Flow edges*: edges between nodes are drawn in team colour with line width
-  proportional to the number of player transitions along that edge during push
-  windows. Thick edges highlight the actual paths the team used when they were
-  coordinating, rather than all movement across the match.
+- *Flow arrows*: directed edges drawn in team colour with width proportional to
+  the number of player transitions along that edge during push windows. Arrow
+  direction points toward the enemy wool. Thick arrows highlight the actual
+  paths the team used when coordinating, not all movement across the match.
+- *Island-crossing edges*: when players move between islands during a push
+  window, dashed lines connect the relevant island centres to show which
+  inter-island corridors were used.
 
-Wool room nodes are marked with diamonds, spawn nodes with squares, both
-coloured by their semantic role. This makes it possible to read the map's
-choke-point structure and see where the attacking team converged.
+Wool nodes are marked with diamonds and spawn nodes with squares, both coloured
+by their semantic role.
 
 **Push efficiency table** — printed below the figure, one row per
 `(team, wool)` pair: number of push windows, wool touches and captures that
