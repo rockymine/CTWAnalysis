@@ -47,8 +47,8 @@ except ImportError as exc:
 # ---------------------------------------------------------------------------
 
 _BG_COLOR      = "#0d0d18"
-_EDGE_ALPHA    = 0.25       # faint background graph edges
-_NODE_ALPHA    = 0.30       # faint background graph nodes
+_EDGE_ALPHA    = 0.14       # faint background graph edges
+_NODE_ALPHA    = 0.14       # faint background graph nodes
 _OBS_CMAP      = cm.get_cmap("plasma")   # temporal colouring for observed data
 _INFER_COLOR   = "#44ccff"               # colour for inferred intermediate nodes
 _ANCHOR_COLOR  = "#ffdd44"              # colour for snapped anchor nodes (observed)
@@ -152,27 +152,31 @@ def _draw_graph_background(
 
 
 def _temporal_colors(n: int) -> np.ndarray:
-    """Return (n, 4) RGBA array ramping through the plasma colourmap."""
+    """Return (n, 4) RGBA array ramping through the plasma colourmap.
+
+    Start at 0.15 (avoids near-black) and end at 0.98 (bright yellow).
+    """
     if n <= 1:
-        return _OBS_CMAP(np.array([0.0]))
-    return _OBS_CMAP(np.linspace(0.0, 1.0, n))
+        return _OBS_CMAP(np.array([0.15]))
+    return _OBS_CMAP(np.linspace(0.15, 0.98, n))
 
 
-def _draw_position_trace(ax, xs, zs, size: float = 22) -> None:
+def _draw_position_trace(ax, xs, zs, size: float = 55) -> None:
     """Draw raw positions with temporal colour gradient and start/end markers."""
     n = len(xs)
     if n == 0:
         return
     colors = _temporal_colors(n)
-    # Faint connecting line
-    ax.plot(xs, zs, color="#aaaaaa", lw=0.6, alpha=0.35, zorder=3)
-    # Scatter with temporal colours
-    ax.scatter(xs, zs, c=colors, s=size, linewidths=0, zorder=4)
-    # Start / end markers
-    ax.scatter([xs[0]], [zs[0]], s=100, color=_START_COLOR,
-               marker="*", zorder=6, edgecolors="white", linewidths=0.8)
-    ax.scatter([xs[-1]], [zs[-1]], s=80, color=_END_COLOR,
-               marker="X", zorder=6, edgecolors="white", linewidths=0.8)
+    # Connecting line — brighter and thicker for visibility
+    ax.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+    # Scatter with temporal colours and white stroke for contrast
+    ax.scatter(xs, zs, c=colors, s=size, linewidths=0.6,
+               edgecolors="white", zorder=4)
+    # Start / end markers — larger
+    ax.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
+               marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+    ax.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
+               marker="X", zorder=6, edgecolors="white", linewidths=1.2)
 
 
 def _draw_node_sequence(
@@ -212,29 +216,32 @@ def _draw_node_sequence(
 
     if draw_line:
         ax.plot(coords_arr[:, 0], coords_arr[:, 1],
-                color="#aaaaaa", lw=0.6, alpha=0.35, zorder=3)
+                color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
 
     if is_anchor is None:
         ax.scatter(coords_arr[:, 0], coords_arr[:, 1],
-                   c=colors, s=25, marker="s", linewidths=0, zorder=4)
+                   c=colors, s=50, marker="s",
+                   linewidths=0.6, edgecolors="white", zorder=4)
     else:
         # Draw anchors (squares) and intermediates (diamonds) separately
         anchor_mask = np.array(is_anchor[:len(coords_arr)], dtype=bool)
         if anchor_mask.any():
             ax.scatter(coords_arr[anchor_mask, 0], coords_arr[anchor_mask, 1],
-                       c=colors[anchor_mask], s=30, marker="s",
-                       linewidths=0, zorder=5, label="snapped anchor (observed)")
+                       c=colors[anchor_mask], s=55, marker="s",
+                       linewidths=0.6, edgecolors="white", zorder=5,
+                       label="snapped anchor (observed)")
         infer_mask = ~anchor_mask
         if infer_mask.any():
             ax.scatter(coords_arr[infer_mask, 0], coords_arr[infer_mask, 1],
-                       s=12, marker="D", color=_INFER_COLOR,
-                       alpha=0.55, linewidths=0, zorder=4, label="inferred intermediate")
+                       s=22, marker="D", color=_INFER_COLOR,
+                       alpha=0.75, linewidths=0.4, edgecolors="white",
+                       zorder=4, label="inferred intermediate")
 
     # Start / end markers (use first and last valid node in sequence)
-    ax.scatter([coords_arr[0, 0]], [coords_arr[0, 1]], s=100, color=_START_COLOR,
-               marker="*", zorder=6, edgecolors="white", linewidths=0.8)
-    ax.scatter([coords_arr[-1, 0]], [coords_arr[-1, 1]], s=80, color=_END_COLOR,
-               marker="X", zorder=6, edgecolors="white", linewidths=0.8)
+    ax.scatter([coords_arr[0, 0]], [coords_arr[0, 1]], s=180, color=_START_COLOR,
+               marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+    ax.scatter([coords_arr[-1, 0]], [coords_arr[-1, 1]], s=130, color=_END_COLOR,
+               marker="X", zorder=6, edgecolors="white", linewidths=1.2)
 
 
 def _legend_handles() -> list[Line2D]:
@@ -271,6 +278,7 @@ def plot_life_segment_diagnostic(
     has_wool_event: bool = False,
     label: str = "",
     simplification_method: str = "consecutive_dedup",
+    tortuosity: float | None = None,
     output_path: Optional[Path] = None,
 ) -> plt.Figure:
     """Generate a 6-panel diagnostic figure for one life segment.
@@ -401,31 +409,34 @@ def plot_life_segment_diagnostic(
     ax_f.axis("off")
 
     n_unique_snapped = len(set(snapped_sequence))
-    jitter_removed   = len(snapped_sequence) - len(simplified_sequence)
-    jitter_pct       = (
-        100.0 * jitter_removed / len(snapped_sequence)
+    consec_dedup_removed = len(snapped_sequence) - len(simplified_sequence)
+    dedup_pct = (
+        100.0 * consec_dedup_removed / len(snapped_sequence)
         if snapped_sequence else 0.0
     )
+    span_m = float(np.sqrt((xs[-1] - xs[0]) ** 2 + (zs[-1] - zs[0]) ** 2)) if len(xs) > 1 else 0.0
 
     lines = [
-        ("Map",              map_slug),
-        ("Match ID",         str(match_id)),
-        ("Player ID",        str(player_id)),
-        ("Segment",          str(segment_idx)),
-        ("Category",         label or "—"),
-        ("",                 ""),
-        ("Duration",         f"{duration_s:.1f} s"),
-        ("Position samples", str(len(xs))),
-        ("Snapped nodes",    str(len(snapped_sequence))),
-        ("Unique snapped",   str(n_unique_snapped)),
-        ("Consec. dedup removed", f"{jitter_removed} ({jitter_pct:.0f}%)"),
-        ("Reconstructed nodes",   str(len(path_nodes))),
-        ("Simplified anchors",    str(len(simplified_sequence))),
-        ("Wool touched",     "YES" if has_wool_event else "no"),
-        ("",                 ""),
-        ("Layers note:",     ""),
-        (" observed",        "raw positions, snapped anchors"),
-        (" inferred",        "reconstructed intermediates"),
+        ("Map",               map_slug),
+        ("Match ID",          str(match_id)),
+        ("Player ID",         str(player_id)),
+        ("Segment",           str(segment_idx)),
+        ("Category",          label or "—"),
+        ("",                  ""),
+        ("Duration",          f"{duration_s:.1f} s"),
+        ("Position samples",  str(len(xs))),
+        ("Snapped nodes",     str(len(snapped_sequence))),
+        ("Unique snapped",    str(n_unique_snapped)),
+        ("Dedup removed",     f"{consec_dedup_removed} ({dedup_pct:.0f}%)"),
+        ("Span (start→end)",  f"{span_m:.0f} blocks"),
+        ("Tortuosity",        f"{tortuosity:.2f}" if tortuosity is not None else "—"),
+        ("Reconstructed",     str(len(path_nodes))),
+        ("Simplified",        str(len(simplified_sequence))),
+        ("Wool touched",      "YES" if has_wool_event else "no"),
+        ("",                  ""),
+        ("Layers note:",      ""),
+        (" observed",         "raw positions, snapped anchors"),
+        (" inferred",         "reconstructed intermediates"),
     ]
 
     y = 0.97

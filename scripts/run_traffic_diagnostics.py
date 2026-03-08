@@ -4,9 +4,9 @@
 Produces:
   1. A full-map traffic graph overview (reuses existing plot_traffic_graph).
   2. A 6-panel diagnostic figure for each of four representative life segments:
-       - deep_attacker   (snapped closest to a wool node)
-       - defender        (long segment, low unique-node count, near spawn)
-       - jitter          (highest consecutive-repeat ratio)
+       - deep_attacker   (snapped closest to an ENEMY wool node)
+       - defender        (player whose snapped nodes hug their HOME wool room)
+       - roamer          (high unique-node count with high path tortuosity)
        - traversal       (maximum first→last Euclidean span)
 
 Outputs are written to:
@@ -109,6 +109,38 @@ def _load_wool_events(conn, map_slug: str) -> pd.DataFrame:
 # Per-segment metric computation
 # ---------------------------------------------------------------------------
 
+def _build_team_wool_lookup(node_info: dict[int, dict]) -> dict[str, list[int]]:
+    """Map team name → list of wool node_ids on that team's island.
+
+    These are the wools that team *defends* (located on their own island).
+    """
+    result: dict[str, list[int]] = {}
+    for nid, n in node_info.items():
+        if n.get("poi_type") == "wool" and n.get("team"):
+            team = n["team"]
+            result.setdefault(team, []).append(nid)
+    return result
+
+
+def _nearest_spawn_team(
+    spawn_x: float,
+    spawn_z: float,
+    node_info: dict[int, dict],
+) -> str | None:
+    """Return the team of the spawn node closest to (spawn_x, spawn_z)."""
+    best_team = None
+    best_d    = float("inf")
+    for n in node_info.values():
+        if n.get("poi_type") != "spawn":
+            continue
+        cx, cz = n["coords"]
+        d = (cx - spawn_x) ** 2 + (cz - spawn_z) ** 2
+        if d < best_d:
+            best_d    = d
+            best_team = n.get("team")
+    return best_team
+
+
 def _compute_segment_metrics(
     positions_all: pd.DataFrame,
     life_segments: pd.DataFrame,
@@ -121,9 +153,21 @@ def _compute_segment_metrics(
 
     Returns a DataFrame with one row per life_segment and columns:
         segment_id, match_id, player_id, segment_idx, duration,
-        position_count, snapped (list), unique_nodes, jitter_ratio,
-        min_wool_dist, span_m (Euclidean first→last), has_wool_event
+        position_count, snapped_seq, unique_nodes,
+        min_enemy_wool_dist, avg_home_wool_dist, span_m,
+        tortuosity, has_wool_event
     """
+    # Pre-build team → home wool ids lookup
+    team_wool = _build_team_wool_lookup(node_info)
+
+    # Pre-build spawn lookup from life_segments
+    spawn_lookup: dict[tuple, tuple[float, float]] = {
+        (int(r.match_id), int(r.player_id), int(r.segment_idx)): (
+            float(r.spawn_x), float(r.spawn_z)
+        )
+        for r in life_segments.itertuples()
+    }
+
     # Filter to segments with enough positions
     seg_keys = positions_all.groupby(["match_id", "player_id", "segment_idx"]).size()
     valid_keys = seg_keys[seg_keys >= min_positions].reset_index()
@@ -143,6 +187,11 @@ def _compute_segment_metrics(
     pos_filtered = pos_filtered.copy()
     pos_filtered["snapped_node"] = all_snapped
 
+    # Pre-extract node coords for trajectory-length computation
+    node_coords: dict[int, tuple[float, float]] = {
+        nid: (n["coords"][0], n["coords"][1]) for nid, n in node_info.items()
+    }
+
     wool_events_set = set(
         zip(wool_events["match_id"], wool_events["player_id"], wool_events["segment_idx"])
     )
@@ -159,27 +208,62 @@ def _compute_segment_metrics(
         unique_nodes = len(set(snapped_seq))
         n = len(snapped_seq)
 
-        # Jitter ratio: how many consecutive nodes are the same
-        consec_same = sum(1 for a, b in zip(snapped_seq, snapped_seq[1:]) if a == b)
-        jitter_ratio = consec_same / (n - 1) if n > 1 else 0.0
+        # Determine player team from closest spawn node to their recorded spawn position
+        spawn_x, spawn_z = spawn_lookup.get(
+            (int(match_id), int(player_id), int(seg_idx)), (xs[0], zs[0])
+        )
+        player_team = _nearest_spawn_team(spawn_x, spawn_z, node_info)
 
-        # Minimum Dijkstra distance to any wool node (using snapped anchors)
-        if dijkstra_dists:
-            min_wool_dist = min(
-                (
-                    min(
-                        (dd.get(nid, float("inf")) for dd in dijkstra_dists.values()),
-                        default=float("inf"),
-                    )
-                    for nid in snapped_seq
-                ),
-                default=float("inf"),
+        # Home wools = wools on the player's OWN island (which they defend)
+        home_wool_ids = team_wool.get(player_team, []) if player_team else []
+        # Enemy wools = all other wool nodes
+        all_wool_ids  = [
+            nid for nid, nd in node_info.items() if nd.get("poi_type") == "wool"
+        ]
+        enemy_wool_ids = [w for w in all_wool_ids if w not in home_wool_ids]
+
+        # Minimum Dijkstra distance to an ENEMY wool (deep attacker metric)
+        if enemy_wool_ids and dijkstra_dists:
+            min_enemy_wool_dist = min(
+                min(
+                    dijkstra_dists.get(w, {}).get(nid, float("inf"))
+                    for w in enemy_wool_ids
+                    if w in dijkstra_dists
+                )
+                for nid in snapped_seq
             )
         else:
-            min_wool_dist = float("inf")
+            min_enemy_wool_dist = float("inf")
+
+        # Average Dijkstra distance to HOME wools (defender metric)
+        if home_wool_ids and dijkstra_dists:
+            per_node_home_dists = [
+                min(
+                    dijkstra_dists.get(w, {}).get(nid, float("inf"))
+                    for w in home_wool_ids
+                    if w in dijkstra_dists
+                )
+                for nid in snapped_seq
+            ]
+            finite_home = [d for d in per_node_home_dists if d < float("inf")]
+            avg_home_wool_dist = float(np.mean(finite_home)) if finite_home else float("inf")
+        else:
+            avg_home_wool_dist = float("inf")
 
         # Euclidean span: distance between first and last sample
         span_m = float(np.sqrt((xs[-1] - xs[0]) ** 2 + (zs[-1] - zs[0]) ** 2))
+
+        # Tortuosity: total trajectory length (through snapped nodes) / span
+        # High tortuosity means the player looped around rather than going straight.
+        traj_len = sum(
+            np.sqrt(
+                (node_coords[a][0] - node_coords[b][0]) ** 2
+                + (node_coords[a][1] - node_coords[b][1]) ** 2
+            )
+            for a, b in zip(snapped_seq, snapped_seq[1:])
+            if a in node_coords and b in node_coords and a != b
+        )
+        tortuosity = traj_len / max(span_m, 1.0)
 
         has_wool = (int(match_id), int(player_id), int(seg_idx)) in wool_events_set
 
@@ -193,18 +277,19 @@ def _compute_segment_metrics(
         segment_id = int(ls_row["segment_id"].iloc[0]) if len(ls_row) else -1
 
         records.append({
-            "segment_id":   segment_id,
-            "match_id":     int(match_id),
-            "player_id":    int(player_id),
-            "segment_idx":  int(seg_idx),
-            "duration":     duration,
-            "position_count": n,
-            "snapped_seq":  snapped_seq,
-            "unique_nodes": unique_nodes,
-            "jitter_ratio": jitter_ratio,
-            "min_wool_dist": min_wool_dist,
-            "span_m":       span_m,
-            "has_wool_event": has_wool,
+            "segment_id":          segment_id,
+            "match_id":            int(match_id),
+            "player_id":           int(player_id),
+            "segment_idx":         int(seg_idx),
+            "duration":            duration,
+            "position_count":      n,
+            "snapped_seq":         snapped_seq,
+            "unique_nodes":        unique_nodes,
+            "min_enemy_wool_dist": min_enemy_wool_dist,
+            "avg_home_wool_dist":  avg_home_wool_dist,
+            "span_m":              span_m,
+            "tortuosity":          tortuosity,
+            "has_wool_event":      has_wool,
         })
 
     return pd.DataFrame(records)
@@ -220,14 +305,22 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
     Categories
     ----------
     deep_attacker
-        Minimum Dijkstra distance to any wool node across snapped sequence.
+        Closest snapped approach to an ENEMY wool node across the whole segment.
+
     defender
-        Longest duration segment with low unique-node count (≤ Q25 of unique_nodes)
-        and not a wool toucher (likely staying near home).
-    jitter
-        Highest ratio of consecutive repeated snapped nodes.
+        Player whose snapped positions average the lowest Dijkstra distance to
+        their HOME wool nodes (on their own island).  Must have ≥ 8 positions,
+        no wool touch (not carrying), and not selected as deep_attacker.
+
+    roamer
+        High path tortuosity (total trajectory length / Euclidean span) combined
+        with high unique-node count.  Captures players who cover lots of ground
+        without moving in a straight line — pushing, retreating, looping.
+        Requires span_m ≥ 40 blocks and unique_nodes ≥ 12.
+
     traversal
-        Maximum first→last Euclidean span.
+        Maximum first→last Euclidean span — the most sustained directional
+        movement in a single life.
 
     Returns
     -------
@@ -238,34 +331,48 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
 
     selected: dict[str, dict] = {}
 
-    # 1. Deep attacker — closest snapped approach to a wool node
-    finite_wool = metrics[metrics["min_wool_dist"] < float("inf")]
-    if not finite_wool.empty:
-        row = finite_wool.loc[finite_wool["min_wool_dist"].idxmin()]
+    # 1. Deep attacker — closest approach to an enemy wool node
+    finite_enemy = metrics[metrics["min_enemy_wool_dist"] < float("inf")]
+    if not finite_enemy.empty:
+        row = finite_enemy.loc[finite_enemy["min_enemy_wool_dist"].idxmin()]
         selected["deep_attacker"] = row.to_dict()
-
-    # 2. Defender — long segment, low unique-node count, no wool touch
-    uniq_q25 = metrics["unique_nodes"].quantile(0.25)
-    defender_pool = metrics[
-        (metrics["unique_nodes"] <= max(uniq_q25, 3))
-        & (~metrics["has_wool_event"])
-        & (metrics["duration"] > 0)
-    ]
-    if not defender_pool.empty:
-        row = defender_pool.loc[defender_pool["duration"].idxmax()]
-        selected["defender"] = row.to_dict()
+        attacker_id = (row["match_id"], row["player_id"], row["segment_idx"])
     else:
-        # Fallback: just longest low-unique segment
-        low_unique = metrics[metrics["unique_nodes"] <= max(uniq_q25, 3)]
-        if not low_unique.empty:
-            row = low_unique.loc[low_unique["duration"].idxmax()]
+        attacker_id = None
+
+    # 2. Defender — lowest average home-wool distance, no wool touch, ≥ 8 positions
+    finite_home = metrics[
+        (metrics["avg_home_wool_dist"] < float("inf"))
+        & (~metrics["has_wool_event"])
+        & (metrics["position_count"] >= 8)
+    ]
+    if not finite_home.empty:
+        # Exclude the segment already chosen as deep_attacker
+        if attacker_id:
+            finite_home = finite_home[
+                ~(
+                    (finite_home["match_id"]    == attacker_id[0])
+                    & (finite_home["player_id"] == attacker_id[1])
+                    & (finite_home["segment_idx"] == attacker_id[2])
+                )
+            ]
+        if not finite_home.empty:
+            row = finite_home.loc[finite_home["avg_home_wool_dist"].idxmin()]
             selected["defender"] = row.to_dict()
 
-    # 3. Jitter — highest consecutive-repeat ratio (min 8 positions so it's meaningful)
-    jitter_pool = metrics[metrics["position_count"] >= 8]
-    if not jitter_pool.empty:
-        row = jitter_pool.loc[jitter_pool["jitter_ratio"].idxmax()]
-        selected["jitter"] = row.to_dict()
+    # 3. Roamer — high unique-node count AND high tortuosity, meaningful span
+    roamer_pool = metrics[
+        (metrics["span_m"] >= 40)
+        & (metrics["unique_nodes"] >= 12)
+    ]
+    if not roamer_pool.empty:
+        # Score = tortuosity × log(unique_nodes): rewards both qualities together
+        roamer_pool = roamer_pool.copy()
+        roamer_pool["roamer_score"] = (
+            roamer_pool["tortuosity"] * np.log1p(roamer_pool["unique_nodes"])
+        )
+        row = roamer_pool.loc[roamer_pool["roamer_score"].idxmax()]
+        selected["roamer"] = row.to_dict()
 
     # 4. Long traversal — maximum first→last Euclidean span
     row = metrics.loc[metrics["span_m"].idxmax()]
@@ -332,7 +439,8 @@ def run(map_slug: str, output_root: Path) -> None:
             f"duration={meta['duration']:.0f}s  "
             f"positions={meta['position_count']}  "
             f"unique_nodes={meta['unique_nodes']}  "
-            f"jitter={meta['jitter_ratio']:.2f}"
+            f"span={meta['span_m']:.0f}m  "
+            f"tortuosity={meta['tortuosity']:.2f}"
         )
     print()
 
@@ -375,6 +483,7 @@ def run(map_slug: str, output_root: Path) -> None:
             has_wool_event=meta["has_wool_event"],
             label=label,
             simplification_method="consecutive_dedup",
+            tortuosity=meta.get("tortuosity"),
             output_path=out_path,
         )
 

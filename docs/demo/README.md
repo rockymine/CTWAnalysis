@@ -273,6 +273,12 @@ far closer to where players actually move.
   two consecutive snapped anchors.  Players may have traversed multiple edges between
   samples; this layer fills in the probable route, but is *not* directly observed.
 
+**Heuristic selection criteria:**
+- **deep_attacker** — segment whose snapped anchors reach the minimum Dijkstra distance to an *enemy* wool node
+- **defender** — segment with the lowest average Dijkstra distance to the player's *home* wool nodes, no wool touch, ≥ 8 positions
+- **roamer** — highest combined score of path tortuosity × log(unique_nodes), with span ≥ 40 blocks and unique nodes ≥ 12
+- **traversal** — maximum Euclidean distance between first and last raw position sample
+
 ### Traffic Graph Overview
 
 The full traffic graph for Tumbleweed, built from one match (1,695 life segments,
@@ -303,26 +309,26 @@ Each of the four figures below uses a consistent 6-panel layout:
 | **C** | Snapped node sequence — one nearest-graph-node per sample, raw (includes repeats) |
 | **D** | Reconstructed shortest path between consecutive snapped anchors (inferred) |
 | **E** | Simplified snapped sequence after consecutive-dedup (removes immediate repeats) |
-| **F** | Metadata summary: duration, sample counts, jitter ratio, wool contact |
+| **F** | Metadata summary: duration, sample counts, span, tortuosity, wool contact |
 
 ---
 
 ### Deep Attacker
 
 **Segment:** player 0, life 11 · 156 s · 23 positions · 16 unique snapped nodes
-· jitter ratio 0.32 · wool contact: yes
+· span 249 blocks · tortuosity 1.20 · wool contact: yes
 
-This segment was selected because its snapped sequence reached the minimum Dijkstra
-distance to a wool objective across all 1,577 qualifying segments.  At 0.32 jitter,
-roughly one in three consecutive position samples snapped to the same node — normal
-for a player traversing the graph at ~2 s resolution.
+Selected because its snapped sequence reached the minimum Dijkstra distance to an
+**enemy** wool node across all 1,577 qualifying segments.  Tortuosity of 1.20 means the
+player's snapped trajectory length was only 20% longer than the straight-line
+first-to-last distance — a nearly direct push toward the objective.
 
-Panel B shows raw positions sitting clearly on top of the high-traffic corridors
-leading toward the enemy wool room, confirming good graph coverage in the attack zone.
-Panel C's snapped sequence traces a directed path deep into enemy territory.  Panel D's
-reconstructed path fills in the inferred in-between moves through the graph, giving a
-plausible continuous route.  Panel E (simplified) removes the small clusters of repeated
-anchors, making the directional thrust clearer.
+Panel B shows raw positions sitting on the high-traffic corridors leading into the
+enemy wool room, confirming good graph coverage in the attack zone.  Panel C's snapped
+sequence traces a directed path deep into enemy territory.  Panel D fills in the inferred
+intermediate hops and should closely follow the dominant approach corridor.  Panel E
+(simplified) removes repeated anchor pairs, leaving a clean directed sequence from spawn
+to objective.
 
 ![Deep Attacker](assets/tumbleweed/14_life_deep_attacker.png)
 
@@ -330,74 +336,72 @@ anchors, making the directional thrust clearer.
 
 ### Defender
 
-**Segment:** player 90, life 6 · 632 s · 5 positions · 5 unique snapped nodes
-· jitter ratio 0.00 · wool contact: no
+**Segment:** player 47, life 0 · 2874 s (~48 min) · 461 positions · 28 unique snapped nodes
+· span 55 blocks · tortuosity 31.17 · wool contact: no
 
-The longest-duration segment with a very low unique-node count (5) and no wool contact,
-selected as a probable defensive or stationary patrol life.  At 632 seconds with only
-5 position samples, the player was largely stationary (or the sampling interval produced
-few distinct captures).
+Selected by **lowest average Dijkstra distance to home wool nodes** among segments with
+≥ 8 positions and no wool touch.  The player spent nearly the entire match within a small
+area of their own island centred on the home wool room, patrolling without ever reaching
+enemy territory.  Tortuosity of 31 means the total path traced was ~31× the start-to-end
+displacement — a tight continuous patrol loop rather than any directional movement.
 
-Panel C's snapped sequence is very short — five distinct nodes, no consecutive repeats —
-suggesting the player moved between a small cluster of nearby nodes without oscillating.
-Panel D and E are nearly identical because there are too few anchors to produce meaningful
-reconstructed intermediate paths.  This segment is useful as a baseline: the traffic
-graph correctly represents a small local area rather than forcing the player's movement
-into a long fictitious path.
+Panel C is the key inspection panel: a large number of positions mapped to 28 distinct
+nodes, almost all tightly clustered around the home wool area.  Repeated back-and-forth
+between adjacent nodes is visible in the temporal colour pattern (neighbouring nodes
+alternate purple → yellow → purple as the player passes the same spot repeatedly).
+Panel E collapses the immediate repeats to give a cleaner picture of which sub-area is
+being patrolled.  Panels D and E closely mirror each other — there are enough samples
+here for the reconstructed path to be dense and locally accurate.
 
 ![Defender](assets/tumbleweed/15_life_defender.png)
 
 ---
 
-### Jitter
+### Roamer
 
-**Segment:** player 62, life 9 · 546 s · 70 positions · 9 unique snapped nodes
-· jitter ratio 0.81 · wool contact: no
+**Segment:** player 66, life 0 · 4189 s (~70 min) · 780 positions · 94 unique snapped nodes
+· span 50 blocks · tortuosity 100.46 · wool contact: no
 
-81% of consecutive position-sample pairs snapped to the *same* graph node — the highest
-jitter ratio across all segments.  With 70 positions but only 9 unique nodes, this player
-was clearly moving within a very localised area for nearly 9 minutes.
+Selected by highest **tortuosity × log(unique_nodes)** score among segments with
+span ≥ 40 blocks and ≥ 12 unique nodes.  With 94 distinct snapped nodes visited and a
+tortuosity of 100 — meaning the total path length was 100× the net displacement — this
+player covered an enormous amount of ground over a ~70-minute life while ending up close
+to where they started.  This is the signature of a mid-map fighter or roaming supporter:
+lots of diverse node coverage, repeated passes across the same corridors, and no
+sustained directional push.
 
-Panel C is the critical inspection panel here: it shows the raw snapped sequence
-including all repeats.  A long run of AAABBBAAABBB-style oscillation is visible,
-reflecting the player bouncing between two or three nearby nodes.  This is the typical
-behaviour of a defender patrolling a tight corridor or a player engaged in combat at a
-fixed engagement point.
+Panel C is dense and visually complex: 780 positions mapped to 94 unique nodes shows
+the graph being exercised across a wide area, not concentrated in one room.  Panel D's
+reconstructed path is correspondingly large — many inferred intermediate hops filling
+the space between every pair of sampled anchors.  Panel E reduces the sequence to its
+unique-node visits only, giving a much cleaner picture of the spatial footprint.
 
-Panel E (simplified, consecutive-dedup) removes the immediate repeats, collapsing the
-oscillation into a compact multi-node cluster.  Comparing D and E visually suggests that
-the oscillation is *real local behaviour*, not snapping noise — the inferred path in D
-repeatedly traces back and forth between the same few edges.
+> **Key inspection point:** Does Panel E's simplified sequence show the roamer
+> circling a central area, or crossing back and forth along a single corridor?
+> That distinction will matter for role classification.
 
-> **Open question this highlights:** Is ABAB oscillation in the snapped sequence
-> meaningfully different from pure noise?  The graph density and the consistent
-> return-to-the-same-nodes pattern suggest it is real defensive patrol behaviour
-> rather than snapping artefacts.
-
-![Jitter](assets/tumbleweed/16_life_jitter.png)
+![Roamer](assets/tumbleweed/16_life_jitter.png)
 
 ---
 
 ### Long Traversal
 
 **Segment:** player 58, life 5 · 234 s · 45 positions · 27 unique snapped nodes
-· jitter ratio 0.23 · wool contact: no
+· span 276 blocks · tortuosity 1.70 · wool contact: no
 
-Maximum first-to-last Euclidean span across all segments, selecting for a life with
-sustained directional movement.  27 unique snapped nodes from 45 samples gives a
-high unique-to-total ratio, consistent with a player who rarely backtracks.
+Maximum first-to-last Euclidean span across all segments.  27 unique snapped nodes from
+45 samples and a tortuosity of only 1.70 confirm this is a near-straight run across
+a large fraction of the map — almost certainly a player running from spawn toward the
+enemy base or vice versa.
 
-Panel B shows the raw positions spread across a substantial fraction of the map,
-confirming this is a genuine long-range movement.  Panel C's snapped sequence traces
-a directed path through many distinct nodes.  Panel D's reconstructed path stitches
-the inferred intermediate hops together into a continuous route, which should follow
-the dominant traffic corridors visible in the overview.
-
-This segment is the most useful for evaluating path reconstruction quality.  If the
-reconstructed path in D looks geographically plausible (follows bridges and corridors
-rather than cutting through islands), shortest-path reconstruction on the traffic graph
-is likely sufficient.  If not, traffic-weighted reconstruction would be the next step
-to try.
+Panel B shows positions spread across most of the map's width, confirming genuine
+long-range movement.  Panel C's snapped sequence traces a clear directional path.
+Panel D's reconstructed path is the most useful one for evaluating reconstruction
+quality: if the inferred path in D follows the traffic corridors in the overview plot
+rather than cutting through impassable terrain, shortest-path reconstruction is
+working correctly.  Tortuosity of 1.70 is already a good sign — the snapped path is
+only 70% longer than the straight line, so reconstruction is unlikely to produce
+wild detours.
 
 ![Long Traversal](assets/tumbleweed/17_life_traversal.png)
 
@@ -408,8 +412,9 @@ to try.
 | Question | Observation |
 |----------|-------------|
 | Does nearest-node snapping look locally accurate? | Yes — Panel B shows positions sitting on or very near graph nodes in high-traffic zones. The 5-block grid size appears well-matched to position sample density. |
-| Is the snapped sequence stable enough as an anchor representation? | Mostly yes for directional movement. Jitter is present but appears behaviourally real (local patrol), not pure snapping noise. |
-| Are ABAB oscillations noise or meaningful? | The jitter segment strongly suggests real patrol behaviour — the player consistently returns to the same 2–3 nodes over ~9 minutes. |
-| Does shortest-path reconstruction look plausible? | Visually reasonable for the traversal segment; the inferred path follows the traffic corridors. Full validation requires more examples. |
-| Is simplification useful? | Consecutive-dedup produces clearly cleaner sequences without hiding meaningful spatial structure. Long loops and ABAB patterns are preserved. |
-| Next step? | Inspect Panel D vs E for the deep attacker and traversal cases closely to decide whether traffic-weighted paths add value over shortest-path. |
+| Is the snapped sequence stable enough as an anchor representation? | Yes for directed movement (attacker, traversal). Defender and roamer show dense local revisits, but those appear behaviorally real rather than snapping noise. |
+| Is home-wool proximity a good defender signal? | The selected defender (player 47, 48 min life, low span, near home wool) is a far better example than the previous spawn-proximity heuristic, which just found an idle player. |
+| Is tortuosity a good roamer signal? | The selected roamer (94 unique nodes, tortuosity 100) reflects genuine map-wide coverage with no net displacement. Inspect Panel E to confirm circular vs. corridor movement. |
+| Does shortest-path reconstruction look plausible? | The traversal segment is the best test case. Tortuosity 1.70 suggests the path is direct; Panel D should follow the main bridge corridor. |
+| Is simplification useful? | Consecutive-dedup reduces the defender and roamer panels significantly, making spatial footprints much clearer without removing meaningful oscillation structure. |
+| Next step? | Examine Panel C vs E for the roamer to determine whether back-and-forth between distant nodes (vs. local oscillation) drives the high tortuosity — this will inform whether "roamer" needs its own classifier cluster. |
