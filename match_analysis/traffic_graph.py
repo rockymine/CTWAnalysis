@@ -58,13 +58,13 @@ def build_traffic_graph(
 
     # ── 1. Load positions ──────────────────────────────────────────────────
     pos_df: pd.DataFrame = conn.execute("""
-        SELECT pe.player_id, pe.match_id, pe.timestamp,
+        SELECT pe.player_id, pe.match_id, pe.segment_idx, pe.timestamp,
                pe.x, pe.z, pe.location_type, pe.island_id
         FROM position_events pe
         JOIN matches mat ON mat.match_id = pe.match_id
         JOIN maps m      ON m.map_id     = mat.map_id
         WHERE m.map_slug = ? AND mat.processed = TRUE
-        ORDER BY pe.player_id, pe.match_id, pe.timestamp
+        ORDER BY pe.player_id, pe.match_id, pe.segment_idx, pe.timestamp
     """, [map_slug]).df()
 
     if pos_df.empty:
@@ -108,12 +108,16 @@ def build_traffic_graph(
     )
 
     # ── 4. Consecutive transitions (vectorised) ────────────────────────────
-    pos_s = pos_df.sort_values(["player_id", "match_id", "timestamp"]).copy()
-    grp   = pos_s.groupby(["player_id", "match_id"])
+    # Group by life segment so no transition crosses a death/respawn boundary.
+    # max_gap_s is a secondary guard against stale position records.
+    pos_s = pos_df.sort_values(
+        ["player_id", "match_id", "segment_idx", "timestamp"]
+    ).copy()
+    grp = pos_s.groupby(["player_id", "match_id", "segment_idx"])
 
-    pos_s["prev_cx"]   = grp["cx"].shift(1)
-    pos_s["prev_cz"]   = grp["cz"].shift(1)
-    pos_s["dt"]        = pos_s["timestamp"] - grp["timestamp"].shift(1)
+    pos_s["prev_cx"] = grp["cx"].shift(1)
+    pos_s["prev_cz"] = grp["cz"].shift(1)
+    pos_s["dt"]      = pos_s["timestamp"] - grp["timestamp"].shift(1)
 
     trans = pos_s[
         pos_s["prev_cx"].notna()
