@@ -75,6 +75,18 @@ def build_traffic_graph(
     position_count = len(pos_df)
     logger.debug("Loaded %d positions from %d match(es)", position_count, match_count)
 
+    # ── 1a. Aggregate match-level stats (player count, aggregate playtime) ─
+    stats_df: pd.DataFrame = conn.execute("""
+        SELECT COUNT(DISTINCT ls.player_id)                        AS player_count,
+               SUM(ls.end_timestamp - ls.start_timestamp) / 60.0  AS total_playtime_min
+        FROM life_segments ls
+        JOIN matches mat ON mat.match_id = ls.match_id
+        JOIN maps m      ON m.map_id     = mat.map_id
+        WHERE m.map_slug = ? AND mat.processed = TRUE
+    """, [map_slug]).df()
+    player_count      = int(stats_df["player_count"].iloc[0])
+    total_playtime_min = round(float(stats_df["total_playtime_min"].iloc[0]), 1)
+
     # ── 1b. Drop void positions ────────────────────────────────────────────
     # 'void' = outside all island and build-region polygons in 2D.
     # These positions are off the map footprint and must not become graph nodes
@@ -297,10 +309,12 @@ def build_traffic_graph(
         edges.append({"src": int(src), "dst": int(dst), "transitions": int(r.transitions)})
 
     graph = {
-        "map_slug":       map_slug,
-        "grid_size":      grid_size,
-        "match_count":    match_count,
-        "position_count": position_count,
+        "map_slug":           map_slug,
+        "grid_size":          grid_size,
+        "match_count":        match_count,
+        "position_count":     position_count,
+        "player_count":       player_count,
+        "total_playtime_min": total_playtime_min,
         "nodes":          nodes,
         "edges":          edges,
     }
@@ -452,9 +466,11 @@ def plot_traffic_graph(
     edges = graph["edges"]
     node_by_id = {n["node_id"]: n for n in nodes}
 
-    grid_size = graph.get("grid_size", DEFAULT_GRID_SIZE)
-    n_matches = graph.get("match_count", "?")
-    n_pos     = graph.get("position_count", "?")
+    grid_size         = graph.get("grid_size", DEFAULT_GRID_SIZE)
+    n_matches         = graph.get("match_count", "?")
+    n_pos             = graph.get("position_count", "?")
+    n_players         = graph.get("player_count", "?")
+    playtime_min      = graph.get("total_playtime_min")
 
     occupations = [n["occupation"] for n in nodes]
     max_occ     = max(occupations) if occupations else 1
@@ -563,9 +579,17 @@ def plot_traffic_graph(
               facecolor="#0e0e1a", labelcolor="white", framealpha=0.8)
 
     n_nodes = len(nodes); n_edges = len(edges)
+    playtime_str = (
+        f"{playtime_min:,.0f} min aggregate playtime"
+        if playtime_min is not None else ""
+    )
+    subtitle_parts = [f"{n_players} players", f"{n_pos:,} positions"]
+    if playtime_str:
+        subtitle_parts.append(playtime_str)
     ax.set_title(
         f"Traffic graph — {graph['map_slug']}  "
-        f"({n_matches} match, {n_pos:,} positions)\n"
+        f"({n_matches} match{'es' if n_matches != 1 else ''}  |  "
+        + "  ·  ".join(subtitle_parts) + ")\n"
         f"{n_nodes} nodes · {n_edges} edges  |  grid={grid_size}×{grid_size} blocks",
         color="white", fontsize=10,
     )
