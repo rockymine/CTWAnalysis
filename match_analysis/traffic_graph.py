@@ -75,16 +75,22 @@ def build_traffic_graph(
     position_count = len(pos_df)
     logger.debug("Loaded %d positions from %d match(es)", position_count, match_count)
 
-    # ── 1a. Aggregate match-level stats (player count, aggregate playtime) ─
+    # ── 1a. Aggregate match-level stats (player participations, aggregate playtime) ─
+    # Note: player_id is re-assigned 0…n per match (anonymisation), so
+    # COUNT(DISTINCT player_id) across matches is meaningless.  Use SUM of the
+    # per-match player_count instead.
     stats_df: pd.DataFrame = conn.execute("""
-        SELECT COUNT(DISTINCT ls.player_id)                        AS player_count,
-               SUM(ls.end_timestamp - ls.start_timestamp) / 60.0  AS total_playtime_min
-        FROM life_segments ls
-        JOIN matches mat ON mat.match_id = ls.match_id
-        JOIN maps m      ON m.map_id     = mat.map_id
-        WHERE m.map_slug = ? AND mat.processed = TRUE
-    """, [map_slug]).df()
-    player_count      = int(stats_df["player_count"].iloc[0])
+        SELECT
+            (SELECT SUM(mat.player_count)
+             FROM matches mat JOIN maps m ON m.map_id = mat.map_id
+             WHERE m.map_slug = ? AND mat.processed = TRUE)           AS player_count,
+            (SELECT SUM(ls.end_timestamp - ls.start_timestamp) / 60.0
+             FROM life_segments ls
+             JOIN matches mat ON mat.match_id = ls.match_id
+             JOIN maps m      ON m.map_id     = mat.map_id
+             WHERE m.map_slug = ? AND mat.processed = TRUE)           AS total_playtime_min
+    """, [map_slug, map_slug]).df()
+    player_count       = int(stats_df["player_count"].iloc[0])
     total_playtime_min = round(float(stats_df["total_playtime_min"].iloc[0]), 1)
 
     # ── 1b. Drop void positions ────────────────────────────────────────────
@@ -583,7 +589,7 @@ def plot_traffic_graph(
         f"{playtime_min:,.0f} min aggregate playtime"
         if playtime_min is not None else ""
     )
-    subtitle_parts = [f"{n_players} players", f"{n_pos:,} positions"]
+    subtitle_parts = [f"{n_players} participations", f"{n_pos:,} positions"]
     if playtime_str:
         subtitle_parts.append(playtime_str)
     ax.set_title(
