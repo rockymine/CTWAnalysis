@@ -307,7 +307,7 @@ Each of the four figures below uses a consistent 6-panel layout:
 | **A** | Raw position samples only (ground truth, temporal colour: purple → yellow) |
 | **B** | Raw positions overlaid on the full traffic graph (coverage check) |
 | **C** | Snapped node sequence — one nearest-graph-node per sample, raw (includes repeats) |
-| **D** | Reconstructed shortest path between consecutive snapped anchors (inferred) |
+| **D** | Reconstructed path between consecutive snapped anchors using **dense-hop** mode (inferred) |
 | **E** | Simplified snapped sequence after consecutive-dedup (removes immediate repeats) |
 | **F** | Metadata summary: duration, sample counts, span, tortuosity, wool contact |
 
@@ -325,10 +325,11 @@ first-to-last distance — a nearly direct push toward the objective.
 
 Panel B shows raw positions sitting on the high-traffic corridors leading into the
 enemy wool room, confirming good graph coverage in the attack zone.  Panel C's snapped
-sequence traces a directed path deep into enemy territory.  Panel D fills in the inferred
-intermediate hops and should closely follow the dominant approach corridor.  Panel E
-(simplified) removes repeated anchor pairs, leaving a clean directed sequence from spawn
-to objective.
+sequence traces a directed path deep into enemy territory.  Panel D uses **dense-hop
+reconstruction** (edge weight = distance²/grid_size), penalising long void-crossing
+edges quadratically so that Dijkstra routes through the fine-grained short-hop
+neighbourhood rather than jumping across the void.  Panel E (simplified) removes
+repeated anchor pairs, leaving a clean directed sequence from spawn to objective.
 
 ![Deep Attacker](assets/tumbleweed/14_life_deep_attacker.png)
 
@@ -397,11 +398,11 @@ enemy base or vice versa.
 Panel B shows positions spread across most of the map's width, confirming genuine
 long-range movement.  Panel C's snapped sequence traces a clear directional path.
 Panel D's reconstructed path is the most useful one for evaluating reconstruction
-quality: if the inferred path in D follows the traffic corridors in the overview plot
-rather than cutting through impassable terrain, shortest-path reconstruction is
-working correctly.  Tortuosity of 1.70 is already a good sign — the snapped path is
-only 70% longer than the straight line, so reconstruction is unlikely to produce
-wild detours.
+quality: with dense-hop mode the inferred path follows the traffic corridors from
+the overview plot rather than taking void-crossing shortcuts.  A 30-block void jump
+costs 180 in dense mode vs. 30 for six 5-block hops, so the reconstructed route
+stays on the main bridge corridor.  Tortuosity of 1.70 is already a good sign —
+the snapped path is only 70% longer than the straight line.
 
 ![Long Traversal](assets/tumbleweed/17_life_traversal.png)
 
@@ -415,6 +416,6 @@ wild detours.
 | Is the snapped sequence stable enough as an anchor representation? | Yes for directed movement (attacker, traversal). Defender and roamer show dense local revisits, but those appear behaviorally real rather than snapping noise. |
 | Is home-wool proximity a good defender signal? | The selected defender (player 47, 48 min life, low span, near home wool) is a far better example than the previous spawn-proximity heuristic, which just found an idle player. |
 | Is tortuosity a good roamer signal? | The selected roamer (94 unique nodes, tortuosity 100) reflects genuine map-wide coverage with no net displacement. Inspect Panel E to confirm circular vs. corridor movement. |
-| Does shortest-path reconstruction look plausible? | The traversal segment is the best test case. Tortuosity 1.70 suggests the path is direct; Panel D should follow the main bridge corridor. |
+| Does dense-hop reconstruction avoid void jumping? | Yes — the traversal segment is the best test case. With linear edge weights a 30-block void jump was cheaper than going around; dense mode (dist²/grid_size) makes that jump 6× more expensive than six 5-block hops, routing the reconstructed path along the bridge corridor. |
 | Is simplification useful? | Consecutive-dedup reduces the defender and roamer panels significantly, making spatial footprints much clearer without removing meaningful oscillation structure. |
 | Next step? | Examine Panel C vs E for the roamer to determine whether back-and-forth between distant nodes (vs. local oscillation) drives the high tortuosity — this will inform whether "roamer" needs its own classifier cluster. |
