@@ -211,15 +211,24 @@ def _select_defense_wool(
 ) -> tuple[int, str]:
     """Pick the wool node + team with the most pit-digging signal.
 
-    Metric: count of positions with y < 5 AND wool_dist < 30.
+    Metric: count of positions with y < 5 AND spatial distance < 40 blocks from
+    each specific wool node.  Uses spatial (Euclidean) proximity so that each
+    wool is evaluated independently — not the pre-computed multi-wool minimum.
     """
     wool_by_team = _wool_nodes_by_team(node_info)
     best_wool, best_team, best_count = -1, "", 0
 
     for team_name, wools in wool_by_team.items():
         team_df = enriched[enriched["team"] == team_name]
+        if team_df.empty:
+            continue
         for w in wools:
-            mask = (team_df["wool_dist"] < 30) & (team_df["y"] < 5)
+            wx, wz = node_info[w]["coords"]
+            spatial_dist = np.sqrt(
+                (team_df["x"].to_numpy(float) - wx) ** 2
+                + (team_df["z"].to_numpy(float) - wz) ** 2
+            )
+            mask = (spatial_dist < 40) & (team_df["y"].to_numpy(float) < 5)
             cnt  = int(mask.sum())
             if cnt > best_count:
                 best_count = cnt
@@ -227,11 +236,18 @@ def _select_defense_wool(
                 best_team  = team_name
 
     if best_wool < 0:
-        # Fallback: pick wool with most near positions at all
+        # Fallback: wool with most spatially nearby positions at any y
         for team_name, wools in wool_by_team.items():
             team_df = enriched[enriched["team"] == team_name]
+            if team_df.empty:
+                continue
             for w in wools:
-                cnt = int((team_df["wool_dist"] < 30).sum())
+                wx, wz = node_info[w]["coords"]
+                spatial_dist = np.sqrt(
+                    (team_df["x"].to_numpy(float) - wx) ** 2
+                    + (team_df["z"].to_numpy(float) - wz) ** 2
+                )
+                cnt = int((spatial_dist < 40).sum())
                 if cnt > best_count:
                     best_count = cnt
                     best_wool  = w
@@ -404,7 +420,32 @@ def run(map_slug: str, output_root: Path) -> None:
     wool_by_team = _wool_nodes_by_team(node_info)
     home_wools = wool_by_team.get(team, [])
 
-    zone_df = enriched[enriched["wool_dist"] <= 60].copy()
+    # Compute Dijkstra distances to the SPECIFIC selected wool for the overview.
+    # The generic wool_dist column holds min-over-all-home-wools and must not be
+    # used for the section-view x-axis or pit-depth stats.
+    w_dists_specific = dijkstra.get(wool_id, {})
+    snapped_arr = enriched["snapped_node"].to_numpy(int)
+    specific_dists = np.array([
+        w_dists_specific.get(int(nid), float("inf")) for nid in snapped_arr
+    ])
+    enriched["wool_dist_specific"] = specific_dists
+
+    # For zone_df: use spatial proximity to the selected wool so positions that
+    # cannot be reached via Dijkstra are still included if they are close.
+    spatial_all = np.sqrt(
+        (enriched["x"].to_numpy(float) - wx) ** 2
+        + (enriched["z"].to_numpy(float) - wz) ** 2
+    )
+    zone_mask = (spatial_all <= 70) | (specific_dists <= 60)
+    zone_df = enriched[zone_mask].copy()
+    # Overwrite wool_dist with specific-wool distance for section view x-axis and stats.
+    # For unreachable positions use spatial distance as a fallback approximation.
+    zone_specific = zone_df["wool_dist_specific"].to_numpy(float)
+    zone_spatial  = spatial_all[zone_mask]
+    zone_df["wool_dist"] = np.where(
+        np.isfinite(zone_specific), zone_specific, zone_spatial
+    )
+
     print(f"Target wool: node {wool_id}  team={team}  coords=({wx}, {wz})")
     print(f"  {zone_df['player_id'].nunique()} players active within 60 blocks")
     print(f"  {int((zone_df['y'] < 5).sum())} positions with y<5 (pit digging)")
