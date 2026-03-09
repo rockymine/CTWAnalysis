@@ -419,3 +419,109 @@ the snapped path is only 70% longer than the straight line.
 | Does dense-hop reconstruction avoid void jumping? | Yes — the traversal segment is the best test case. With linear edge weights a 30-block void jump was cheaper than going around; dense mode (dist²/grid_size) makes that jump 6× more expensive than six 5-block hops, routing the reconstructed path along the bridge corridor. |
 | Is simplification useful? | Consecutive-dedup reduces the defender and roamer panels significantly, making spatial footprints much clearer without removing meaningful oscillation structure. |
 | Next step? | Examine Panel C vs E for the roamer to determine whether back-and-forth between distant nodes (vs. local oscillation) drives the high tortuosity — this will inform whether "roamer" needs its own classifier cluster. |
+
+---
+
+### Extended Heuristics — Item and Elevation Signals
+
+Four additional segments were selected using combat, elevation, and held-item signals
+extracted from position samples.  Kill `held_item` was not recorded in this match
+(pre-plugin-update gap), so held-item characterisation is based on what the player
+was holding at each ~2 s position sample — which is actually richer for role inference
+since it covers the entire life rather than only kill moments.
+
+**Panel A colour encoding for held-item plots:**
+
+| Colour | Category | Item IDs (examples) |
+|--------|----------|---------------------|
+| **Amber** `#ff8c00` | Bow | BOW (203) |
+| **Red** `#ff3333` | Sword / Axe | IRON_SWORD (209), DIAMOND_AXE (221) |
+| **Green** `#44ff88` | Bridge block | GLASS (20), WOOD (5), STAINED_CLAY (159) |
+| **Yellow** `#ffdd44` | Tool | IRON_PICKAXE (199), DIAMOND_PICKAXE (220) |
+| **Gray** `#888888` | Other / empty | AIR (0), food, misc |
+
+For the **skybridge** plot Panel A is coloured by y-level using a
+cool (low) → warm (high) gradient.  A colourbar on the panel shows the
+min/max y range for the segment.
+
+---
+
+#### High Killer
+
+**Segment:** player 21, life 1 · 1084 s · 215 positions · 62 unique snapped nodes
+· span 226 blocks · tortuosity 8.53 · **kills: 21**
+
+![High Killer](assets/tumbleweed/18_life_high_killer.png)
+
+The most kills recorded in a single life across the entire match.  Panel A shows
+wide-ranging movement — a 226-block span with tortuosity 8.53 indicates repeated
+pushes and retreats across the map rather than camping in one corner.  Panel C's
+dense snapped sequence reflects frequent engagement zones.  Panel D reconstructs
+the full trajectory including inferred intermediate hops; the high kill count
+combined with non-trivial span suggests an aggressive roaming fighter rather than
+a spawn-camping kill farmer.
+
+---
+
+#### Skybridge Controller
+
+**Segment:** player 0, life 20 · 300 s · 51 positions · 19 unique snapped nodes
+· span 176 blocks · frac\_elevated 96% · avg y 27.5
+
+![Skybridge](assets/tumbleweed/19_life_skybridge.png)
+
+96% of position samples were recorded at y ≥ 22 (the skybridge threshold), making
+this the most elevation-dominant life in the match.  Panel A is coloured by y-level:
+nearly all dots are warm (high y), confirming the player spent the entire life on or
+above the skybridge rather than touching ground level.  Panel B shows the snapped
+positions concentrated on the high-elevation portion of the traffic graph.
+The 176-block span indicates the player traversed a significant horizontal distance
+along the bridge — consistent with extending or defending it rather than simply
+standing still.
+
+---
+
+#### Bow Archer
+
+**Segment:** player 0, life 16 · 70 s · 14 positions · 10 unique snapped nodes
+· span 134 blocks · frac\_bow 100%
+
+![Bow Archer](assets/tumbleweed/20_life_bow_archer.png)
+
+Every position sample in this life recorded the player holding a BOW (item 203).
+Panel A shows all positions in amber — the item-category colour for bow.  With a
+134-block span and 100% bow-hold rate the player was clearly in a sustained
+ranged combat posture while crossing significant ground.  Panel F's held-item
+breakdown confirms the single-category dominance.  This is the strongest bow-archer
+signal in the dataset; note that 70 s is a short life, consistent with aggressive
+bow use that typically leads to faster deaths in open fights.
+
+---
+
+#### Builder
+
+**Segment:** player 0, life 1 · 93 s · 15 positions · 14 unique snapped nodes
+· span 217 blocks · frac\_builder 100%
+
+![Builder](assets/tumbleweed/21_life_builder.png)
+
+Every position sample shows the player holding a bridge block (100% builder
+fraction).  Panel A positions are uniformly green — the item-category colour for
+building materials.  The 217-block span with only 15 positions and 14 unique nodes
+indicates a fast, linear movement across the map: consistent with placing blocks
+continuously while crossing a skybridge or void corridor at speed.  Panel D's
+reconstructed path should trace one of the main bridge corridors; dense-hop
+weighting prevents the path from jumping directly across void sections that
+weren't actually bridged.
+
+---
+
+### Extended Findings
+
+| Question | Finding |
+|----------|---------|
+| Is kill count a useful discriminator? | Yes — the top killer (21 kills, player 21) shows wide-ranging map coverage rather than static camping, confirming kills correlate with active engagement across multiple zones. |
+| Does elevation (avg y) reliably identify skybridge players? | Yes — the skybridge segment has frac\_elevated=96%, avg y=27.5, and a 176-block horizontal span. Static elevated players (sitting on a tower) would have low span; this one moved. |
+| Does frac\_elevated need a span filter? | Yes — without a minimum span, single-point elevated structures would score identically. A 20-block span requirement filters out static campers. |
+| Is position held\_item a viable role signal despite missing kill held\_item? | Yes — 100% bow and 100% builder segments were found, showing position-held items are a strong and cleanly separable signal even at short life durations. |
+| Should held-item plots use temporal or category colouring in Panel A? | Category colouring — it immediately reveals item composition without the user needing to look at Panel F statistics. Temporal colouring is still used in Panels B–E for sequence context. |
