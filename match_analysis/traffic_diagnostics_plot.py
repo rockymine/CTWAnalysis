@@ -57,6 +57,58 @@ _END_COLOR     = "#ff4444"
 _FIGSIZE       = (20, 13)
 _MAP_PAD       = 15         # extra padding around map bounds (blocks)
 
+# ---------------------------------------------------------------------------
+# Held-item category → colour mapping (for Panel A alternate colouring)
+# ---------------------------------------------------------------------------
+
+_ITEM_BOW_IDS:     frozenset[int] = frozenset({203})
+_ITEM_MELEE_IDS:   frozenset[int] = frozenset({
+    200, 209, 210, 213, 214, 217, 218, 221, 225, 228,
+})
+_ITEM_BRIDGE_IDS:  frozenset[int] = frozenset({
+    1, 4, 5, 12, 20, 24, 35, 85, 95, 101,
+    159, 160, 171, 188, 189, 190, 191, 192,
+})
+_ITEM_TOOL_IDS:    frozenset[int] = frozenset({
+    198, 199, 211, 212, 215, 216, 219, 220,
+})
+
+_ITEM_CAT_COLORS: dict[str, str] = {
+    "bow":   "#ff8c00",   # amber
+    "melee": "#ff3333",   # red
+    "block": "#44ff88",   # green
+    "tool":  "#ffdd44",   # yellow
+    "other": "#888888",   # gray
+}
+
+_ITEM_CAT_LABELS: dict[str, str] = {
+    "bow":   "Bow",
+    "melee": "Sword / Axe",
+    "block": "Bridge block",
+    "tool":  "Tool",
+    "other": "Other / empty",
+}
+
+
+def _categorise_item(item_id: int) -> str:
+    if item_id < 0:
+        return "other"
+    if item_id in _ITEM_BOW_IDS:
+        return "bow"
+    if item_id in _ITEM_MELEE_IDS:
+        return "melee"
+    if item_id in _ITEM_BRIDGE_IDS:
+        return "block"
+    if item_id in _ITEM_TOOL_IDS:
+        return "tool"
+    return "other"
+
+
+def _item_category_colors(held_item_series: list[int]) -> list[str]:
+    """Return a per-position list of hex colour strings by item category."""
+    return [_ITEM_CAT_COLORS[_categorise_item(i)] for i in held_item_series]
+
+
 _MINECRAFT_COLORS: dict[str, str] = {
     "dark_red":    "#AA0000", "dark red":    "#AA0000",
     "red":         "#FF5555",
@@ -280,6 +332,8 @@ def plot_life_segment_diagnostic(
     simplification_method: str = "consecutive_dedup",
     reconstruction_mode: str = "dense",
     tortuosity: float | None = None,
+    held_item_series: list[int] | None = None,
+    positions_y: list[float] | None = None,
     output_path: Optional[Path] = None,
 ) -> plt.Figure:
     """Generate a 6-panel diagnostic figure for one life segment.
@@ -367,7 +421,54 @@ def plot_life_segment_diagnostic(
                                facecolor=fc, edgecolor="#555555",
                                linewidth=0.3, alpha=alpha, zorder=0)
             ax_a.add_patch(patch)
-    _draw_position_trace(ax_a, xs, zs)
+    if held_item_series is not None and len(held_item_series) == len(xs):
+        # Held-item category colouring — Panel A title update
+        _style_ax(ax_a, xmin, xmax, zmin, zmax,
+                  "A — Raw positions coloured by held item\n(observed, ground truth)")
+        item_colors = _item_category_colors(held_item_series)
+        ax_a.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+        ax_a.scatter(xs, zs, c=item_colors, s=55, linewidths=0.6,
+                     edgecolors="white", zorder=4)
+        ax_a.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
+                     marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+        ax_a.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
+                     marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+        # Item category legend
+        from matplotlib.patches import Patch as _Patch
+        seen_cats = {_categorise_item(i) for i in held_item_series}
+        legend_handles_a = [
+            _Patch(facecolor=_ITEM_CAT_COLORS[c], edgecolor="white",
+                   linewidth=0.5, label=_ITEM_CAT_LABELS[c])
+            for c in ("bow", "melee", "block", "tool", "other")
+            if c in seen_cats
+        ]
+        if legend_handles_a:
+            ax_a.legend(handles=legend_handles_a, loc="lower left", fontsize=5.5,
+                        facecolor="#0e0e1a", labelcolor="white", framealpha=0.85)
+    elif positions_y is not None and len(positions_y) == len(xs):
+        # Elevation colouring — Panel A title update
+        _style_ax(ax_a, xmin, xmax, zmin, zmax,
+                  "A — Raw positions coloured by elevation (y)\n(observed, ground truth)")
+        y_arr = np.array(positions_y, dtype=float)
+        y_norm = (y_arr - y_arr.min()) / max(y_arr.max() - y_arr.min(), 1.0)
+        elev_cmap = cm.get_cmap("RdYlGn")
+        elev_colors = elev_cmap(y_norm)
+        ax_a.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+        sc = ax_a.scatter(xs, zs, c=y_norm, cmap="RdYlGn", s=55,
+                          linewidths=0.6, edgecolors="white", zorder=4,
+                          vmin=0, vmax=1)
+        ax_a.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
+                     marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+        ax_a.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
+                     marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+        # Mini colourbar: low y → high y
+        cb = plt.colorbar(sc, ax=ax_a, orientation="horizontal",
+                          fraction=0.04, pad=0.04, aspect=25)
+        cb.set_label(f"y level  [{int(y_arr.min())}–{int(y_arr.max())}]",
+                     color="#cccccc", fontsize=6)
+        cb.ax.tick_params(colors="#cccccc", labelsize=5)
+    else:
+        _draw_position_trace(ax_a, xs, zs)
 
     # ── Panel B — raw positions over traffic graph ────────────────────────
     _style_ax(ax_b, xmin, xmax, zmin, zmax,
@@ -441,6 +542,27 @@ def plot_life_segment_diagnostic(
         (" inferred",         "reconstructed intermediates"),
     ]
 
+    # Optional: held-item breakdown block
+    if held_item_series is not None and len(held_item_series) > 0:
+        from collections import Counter as _Counter
+        cat_counts = _Counter(_categorise_item(i) for i in held_item_series)
+        total_items = len(held_item_series)
+        lines.append(("", ""))
+        lines.append(("Held item (pos):", ""))
+        for cat in ("bow", "melee", "block", "tool", "other"):
+            cnt = cat_counts.get(cat, 0)
+            if cnt:
+                pct = 100.0 * cnt / total_items
+                lines.append((f"  {_ITEM_CAT_LABELS[cat]}", f"{pct:.0f}%"))
+
+    # Optional: elevation breakdown block
+    if positions_y is not None and len(positions_y) > 0:
+        y_np = np.array(positions_y, dtype=float)
+        lines.append(("", ""))
+        lines.append(("Elevation (y):", ""))
+        lines.append(("  avg / max", f"{y_np.mean():.1f} / {int(y_np.max())}"))
+        lines.append(("  frac ≥22 (sky)", f"{np.mean(y_np >= 22):.0%}"))
+
     y = 0.97
     ax_f.set_title("F — Metadata", color="#cccccc", fontsize=8, pad=4)
     for key, val in lines:
@@ -457,17 +579,32 @@ def plot_life_segment_diagnostic(
             ax_f.text(0.05, y, val, **kw)
         y -= 0.048
 
-    # Colour-ramp legend for temporal colouring
+    # Colour-ramp legend — temporal for standard plots, note for held-item/elevation
     from matplotlib.colors import Normalize
     from matplotlib.cm import ScalarMappable
-    sm = ScalarMappable(cmap=_OBS_CMAP, norm=Normalize(vmin=0, vmax=1))
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax_f, fraction=0.06, pad=0.04, orientation="horizontal")
-    cbar.set_label("time (start → end)", color="#aaaaaa", fontsize=7)
-    cbar.ax.xaxis.set_tick_params(color="#aaaaaa", labelsize=6)
-    plt.setp(cbar.ax.xaxis.get_ticklabels(), color="#aaaaaa")
-    cbar.set_ticks([0, 1])
-    cbar.set_ticklabels(["start", "end"])
+    if held_item_series is not None:
+        # Show item-category colour swatches instead of temporal bar
+        from matplotlib.patches import Patch as _PatchCB
+        from collections import Counter as _CounterCB
+        cat_counts2 = _CounterCB(_categorise_item(i) for i in held_item_series)
+        swatch_handles = [
+            _PatchCB(facecolor=_ITEM_CAT_COLORS[c], edgecolor="white",
+                     linewidth=0.5, label=_ITEM_CAT_LABELS[c])
+            for c in ("bow", "melee", "block", "tool", "other")
+            if cat_counts2.get(c, 0) > 0
+        ]
+        ax_f.legend(handles=swatch_handles, loc="lower center",
+                    fontsize=6, facecolor="#0e0e1a", labelcolor="white",
+                    framealpha=0.85, ncol=2)
+    else:
+        sm = ScalarMappable(cmap=_OBS_CMAP, norm=Normalize(vmin=0, vmax=1))
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax_f, fraction=0.06, pad=0.04, orientation="horizontal")
+        cbar.set_label("time (start → end)", color="#aaaaaa", fontsize=7)
+        cbar.ax.xaxis.set_tick_params(color="#aaaaaa", labelsize=6)
+        plt.setp(cbar.ax.xaxis.get_ticklabels(), color="#aaaaaa")
+        cbar.set_ticks([0, 1])
+        cbar.set_ticklabels(["start", "end"])
 
     # ── Overall title ────────────────────────────────────────────────────
     title_str = (
