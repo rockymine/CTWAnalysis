@@ -525,3 +525,96 @@ weren't actually bridged.
 | Does frac\_elevated need a span filter? | Yes — without a minimum span, single-point elevated structures would score identically. A 20-block span requirement filters out static campers. |
 | Is position held\_item a viable role signal despite missing kill held\_item? | Yes — 100% bow and 100% builder segments were found, showing position-held items are a strong and cleanly separable signal even at short life durations. |
 | Should held-item plots use temporal or category colouring in Panel A? | Category colouring — it immediately reveals item composition without the user needing to look at Panel F statistics. Temporal colouring is still used in Panels B–E for sequence context. |
+
+---
+
+## Defense Setup Analysis
+
+Early-game defense setup can be inferred entirely from position data and held items.
+Every player's first life (`segment_idx = 0`) starts at match second 0, making it a
+clean proxy for "early game."  The analysis focuses on positions within 60 Dijkstra
+blocks of the home wool node — the defended objective.
+
+Four observable defense phases:
+
+| Phase | Signal | Item IDs |
+|-------|--------|----------|
+| **Wall building** | y stable 9–25, wool_dist < 15, holding solid blocks | WOOD(5), GLASS(20), COBBLESTONE(4), STAINED_CLAY(159)… |
+| **Pit digging** | y drops to 2–5 near wool, holding pickaxe/shovel | IRON_PICKAXE(199), DIAMOND_PICKAXE(220), IRON_SPADE(198)… |
+| **Trap placement** | y near pit floor, holding fence/plate/button/cobble wall | FENCE(85), STONE_PLATE(70), WOOD_BUTTON(143), COBBLE_WALL(139), WORKBENCH(58)… |
+| **Gate building** | y elevated, holding fence gate | FENCE_GATE(107), wood-type FENCE_GATEs(183–187) |
+
+**Target wool selected automatically** — the node with the most `y < 5` positions
+within 30 Dijkstra blocks (richest digging signal).  For this match: **wool 278**
+(blue team), 74 active players in the 60-block zone, 1623 positions with y < 5.
+
+**Lane section view** — the right panel in the overview uses Dijkstra distance from
+the wool node as the x-axis (topology-aware lane distance, immune to lane curves) and
+raw y-level as the y-axis.  This produces a cross-section of the defense corridor
+showing spatial separation of phases.
+
+---
+
+### Defense Overview
+
+**Wool 278 (blue team) · 74 players · 5518 zone positions · 1623 dig events (y < 5)**
+
+![Defense Overview](assets/tumbleweed/22_defense_overview.png)
+
+**Spatial map (left):** All first-life positions within 60 Dijkstra blocks of wool 278,
+coloured by activity.  Dig (orange) and guard (amber) dominate the close-in area.
+Dashed rings at 10 / 20 / 30 / 50 blocks from the wool mark defense zones.
+
+**Lane section (right):** Dijkstra distance × y-level cross-section.  Orange dig events
+cluster at y = 2–5 within the first 30 blocks — the pit is being excavated immediately
+adjacent to the wool.  Green wall events sit at y = 9–20 at near-zero distance — players
+are building the outer wall before the pit is dug.  Cyan trap events fill the y = 0–8
+band once the pit is complete.  The amber guard layer at y = 9–15 spans the full 0–50
+block range as players patrol the corridor throughout.
+
+**Summary stats:** Pit depth y = 2, max wall/gate height y = 30, defense perimeter
+extends to the edge of the 60-block zone.
+
+---
+
+### Early Digger
+
+**Segment:** player 7, life 0 · first life · 648 positions · min y near wool = 2 · frac_trap = 2%
+
+![Defense Digger](assets/tumbleweed/23_defense_digger.png)
+
+Panel A is coloured by y-level (cool = low, warm = high).  The cool cluster near wool 278
+confirms this player spent significant time at y = 2–5 in the immediate wool area —
+deep pit excavation.  Panel B overlays the traffic graph: the snapped positions sit within
+the first 1–2 hops of the wool node, confirming minimal lateral movement during digging.
+Panel C's snapped sequence shows high node-repeat clustering (same 2–3 nodes repeatedly)
+consistent with digging in place rather than traversing the map.  Panel F reports min_y
+near wool.
+
+---
+
+### Early Builder
+
+**Segment:** player 24, life 0 · first life · 157 positions · min y near wool = 2 · frac_trap = 43%
+
+![Defense Builder](assets/tumbleweed/24_defense_builder.png)
+
+Panel A is coloured by held-item category.  Cyan (trap/obstacle) dominates — 43% of
+position samples show this player holding fence, fence gate, pressure plate, workbench,
+or cobblestone wall items.  Green (wall block) and magenta (gate) samples confirm
+mixed building activity.  Panel B shows the player staying within ~15 Dijkstra blocks
+of the wool.  Panel E (simplified sequence) reveals the compact spatial footprint:
+fewer unique nodes than the digger, consistent with a builder who plants traps in a
+fixed zone rather than traversing the lane.
+
+---
+
+### Defense Analysis Findings
+
+| Question | Finding |
+|----------|---------|
+| Can pit digging be detected from position data alone? | Yes — y < 5 within 30 Dijkstra blocks of wool, combined with pickaxe/shovel held items, is a clean signal. Player 7 reached y = 2 (below bedrock floor level on some maps). |
+| Are defense phases spatially separable? | Yes — the lane section view clearly separates wall events (y 9–25, dist < 15), pit events (y 2–5, dist < 30), and trap events (y 0–8, dist < 30). Guard patrol spans the full distance range. |
+| How far does defense extend? | Defense perimeter (max dist for dig/trap/gate/wall activity) reaches the edge of the 60-block zone, suggesting the first line of defense is actually pushed ~50 blocks down the lane from the wool in this match. |
+| Is fence gate a distinct signal from other trap items? | Yes — gate (magenta) samples are sparse but visible in the builder segment and the overview. Gate builders appear to work at a different y level (near max build height) from general trap placers. |
+| Does segment_idx=0 reliably capture early-game setup? | Yes — all 141 players' first lives start at match second 0, and the defense activity (pit + wall + trap) is concentrated before any deaths occur (player 7's first life lasts the full match at 4519 s). |
