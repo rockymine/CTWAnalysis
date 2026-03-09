@@ -89,6 +89,7 @@ def handle_load(args):
         _upsert_map(conn, row)
         loaded += 1
         print(f"  [OK] {row['map_name']}: {row['island_count']} islands, "
+              f"{row['team_count']}t/{row['wools_per_team']}w/{row['max_players_per_team']}p, "
               f"bbox X[{row['min_x']:.0f},{row['max_x']:.0f}] "
               f"Z[{row['min_z']:.0f},{row['max_z']:.0f}]")
 
@@ -196,6 +197,13 @@ def _collect_map_row(map_dir: Path) -> dict | None:
         print(f"  Skip {map_dir.name}: missing/invalid 'map_center' in map_context.json")
         return None
 
+    teams = map_data.get('teams', [])
+    team_count = len(teams)
+    wools = map_data.get('wools', [])
+    wools_per_team = round(len(wools) / team_count) if team_count > 0 else None
+    player_counts = [t.get('max_players') for t in teams if t.get('max_players')]
+    max_players_per_team = round(sum(player_counts) / len(player_counts)) if player_counts else None
+
     return {
         'map_slug': map_dir.name,
         'map_name': map_name,
@@ -207,7 +215,10 @@ def _collect_map_row(map_dir: Path) -> dict | None:
         'center_x': center[0],
         'center_z': center[1],
         'island_count': map_context.get('island_count', 0),
-        'team_count': len(map_context.get('teams', [])),
+        'team_count': team_count,
+        'wools_per_team': wools_per_team,
+        'max_players_per_team': max_players_per_team,
+        'total_blocks': map_context.get('total_blocks'),
         'last_updated': datetime.now(),
     }
 
@@ -237,6 +248,9 @@ def _upsert_map(conn, row: dict):
                 center_x = ?, center_z = ?,
                 island_count = ?,
                 team_count = ?,
+                wools_per_team = ?,
+                max_players_per_team = ?,
+                total_blocks = ?,
                 last_updated = ?
             WHERE map_slug = ?
         """, [
@@ -244,7 +258,9 @@ def _upsert_map(conn, row: dict):
             row['min_x'], row['max_x'],
             row['min_z'], row['max_z'],
             row['center_x'], row['center_z'],
-            row['island_count'], row['team_count'], row['last_updated'],
+            row['island_count'], row['team_count'],
+            row['wools_per_team'], row['max_players_per_team'],
+            row['total_blocks'], row['last_updated'],
             row['map_slug'],
         ])
     else:
@@ -253,11 +269,15 @@ def _upsert_map(conn, row: dict):
                 map_slug, map_name, max_build_height,
                 min_x, max_x, min_z, max_z,
                 center_x, center_z,
-                island_count, team_count, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                island_count, team_count,
+                wools_per_team, max_players_per_team, total_blocks,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
             row['map_slug'], row['map_name'], row['max_build_height'],
             row['min_x'], row['max_x'], row['min_z'], row['max_z'],
             row['center_x'], row['center_z'],
-            row['island_count'], row['team_count'], row['last_updated'],
+            row['island_count'], row['team_count'],
+            row['wools_per_team'], row['max_players_per_team'],
+            row['total_blocks'], row['last_updated'],
         ])

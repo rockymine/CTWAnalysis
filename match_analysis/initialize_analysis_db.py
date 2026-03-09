@@ -331,6 +331,27 @@ def migrate_y_columns(db_path: str | None = None) -> None:
     print(f"Y-level columns and wool_carry_chains migrated in {db_path}")
 
 
+def migrate_map_classification_columns(db_path: str | None = None) -> None:
+    """Add map classification columns to the maps table.
+
+    Safe to run on an already-migrated database — DuckDB silently skips
+    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    for col_name, col_type in [
+        ("wools_per_team", "INTEGER"),
+        ("max_players_per_team", "INTEGER"),
+        ("total_blocks", "INTEGER"),
+    ]:
+        conn.execute(
+            f"ALTER TABLE maps ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+        )
+    conn.close()
+    print(f"Map classification columns migrated in {db_path}")
+
+
 def migrate_node_path_columns(db_path: str | None = None) -> None:
     """Add node-path feature columns to an existing life_segment_features table.
 
