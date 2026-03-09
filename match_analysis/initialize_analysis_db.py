@@ -344,6 +344,9 @@ def migrate_map_classification_columns(db_path: str | None = None) -> None:
         ("wools_per_team", "INTEGER"),
         ("max_players_per_team", "INTEGER"),
         ("total_blocks", "INTEGER"),
+        ("size_tier", "VARCHAR"),
+        ("symmetry_type", "VARCHAR"),
+        ("has_intra_team_symmetry", "BOOLEAN"),
     ]:
         conn.execute(
             f"ALTER TABLE maps ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
