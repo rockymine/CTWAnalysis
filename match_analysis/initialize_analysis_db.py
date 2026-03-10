@@ -282,8 +282,42 @@ def initialize_database() -> None:
         )
     """)
 
+    _create_views(conn)
+
     conn.close()
     print(f"Database initialized at {db_path}")
+
+
+def _create_views(conn) -> None:
+    """Create or replace derived views."""
+    conn.execute("DROP VIEW IF EXISTS map_size_buckets")
+    conn.execute("""
+        CREATE VIEW map_size_buckets AS
+        WITH ranked AS (
+            SELECT
+                map_id,
+                map_slug,
+                total_blocks,
+                NTILE(5) OVER (ORDER BY total_blocks) AS bucket_rank
+            FROM maps
+            WHERE wools_per_team > 0
+              AND total_blocks IS NOT NULL
+              AND total_blocks > 0
+        )
+        SELECT
+            map_id,
+            map_slug,
+            total_blocks,
+            bucket_rank,
+            CASE bucket_rank
+                WHEN 1 THEN 'tiny'
+                WHEN 2 THEN 'small'
+                WHEN 3 THEN 'medium'
+                WHEN 4 THEN 'large'
+                WHEN 5 THEN 'huge'
+            END AS map_size_bucket
+        FROM ranked
+    """)
 
 
 def _ensure_wool_carry_chains_table(conn) -> None:
@@ -329,6 +363,16 @@ def migrate_y_columns(db_path: str | None = None) -> None:
     _ensure_wool_carry_chains_table(conn)
     conn.close()
     print(f"Y-level columns and wool_carry_chains migrated in {db_path}")
+
+
+def migrate_views(db_path: str | None = None) -> None:
+    """Create or replace all derived views in an existing database."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    _create_views(conn)
+    conn.close()
+    print(f"Views created/replaced in {db_path}")
 
 
 def migrate_map_classification_columns(db_path: str | None = None) -> None:
