@@ -658,6 +658,12 @@ def run_island_geometry(
     # Load layout and detect islands
     logger.debug(f"  Loading layout: {layout_file.name}")
     df = pd.read_parquet(layout_file)
+    if 'block_id' in df.columns:
+        n_before = len(df)
+        df = df[df['block_id'] != 36]
+        removed = n_before - len(df)
+        if removed:
+            logger.debug(f"    Excluded {removed} block-36 rows (void marker)")
     logger.debug(f"    {len(df)} blocks")
 
     df, islands = detect_and_enrich(
