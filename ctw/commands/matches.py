@@ -48,7 +48,7 @@ Actions:
   post-process   Build life_segment_features from processed matches
   trace          Visualize player traces on map
   kills          Visualize kill-death pairs on map
-  traffic-graph  Build data-driven traffic graph from player position traces
+  traffic-graph  Build data-driven traffic graph from player position traces (--map or --all)
 
 Examples:
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
@@ -207,8 +207,11 @@ Examples:
         'traffic-graph',
         help='Build data-driven traffic graph from player position traces',
     )
-    p.add_argument('--map-name', required=True,
-                   help='Map slug (e.g. tumbleweed) to build the graph for')
+    map_group = p.add_mutually_exclusive_group(required=True)
+    map_group.add_argument('--map',
+                           help='Map slug (e.g. tumbleweed) to build the graph for')
+    map_group.add_argument('--all', action='store_true',
+                           help='Build traffic graphs for all maps with recorded matches')
     p.add_argument('--grid-size', type=int, default=5,
                    help='Block-side of each grid cell (default: 5)')
     p.add_argument('--min-occupation', type=int, default=5,
@@ -670,20 +673,14 @@ def handle_kills(args):
         print(f"\nPlotted kills for {plotted}/{len(valid_match_ids)} matches.")
 
 
-def handle_traffic_graph(args):
-    import logging
+def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
+    import json
     import duckdb
     from ctw.common import DEFAULT_OUTPUT_ROOT
     from match_analysis.traffic_graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
     )
 
-    ensure_match_db()
-    logging.basicConfig(level=logging.INFO)
-
-    # Resolve map slug and output dir without requiring a map_folder to exist.
-    # If a map_folder exists, use it; otherwise fall back to output/<slug>.
-    map_slug = args.map_name
     map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
     if not map_folder_candidate.is_dir():
         map_folder_candidate = None
@@ -719,7 +716,6 @@ def handle_traffic_graph(args):
         print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
 
     # Always (re-)render the plot
-    import json
     with open(out_json) as f:
         graph = json.load(f)
 
@@ -727,6 +723,33 @@ def handle_traffic_graph(args):
     map_context = _load_map_context(map_output_dir, fallback)
     plot_traffic_graph(graph, map_context, out_png)
     print(f"Saved: {out_png}")
+
+
+def handle_traffic_graph(args):
+    import logging
+    import duckdb
+
+    ensure_match_db()
+    logging.basicConfig(level=logging.INFO)
+
+    if getattr(args, 'all', False):
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        slugs = [
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT m.map_slug FROM matches mat "
+                "JOIN maps m ON mat.map_id = m.map_id ORDER BY m.map_slug"
+            ).fetchall()
+        ]
+        conn.close()
+        if not slugs:
+            print("No maps with matches found in the database.")
+            return
+        print(f"Building traffic graphs for {len(slugs)} map(s): {', '.join(slugs)}")
+        for slug in slugs:
+            print(f"\n--- {slug} ---")
+            _build_traffic_graph_for_slug(args, slug)
+    else:
+        _build_traffic_graph_for_slug(args, args.map)
 
 
 def handle_list(args):

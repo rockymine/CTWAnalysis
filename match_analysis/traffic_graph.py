@@ -6,7 +6,7 @@ become nodes; consecutive player movements between cells become edges.
 Spawn and wool nodes from map_graph.json are injected as fixed anchors.
 
 Typical usage (CLI):
-    python ctw.py matches traffic-graph --map-name tumbleweed
+    python ctw.py matches traffic-graph --map tumbleweed
 
 Output:
     output/<map_slug>/traffic_graph.json
