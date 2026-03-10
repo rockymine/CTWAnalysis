@@ -29,6 +29,34 @@ python match_analysis/initialize_analysis_db.py
 
 This is idempotent — existing tables are not recreated.
 
+#### Migrating an existing database
+
+If you have an existing database that predates a schema addition, use the migration helpers in `initialize_analysis_db.py`. Each is safe to run on an already-migrated database.
+
+| Migration function | What it adds |
+|-------------------|-------------|
+| `migrate_map_classification_columns()` | `wools_per_team`, `max_players_per_team`, `total_blocks`, `size_tier`, `symmetry_type`, `has_intra_team_symmetry` to `maps` |
+| `migrate_y_columns()` | `y_avg`, `y_max`, `frac_time_elevated` to `life_segment_features`; creates `wool_carry_chains` table |
+| `migrate_node_path_columns()` | Nine node-path metric columns to `life_segment_features` |
+| `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`) |
+
+Run any migration directly:
+
+```python
+from match_analysis.initialize_analysis_db import (
+    migrate_map_classification_columns,
+    migrate_views,
+)
+migrate_map_classification_columns()   # safe if columns already exist
+migrate_views()                        # recreates all views
+```
+
+After adding classification columns, reload map metadata to populate them:
+
+```bash
+ctw maps load       # repopulates all classification columns for every map
+```
+
 ### Step 1: Preprocess maps
 
 Each map must be run through the analysis pipeline first to generate `map_context.json`
@@ -197,7 +225,7 @@ maps                        Map metadata (bbox, island count, teams)
 
 | Table | Key Columns | Populated By |
 |-------|-------------|-------------|
-| `maps` | `map_id`, `map_slug`, `map_name`, bbox, `island_count` | `ctw maps load` |
+| `maps` | `map_id`, `map_slug`, `map_name`, bbox, `island_count`, classification columns | `ctw maps load` |
 | `map_spawns` | `map_id` (FK), `x`, `z`, bounds, `team`, `team_color` | `ctw maps spawns` |
 | `matches` | `match_id`, `match_file`, `map_id` (FK), `processed` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
@@ -213,6 +241,41 @@ maps                        Map metadata (bbox, island count, teams)
 | `wool_spawn_baselines` | `map_id` (FK), `team`, `wool_id`, `baseline_distance` | `run_post_processing` |
 | `life_segment_region_visits` | `segment_id` (FK), `visit_idx`, `location_type`, `entry_node`, `exit_node`, `node_path` | `run_post_processing` |
 | `life_segment_features` | `segment_id` (FK), movement fractions, node-path metrics, `cluster_label` | `run_post_processing` |
+
+### `maps` classification columns
+
+These columns are populated by `ctw maps load` from pipeline output files (`map_data.json`, `symmetry.json`, `layout_top_surface.parquet`):
+
+| Column | Type | Source | Description |
+|--------|------|---------|-------------|
+| `wools_per_team` | INTEGER | `map_data.json` wools/teams | Wool objectives per team; 0 = non-CTW |
+| `max_players_per_team` | INTEGER | `map_data.json` teams | Max players per team (avg across teams) |
+| `total_blocks` | INTEGER | `layout_top_surface.parquet` | Buildable surface blocks, **excluding block ID 36** (void marker) |
+| `size_tier` | VARCHAR | derived from `max_players_per_team` | Server tier: `pico`/`nano`/`micro`/`milli`/`centi`/`hecto`/`mega`/`giga` |
+| `symmetry_type` | VARCHAR | `symmetry.json` global_symmetry | Highest-confidence detected global symmetry type, or `none` |
+| `has_intra_team_symmetry` | BOOLEAN | `symmetry.json` intra_team_symmetry | True if any team's island cluster has intra-team symmetry |
+
+Size tier thresholds (players per team, lower-bound inclusive):
+
+| Tier | Threshold |
+|------|----------:|
+| `giga` | 80+ |
+| `mega` | 64 |
+| `hecto` | 48 |
+| `centi` | 32 |
+| `milli` | 22 |
+| `micro` | 14 |
+| `nano` | 6 |
+| `pico` | 1 |
+
+### `map_size_buckets` view
+
+A derived view assigning each map to one of five area buckets via NTILE(5) percentile ranking on `total_blocks`. Only maps with `wools_per_team > 0` and a valid `total_blocks` are included. Bucket boundaries shift automatically as new maps are loaded.
+
+```sql
+SELECT map_slug, map_size_bucket FROM map_size_buckets;
+-- Buckets: tiny, small, medium, large, huge (~59 maps each)
+```
 
 #### `life_segment_region_visits` — notable columns
 
