@@ -50,6 +50,7 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
         'no_json': bool,
     },
     'run': {
+        'force': bool,
         'no_layout': bool,
         'no_islands': bool,
         'no_symmetry': bool,
