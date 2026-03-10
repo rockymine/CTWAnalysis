@@ -696,28 +696,24 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     out_png  = map_output_dir / "traffic_graph.png"
 
     if out_json.exists() and not getattr(args, 'force', False):
-        print(f"traffic_graph.json already exists at {out_json}")
-        print("Use --force to rebuild.")
-    else:
-        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
-        try:
-            graph = build_traffic_graph(
-                map_slug,
-                conn,
-                output_dir      = map_output_dir,
-                grid_size       = args.grid_size,
-                min_occupation  = args.min_occupation,
-                min_transitions = args.min_transitions,
-            )
-        finally:
-            conn.close()
+        print(f"Skipping '{map_slug}': traffic_graph.json already exists (use --force to rebuild).")
+        return
 
-        save_traffic_graph(graph, out_json)
-        print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
+    conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+    try:
+        graph = build_traffic_graph(
+            map_slug,
+            conn,
+            output_dir      = map_output_dir,
+            grid_size       = args.grid_size,
+            min_occupation  = args.min_occupation,
+            min_transitions = args.min_transitions,
+        )
+    finally:
+        conn.close()
 
-    # Always (re-)render the plot
-    with open(out_json) as f:
-        graph = json.load(f)
+    save_traffic_graph(graph, out_json)
+    print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
 
     fallback = map_folder_candidate if map_folder_candidate else map_output_dir
     map_context = _load_map_context(map_output_dir, fallback)
