@@ -514,7 +514,7 @@ def plot_traffic_graph(
             team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
 
         for isl in map_context.get("islands", []):
-            pts = isl.get("simplified_polygon", {}).get("exterior", [])
+            pts = (isl.get("simplified_polygon") or {}).get("exterior", [])
             if not pts:
                 continue
             isl_t = isl.get("team")
