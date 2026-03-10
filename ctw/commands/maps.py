@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 from ctw.common import DEFAULT_OUTPUT_ROOT, ensure_match_db
 
 # Size tier thresholds (max_players_per_team, lower bound inclusive)
@@ -29,6 +31,20 @@ def _size_tier(max_players_per_team: Optional[int]) -> Optional[str]:
         if max_players_per_team >= threshold:
             return label
     return None
+
+
+def _count_surface_blocks(map_dir: Path) -> Optional[int]:
+    """Count non-void surface blocks from layout_top_surface.parquet.
+
+    Block ID 36 is excluded — it is used as a void/region marker and must
+    not be counted as playable terrain.
+    Returns None if the parquet file is absent.
+    """
+    surface_path = map_dir / 'layout_top_surface.parquet'
+    if not surface_path.exists():
+        return None
+    df = pd.read_parquet(surface_path, columns=['block_id'])
+    return int((df['block_id'] != 36).sum())
 
 
 def _read_symmetry(map_dir: Path) -> tuple[Optional[str], Optional[bool]]:
@@ -255,6 +271,7 @@ def _collect_map_row(map_dir: Path) -> dict | None:
     max_players_per_team = round(sum(player_counts) / len(player_counts)) if player_counts else None
 
     symmetry_type, has_intra_team_symmetry = _read_symmetry(map_dir)
+    total_blocks = _count_surface_blocks(map_dir)
 
     return {
         'map_slug': map_dir.name,
@@ -270,7 +287,7 @@ def _collect_map_row(map_dir: Path) -> dict | None:
         'team_count': team_count,
         'wools_per_team': wools_per_team,
         'max_players_per_team': max_players_per_team,
-        'total_blocks': map_context.get('total_blocks'),
+        'total_blocks': total_blocks,
         'size_tier': _size_tier(max_players_per_team),
         'symmetry_type': symmetry_type,
         'has_intra_team_symmetry': has_intra_team_symmetry,
