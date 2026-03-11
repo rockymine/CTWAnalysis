@@ -536,6 +536,7 @@ def plot_traffic_strategy_comparison(
     map_slug: str,
     pos_df: pd.DataFrame,
     total_blocks: int,
+    n_matches: int = 0,
     map_context: Optional[dict] = None,
     min_occupation: int = 5,
     min_transitions: int = 2,
@@ -803,8 +804,8 @@ def plot_traffic_strategy_comparison(
 
     y -= 0.04
     # Thin separator line
-    ax_f.axhline(
-        y=y + 0.005, xmin=0.02, xmax=0.98,
+    ax_f.plot(
+        [0.02, 0.98], [y + 0.005, y + 0.005],
         color="#444466", linewidth=0.8, transform=ax_f.transAxes,
     )
     y -= 0.02

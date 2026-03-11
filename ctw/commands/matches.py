@@ -713,7 +713,8 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
         conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
         try:
             pos_df = conn.execute("""
-                SELECT pe.x, pe.z, pe.y, pe.location_type
+                SELECT pe.player_id, pe.match_id, pe.segment_idx,
+                       pe.timestamp, pe.x, pe.z, pe.y, pe.location_type
                 FROM position_events pe
                 JOIN matches mat ON mat.match_id = pe.match_id
                 JOIN maps m      ON m.map_id = mat.map_id
@@ -721,18 +722,13 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
                   AND mat.processed = TRUE
                   AND (mat.log_interval = ? OR mat.log_interval IS NULL)
                   AND pe.y > 0
+                ORDER BY pe.player_id, pe.match_id, pe.segment_idx, pe.timestamp
             """, [map_slug, log_interval]).df()
             total_blocks = conn.execute(
                 "SELECT total_blocks FROM maps WHERE map_slug = ?", [map_slug]
             ).fetchone()
             total_blocks = int(total_blocks[0]) if total_blocks and total_blocks[0] else 5000
-            n_matches = conn.execute("""
-                SELECT COUNT(DISTINCT mat.match_id)
-                FROM matches mat JOIN maps m ON m.map_id = mat.map_id
-                WHERE m.map_slug = ?
-                  AND mat.processed = TRUE
-                  AND (mat.log_interval = ? OR mat.log_interval IS NULL)
-            """, [map_slug, log_interval]).fetchone()[0]
+            n_matches = int(pos_df["match_id"].nunique()) if not pos_df.empty else 0
         finally:
             conn.close()
 
