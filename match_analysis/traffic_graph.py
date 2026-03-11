@@ -38,6 +38,46 @@ DEFAULT_MAX_GAP_S       = 30.0 # max seconds between consecutive samples before 
 # Build
 # ---------------------------------------------------------------------------
 
+def _bresenham_cells(
+    cx1: int, cz1: int, cx2: int, cz2: int, grid_size: int
+) -> list[tuple[int, int]]:
+    """Return all grid cells on the Bresenham line from (cx1,cz1) to (cx2,cz2).
+
+    Coordinates are grid-cell origins (i.e. already snapped to grid_size
+    multiples).  The returned list always starts with (cx1,cz1) and ends
+    with (cx2,cz2), with every intermediate cell included.
+    """
+    cells: list[tuple[int, int]] = [(cx1, cz1)]
+    if cx1 == cx2 and cz1 == cz2:
+        return cells
+
+    dx = abs(cx2 - cx1) // grid_size
+    dz = abs(cz2 - cz1) // grid_size
+    sx = grid_size if cx2 > cx1 else -grid_size
+    sz = grid_size if cz2 > cz1 else -grid_size
+
+    cx, cz = cx1, cz1
+    if dx >= dz:
+        err = dx // 2
+        while cx != cx2:
+            err -= dz
+            if err < 0:
+                cz += sz
+                err += dx
+            cx += sx
+            cells.append((cx, cz))
+    else:
+        err = dz // 2
+        while cz != cz2:
+            err -= dx
+            if err < 0:
+                cx += sx
+                err += dz
+            cz += sz
+            cells.append((cx, cz))
+    return cells
+
+
 def build_traffic_graph(
     map_slug: str,
     conn,
@@ -46,10 +86,22 @@ def build_traffic_graph(
     min_occupation: int   = DEFAULT_MIN_OCCUPATION,
     min_transitions: int  = DEFAULT_MIN_TRANSITIONS,
     max_gap_s: float      = DEFAULT_MAX_GAP_S,
+    log_interval: int     = 2,
 ) -> dict:
     """Build a traffic graph from all processed position data for *map_slug*.
 
+    Parameters
+    ----------
+    map_slug:
+        Identifies which map's position data to load from the DB.
+    log_interval:
+        Only include matches whose ``log_interval`` equals this value (or is
+        NULL for un-migrated rows).  Default ``2`` restricts to 2-second
+        logged matches, filtering out 5-second logged matches that would
+        produce sparser traces.
+
     Returns the graph as a plain dict (same structure written to JSON).
+    The dict includes a ``log_interval`` key recording the filter applied.
     """
     logger.info(
         "Building traffic graph for '%s'  grid=%d  min_occ=%d  min_trans=%d",
@@ -64,12 +116,18 @@ def build_traffic_graph(
         JOIN matches mat ON mat.match_id = pe.match_id
         JOIN maps m      ON m.map_id     = mat.map_id
         WHERE m.map_slug = ? AND mat.processed = TRUE
+          AND pe.y > 0
+          AND (mat.log_interval = ? OR mat.log_interval IS NULL)
         ORDER BY pe.player_id, pe.match_id, pe.segment_idx, pe.timestamp
-    """, [map_slug]).df()
+    """, [map_slug, log_interval]).df()
 
     if pos_df.empty:
-        raise ValueError(f"No position data found for map '{map_slug}'. "
-                         "Run 'ctw matches process-all --map-name <slug>' first.")
+        raise ValueError(
+            f"No position data found for map '{map_slug}'. "
+            "Run 'ctw matches process-all --map-name <slug>' first. "
+            f"Also check that log_interval={log_interval} matches your data "
+            "(use log_interval=5 for 5-second logged matches)."
+        )
 
     match_count    = int(pos_df["match_id"].nunique())
     position_count = len(pos_df)
@@ -97,8 +155,10 @@ def build_traffic_graph(
     # 'void' = outside all island and build-region polygons in 2D.
     # These positions are off the map footprint and must not become graph nodes
     # or contribute to edge transitions.
-    # Note: players falling straight down (y < 0) while within an island polygon
-    # are classified as 'island' because y is not stored in position_events.
+    # Note: y>0 is enforced at query time, filtering players who have fallen out
+    # of the world (y<=0).  This belt-and-suspenders check drops any remaining
+    # void-classified positions — e.g. players standing in void at ground level
+    # (y=1) whose y>0 filter did not catch them.
     n_void = int((pos_df["location_type"] == "void").sum())
     if n_void:
         pos_df = pos_df[pos_df["location_type"] != "void"].copy()
@@ -110,6 +170,16 @@ def build_traffic_graph(
     # ── 2. Discretise to grid cells ────────────────────────────────────────
     pos_df["cx"] = (pos_df["x"] // grid_size * grid_size).astype(int)
     pos_df["cz"] = (pos_df["z"] // grid_size * grid_size).astype(int)
+
+    # ── 2a. Valid cell set (non-void cells that have y>0 positions) ───────────
+    # Used later to reject interpolated edge steps through void territory.
+    valid_cells_df = pos_df[pos_df["location_type"] != "void"]
+    valid_cell_set: set[tuple[int, int]] = set(
+        zip(
+            (valid_cells_df["x"] // grid_size * grid_size).astype(int),
+            (valid_cells_df["z"] // grid_size * grid_size).astype(int),
+        )
+    )
 
     # ── 3. Node occupation & dominant island_id ────────────────────────────
     def _mode_or_none(s: pd.Series) -> Optional[int]:
@@ -125,9 +195,11 @@ def build_traffic_graph(
         .reset_index()
     )
 
-    # ── 4. Consecutive transitions (vectorised) ────────────────────────────
+    # ── 4. Consecutive transitions — Bresenham interpolation ──────────────
     # Group by life segment so no transition crosses a death/respawn boundary.
-    # max_gap_s is a secondary guard against stale position records.
+    # For each consecutive position pair, walk the Bresenham line through
+    # all intermediate grid cells and record each adjacent-cell step as a
+    # transition.  Steps through void cells are rejected via valid_cell_set.
     pos_s = pos_df.sort_values(
         ["player_id", "match_id", "segment_idx", "timestamp"]
     ).copy()
@@ -137,32 +209,48 @@ def build_traffic_graph(
     pos_s["prev_cz"] = grp["cz"].shift(1)
     pos_s["dt"]      = pos_s["timestamp"] - grp["timestamp"].shift(1)
 
-    trans = pos_s[
+    hops = pos_s[
         pos_s["prev_cx"].notna()
         & ((pos_s["cx"] != pos_s["prev_cx"]) | (pos_s["cz"] != pos_s["prev_cz"]))
         & (pos_s["dt"] <= max_gap_s)
     ].copy()
 
-    if not trans.empty:
-        cx  = trans["cx"].astype(int).values
-        cz  = trans["cz"].astype(int).values
-        pcx = trans["prev_cx"].astype(int).values
-        pcz = trans["prev_cz"].astype(int).values
+    # Bresenham line: decompose each hop into adjacent-cell steps
+    transition_list: list[tuple[int, int, int, int]] = []  # (cx1, cz1, cx2, cz2)
 
-        # Canonical undirected key: smaller cell first (compare as (cx, cz) tuples)
-        forward   = (cx < pcx) | ((cx == pcx) & (cz <= pcz))
-        key_cx1   = np.where(forward, cx, pcx)
-        key_cz1   = np.where(forward, cz, pcz)
-        key_cx2   = np.where(forward, pcx, cx)
-        key_cz2   = np.where(forward, pcz, cz)
+    if not hops.empty:
+        cx_arr  = hops["cx"].astype(int).values
+        cz_arr  = hops["cz"].astype(int).values
+        pcx_arr = hops["prev_cx"].astype(int).values
+        pcz_arr = hops["prev_cz"].astype(int).values
 
-        trans["key_cx1"] = key_cx1
-        trans["key_cz1"] = key_cz1
-        trans["key_cx2"] = key_cx2
-        trans["key_cz2"] = key_cz2
+        for cx1, cz1, cx2, cz2 in zip(pcx_arr, pcz_arr, cx_arr, cz_arr):
+            # Walk Bresenham line from (cx1,cz1) → (cx2,cz2) in grid-cell steps
+            cells = _bresenham_cells(cx1, cz1, cx2, cz2, grid_size)
+            for a, b in zip(cells, cells[1:]):
+                if a in valid_cell_set and b in valid_cell_set:
+                    transition_list.append((*a, *b))
+
+    if transition_list:
+        trans_df = pd.DataFrame(
+            transition_list, columns=["cx1", "cz1", "cx2", "cz2"]
+        )
+        # Canonical undirected key: smaller cell first
+        forward   = (trans_df["cx1"] < trans_df["cx2"]) | (
+            (trans_df["cx1"] == trans_df["cx2"]) & (trans_df["cz1"] <= trans_df["cz2"])
+        )
+        key_cx1 = np.where(forward, trans_df["cx1"], trans_df["cx2"])
+        key_cz1 = np.where(forward, trans_df["cz1"], trans_df["cz2"])
+        key_cx2 = np.where(forward, trans_df["cx2"], trans_df["cx1"])
+        key_cz2 = np.where(forward, trans_df["cz2"], trans_df["cz1"])
+
+        trans_df["key_cx1"] = key_cx1
+        trans_df["key_cz1"] = key_cz1
+        trans_df["key_cx2"] = key_cx2
+        trans_df["key_cz2"] = key_cz2
 
         edge_counts = (
-            trans.groupby(["key_cx1", "key_cz1", "key_cx2", "key_cz2"])
+            trans_df.groupby(["key_cx1", "key_cz1", "key_cx2", "key_cz2"])
             .size()
             .reset_index(name="transitions")
         )
@@ -317,6 +405,7 @@ def build_traffic_graph(
     graph = {
         "map_slug":           map_slug,
         "grid_size":          grid_size,
+        "log_interval":       log_interval,
         "match_count":        match_count,
         "position_count":     position_count,
         "player_count":       player_count,
