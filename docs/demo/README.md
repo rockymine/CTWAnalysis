@@ -618,3 +618,82 @@ fixed zone rather than traversing the lane.
 | How far does defense extend? | Defense perimeter (max dist for dig/trap/gate/wall activity) reaches the edge of the 60-block zone, suggesting the first line of defense is actually pushed ~50 blocks down the lane from the wool in this match. |
 | Is fence gate a distinct signal from other trap items? | Yes — gate (magenta) samples are sparse but visible in the builder segment and the overview. Gate builders appear to work at a different y level (near max build height) from general trap placers. |
 | Does segment_idx=0 reliably capture early-game setup? | Yes — all 141 players' first lives start at match second 0, and the defense activity (pit + wall + trap) is concentrated before any deaths occur (player 7's first life lasts the full match at 4519 s). |
+
+---
+
+# Improved Traffic Graph — Five-Map Validation
+
+The Tumbleweed traffic graph above was built with the original fixed 5×5 grid
+using all available matches (including 5 s-sampled data). Three data-quality
+improvements were subsequently implemented and validated across five maps with
+diverse characteristics. See the full report at
+[`docs/traffic_graph_improvements.md`](../traffic_graph_improvements.md).
+
+## Data Quality Improvements
+
+| Problem | Fix |
+|---------|-----|
+| Mixing 2 s and 5 s-logged matches inflates edge lengths | New `log_interval` column on `matches`; graph uses only 2 s data by default |
+| `y <= 0` positions (fallen-out-of-world) pollute node set | SQL filter `AND pe.y > 0` |
+| Long hops between islands create void-crossing phantom edges | Bresenham line interpolation: reject any hop where an intermediate cell lacks player data |
+
+## Adaptive Grid Size
+
+Fixed 5-block cells are too coarse for small maps and too fine for large ones.
+The new default computes grid size from playable block count:
+
+```
+grid_size = max(2, round(sqrt(total_blocks / 300)))
+```
+
+This keeps node counts stable (270–460) across a 14× size range:
+
+| Map | Blocks | Grid | Nodes | Edges |
+|-----|--------|------|-------|-------|
+| dromedary | 1 466 | 2 | 457 | 1 355 |
+| expedition | 2 300 | 3 | 302 | 839 |
+| research_base | 2 808 | 3 | 326 | 906 |
+| dynamo | 2 957 | 3 | 270 | 754 |
+| level_up | 20 288 | 8 | 374 | 1 234 |
+
+## Strategy Comparison
+
+The `--compare` flag generates a 6-panel figure comparing grid-5, grid-3,
+adaptive grid, and k-means/Voronoi strategies side-by-side.
+
+### Dromedary — tiny map, 10 islands
+
+![Dromedary strategy comparison](../../output/dromedary/traffic_strategy_comparison.png)
+
+### Dynamo — medium map, highly elongated (171×37)
+
+![Dynamo strategy comparison](../../output/dynamo/traffic_strategy_comparison.png)
+
+### Level Up — large map, 4-tier bridge structure
+
+![Level Up strategy comparison](../../output/level_up/traffic_strategy_comparison.png)
+
+## Wool-Capture Path Validation
+
+Representative deep_attacker life-segments were selected for each map and
+inspected for snapping quality. 3 of 5 had confirmed wool captures:
+
+### Dromedary — wool captured
+
+![Dromedary deep attacker](../../output/dromedary/traffic_graph_diagnostics/life_158835_deep_attacker.png)
+
+### Research Base — wool captured
+
+![Research Base deep attacker](../../output/research_base/traffic_graph_diagnostics/life_188149_deep_attacker.png)
+
+### Dynamo — wool captured
+
+![Dynamo deep attacker](../../output/dynamo/traffic_graph_diagnostics/life_159710_deep_attacker.png)
+
+In all three wool-capture cases:
+- Panel D (reconstructed path) follows established bridge corridors — no
+  void-crossing shortcuts even for lives with only 9–22 unique position samples.
+- The wool marker (`×`) lands on or adjacent to the closest graph node to the
+  actual wool location.
+- Bresenham filtering eliminated all cross-void phantom transitions, confirmed
+  by visual inspection.

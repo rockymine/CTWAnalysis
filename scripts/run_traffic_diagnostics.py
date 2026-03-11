@@ -7,7 +7,7 @@ Produces:
        - deep_attacker   (snapped closest to an ENEMY wool node)
        - defender        (player whose snapped nodes hug their HOME wool room)
        - roamer          (high unique-node count with high path tortuosity)
-       - traversal       (maximum first→last Euclidean span)
+       - traversal       (maximum first->last Euclidean span)
 
 Outputs are written to:
   <output_dir>/<map>/traffic_graph_diagnostics/
@@ -121,7 +121,7 @@ def _load_wool_events(conn, map_slug: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def _build_team_wool_lookup(node_info: dict[int, dict]) -> dict[str, list[int]]:
-    """Map team name → list of wool node_ids on that team's island.
+    """Map team name -> list of wool node_ids on that team's island.
 
     These are the wools that team *defends* (located on their own island).
     """
@@ -185,7 +185,7 @@ def _compute_segment_metrics(
         frac_bow, frac_builder,
         held_item_series, positions_y
     """
-    # Pre-build team → home wool ids lookup
+    # Pre-build team -> home wool ids lookup
     team_wool = _build_team_wool_lookup(node_info)
 
     # Pre-build spawn lookup from life_segments
@@ -317,7 +317,7 @@ def _compute_segment_metrics(
         held_arr = hi_raw.to_numpy(dtype=int) if len(hi_raw) else np.array([], dtype=int)
         frac_bow     = float(np.isin(held_arr, list(_BOW_IDS)).mean())    if len(held_arr) else 0.0
         frac_builder = float(np.isin(held_arr, list(_BRIDGE_IDS)).mean()) if len(held_arr) else 0.0
-        # Build held_item_series aligned to all positions (NA → -1 sentinel)
+        # Build held_item_series aligned to all positions (NA -> -1 sentinel)
         hi_full = grp["held_item"].to_numpy()
         held_item_series = [int(v) if v is not pd.NA and not (isinstance(v, float) and np.isnan(v)) else -1
                             for v in hi_full]
@@ -371,22 +371,22 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
 
     defender
         Player whose snapped positions average the lowest Dijkstra distance to
-        their HOME wool nodes (on their own island).  Must have ≥ 8 positions,
+        their HOME wool nodes (on their own island).  Must have >= 8 positions,
         no wool touch (not carrying), and not selected as deep_attacker.
 
     roamer
         High path tortuosity (total trajectory length / Euclidean span) combined
         with high unique-node count.  Captures players who cover lots of ground
         without moving in a straight line — pushing, retreating, looping.
-        Requires span_m ≥ 40 blocks and unique_nodes ≥ 12.
+        Requires span_m >= 40 blocks and unique_nodes >= 12.
 
     traversal
-        Maximum first→last Euclidean span — the most sustained directional
+        Maximum first->last Euclidean span — the most sustained directional
         movement in a single life.
 
     Returns
     -------
-    dict mapping category label → row dict from metrics DataFrame.
+    dict mapping category label -> row dict from metrics DataFrame.
     """
     if metrics.empty:
         return {}
@@ -402,7 +402,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
     else:
         attacker_id = None
 
-    # 2. Defender — lowest average home-wool distance, no wool touch, ≥ 8 positions
+    # 2. Defender — lowest average home-wool distance, no wool touch, >= 8 positions
     finite_home = metrics[
         (metrics["avg_home_wool_dist"] < float("inf"))
         & (~metrics["has_wool_event"])
@@ -436,7 +436,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
         row = roamer_pool.loc[roamer_pool["roamer_score"].idxmax()]
         selected["roamer"] = row.to_dict()
 
-    # 4. Long traversal — maximum first→last Euclidean span
+    # 4. Long traversal — maximum first->last Euclidean span
     row = metrics.loc[metrics["span_m"].idxmax()]
     selected["traversal"] = row.to_dict()
 
@@ -444,7 +444,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
     def _selected_ids() -> set[int]:
         return {v["segment_id"] for v in selected.values()}
 
-    # 5. High killer — max kill_count in one life (≥4 positions)
+    # 5. High killer — max kill_count in one life (>=4 positions)
     hk_pool = metrics[
         (metrics["position_count"] >= 4)
         & ~metrics["segment_id"].isin(_selected_ids())
@@ -453,7 +453,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
         row = hk_pool.loc[hk_pool["kill_count"].idxmax()]
         selected["high_killer"] = row.to_dict()
 
-    # 6. Skybridge — most time at y≥22 (≥8 positions, span≥20 blocks)
+    # 6. Skybridge — most time at y>=22 (>=8 positions, span>=20 blocks)
     sky_pool = metrics[
         (metrics["position_count"] >= 8)
         & (metrics["span_m"] >= 20)
@@ -463,7 +463,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
         row = sky_pool.loc[sky_pool["frac_elevated"].idxmax()]
         selected["skybridge"] = row.to_dict()
 
-    # 7. Bow archer — highest bow-holding fraction (≥8 positions, frac_bow>0.1)
+    # 7. Bow archer — highest bow-holding fraction (>=8 positions, frac_bow>0.1)
     bow_pool = metrics[
         (metrics["position_count"] >= 8)
         & (metrics["frac_bow"] > 0.1)
@@ -473,7 +473,7 @@ def _select_representative_segments(metrics: pd.DataFrame) -> dict[str, dict]:
         row = bow_pool.loc[bow_pool["frac_bow"].idxmax()]
         selected["bow_archer"] = row.to_dict()
 
-    # 8. Builder — highest bridge-block holding fraction (≥8 positions, frac_builder>0.1)
+    # 8. Builder — highest bridge-block holding fraction (>=8 positions, frac_builder>0.1)
     builder_pool = metrics[
         (metrics["position_count"] >= 8)
         & (metrics["frac_builder"] > 0.1)
@@ -498,7 +498,7 @@ def run(map_slug: str, output_root: Path) -> None:
     print(f"=== Traffic graph diagnostics for '{map_slug}' ===\n")
 
     # ── Load data ─────────────────────────────────────────────────────────
-    print("Loading traffic graph …")
+    print("Loading traffic graph ...")
     graph       = _load_traffic_graph_data(output_dir)
     topology    = build_traffic_topology(graph)
     node_info   = topology["node_info"]
@@ -510,7 +510,7 @@ def run(map_slug: str, output_root: Path) -> None:
 
     conn = duckdb.connect(str(DB_PATH), read_only=True)
     try:
-        print("Loading positions and life segment metadata …")
+        print("Loading positions and life segment metadata ...")
         positions_all  = _load_all_positions(conn, map_slug)
         life_segments  = _load_life_segments(conn, map_slug)
         wool_events    = _load_wool_events(conn, map_slug)
@@ -526,23 +526,23 @@ def run(map_slug: str, output_root: Path) -> None:
     if match_file_rel:
         match_file_path = _PROJECT_ROOT / match_file_rel[0]
         if match_file_path.exists():
-            print(f"Loading held_item data from parquet …")
+            print(f"Loading held_item data from parquet ...")
             held_items = _load_held_items_from_parquet(match_file_path)
 
     print(f"  {len(life_segments)} life segments, {len(positions_all)} position events\n")
 
     # ── Full-map traffic graph overview ───────────────────────────────────
     overview_path = diag_dir / "traffic_graph_overview.png"
-    print(f"Plotting traffic graph overview → {overview_path}")
+    print(f"Plotting traffic graph overview -> {overview_path}")
     plot_traffic_graph(graph, map_context, overview_path)
 
     # ── Compute per-segment metrics ───────────────────────────────────────
-    print("Computing snapping metrics for all segments …")
+    print("Computing snapping metrics for all segments ...")
     metrics = _compute_segment_metrics(
         positions_all, life_segments, node_info, dijkstra, wool_events,
         held_items=held_items,
     )
-    print(f"  {len(metrics)} segments with ≥ 4 positions\n")
+    print(f"  {len(metrics)} segments with >= 4 positions\n")
 
     # ── Select representative segments ────────────────────────────────────
     selections = _select_representative_segments(metrics)
@@ -595,7 +595,7 @@ def run(map_slug: str, output_root: Path) -> None:
         simplified = simplify_sequence(snapped_seq, method="consecutive_dedup")
 
         out_path = diag_dir / f"life_{segment_id}_{label}.png"
-        print(f"Plotting [{label}] → {out_path}")
+        print(f"Plotting [{label}] -> {out_path}")
 
         # Determine which optional visual overlays to pass
         seg_held_items = meta.get("held_item_series") if label in ("bow_archer", "builder") else None
