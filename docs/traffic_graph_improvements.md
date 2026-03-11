@@ -151,7 +151,7 @@ Five maps were chosen to cover a wide range of sizes and shapes:
 
 ### Dromedary (tiny, 1 466 blocks)
 
-![Dromedary strategy comparison](../output/dromedary/traffic_strategy_comparison.png)
+![Dromedary strategy comparison](demo/assets/dromedary/traffic_strategy_comparison.png)
 
 - Adaptive 2×2 grid: ~499 nodes — densest coverage, appropriate for the many
   small closely-spaced islands; no void edges after Bresenham filtering.
@@ -163,7 +163,7 @@ for coarser analyses.
 
 ### Expedition (medium, 2 300 blocks, elongated)
 
-![Expedition strategy comparison](../output/expedition/traffic_strategy_comparison.png)
+![Expedition strategy comparison](demo/assets/expedition/traffic_strategy_comparison.png)
 
 - Adaptive 3×3 = Grid-3: 302 nodes, covers the long corridor axis well.
 - Grid-5: 116 nodes — merges distinct path segments in the narrow lanes.
@@ -174,7 +174,7 @@ for coarser analyses.
 
 ### Research Base (medium, 2 808 blocks)
 
-![Research Base strategy comparison](../output/research_base/traffic_strategy_comparison.png)
+![Research Base strategy comparison](demo/assets/research_base/traffic_strategy_comparison.png)
 
 - Adaptive 3×3: 326 nodes, good island separation.
 - Grid-5: 134 nodes — acceptable but loses detail in dense build regions.
@@ -183,7 +183,7 @@ for coarser analyses.
 
 ### Dynamo (medium, 2 957 blocks, extremely elongated)
 
-![Dynamo strategy comparison](../output/dynamo/traffic_strategy_comparison.png)
+![Dynamo strategy comparison](demo/assets/dynamo/traffic_strategy_comparison.png)
 
 - Adaptive 3×3: 270 nodes — handles the narrow axis without void edges.
 - Grid-5: 130 nodes — acceptable backbone but loses bridges.
@@ -195,7 +195,7 @@ asymmetric maps.
 
 ### Level Up (large, 20 288 blocks)
 
-![Level Up strategy comparison](../output/level_up/traffic_strategy_comparison.png)
+![Level Up strategy comparison](demo/assets/level_up/traffic_strategy_comparison.png)
 
 - Adaptive 8×8: 374 nodes — lean graph for the large 4-tier bridge structure.
 - Grid-5: 879 nodes, 96% coverage — very dense, expensive to compute paths.
@@ -237,7 +237,7 @@ enemy-island topology — no void-crossing edges visible.
 
 #### Dromedary — deep_attacker (wool captured)
 
-![Dromedary deep_attacker](../output/dromedary/traffic_graph_diagnostics/life_158835_deep_attacker.png)
+![Dromedary deep_attacker](demo/assets/dromedary/life_deep_attacker.png)
 
 13 positions, 9 unique nodes, 80-block span. The path travels from the home
 island (spawn, bottom-left) across two bridge hops to the enemy wool area
@@ -246,7 +246,7 @@ intermediates — no cross-void shortcuts.
 
 #### Research Base — deep_attacker (wool captured)
 
-![Research Base deep_attacker](../output/research_base/traffic_graph_diagnostics/life_188149_deep_attacker.png)
+![Research Base deep_attacker](demo/assets/research_base/life_deep_attacker.png)
 
 29 positions, 22 unique nodes, 56-block span, tortuosity 5.90. The trajectory
 spirals through the island cluster, terminates at enemy wool. Panel D correctly
@@ -254,7 +254,7 @@ routes intermediates through established bridge corridors.
 
 #### Dynamo — deep_attacker (wool captured)
 
-![Dynamo deep_attacker](../output/dynamo/traffic_graph_diagnostics/life_159710_deep_attacker.png)
+![Dynamo deep_attacker](demo/assets/dynamo/life_deep_attacker.png)
 
 12 positions, 9 unique nodes, 99-block span (the full map width). Clean
 left-to-right traversal across the elongated map. With only 12 position samples
@@ -263,14 +263,14 @@ bridge nodes.
 
 #### Expedition — deep_attacker (no wool touch)
 
-![Expedition deep_attacker](../output/expedition/traffic_graph_diagnostics/life_163603_deep_attacker.png)
+![Expedition deep_attacker](demo/assets/expedition/life_deep_attacker.png)
 
 The player got close to the enemy wool (min Dijkstra distance = 0) but did
 not capture. Path follows the elongated corridor cleanly.
 
 #### Level Up — deep_attacker (no wool touch)
 
-![Level Up deep_attacker](../output/level_up/traffic_graph_diagnostics/life_176418_deep_attacker.png)
+![Level Up deep_attacker](demo/assets/level_up/life_deep_attacker.png)
 
 The 4-tier vertical structure is clearly visible in the raw scatter (panel A).
 The snapped path descends from the upper spawn tier to the lower enemy area,
@@ -280,23 +280,23 @@ correctly following the bridge staircase.
 
 #### Dromedary
 
-![Dromedary traffic graph overview](../output/dromedary/traffic_graph_diagnostics/traffic_graph_overview.png)
+![Dromedary traffic graph overview](demo/assets/dromedary/traffic_graph_overview.png)
 
 #### Expedition
 
-![Expedition traffic graph overview](../output/expedition/traffic_graph_diagnostics/traffic_graph_overview.png)
+![Expedition traffic graph overview](demo/assets/expedition/traffic_graph_overview.png)
 
 #### Research Base
 
-![Research Base traffic graph overview](../output/research_base/traffic_graph_diagnostics/traffic_graph_overview.png)
+![Research Base traffic graph overview](demo/assets/research_base/traffic_graph_overview.png)
 
 #### Dynamo
 
-![Dynamo traffic graph overview](../output/dynamo/traffic_graph_diagnostics/traffic_graph_overview.png)
+![Dynamo traffic graph overview](demo/assets/dynamo/traffic_graph_overview.png)
 
 #### Level Up
 
-![Level Up traffic graph overview](../output/level_up/traffic_graph_diagnostics/traffic_graph_overview.png)
+![Level Up traffic graph overview](demo/assets/level_up/traffic_graph_overview.png)
 
 ### Key Observations Across Maps
 

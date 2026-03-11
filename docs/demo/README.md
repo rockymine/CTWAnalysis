@@ -663,15 +663,15 @@ adaptive grid, and k-means/Voronoi strategies side-by-side.
 
 ### Dromedary — tiny map, 10 islands
 
-![Dromedary strategy comparison](../../output/dromedary/traffic_strategy_comparison.png)
+![Dromedary strategy comparison](assets/dromedary/traffic_strategy_comparison.png)
 
 ### Dynamo — medium map, highly elongated (171×37)
 
-![Dynamo strategy comparison](../../output/dynamo/traffic_strategy_comparison.png)
+![Dynamo strategy comparison](assets/dynamo/traffic_strategy_comparison.png)
 
 ### Level Up — large map, 4-tier bridge structure
 
-![Level Up strategy comparison](../../output/level_up/traffic_strategy_comparison.png)
+![Level Up strategy comparison](assets/level_up/traffic_strategy_comparison.png)
 
 ## Wool-Capture Path Validation
 
@@ -680,15 +680,15 @@ inspected for snapping quality. 3 of 5 had confirmed wool captures:
 
 ### Dromedary — wool captured
 
-![Dromedary deep attacker](../../output/dromedary/traffic_graph_diagnostics/life_158835_deep_attacker.png)
+![Dromedary deep attacker](assets/dromedary/life_deep_attacker.png)
 
 ### Research Base — wool captured
 
-![Research Base deep attacker](../../output/research_base/traffic_graph_diagnostics/life_188149_deep_attacker.png)
+![Research Base deep attacker](assets/research_base/life_deep_attacker.png)
 
 ### Dynamo — wool captured
 
-![Dynamo deep attacker](../../output/dynamo/traffic_graph_diagnostics/life_159710_deep_attacker.png)
+![Dynamo deep attacker](assets/dynamo/life_deep_attacker.png)
 
 In all three wool-capture cases:
 - Panel D (reconstructed path) follows established bridge corridors — no
