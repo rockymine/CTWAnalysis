@@ -274,12 +274,91 @@ def _check_canonical_coverage(
 # Public API
 # ---------------------------------------------------------------------------
 
+def _resolve_spawn_anchors(
+    islands: list[dict],
+    teams: list[dict],
+    spawn_positions: "dict[str, tuple[float, float]] | None",
+) -> "dict[str, tuple[float, float]]":
+    """Return a team_id → (x, z) mapping for each team's spawn location.
+
+    Priority:
+    1. Already-annotated spawn islands (has_spawn=True, team set).
+    2. Explicit spawn_positions dict (POI data, may contain spawns not on
+       any detected island).
+
+    Returns an empty dict if no anchor is available.
+    """
+    anchors: dict[str, tuple[float, float]] = {}
+
+    # Priority 1: spawn islands
+    for isl in islands:
+        if isl.get("has_spawn") and isl.get("team"):
+            cx, cz = isl["center"]
+            anchors[isl["team"]] = (cx, cz)
+
+    # Priority 2: explicit POI coordinates for teams still missing
+    if spawn_positions:
+        for team in teams:
+            tid = team["id"]
+            if tid not in anchors and tid in spawn_positions:
+                anchors[tid] = spawn_positions[tid]
+
+    return anchors
+
+
+def _two_team_axis_and_sides(
+    team_ids: list[str],
+    anchors: "dict[str, tuple[float, float]]",
+    center_x: float,
+    center_z: float,
+    default_axis: str,
+) -> "tuple[str, float, str, str]":
+    """Return (axis, center_val, neg_team, pos_team) for a 2-team split.
+
+    Uses anchor positions to determine which axis separates the teams better
+    and which team belongs on each side.  Falls back to (default_axis,
+    arbitrary team order) when anchors are insufficient.
+
+    Returns:
+        axis        -- 'x' or 'z'
+        center_val  -- the map center coordinate along that axis
+        neg_team    -- team_id for the axis-negative side
+        pos_team    -- team_id for the axis-positive side
+    """
+    tid0, tid1 = team_ids[0], team_ids[1]
+    default_center = center_z if default_axis == "z" else center_x
+
+    if len(anchors) < 2:
+        # Not enough information — use team list order and default axis.
+        return default_axis, default_center, tid0, tid1
+
+    ax0, az0 = anchors[tid0]
+    ax1, az1 = anchors[tid1]
+
+    dx = abs(ax0 - ax1)
+    dz = abs(az0 - az1)
+    axis = "x" if dx > dz else "z"
+    center_val = center_x if axis == "x" else center_z
+
+    # Which team is on the negative side of the split axis?
+    val0 = ax0 if axis == "x" else az0
+    val1 = ax1 if axis == "x" else az1
+
+    if val0 <= val1:
+        neg_team, pos_team = tid0, tid1
+    else:
+        neg_team, pos_team = tid1, tid0
+
+    return axis, center_val, neg_team, pos_team
+
+
 def assign_islands_to_teams(
     islands: list[dict],
     teams: list[dict],
     center_x: float,
     center_z: float,
     primary_global: dict,
+    spawn_positions: "dict[str, tuple[float, float]] | None" = None,
 ) -> dict[str, list[dict]]:
     """Assign island dicts to teams by explicit team field or geometric fallback.
 
@@ -289,11 +368,20 @@ def assign_islands_to_teams(
     Second pass: remaining islands are assigned by proximity to spawn centers
     (3+ teams) or by which side of the symmetry axis they fall on (2 teams).
 
+    For 2-team maps, the split axis and side→team mapping are anchored to
+    actual spawn positions (from spawn_positions or from spawn-carrying
+    islands) to avoid depending on arbitrary XML team-list ordering.
+
+    Islands within a neutral band around the split axis centre are left
+    unassigned so they render as neutral rather than being forced into a team.
+
     Args:
         islands: list of island dicts (same format as islands.json / map_context.json)
         teams: list of team dicts with at least an "id" key
         center_x, center_z: map center coordinates
         primary_global: primary global symmetry dict (keys: "type", ...)
+        spawn_positions: optional team_id → (x, z) from POI annotation,
+            used to anchor the split when spawns are not on any detected island.
 
     Returns:
         Dict mapping team_id → list of island dicts.
@@ -310,10 +398,14 @@ def assign_islands_to_teams(
     unassigned = [isl for isl in islands if isl["id"] not in assigned_ids]
 
     if len(teams) >= 3:
-        spawn_centers = {}
+        spawn_centers: dict[str, tuple[float, float]] = {}
         for isl in islands:
             if isl.get("team") and isl.get("has_spawn"):
-                spawn_centers[isl["team"]] = isl["center"]
+                cx, cz = isl["center"]
+                spawn_centers[isl["team"]] = (cx, cz)
+        if spawn_positions:
+            for tid, pos in spawn_positions.items():
+                spawn_centers.setdefault(tid, pos)
         for isl in unassigned:
             if not spawn_centers:
                 break
@@ -324,27 +416,39 @@ def assign_islands_to_teams(
                             + (iz - spawn_centers[t][1]) ** 2,
             )
             team_islands[best_team].append(isl)
-    elif primary_global["type"] == "rot_180" and len(teams) == 2:
+
+    elif len(teams) == 2:
         team_ids = [t["id"] for t in teams]
+        anchors = _resolve_spawn_anchors(islands, teams, spawn_positions)
+
+        gtype = primary_global["type"]
+        if gtype == "rot_180":
+            default_axis = "z"
+        elif gtype == "mirror_z":
+            default_axis = "z"
+        elif gtype == "mirror_x":
+            default_axis = "x"
+        else:
+            default_axis = "z"
+
+        axis, center_val, neg_team, pos_team = _two_team_axis_and_sides(
+            team_ids, anchors, center_x, center_z, default_axis,
+        )
+
+        # Neutral band: islands within this many blocks of the split axis
+        # remain unassigned.  Scale with map extent but enforce a minimum.
+        extents = [isl["center"][0 if axis == "x" else 1] for isl in islands]
+        map_extent = (max(extents) - min(extents)) if len(extents) >= 2 else 1.0
+        neutral_band = max(2.0, 0.03 * map_extent)
+
         for isl in unassigned:
-            iz = isl["center"][1]
-            if iz < center_z:
-                team_islands[team_ids[0]].append(isl)
+            val = isl["center"][0] if axis == "x" else isl["center"][1]
+            if abs(val - center_val) <= neutral_band:
+                continue  # leave as neutral
+            if val < center_val:
+                team_islands[neg_team].append(isl)
             else:
-                team_islands[team_ids[1]].append(isl)
-    elif primary_global["type"] in ("mirror_x", "mirror_z"):
-        team_ids = [t["id"] for t in teams]
-        for isl in unassigned:
-            if primary_global["type"] == "mirror_z":
-                val = isl["center"][1]
-                ref = center_z
-            else:
-                val = isl["center"][0]
-                ref = center_x
-            if val < ref:
-                team_islands[team_ids[0]].append(isl)
-            elif val > ref:
-                team_islands[team_ids[1]].append(isl)
+                team_islands[pos_team].append(isl)
 
     return team_islands
 

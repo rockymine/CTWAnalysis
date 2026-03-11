@@ -323,6 +323,7 @@ def _assign_teams(
     map_data_obj: Optional[MapData],
     map_output_dir: Path,
     symmetry: Optional[SymmetryResult] = None,
+    poi_assignments: Optional[dict] = None,
 ) -> None:
     """Assign islands to teams using symmetry + XML data.
 
@@ -366,8 +367,18 @@ def _assign_teams(
     primary_global = max(detected, key=lambda s: s['confidence'])
     island_dicts = _build_island_dicts(islands)
 
+    # Extract spawn positions from POI data — includes spawns not on any
+    # detected island (island_id=None), which are used to anchor the
+    # side→team mapping in the geometric fallback.
+    spawn_positions: dict[str, tuple[float, float]] = {}
+    if poi_assignments:
+        for s in poi_assignments.get('spawns', []):
+            if s.get('x') is not None and s.get('z') is not None:
+                spawn_positions[s['team']] = (s['x'], s['z'])
+
     team_islands = assign_islands_to_teams(
         island_dicts, teams, center_x, center_z, primary_global,
+        spawn_positions=spawn_positions or None,
     )
 
     # Propagate assignments back to Island objects
@@ -810,7 +821,8 @@ def assemble_map(
         ))
 
     # Team assignment + intra-team symmetry (mutates final_islands[].team)
-    _assign_teams(final_islands, map_data_obj, map_output_dir, symmetry=symmetry)
+    _assign_teams(final_islands, map_data_obj, map_output_dir,
+                  symmetry=symmetry, poi_assignments=poi_assignments)
     _update_intra_team_symmetry(final_islands, map_data_obj, map_output_dir, symmetry=symmetry)
 
     # Build MapContext
