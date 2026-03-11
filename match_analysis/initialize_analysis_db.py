@@ -428,5 +428,45 @@ def migrate_node_path_columns(db_path: str | None = None) -> None:
     print(f"Node-path columns migrated in {db_path}")
 
 
+def migrate_log_interval_column(db_path: str | None = None) -> None:
+    """Add log_interval column to matches and backfill from position_events.
+
+    Safe to run on an already-migrated database — DuckDB silently skips
+    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+
+    conn.execute("""
+        ALTER TABLE matches ADD COLUMN IF NOT EXISTS log_interval INTEGER
+    """)
+
+    conn.execute("""
+        UPDATE matches
+        SET log_interval = derived.log_interval
+        FROM (
+            WITH gaps AS (
+                SELECT match_id,
+                       timestamp - LAG(timestamp) OVER (
+                           PARTITION BY match_id, player_id, segment_idx
+                           ORDER BY timestamp
+                       ) AS dt
+                FROM position_events
+            )
+            SELECT match_id,
+                   CASE WHEN MEDIAN(dt) >= 4 THEN 5 ELSE 2 END AS log_interval
+            FROM gaps
+            WHERE dt IS NOT NULL AND dt > 0
+            GROUP BY match_id
+        ) derived
+        WHERE matches.match_id = derived.match_id
+          AND matches.processed = TRUE
+    """)
+
+    conn.close()
+    print(f"log_interval column added and backfilled in {db_path}")
+
+
 if __name__ == "__main__":
     initialize_database()

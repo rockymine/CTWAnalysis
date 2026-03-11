@@ -208,15 +208,25 @@ def process_match(match_id: int) -> None:
 
         processing_time = time.time() - start_time
 
+        # Compute log_interval from median inter-sample gap
+        if len(position_df) > 1:
+            sorted_pos = position_df.sort_values(['player_id', 'segment_idx', 'timestamp'])
+            dts = sorted_pos.groupby(['player_id', 'segment_idx'])['timestamp'].diff().dropna()
+            median_gap = float(dts[dts > 0].median()) if len(dts[dts > 0]) > 0 else 2.0
+            log_interval = 5 if median_gap >= 4.0 else 2
+        else:
+            log_interval = 2
+
         conn.execute(
             """
             UPDATE matches
             SET processed = TRUE,
                 processed_at = CURRENT_TIMESTAMP,
-                processing_time = ?
+                processing_time = ?,
+                log_interval = ?
             WHERE match_id = ?
             """,
-            [processing_time, match_id],
+            [processing_time, log_interval, match_id],
         )
 
         conn.execute(

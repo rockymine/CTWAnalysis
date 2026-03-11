@@ -38,6 +38,7 @@ If you have an existing database that predates a schema addition, use the migrat
 | `migrate_map_classification_columns()` | `wools_per_team`, `max_players_per_team`, `total_blocks`, `size_tier`, `symmetry_type`, `has_intra_team_symmetry` to `maps` |
 | `migrate_y_columns()` | `y_avg`, `y_max`, `frac_time_elevated` to `life_segment_features`; creates `wool_carry_chains` table |
 | `migrate_node_path_columns()` | Nine node-path metric columns to `life_segment_features` |
+| `migrate_log_interval_column()` | `log_interval` to `matches` (2 or 5 — position sampling interval in seconds) |
 | `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`) |
 
 Run any migration directly:
@@ -227,7 +228,7 @@ maps                        Map metadata (bbox, island count, teams)
 |-------|-------------|-------------|
 | `maps` | `map_id`, `map_slug`, `map_name`, bbox, `island_count`, classification columns | `ctw maps load` |
 | `map_spawns` | `map_id` (FK), `x`, `z`, bounds, `team`, `team_color` | `ctw maps spawns` |
-| `matches` | `match_id`, `match_file`, `map_id` (FK), `processed` | `ctw matches index` |
+| `matches` | `match_id`, `match_file`, `map_id` (FK), `processed`, `log_interval` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
 | `combat_events` | `match_id` (FK), `player_id`, `event_type`, position | `ctw matches process` |
 | `position_events` | `match_id` (FK), `player_id`, position, `location_type`, `island_id` | `ctw matches process` |
