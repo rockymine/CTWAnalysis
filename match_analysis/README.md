@@ -184,10 +184,15 @@ Parameters:
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--grid-size` | 5 | Grid cell side length in blocks (spatial resolution of nodes) |
+| `--grid-size` | auto | Grid cell side length in blocks; auto = `max(2, round(sqrt(total_blocks/300)))` |
 | `--min-occupation` | 5 | Minimum position samples to keep a node |
 | `--min-transitions` | 2 | Minimum crossings to keep an edge |
+| `--log-interval` | 2 | Only use matches logged at this interval (2 or 5 seconds) |
+| `--strategy` | grid | Graph construction strategy: `grid` or `voronoi` (k-means cluster nodes) |
+| `--compare` | off | Generate a 6-panel strategy comparison plot instead of building the graph |
 | `--force` | off | Rebuild even if `traffic_graph.json` already exists |
+
+The comparison plot is saved to `output/<map_slug>/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
 
 ### Step 9: Cluster archetypes
 

@@ -212,12 +212,18 @@ Examples:
                            help='Map slug (e.g. tumbleweed) to build the graph for')
     map_group.add_argument('--all', action='store_true',
                            help='Build traffic graphs for all maps with recorded matches')
-    p.add_argument('--grid-size', type=int, default=5,
-                   help='Block-side of each grid cell (default: 5)')
+    p.add_argument('--grid-size', type=int, default=None,
+                   help='Block-side of each grid cell (default: auto from map size)')
     p.add_argument('--min-occupation', type=int, default=5,
                    help='Min position ticks to keep a node (default: 5)')
     p.add_argument('--min-transitions', type=int, default=2,
                    help='Min crossings to keep an edge (default: 2)')
+    p.add_argument('--log-interval', type=int, default=2, choices=[2, 5],
+                   help='Only use matches logged at this interval in seconds (default: 2)')
+    p.add_argument('--strategy', default='grid', choices=['grid', 'voronoi'],
+                   help='Graph construction strategy: grid (default) or voronoi (k-means)')
+    p.add_argument('--compare', action='store_true',
+                   help='Generate strategy comparison plot instead of building the graph')
     p.add_argument('--force', action='store_true',
                    help='Overwrite existing traffic_graph.json')
     p.set_defaults(func=handle_traffic_graph)
@@ -674,11 +680,13 @@ def handle_kills(args):
 
 
 def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
-    import json
     import duckdb
     from ctw.common import DEFAULT_OUTPUT_ROOT
     from match_analysis.traffic_graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
+    )
+    from match_analysis.traffic_strategy_plot import (
+        plot_traffic_strategy_comparison, _adaptive_grid_size,
     )
 
     map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
@@ -692,6 +700,61 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
         return
     map_output_dir.mkdir(parents=True, exist_ok=True)
 
+    fallback = map_folder_candidate if map_folder_candidate else map_output_dir
+    map_context = _load_map_context(map_output_dir, fallback)
+
+    log_interval  = getattr(args, 'log_interval', 2)
+    strategy      = getattr(args, 'strategy', 'grid')
+    do_compare    = getattr(args, 'compare', False)
+
+    # ── Strategy comparison mode ────────────────────────────────────────────
+    if do_compare:
+        import pandas as pd
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        try:
+            pos_df = conn.execute("""
+                SELECT pe.x, pe.z, pe.y, pe.location_type
+                FROM position_events pe
+                JOIN matches mat ON mat.match_id = pe.match_id
+                JOIN maps m      ON m.map_id = mat.map_id
+                WHERE m.map_slug = ?
+                  AND mat.processed = TRUE
+                  AND (mat.log_interval = ? OR mat.log_interval IS NULL)
+                  AND pe.y > 0
+            """, [map_slug, log_interval]).df()
+            total_blocks = conn.execute(
+                "SELECT total_blocks FROM maps WHERE map_slug = ?", [map_slug]
+            ).fetchone()
+            total_blocks = int(total_blocks[0]) if total_blocks and total_blocks[0] else 5000
+            n_matches = conn.execute("""
+                SELECT COUNT(DISTINCT mat.match_id)
+                FROM matches mat JOIN maps m ON m.map_id = mat.map_id
+                WHERE m.map_slug = ?
+                  AND mat.processed = TRUE
+                  AND (mat.log_interval = ? OR mat.log_interval IS NULL)
+            """, [map_slug, log_interval]).fetchone()[0]
+        finally:
+            conn.close()
+
+        if pos_df.empty:
+            print(f"No position data for '{map_slug}' with log_interval={log_interval}.")
+            return
+
+        out_compare = map_output_dir / "traffic_strategy_comparison.png"
+        plot_traffic_strategy_comparison(
+            map_slug=map_slug,
+            pos_df=pos_df,
+            total_blocks=total_blocks,
+            n_matches=n_matches,
+            map_context=map_context,
+            min_occupation=args.min_occupation,
+            min_transitions=args.min_transitions,
+            output_path=out_compare,
+        )
+        print(f"Saved: {out_compare}")
+        return
+
+    # ── Normal graph build mode ─────────────────────────────────────────────
     out_json = map_output_dir / "traffic_graph.json"
     out_png  = map_output_dir / "traffic_graph.png"
 
@@ -699,15 +762,28 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
         print(f"Skipping '{map_slug}': traffic_graph.json already exists (use --force to rebuild).")
         return
 
+    # Resolve grid_size: explicit > adaptive
+    grid_size = getattr(args, 'grid_size', None)
+    if grid_size is None:
+        conn_tmp = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        tb = conn_tmp.execute(
+            "SELECT total_blocks FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        conn_tmp.close()
+        total_blocks = int(tb[0]) if tb and tb[0] else 5000
+        grid_size = _adaptive_grid_size(total_blocks)
+        print(f"  grid_size auto-set to {grid_size} (total_blocks={total_blocks})")
+
     conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
     try:
         graph = build_traffic_graph(
             map_slug,
             conn,
             output_dir      = map_output_dir,
-            grid_size       = args.grid_size,
+            grid_size       = grid_size,
             min_occupation  = args.min_occupation,
             min_transitions = args.min_transitions,
+            log_interval    = log_interval,
         )
     finally:
         conn.close()
@@ -715,8 +791,6 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     save_traffic_graph(graph, out_json)
     print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
 
-    fallback = map_folder_candidate if map_folder_candidate else map_output_dir
-    map_context = _load_map_context(map_output_dir, fallback)
     plot_traffic_graph(graph, map_context, out_png)
     print(f"Saved: {out_png}")
 
