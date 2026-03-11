@@ -113,12 +113,20 @@ maps                    Map metadata (bbox, island count, teams)
 |-------|-------------|-------------|
 | `maps` | `map_id`, `map_slug`, `map_name`, bbox, `island_count` | `ctw maps load` |
 | `map_spawns` | `map_id` (FK), `x`, `z`, bounds, `team`, `team_color` | `ctw maps spawns` |
-| `matches` | `match_id`, `match_file`, `map_id` (FK), `processed` | `ctw matches index` |
+| `matches` | `match_id`, `match_file`, `map_id` (FK), `processed`, `log_interval` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
 | `combat_events` | `match_id` (FK), `player_id`, `event_type`, position | `ctw matches process` |
 | `position_events` | `match_id` (FK), `player_id`, position, `location_type`, `island_id` | `ctw matches process` |
 | `player_team_segments` | `match_id` (FK), `player_id`, `team`, time range | `ctw matches process` |
 | `processing_log` | `match_id` (FK), `step`, `status`, `duration` | `ctw matches process` |
+
+## Migrations
+
+Run these functions after schema changes to update an existing database without rebuilding from scratch:
+
+| Function | What it adds |
+|----------|-------------|
+| `migrate_log_interval_column()` | `log_interval` to `matches` (2 or 5 — position sampling interval in seconds) |
 
 ## Resetting
 
