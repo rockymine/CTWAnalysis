@@ -93,13 +93,13 @@ def _generate_skeleton_visuals(
 ) -> None:
     """Write island and skeleton debug images.
 
-    Always generated:
+    Always generated (in images/):
         - island_detail.png
         - unique_islands.png
 
     Only when plots=True:
-        - island_{id}_debug.png (per canonical shape)
-        - skeleton_report.txt
+        - images/island_{id}_debug.png (per canonical shape)
+        - skeleton_report.txt (at output root)
     """
     from island_analysis.visualization import plot_island_detail
     from skeleton_analysis.visualization import (
@@ -110,12 +110,13 @@ def _generate_skeleton_visuals(
 
     logger.debug("  Generating visualizations...")
 
+    images_dir = island_output_dir / 'images'
+    images_dir.mkdir(exist_ok=True)
+
     plot_island_detail(
         islands,
-        output_path=str(island_output_dir / 'island_detail.png'),
+        output_path=str(images_dir / 'island_detail.png'),
     )
-
-    skeleton_output_dir = island_output_dir
 
     if plots:
         result_by_id = {r.island_id: r for r in skeletons}
@@ -124,18 +125,18 @@ def _generate_skeleton_visuals(
             if rep_id in result_by_id:
                 plot_island_debug(
                     result_by_id[rep_id],
-                    str(skeleton_output_dir / f'island_{rep_id}_debug.png'),
+                    str(images_dir / f'island_{rep_id}_debug.png'),
                 )
 
     plot_unique_islands(
         skeletons, canonical_groups,
-        str(skeleton_output_dir / 'unique_islands.png'),
+        str(images_dir / 'unique_islands.png'),
     )
 
     if plots:
         generate_skeleton_report(
             skeletons, canonical_groups,
-            str(skeleton_output_dir / 'skeleton_report.txt'),
+            str(island_output_dir / 'skeleton_report.txt'),
             map_name=map_name,
         )
 
@@ -786,7 +787,7 @@ def assemble_map(
 
     logger.debug(f"[5/6] Map Assembly: {map_folder.name}")
 
-    skeleton_output_dir = island_output_dir
+    skeleton_output_dir = island_output_dir / 'images'
 
     if map_center_pt is None:
         from map_analysis.poi_annotation import compute_map_center

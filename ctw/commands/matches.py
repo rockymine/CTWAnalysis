@@ -736,7 +736,8 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
             print(f"No position data for '{map_slug}' with log_interval={log_interval}.")
             return
 
-        out_compare = map_output_dir / "traffic_strategy_comparison.png"
+        (map_output_dir / 'images').mkdir(exist_ok=True)
+        out_compare = map_output_dir / 'images' / "traffic_strategy_comparison.png"
         plot_traffic_strategy_comparison(
             map_slug=map_slug,
             pos_df=pos_df,
@@ -752,7 +753,8 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
 
     # ── Normal graph build mode ─────────────────────────────────────────────
     out_json = map_output_dir / "traffic_graph.json"
-    out_png  = map_output_dir / "traffic_graph.png"
+    (map_output_dir / 'images').mkdir(exist_ok=True)
+    out_png  = map_output_dir / 'images' / "traffic_graph.png"
 
     if out_json.exists() and not getattr(args, 'force', False):
         print(f"Skipping '{map_slug}': traffic_graph.json already exists (use --force to rebuild).")

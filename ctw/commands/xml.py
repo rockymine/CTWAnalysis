@@ -53,14 +53,16 @@ def handler(args):
             json_path = output_dir / 'map_data.json'
             map_data_exporter.save(map_data, str(json_path), categories)
 
+        images_dir = output_dir / 'images'
+        images_dir.mkdir(exist_ok=True)
         map_name_safe = map_data.name.replace(' ', '_').lower()
-        main_plot_path = output_dir / f'{map_name_safe}_layout.png'
+        main_plot_path = images_dir / f'{map_name_safe}_layout.png'
         visualizer.plot_all(str(main_plot_path))
 
         if args.category_plots:
-            visualizer.plot_by_category(str(output_dir), categories)
+            visualizer.plot_by_category(str(images_dir), categories)
 
-        logger.debug(f"  Visualizations saved to: {output_dir}")
+        logger.debug(f"  Visualizations saved to: {images_dir}")
     else:
         map_output_dir = resolve_output_dir(map_folder, create=True)
         analyze_xml(map_folder, force_rerun=args.force,
