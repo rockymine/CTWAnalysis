@@ -1,9 +1,9 @@
 """Tests for cross-platform path handling in match analysis.
 
 Verifies that:
-- match_indexer stores POSIX paths (forward slashes) in the database
-- match_queries normalizes legacy backslash paths on read
-- match_processor normalizes legacy backslash paths on read
+- database.indexer stores POSIX paths (forward slashes) in the database
+- database.queries normalizes legacy backslash paths on read
+- processing.processor normalizes legacy backslash paths on read
 """
 
 import unittest
@@ -17,7 +17,7 @@ import pandas as pd
 
 
 class TestMatchIndexerPathStorage(unittest.TestCase):
-    """match_indexer should store POSIX-style paths in the database."""
+    """database.indexer should store POSIX-style paths in the database."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -63,12 +63,12 @@ class TestMatchIndexerPathStorage(unittest.TestCase):
 
     def test_stores_posix_path(self):
         """Indexed match_file should use forward slashes regardless of platform."""
-        from match_analysis.match_indexer import index_match_files
+        from match_analysis.database.indexer import index_match_files
 
         with tempfile.TemporaryDirectory() as tmpdir:
             self._create_dummy_parquet(Path(tmpdir), '2026-01-01_00-00-00_999.parquet')
 
-            with patch('match_analysis.match_indexer.duckdb') as mock_duckdb:
+            with patch('match_analysis.database.indexer.duckdb') as mock_duckdb:
                 mock_conn = MagicMock()
                 mock_duckdb.connect.return_value = mock_conn
 
@@ -98,7 +98,7 @@ class TestMatchIndexerPathStorage(unittest.TestCase):
 
 
 class TestMatchServicePathNormalization(unittest.TestCase):
-    """match_queries.get_match_file should normalize backslash paths."""
+    """database.queries.get_match_file should normalize backslash paths."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -146,9 +146,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_normalizes_backslash_path(self):
         """Legacy backslash paths should be normalized to platform-native separators."""
-        from match_analysis.match_queries import get_match_file
+        from match_analysis.database.queries import get_match_file
 
-        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
+        with patch('match_analysis.database.queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(42)
 
         self.assertEqual(map_name, 'TestMap')
@@ -158,9 +158,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_posix_path_unchanged(self):
         """POSIX paths should remain valid after normalization."""
-        from match_analysis.match_queries import get_match_file
+        from match_analysis.database.queries import get_match_file
 
-        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
+        with patch('match_analysis.database.queries.DB_PATH', self.db_path):
             match_file, map_name = get_match_file(43)
 
         self.assertEqual(map_name, 'TestMap')
@@ -168,9 +168,9 @@ class TestMatchServicePathNormalization(unittest.TestCase):
 
     def test_path_is_valid_pathlib(self):
         """Returned path should be usable as a pathlib Path on current platform."""
-        from match_analysis.match_queries import get_match_file
+        from match_analysis.database.queries import get_match_file
 
-        with patch('match_analysis.match_queries.DB_PATH', self.db_path):
+        with patch('match_analysis.database.queries.DB_PATH', self.db_path):
             match_file, _ = get_match_file(42)
 
         # Should not raise

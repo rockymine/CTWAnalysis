@@ -230,7 +230,7 @@ Examples:
 
 
 def handle_parse(args):
-    from match_analysis.match_log_parser import parse_match_log, write_csv
+    from match_analysis.database.log_parser import parse_match_log, write_csv
 
     input_path = Path(args.input)
     if not input_path.exists():
@@ -255,7 +255,7 @@ def handle_parse(args):
 
 
 def handle_scan(args):
-    from match_analysis.match_log_parser import scan_match_folder, write_csv
+    from match_analysis.database.log_parser import scan_match_folder, write_csv
 
     folder = Path(args.folder)
     if not folder.is_dir():
@@ -281,7 +281,7 @@ def handle_scan(args):
 
 def handle_index(args):
     ensure_match_db()
-    from match_analysis.match_indexer import index_match_files
+    from match_analysis.database.indexer import index_match_files
 
     match_dir = args.match_dir or 'match_logs'
     history_csv = getattr(args, 'history', None)
@@ -299,7 +299,7 @@ def handle_index(args):
 
 def handle_process(args):
     ensure_match_db()
-    from match_analysis.match_processor import process_match
+    from match_analysis.processing.processor import process_match
 
     if getattr(args, 'force', False):
         import duckdb
@@ -316,7 +316,7 @@ def handle_process(args):
 def handle_process_all(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.match_processor import process_match
+    from match_analysis.processing.processor import process_match
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
@@ -402,7 +402,7 @@ def handle_reset(args):
 def handle_post_process(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.post_processor import run_post_processing
+    from match_analysis.processing.pipeline import run_post_processing
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
@@ -477,7 +477,7 @@ def _resolve_layout_dir(map_output_dir: Path, map_folder: Path) -> Path:
 
 def handle_trace(args):
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.match_queries import (
+    from match_analysis.database.queries import (
         get_match_player_ids, resolve_match_ids, validate_match_ids,
     )
     from match_analysis.visualization import plot_player_traces
@@ -585,7 +585,7 @@ def handle_trace(args):
 
 def handle_kills(args):
     from ctw.common import resolve_map_folder, resolve_output_dir
-    from match_analysis.match_queries import (
+    from match_analysis.database.queries import (
         get_kill_death_pairs, resolve_match_ids, validate_match_ids,
     )
     from match_analysis.visualization import plot_kill_death_pairs
@@ -682,10 +682,10 @@ def handle_kills(args):
 def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     import duckdb
     from ctw.common import DEFAULT_OUTPUT_ROOT
-    from match_analysis.traffic_graph import (
+    from match_analysis.traffic.graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
     )
-    from match_analysis.traffic_strategy_plot import (
+    from match_analysis.traffic.strategy_plot import (
         plot_traffic_strategy_comparison, _adaptive_grid_size,
     )
 

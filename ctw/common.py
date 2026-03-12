@@ -71,5 +71,5 @@ def ensure_match_db():
     """Initialize match DB if it doesn't exist yet."""
     db_path = Path('match_analysis/metadata.db')
     if not db_path.exists():
-        from match_analysis.initialize_analysis_db import initialize_database
+        from match_analysis.database.schema import initialize_database
         initialize_database()

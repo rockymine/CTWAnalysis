@@ -7,7 +7,7 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 ## Setup Workflow
 
 ```
-0. Initialize database      python match_analysis/initialize_analysis_db.py
+0. Initialize database      python match_analysis/database/schema.py
 1. Preprocess maps          ctw run --map <name>
 2. Load map metadata        ctw maps load
 3. Load spawn data          ctw maps spawns
@@ -24,14 +24,14 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 If starting fresh or after schema changes, create the empty tables:
 
 ```bash
-python match_analysis/initialize_analysis_db.py
+python match_analysis/database/schema.py
 ```
 
 This is idempotent — existing tables are not recreated.
 
 #### Migrating an existing database
 
-If you have an existing database that predates a schema addition, use the migration helpers in `initialize_analysis_db.py`. Each is safe to run on an already-migrated database.
+If you have an existing database that predates a schema addition, use the migration helpers in `match_analysis/database/schema.py`. Each is safe to run on an already-migrated database.
 
 | Migration function | What it adds |
 |-------------------|-------------|
@@ -44,7 +44,7 @@ If you have an existing database that predates a schema addition, use the migrat
 Run any migration directly:
 
 ```python
-from match_analysis.initialize_analysis_db import (
+from match_analysis.database.schema import (
     migrate_map_classification_columns,
     migrate_views,
 )
@@ -135,14 +135,14 @@ features after a code change without reprocessing raw events:
 
 ```python
 import duckdb
-from match_analysis.post_processor import run_post_processing
+from match_analysis.processing.pipeline import run_post_processing
 
 conn = duckdb.connect('match_analysis/metadata.db')
 run_post_processing(conn, match_id=1)  # safe to call repeatedly — idempotent
 conn.close()
 ```
 
-The function runs four internal steps in order:
+The function runs five internal steps in order:
 
 1. **Migrate columns** — adds any new `life_segment_features` columns that are missing
    from an existing database using `ALTER TABLE … ADD COLUMN IF NOT EXISTS`.
@@ -158,6 +158,9 @@ The function runs four internal steps in order:
 4. **Life features** — aggregates all visits for a life into one row of
    `life_segment_features`, computing both region-level time fractions and the nine
    node-path skeleton metrics.
+5. **Wool carry chains** — groups wool touch events into coordinated carry waves,
+   determines the outcome (captured / dropped in void / dropped on land / incomplete),
+   and populates `wool_carry_chains`.
 
 ### Step 8: Build traffic graph
 
@@ -247,6 +250,7 @@ maps                        Map metadata (bbox, island count, teams)
 | `wool_spawn_baselines` | `map_id` (FK), `team`, `wool_id`, `baseline_distance` | `run_post_processing` |
 | `life_segment_region_visits` | `segment_id` (FK), `visit_idx`, `location_type`, `entry_node`, `exit_node`, `node_path` | `run_post_processing` |
 | `life_segment_features` | `segment_id` (FK), movement fractions, node-path metrics, `cluster_label` | `run_post_processing` |
+| `wool_carry_chains` | `match_id` (FK), `wool_id`, `wave_idx`, `attacking_team`, `n_carriers`, `n_handoffs`, `outcome`, `approach_type` | `run_post_processing` |
 
 ### `maps` classification columns
 
@@ -314,7 +318,7 @@ Each row is one contiguous spell in a region (island or build/void area) within 
 | `frac_time_neutral_island` | Fraction of active time on unowned neutral islands |
 | `frac_time_build` | Fraction of active time in build/void bridge regions |
 | `max_attack_depth` | Normalised 0–1 progress toward nearest enemy wool objective |
-| `time_to_first_departure_ms` | Milliseconds before leaving home island (`NULL` = never left) |
+| `time_to_first_departure_s` | Seconds before leaving home island (`NULL` = never left) |
 | `ended_on_enemy_island` | Whether the life ended (death or match-end) while on an enemy island |
 
 The following four are derived in the clustering notebook rather than stored directly,
@@ -322,10 +326,10 @@ since they depend on imputation choices:
 
 | Derived | Formula |
 |---------|---------|
-| `kill_rate` | `kills / duration_ms` |
-| `departure_frac` | `time_to_first_departure_ms / duration_ms`, clipped to [0, 1]; 1.0 = never left home |
+| `kill_rate` | `kills / duration_s` |
+| `departure_frac` | `time_to_first_departure_s / duration_s`, clipped to [0, 1]; 1.0 = never left home |
 | `aggression` | `kill_on_enemy_island / kills` (0 when no kills) |
-| `mobility_rate` | `n_transitions / duration_ms` |
+| `mobility_rate` | `n_transitions / duration_s` |
 
 #### `life_segment_features` — node-path metrics
 
@@ -364,7 +368,7 @@ To fully rebuild, delete the database file and start from Step 0:
 
 ```bash
 rm match_analysis/metadata.db
-python match_analysis/initialize_analysis_db.py
+python match_analysis/database/schema.py
 ```
 
 ---

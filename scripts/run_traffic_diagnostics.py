@@ -34,13 +34,13 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from match_analysis.traffic_graph   import load_traffic_graph, build_traffic_topology, plot_traffic_graph
-from match_analysis.traffic_snapping import (
+from match_analysis.traffic.graph    import load_traffic_graph, build_traffic_topology, plot_traffic_graph
+from match_analysis.traffic.snapping import (
     snap_positions,
     reconstruct_full_path,
     simplify_sequence,
 )
-from match_analysis.traffic_diagnostics_plot import plot_life_segment_diagnostic
+from match_analysis.traffic.diagnostics_plot import plot_life_segment_diagnostic
 
 DB_PATH = _PROJECT_ROOT / "match_analysis" / "metadata.db"
 
