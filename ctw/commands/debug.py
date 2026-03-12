@@ -191,9 +191,9 @@ def handle_prepare_demo(args: object) -> None:
         else:
             print(f"  Warning: expected file not found: {src.name}")
 
-    _copy(output_dir / 'traffic_graph.png',
+    _copy(output_dir / 'images' / 'traffic_graph.png',
           assets_dir / 'traffic_graph_overview.png')
-    _copy(output_dir / 'traffic_strategy_comparison.png',
+    _copy(output_dir / 'images' / 'traffic_strategy_comparison.png',
           assets_dir / 'traffic_strategy_comparison.png')
 
     diag_dir = output_dir / 'traffic_graph_diagnostics'
@@ -1012,7 +1012,9 @@ def handle_resources(args: object) -> None:
         with open(data_path) as f:
             map_data = json.load(f)
 
-        save_path = map_output / 'resources_overview.png'
+        images_dir = map_output / 'images'
+        images_dir.mkdir(exist_ok=True)
+        save_path = images_dir / 'resources_overview.png'
         _plot_resources_figure(
             map_name=map_name,
             map_context=map_context,
