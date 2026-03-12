@@ -985,7 +985,7 @@ def build_wool_carry_chains(
 
     Idempotent — deletes existing rows for the match before inserting.
     """
-    from match_analysis.initialize_analysis_db import _ensure_wool_carry_chains_table
+    from match_analysis.database.schema import _ensure_wool_carry_chains_table
     _ensure_wool_carry_chains_table(conn)
 
     conn.execute("DELETE FROM wool_carry_chains WHERE match_id = ?", [match_id])
@@ -1151,7 +1151,7 @@ def run_post_processing(
       4. build_y_features               (per-match)
       5. build_wool_carry_chains        (per-match)
     """
-    from match_analysis.initialize_analysis_db import (
+    from match_analysis.database.schema import (
         migrate_node_path_columns,
         migrate_y_columns,
     )

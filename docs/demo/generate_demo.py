@@ -553,7 +553,7 @@ def main():
 
     # Resolve match data
     ensure_match_db()
-    from match_analysis.match_queries import get_match_player_ids
+    from match_analysis.database.queries import get_match_player_ids
     import duckdb
 
     db_path = str(_PROJECT_ROOT / 'match_analysis' / 'metadata.db')
