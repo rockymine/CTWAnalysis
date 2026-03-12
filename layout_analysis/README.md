@@ -18,9 +18,10 @@ layout_analysis/
 ├── map_context.py           # MapContext dataclass and builder
 │
 ├── features/                # Map feature extractors
-│   ├── __init__.py          # Exports ResourceBlockExtractor, ChestExtractor
+│   ├── __init__.py          # Exports ResourceBlockExtractor, ChestExtractor, ZoneClassifier
 │   ├── resource_blocks.py   # Scan all Y levels for iron/gold/diamond blocks
-│   └── chests.py            # Read chest tile entities and inventory contents
+│   ├── chests.py            # Read chest tile entities and inventory contents
+│   └── zone_classifier.py   # Classify (x, z) positions into spawn/wool_room/defense/field
 │
 ├── services/                # CLI orchestration
 │   ├── layout_service.py    # Layout extraction orchestrator
@@ -79,6 +80,34 @@ Reads `TileEntities` from each chunk's NBT data to locate chests and
 trapped chests. Extracts the full inventory (slot, item_id, item_damage,
 count) per chest. Empty chests produce no rows; maps without chests produce
 an empty DataFrame with the correct schema.
+
+`detect_double_chests(df)` post-processes a chest DataFrame to identify
+adjacent pairs (same Y, ±1 block in X or Z), adding `is_double` (bool)
+and `chest_group_id` (Int64) columns.
+
+**`ZoneClassifier`** (`features/zone_classifier.py`)
+
+Classifies `(world_x, world_z)` positions into one of five zones using
+Shapely geometry built from `map_data.json` regions:
+
+| Zone | Description |
+|------|-------------|
+| `spawn` | Inside a team spawn region |
+| `near_spawn` | Within `near_spawn_buffer` blocks of spawn (default 15) |
+| `wool_room` | Inside a team wool room region |
+| `defense` | Within `defense_buffer` blocks of a wool room (default 10) |
+| `field` | Everywhere else |
+
+Team ownership is assigned via `deny(team-id)` rules in `apply_rules`, with
+keyword matching on region IDs as fallback. Region types handled: `rectangle`,
+`union`, `cylinder`, `complement`, `intersect`. Unrecognised types fall back
+to the region's `bounds_2d` bounding box.
+
+```python
+clf = ZoneClassifier(map_data)
+zone, team = clf.classify(world_x, world_z)
+df = clf.classify_dataframe(df, x_col='world_x', z_col='world_z')
+```
 
 Debug outputs (with `--plots`): per-island skeleton/POI images, pathfinding
 grids, island comparison/statistics, text reports.
