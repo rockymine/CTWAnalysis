@@ -1,7 +1,7 @@
 """
 Builder for symmetry analysis results.
 
-Analyzes the geometric layout of a map from island_analysis/islands.json
+Analyzes the geometric layout of a map from islands.json
 to determine which global symmetry types are present (mirror, 180° rotation,
 90° rotation).  Works purely from island geometry — does not require XML.
 
@@ -537,7 +537,7 @@ def detect_symmetry(islands_path: str) -> SymmetryResult:
     detect_symmetry_from_data to avoid the disk round-trip.
 
     Args:
-        islands_path: Path to island_analysis/islands.json
+        islands_path: Path to islands.json
 
     Returns:
         SymmetryResult with: map_name, center, pair_analysis, global_symmetry

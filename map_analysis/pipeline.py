@@ -5,7 +5,7 @@ Layer responsibilities
 run_island_geometry()  — Layer 2+3: pure geometry.
     Detect islands, build polygons, compute skeleton graphs, generate
     visualizations, classify island centers relative to the map center.
-    Does NOT read map.xml.  Writes island_analysis/islands.json.
+    Does NOT read map.xml.  Writes islands.json.
     Returns IslandAnalysis with islands: list[IslandPolygon] (no XML fields).
 
 assemble_map()         — Layer 4: semantic enrichment + final assembly.
@@ -115,8 +115,7 @@ def _generate_skeleton_visuals(
         output_path=str(island_output_dir / 'island_detail.png'),
     )
 
-    skeleton_output_dir = island_output_dir / 'skeleton'
-    skeleton_output_dir.mkdir(exist_ok=True)
+    skeleton_output_dir = island_output_dir
 
     if plots:
         result_by_id = {r.island_id: r for r in skeletons}
@@ -151,7 +150,7 @@ def _save_islands_json(
     map_name: str,
     island_output_dir: Path,
 ) -> None:
-    """Write island_analysis/islands.json with geometry data.
+    """Write islands.json with geometry data.
 
     This file is the input for the symmetry step (detect_symmetry) and
     provides the island list for the assembly step (assemble_map).
@@ -545,7 +544,7 @@ def run_symmetry(
     no disk round-trip through islands.json.
 
     When geometry is None (islands step was skipped, e.g. --no-islands),
-    falls back to reading island_analysis/islands.json from disk.
+    falls back to reading islands.json from disk.
 
     Args:
         map_output_dir: Per-map output root (symmetry.json written here).
@@ -584,9 +583,9 @@ def run_symmetry(
         result = detect_symmetry_from_data(data)
     else:
         # Fallback: islands step was skipped — read cached islands.json from disk
-        islands_path = map_output_dir / 'island_analysis' / 'islands.json'
+        islands_path = map_output_dir / 'islands.json'
         if not islands_path.exists():
-            logger.debug("  island_analysis/islands.json not found — skipping symmetry analysis")
+            logger.debug("  islands.json not found — skipping symmetry analysis")
             return None
         result = detect_symmetry(str(islands_path))
 
@@ -625,7 +624,7 @@ def run_island_geometry(
     visualizations, and classifies island centers relative to the map center.
 
     Does NOT read map.xml and does NOT produce map_context.json.
-    Writes island_analysis/islands.json for downstream steps.
+    Writes islands.json for downstream steps.
     Returns IslandAnalysis with islands: list[IslandPolygon] (pure geometry).
 
     Args:
@@ -639,7 +638,7 @@ def run_island_geometry(
         min_size: Minimum island block count.
         detect_holes: If True, detect holes in islands during polygon construction.
         map_output_dir: Per-map output root. Defaults to map_folder.
-        output_dir: Override island_analysis subdir path specifically.
+        output_dir: Override output directory path (defaults to map_output_dir).
         plots: If True, generate debug plots.
 
     Returns:
@@ -649,7 +648,7 @@ def run_island_geometry(
 
     _map_output_dir = map_output_dir or map_folder
     layout_dir = _map_output_dir
-    island_output_dir = output_dir or _map_output_dir / 'island_analysis'
+    island_output_dir = output_dir or _map_output_dir
 
     layout_filename = LAYOUT_FILES.get(layout_type, 'layout_bedrock.parquet')
     layout_file = layout_dir / layout_filename
@@ -787,7 +786,7 @@ def assemble_map(
 
     logger.debug(f"[5/6] Map Assembly: {map_folder.name}")
 
-    skeleton_output_dir = island_output_dir / 'skeleton'
+    skeleton_output_dir = island_output_dir
 
     if map_center_pt is None:
         from map_analysis.poi_annotation import compute_map_center
