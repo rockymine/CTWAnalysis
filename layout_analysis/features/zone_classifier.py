@@ -64,6 +64,31 @@ def _region_to_geometry(region: dict) -> Any:
         radius = float(region.get('radius', 0))
         return Point(float(base.get('x', 0)), float(base.get('z', 0))).buffer(radius)
 
+    elif rtype == 'complement':
+        # First child is the base; remaining children are subtracted from it.
+        children = region.get('children', [])
+        if not children:
+            return None
+        geom = _region_to_geometry(children[0])
+        if geom is None or geom.is_empty:
+            return None
+        for child in children[1:]:
+            sub = _region_to_geometry(child)
+            if sub is not None and not sub.is_empty:
+                geom = geom.difference(sub)
+        return geom if not geom.is_empty else None
+
+    elif rtype == 'intersect':
+        children = region.get('children', [])
+        geoms = [_region_to_geometry(c) for c in children]
+        geoms = [g for g in geoms if g is not None and not g.is_empty]
+        if not geoms:
+            return None
+        result = geoms[0]
+        for g in geoms[1:]:
+            result = result.intersection(g)
+        return result if not result.is_empty else None
+
     else:
         # Fallback: use bounding box
         bounds = region.get('bounds_2d', {})
