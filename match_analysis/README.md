@@ -11,12 +11,13 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 1. Preprocess maps          ctw run --map <name>
 2. Load map metadata        ctw maps load
 3. Load spawn data          ctw maps spawns
-4. Parse match logs         ctw matches parse ...
-5. Index matches            ctw matches index ...
-6. Process matches          ctw matches process-all
-7. Post-process features    (runs automatically inside step 6)
-8. Build traffic graph      ctw matches traffic-graph --map-name <name>
-9. Cluster archetypes       notebooks/life_segment_clustering.ipynb
+4. Load resource data       ctw maps resources --map <name>   (optional)
+5. Parse match logs         ctw matches parse ...
+6. Index matches            ctw matches index ...
+7. Process matches          ctw matches process-all
+8. Post-process features    (runs automatically inside step 7)
+9. Build traffic graph      ctw matches traffic-graph --map-name <name>
+10. Cluster archetypes      notebooks/life_segment_clustering.ipynb
 ```
 
 ### Step 0: Initialize the database
@@ -89,7 +90,25 @@ ctw maps spawns                     # all maps
 ctw maps spawns --map ingwaz        # single map
 ```
 
-### Step 4: Parse match logs (optional)
+### Step 4: Load resource data (optional)
+
+Classify and store resource blocks (iron/gold/diamond) and chest locations for each map.
+Reads `layout_resource_blocks.parquet` and `layout_chest_contents.parquet` produced by
+`ctw layout`, applies zone classification using XML regions, detects double chests, and
+writes to the `map_resource_blocks`, `map_chests`, and `map_chest_contents` tables.
+
+```bash
+ctw maps resources --map ingwaz     # single map
+ctw maps resources                  # all maps with layout parquets
+```
+
+To visualise the output without writing to the database:
+
+```bash
+python ctw.py debug resources --map ingwaz   # saves output/<map>/resources_overview.png
+```
+
+### Step 5: Parse match logs (optional)
 
 If you have a structured text log file mapping parquet filenames to map names:
 
@@ -99,7 +118,7 @@ ctw matches parse --input match_logs/logs.txt --match-dir match_logs/
 
 Produces `match_history.csv` with columns `parquet_file,map_name`.
 
-### Step 5: Index match files
+### Step 6: Index match files
 
 Index parquet files into the `matches` table. Each match is linked to a map via
 `map_id`. Pass `--history` to resolve map names from the CSV produced by `parse`:
@@ -112,7 +131,7 @@ ctw matches index --match-dir match_logs/ --history match_logs/match_history.csv
 - Duplicate files are skipped (UNIQUE constraint on `match_file`).
 - Matches for maps not yet in the `maps` table are skipped with a warning.
 
-### Step 6: Process matches
+### Step 7: Process matches
 
 Extract life segments, combat events, position events, and team assignments:
 
@@ -219,6 +238,9 @@ ctw matches stats                           # aggregate statistics
 ```
 maps                        Map metadata (bbox, island count, teams)
  └─ map_spawns              Spawn locations per map (team, center, bounds)
+ └─ map_resource_blocks     Iron/gold/diamond block positions with zone classification
+ └─ map_chests              Chest positions with zone classification and double-chest detection
+ └─ map_chest_contents      Full inventory of each chest (one row per slot)
  └─ wool_spawn_baselines    Spawn-to-wool baseline distances per team/wool
  └─ matches                 One row per indexed parquet file
      ├─ life_segments            Player life segments (spawn → death)
@@ -236,6 +258,9 @@ maps                        Map metadata (bbox, island count, teams)
 |-------|-------------|-------------|
 | `maps` | `map_id`, `map_slug`, `map_name`, bbox, `island_count`, classification columns | `ctw maps load` |
 | `map_spawns` | `map_id` (FK), `x`, `z`, bounds, `team`, `team_color` | `ctw maps spawns` |
+| `map_resource_blocks` | `map_id` (FK), `world_x`, `world_z`, `y`, `resource_type`, `zone`, `team` | `ctw maps resources` |
+| `map_chests` | `map_id` (FK), `world_x`, `world_z`, `y`, `chest_type`, `zone`, `team`, `is_double`, `chest_group_id` | `ctw maps resources` |
+| `map_chest_contents` | `map_id` (FK), `world_x`, `world_z`, `y`, `slot`, `item_id`, `item_damage`, `count` | `ctw maps resources` |
 | `matches` | `match_id`, `match_file`, `map_id` (FK), `processed`, `log_interval` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
 | `combat_events` | `match_id` (FK), `player_id`, `event_type`, position | `ctw matches process` |

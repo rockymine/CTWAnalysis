@@ -79,6 +79,30 @@ python ctw.py xml --map your_map_name
 python ctw.py info --map your_map_name
 ```
 
+### Map Resources
+
+```bash
+# Classify and store resource blocks and chests for a map (reads layout parquets, writes to DB)
+python ctw.py maps resources --map arabia
+
+# Visualise resource block and chest locations on the map layout
+python ctw.py debug resources --map arabia
+python ctw.py debug resources --map arabia,tumbleweed   # multiple maps
+```
+
+`maps resources` reads `layout_resource_blocks.parquet` and `layout_chest_contents.parquet`,
+classifies every position into a zone (spawn / wool_room / defense / near_spawn / field) using
+XML regions from `map_data.json`, detects double chests, and stores the results in
+`map_resource_blocks`, `map_chests`, and `map_chest_contents` in the database.
+
+`debug resources` does the same classification on the fly and saves a visualisation
+to `output/<map>/resources_overview.png` without touching the database.
+
+**Prerequisite**: `ctw layout --map <name>` (or `ctw run --map <name>`) must have been run
+to produce the layout parquets.
+
+---
+
 ### Match Analysis
 
 ```bash
@@ -121,6 +145,8 @@ Reads Minecraft region files (`region/*.mca`) and extracts block coordinates int
 - `layout_y0.parquet` — Y=0 layer (used for build region detection via block 36)
 - `layout_top_surface.parquet` — topmost non-air block per column
 - `layout_vertical_density.parquet` — density-weighted column summary
+- `layout_resource_blocks.parquet` — all iron/gold/diamond blocks at every Y level (`world_x, world_z, y, resource_type`)
+- `layout_chest_contents.parquet` — chest inventories from tile entities (`world_x, world_z, y, chest_type, slot, item_id, item_damage, count`)
 
 **Return value**: none (writes files only).
 

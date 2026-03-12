@@ -10,12 +10,18 @@ Skeleton extraction, pathfinding, and connectivity live in `skeleton_analysis/`.
 
 ```
 layout_analysis/
-├── __init__.py              # Package exports (extractors, reader, utils)
+├── __init__.py              # Package exports (extractors, reader, utils, features)
 ├── region_reader.py         # Anvil region file reader (MC 1.8.9)
 ├── extractors.py            # Block extraction modes (Y0, surface, density, bedrock)
 ├── utils.py                 # NBT decoding utilities (nibble, block ID)
 ├── visualization.py         # Layout-level visualization (density, surface plots)
 ├── map_context.py           # MapContext dataclass and builder
+│
+├── features/                # Map feature extractors
+│   ├── __init__.py          # Exports ResourceBlockExtractor, ChestExtractor, ZoneClassifier
+│   ├── resource_blocks.py   # Scan all Y levels for iron/gold/diamond blocks
+│   ├── chests.py            # Read chest tile entities and inventory contents
+│   └── zone_classifier.py   # Classify (x, z) positions into spawn/wool_room/defense/field
 │
 ├── services/                # CLI orchestration
 │   ├── layout_service.py    # Layout extraction orchestrator
@@ -49,13 +55,59 @@ builds polygons from world-space blocks.
 
 | File | Description |
 |------|-------------|
-| `layout_bedrock.parquet` | Block positions with `island_id` column |
+| `layout_bedrock.parquet` | Lowest bedrock per column (`world_x, world_z, y, block_data`) |
+| `layout_resource_blocks.parquet` | All iron/gold/diamond blocks (`world_x, world_z, y, resource_type`) |
+| `layout_chest_contents.parquet` | Chest inventories (`world_x, world_z, y, chest_type, slot, item_id, item_damage, count`) |
 | `map_context.json` | Aggregated map context |
 | `map_graph.json` | Inter-island connectivity graph |
 | `island_analysis/island_triangulation_detail.png` | Triangulation overview (essential) |
 | `island_analysis/skeleton/unique_islands.png` | Canonical shapes (essential) |
 | `island_analysis/skeleton/map_overview.png` | Skeleton with polygons + build regions (essential) |
 | `island_analysis/map_connectivity.png` | Connectivity graph (essential) |
+
+### Feature Extractor Details
+
+**`ResourceBlockExtractor`** (`features/resource_blocks.py`)
+
+Scans all chunk sections using direct Blocks-array access (one pass per 16³
+section) for full resource blocks. Default targets: iron_block (ID 42),
+gold_block (ID 41), diamond_block (ID 57). Additional block types can be
+passed via `target_blocks={id: label, ...}`.
+
+**`ChestExtractor`** (`features/chests.py`)
+
+Reads `TileEntities` from each chunk's NBT data to locate chests and
+trapped chests. Extracts the full inventory (slot, item_id, item_damage,
+count) per chest. Empty chests produce no rows; maps without chests produce
+an empty DataFrame with the correct schema.
+
+`detect_double_chests(df)` post-processes a chest DataFrame to identify
+adjacent pairs (same Y, ±1 block in X or Z), adding `is_double` (bool)
+and `chest_group_id` (Int64) columns.
+
+**`ZoneClassifier`** (`features/zone_classifier.py`)
+
+Classifies `(world_x, world_z)` positions into one of five zones using
+Shapely geometry built from `map_data.json` regions:
+
+| Zone | Description |
+|------|-------------|
+| `spawn` | Inside a team spawn region |
+| `near_spawn` | Within `near_spawn_buffer` blocks of spawn (default 15) |
+| `wool_room` | Inside a team wool room region |
+| `defense` | Within `defense_buffer` blocks of a wool room (default 10) |
+| `field` | Everywhere else |
+
+Team ownership is assigned via `deny(team-id)` rules in `apply_rules`, with
+keyword matching on region IDs as fallback. Region types handled: `rectangle`,
+`union`, `cylinder`, `complement`, `intersect`. Unrecognised types fall back
+to the region's `bounds_2d` bounding box.
+
+```python
+clf = ZoneClassifier(map_data)
+zone, team = clf.classify(world_x, world_z)
+df = clf.classify_dataframe(df, x_col='world_x', z_col='world_z')
+```
 
 Debug outputs (with `--plots`): per-island skeleton/POI images, pathfinding
 grids, island comparison/statistics, text reports.
