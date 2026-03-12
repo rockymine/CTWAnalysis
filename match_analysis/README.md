@@ -8,15 +8,16 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 
 ```
 0. Initialize database      python match_analysis/database/schema.py
-1. Preprocess maps          ctw run --map <name>
+1. Preprocess maps          ctw run --map <name> --no-matches
 2. Load map metadata        ctw maps load
 3. Load spawn data          ctw maps spawns
 4. Load resource data       ctw maps resources --map <name>   (optional)
-5. Parse match logs         ctw matches parse ...
+5. Parse match logs         ctw matches parse ...   (or: ctw matches scan ...)
 6. Index matches            ctw matches index ...
-7. Process matches          ctw matches process-all
-8. Post-process features    (runs automatically inside step 7)
-9. Build traffic graph      ctw matches traffic-graph --map-name <name>
+7. Process matches          ctw matches process-all --map-name <name>
+8. Post-process features    runs automatically inside step 7; re-run with:
+                            ctw matches post-process --all
+9. Build traffic graph      ctw matches traffic-graph --map <name>
 10. Cluster archetypes      notebooks/life_segment_clustering.ipynb
 ```
 
@@ -108,7 +109,7 @@ To visualise the output without writing to the database:
 python ctw.py debug resources --map ingwaz   # saves output/<map>/resources_overview.png
 ```
 
-### Step 5: Parse match logs (optional)
+### Step 5: Parse or scan match logs (optional)
 
 If you have a structured text log file mapping parquet filenames to map names:
 
@@ -116,7 +117,13 @@ If you have a structured text log file mapping parquet filenames to map names:
 ctw matches parse --input match_logs/logs.txt --match-dir match_logs/
 ```
 
-Produces `match_history.csv` with columns `parquet_file,map_name`.
+If your parquet files are organised in a `<map>/` folder tree:
+
+```bash
+ctw matches scan --folder data/ --output data/match_history.csv
+```
+
+Both produce a CSV with columns `parquet_file,map_name`.
 
 ### Step 6: Index match files
 
@@ -145,7 +152,7 @@ ctw matches process-all --force             # reprocess everything
 Processing populates: `life_segments`, `combat_events`, `position_events`,
 `player_team_segments`.
 
-### Step 7: Post-processing (automatic)
+### Step 8: Post-processing (automatic)
 
 Post-processing runs at the end of every `ctw matches process` call and produces
 three derived tables: `wool_spawn_baselines`, `life_segment_region_visits`, and
@@ -181,7 +188,7 @@ The function runs five internal steps in order:
    determines the outcome (captured / dropped in void / dropped on land / incomplete),
    and populates `wool_carry_chains`.
 
-### Step 8: Build traffic graph
+### Step 9: Build traffic graph
 
 Build a data-driven navigation graph from aggregated player position traces.
 This is used as the default graph for Section 4 of `match_time_series.ipynb`
@@ -216,7 +223,7 @@ Parameters:
 
 The comparison plot is saved to `output/<map_slug>/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
 
-### Step 9: Cluster archetypes
+### Step 10: Cluster archetypes
 
 Open and run the Jupyter notebook (see [Clustering Notebook](#clustering-notebook) below).
 
@@ -522,9 +529,14 @@ gracefully — wool nodes will be absent for those maps.
 
 ## Visualization
 
-After processing, generate player trace plots:
+After processing, generate player trace and kill plots:
 
 ```bash
+# Player movement traces
 ctw matches trace --map Ingwaz --match 5 --player ALL --color-mode team
-ctw matches trace --map Ingwaz --match ALL --player 0
+ctw matches trace --map Ingwaz --match ALL --player ALL --overlay
+
+# Kill-death pair locations
+ctw matches kills --map Ingwaz --match 5
+ctw matches kills --map Ingwaz --match ALL --overlay --color-mode distance
 ```
