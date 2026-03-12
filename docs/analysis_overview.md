@@ -139,6 +139,12 @@ This annotation step is what makes all of the spatial analysis possible. The
 raw parquet knows only `(x, y, z)` integers; the classifier maps those into the
 semantic geography of the map.
 
+All `nearest_graph_node` values stored in the database are **skeleton graph node
+IDs** — the traffic graph plays no role here. The traffic graph is a separate
+downstream layer used by the diagnostic scripts and analysis notebooks for
+visualization and path reconstruction, but it does not affect any values written
+to the database.
+
 ---
 
 ## The skeleton graph and the traffic graph

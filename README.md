@@ -31,8 +31,6 @@ map_folders/
     map.xml           # PGM map XML file
 ```
 
-The `region/` directory should contain the Minecraft world region files (e.g., `r.0.0.mca`). The `map.xml` is the PGM map definition with spawns, wools, and regions.
-
 ### 3. Populate Match Logs
 
 Place match event parquet files into `match_logs/`:
@@ -44,274 +42,71 @@ match_logs/
   ...
 ```
 
-Each parquet file contains event data for a single match with columns: `timestamp`, `event_type`, `player_id`, `x`, `y`, `z`, `held_item`, `inventory_count`, `wool_id`, `victim_id`.
+Each parquet file contains event data for a single match. See [docs/analysis_overview.md](docs/analysis_overview.md) for a full description of the raw data format.
 
 ## Running the Analysis
 
 All commands go through the `ctw.py` CLI. See [docs/cli.md](docs/cli.md) for the full reference.
 
-### Full Pipeline
+### Map Pipeline
 
 ```bash
 # Analyze a single map (layout + islands + symmetry + XML + assembly)
-python ctw.py run --map your_map_name
+python ctw.py run --map your_map_name --no-matches
 
 # Analyze all maps
-python ctw.py run --all --force
+python ctw.py run --all --no-matches
 
 # With debug plots enabled
-python ctw.py run --map your_map_name --plots
-```
-
-### Individual Steps
-
-```bash
-# Layout extraction (region files -> parquet)
-python ctw.py layout --map your_map_name
-
-# Island detection, skeleton, POI, connectivity
-python ctw.py islands --map your_map_name
-
-# XML parsing
-python ctw.py xml --map your_map_name
+python ctw.py run --map your_map_name --no-matches --plots
 
 # Check analysis status
 python ctw.py info --map your_map_name
 ```
 
-### Map Resources
+### Map Resources (optional)
 
 ```bash
-# Classify and store resource blocks and chests for a map (reads layout parquets, writes to DB)
-python ctw.py maps resources --map arabia
+# Classify and store resource blocks and chests for a map
+python ctw.py maps resources --map your_map_name
 
-# Visualise resource block and chest locations on the map layout
-python ctw.py debug resources --map arabia
-python ctw.py debug resources --map arabia,tumbleweed   # multiple maps
+# Visualize resource and chest locations without writing to DB
+python ctw.py debug resources --map your_map_name
 ```
-
-`maps resources` reads `layout_resource_blocks.parquet` and `layout_chest_contents.parquet`,
-classifies every position into a zone (spawn / wool_room / defense / near_spawn / field) using
-XML regions from `map_data.json`, detects double chests, and stores the results in
-`map_resource_blocks`, `map_chests`, and `map_chest_contents` in the database.
-
-`debug resources` does the same classification on the fly and saves a visualisation
-to `output/<map>/resources_overview.png` without touching the database.
-
-**Prerequisite**: `ctw layout --map <name>` (or `ctw run --map <name>`) must have been run
-to produce the layout parquets.
-
----
 
 ### Match Analysis
 
 ```bash
-# Index match files into database
-python ctw.py matches index
+# Load map into the database (run after ctw run)
+python ctw.py maps load --map your_map_name
+python ctw.py maps spawns --map your_map_name
 
-# List and inspect matches
-python ctw.py matches list
-python ctw.py matches stats
-
-# Process trajectories
+# Index match files, then process
+python ctw.py matches index --match-dir match_logs/
 python ctw.py matches process-all --map-name your_map_name
 
 # Visualize player traces
-python ctw.py matches trace --map Ingwaz --match 57 --player 0
-python ctw.py matches trace --map Ingwaz --match 57 --player ALL --color-mode team
+python ctw.py matches trace --map your_map_name --match 57 --player ALL --color-mode team
+
+# Visualize kill locations
+python ctw.py matches kills --map your_map_name --match ALL --overlay
 ```
 
 ## Analysis Pipeline
 
-The full pipeline runs six sequential steps. Each step produces a typed in-memory result object that is passed directly to the next step — JSON files are written only as debug artifacts for human inspection and are never read back as pipeline inputs.
+The map pipeline runs five sequential steps:
 
 ```
-[1/6] Layout        ctw layout          analyze_layout()         layout_*.parquet
-[2/6] Islands       ctw islands         run_island_geometry()    IslandGeometryResult
-[3/6] Symmetry      (part of ctw run)   run_symmetry()           SymmetryResult
-[4/6] XML           ctw xml             analyze_xml()            MapXmlContext
-[5/6] Assembly      (part of ctw run)   assemble_map()           MapContext
-[6/6] Matches       ctw matches         (not yet implemented)
+[1/5] Layout     ctw layout      Extract block data from region files → layout_*.parquet
+[2/5] Islands    ctw islands     Detect landmasses, skeleton graphs, POIs → islands.json
+[3/5] Symmetry   (ctw run)       Detect global geometric symmetry → symmetry.json
+[4/5] XML        ctw xml         Parse map.xml for teams/spawns/wools → map_data.json
+[5/5] Assembly   (ctw run)       Combine everything → map_context.json, map_graph.json
 ```
 
-### Step 1 — Layout (`analyze_layout`)
+Steps 1, 2, and 4 can be run individually. Steps 3 and 5 are only run as part of `ctw run`.
 
-**Module**: `ctw/commands/layout.py`
-
-Reads Minecraft region files (`region/*.mca`) and extracts block coordinates into parquet files. Multiple layout variants capture different cross-sections of the map.
-
-**Outputs** (in `output/<map>/`):
-- `layout_bedrock.parquet` — bedrock-anchored block layer (default for island detection)
-- `layout_y0.parquet` — Y=0 layer (used for build region detection via block 36)
-- `layout_top_surface.parquet` — topmost non-air block per column
-- `layout_vertical_density.parquet` — density-weighted column summary
-- `layout_resource_blocks.parquet` — all iron/gold/diamond blocks at every Y level (`world_x, world_z, y, resource_type`)
-- `layout_chest_contents.parquet` — chest inventories from tile entities (`world_x, world_z, y, chest_type, slot, item_id, item_damage, count`)
-
-**Return value**: none (writes files only).
-
----
-
-### Step 2 — Island Geometry (`run_island_geometry`)
-
-**Module**: `map_analysis/pipeline.py`
-**Public function**: `run_island_geometry(map_folder, ...) -> Optional[IslandGeometryResult]`
-
-Pure geometry pipeline — no XML knowledge. Reads a layout parquet, detects disconnected landmasses, builds simplified polygons, computes skeleton graphs (morphological thinning), canonicalizes island shapes under the D4 dihedral group, and classifies island centers relative to the map center.
-
-**Returns** `None` only on failure (missing layout file or no islands detected).
-
-**`write_outputs` behaviour**: computation always runs in full. File writes (visualizations, `islands.json`) are skipped when `islands.json` already exists and `force_rerun=False`. This means the returned `IslandGeometryResult` always contains fresh in-memory objects even on a cache hit.
-
-**Outputs** (in `output/<map>/island_analysis/`):
-- `islands.json` — island geometry data (debug artifact; read by `run_symmetry` only as a fallback when `--no-islands` was used)
-- `island_detail.png` — island layout overview (always generated)
-- `skeleton/unique_islands.png` — canonical shape comparison (always generated)
-- `skeleton/map_overview.png` — skeleton graph with polygons + build regions (written by `assemble_map`)
-- `skeleton/island_N_debug.png` — per-canonical-shape debug (requires `--plots`)
-- `skeleton/skeleton_report.txt` — skeleton text report (requires `--plots`)
-
-#### `IslandGeometryResult` fields
-
-```python
-@dataclass
-class IslandGeometryResult:
-    islands: List[Island]                          # Island objects with .blocks, .center, .simplified_polygon, etc.
-    skeleton_results: List[IslandResult]           # One IslandResult per island (graph, nodes, edges)
-    canonical_groups: Dict[str, List[int]]         # canonical_key -> [island_id, ...]
-    df: pd.DataFrame                               # Full layout dataframe (world_x, world_z, island_id, ...)
-    island_output_dir: Path                        # Resolved path to island_analysis/ subdir
-    map_center_pt: Optional[Tuple[float, float]]   # Map centroid (world coords)
-```
-
----
-
-### Step 3 — Symmetry (`run_symmetry`)
-
-**Module**: `map_analysis/pipeline.py`
-**Public function**: `run_symmetry(map_output_dir: Path, geometry: Optional[IslandGeometryResult] = None) -> Optional[SymmetryResult]`
-
-Detects global geometric symmetry of the map from island geometry. When `geometry` is passed (the normal case in the full pipeline), island data is consumed directly from the in-memory `IslandGeometryResult` via `detect_symmetry_from_data` — no disk round-trip through `islands.json`. Falls back to reading `island_analysis/islands.json` from disk only when `geometry` is `None` (islands step skipped with `--no-islands`).
-
-**Returns** `None` when island data is unavailable (step 2 was skipped and no cached `islands.json` exists).
-
-**Output** (in `output/<map>/`):
-- `symmetry.json` — detected symmetry axes, confidence scores, center point
-
-#### `SymmetryResult` fields
-
-```python
-@dataclass
-class SymmetryResult:
-    map_name: str
-    center: Dict[str, Any]                     # center_x, center_z, type, description, blocks
-    pair_analysis: Dict[str, Any]              # total_pairs, transform_counts, pairs
-    global_symmetry: List[Dict[str, Any]]      # per-candidate: type, detected, confidence, description
-
-    # Convenience properties:
-    center_x: float                            # symmetry center X
-    center_z: float                            # symmetry center Z
-    primary: Optional[Dict[str, Any]]          # highest-confidence detected entry, or None
-```
-
-`symmetry.json` is also updated in step 5 (assembly) to add an `intra_team_symmetry` field once team assignments are known.
-
----
-
-### Step 4 — XML Analysis (`analyze_xml`)
-
-**Module**: `ctw/commands/xml.py`
-**Public function**: `analyze_xml(map_folder, ...) -> Optional[MapXmlContext]`
-
-Parses `map.xml` using the PGM XML schema — extracts teams, spawns, wools, and region definitions. Returns a typed `MapXmlContext` so downstream steps receive live `MapData` / `Region` objects without re-parsing the XML.
-
-**Returns** `None` when `map.xml` is absent.
-
-**Output** (in `output/<map>/`):
-- `map_data.json` — declarative metadata export (debug artifact for human inspection)
-
-#### `MapXmlContext` fields
-
-```python
-@dataclass
-class MapXmlContext:
-    map_data: MapData                          # Full parsed map data (teams, spawns, wools, regions)
-    region_categories: Dict[str, List[str]]   # region_id -> [category, ...]
-```
-
-`MapData` contains:
-
-```python
-@dataclass
-class MapData:
-    name: str; version: str; objective: str
-    teams: List[Team]                          # id, color, name, max_players, dye_color
-    spawns: List[Spawn]                        # team, kit, yaw, region
-    wools: List[Wool]                          # team, color, location, monument
-    regions: Dict[str, Region]                 # named regions (cuboids, polygons, mirrors, etc.)
-    apply_rules: List[ApplyRule]               # <apply> elements (block filters, regions)
-    max_build_height: Optional[int]
-```
-
----
-
-### Step 5 — Map Assembly (`assemble_map`)
-
-**Module**: `map_analysis/pipeline.py`
-**Public function**: `assemble_map(map_folder, geometry, map_output_dir, symmetry=None, xml_context=None, plots=False) -> MapContext`
-
-Combines all previous results into the complete map model. Requires `IslandGeometryResult` from step 2. Accepts `SymmetryResult` and `MapXmlContext` as optional in-memory objects; falls back to reading `symmetry.json` / re-parsing `map.xml` when they are absent (supporting partial runs and `--no-symmetry` / `--no-xml` flags).
-
-Assembly sub-steps:
-1. **POI annotation** — maps XML spawn/wool locations to nearest skeleton nodes
-2. **Team assignment** — assigns islands to teams using symmetry + POI data
-3. **Intra-team symmetry** — detects per-team internal symmetry, appends to `symmetry.json`
-4. **MapContext construction** — aggregates all data into `MapContext`
-5. **Build region extraction** — derives buildable void area from XML regions + Y0 layer
-6. **File writes** — `map_context.json`, `map_graph.json`, `skeleton/map_overview.png`
-
-**Always returns** `MapContext` (never `None`).
-
-**Outputs** (in `output/<map>/`):
-- `map_context.json` — complete aggregated map model
-- `map_graph.json` — inter-island connectivity graph (skeleton nodes as graph)
-- `island_analysis/skeleton/map_overview.png` — map overview visualization
-- `symmetry.json` updated with `intra_team_symmetry` (if applicable)
-- `island_analysis/skeleton/island_N_poi.png` — per-island POI debug (requires `--plots`)
-
-#### `MapContext` fields
-
-```python
-@dataclass
-class MapContext:
-    # Map metadata (from XML)
-    map_name: str; map_version: str; objective: str
-    teams: List[Dict]                          # id, color, name, max_players
-
-    # Layout
-    bounding_box: Optional[Tuple[float, float, float, float]]  # min_x, max_x, min_z, max_z
-    map_center: Optional[Tuple[float, float]]
-    total_blocks: int
-
-    # Islands
-    island_count: int
-    islands: List[Dict]                        # per-island: id, area, center, bounding_box,
-                                               #   has_center, team, has_spawn, has_wool,
-                                               #   hole_count, simplified_polygon, distance_to_center
-
-    # Skeleton summary
-    total_nodes: int; total_edges: int
-    total_endpoints: int; total_junctions: int
-    unique_canonical_shapes: int
-
-    # POI
-    poi_assignments: Dict                      # spawns: [...], wools: [...]
-
-    # Build region
-    build_region: Optional[Dict]               # source, buildable_void_area, polygon
-```
-
----
+For a detailed explanation of each step, the data produced, and the match processing pipeline, see [docs/analysis_overview.md](docs/analysis_overview.md).
 
 ## Output Structure
 
@@ -322,65 +117,27 @@ output/your_map_name/
   layout_bedrock.parquet           # extracted block coordinates
   layout_y0.parquet                # Y=0 layer
   layout_top_surface.parquet       # top surface layer
-  layout_vertical_density.parquet  # vertical density layer
-  map_data.json                    # parsed XML data (debug artifact)
+  layout_vertical_density.parquet  # vertical density
+  layout_resource_blocks.parquet   # iron/gold/diamond block positions
+  layout_chest_contents.parquet    # chest inventories
+  map_data.json                    # parsed XML data
   map_context.json                 # complete aggregated map model
   map_graph.json                   # inter-island connectivity graph
-  symmetry.json                    # detected symmetry axes + intra-team symmetry
+  symmetry.json                    # detected symmetry axes
   island_analysis/
-    islands.json                   # island geometry data (debug artifact)
-    island_detail.png              # island layout overview
+    islands.json                   # island geometry data
+    island_triangulation_detail.png
+    unique_islands.png
+    map_overview.png
+    map_connectivity.png
     skeleton/
-      unique_islands.png           # canonical shape comparison
-      map_overview.png             # skeleton graph with polygons + build regions
-      island_N_debug.png           # per-canonical-shape skeleton debug (--plots)
-      skeleton_report.txt          # skeleton text report (--plots)
-    pathfinding/
-      island_N_paths.png           # pathfinding grids (--plots)
-  match_analysis/
-    trace_player0_match57.png      # player trace visualizations
+      world_overview.png
+      (per-island debug images with --plots)
+  traffic_graph.json               # data-driven navigation graph (after matches)
+  traffic_graph.png
 ```
 
-Input files remain in `map_folders/<map>/` (read-only, never modified).
-
-## Design Principles
-
-### JSON Files Are Debug Artifacts
-
-Pipeline steps communicate exclusively through typed in-memory objects. JSON files (`islands.json`, `symmetry.json`, `map_data.json`, `map_context.json`) are written as side effects for human inspection and are **never read back as pipeline inputs** within a single run.
-
-The one deliberate exception is the fallback path in `run_symmetry` and `assemble_map`: when an upstream step is skipped (`--no-islands`, `--no-symmetry`), the downstream step may read the cached JSON artifact from a previous run. This is intentional and documented — it allows partial re-runs without recomputing all steps.
-
-### Cache Hit Behaviour
-
-When a debug artifact already exists on disk and `--force` is not set, computation still runs in full — only file writes are skipped. This ensures the pipeline always returns correct typed objects regardless of cache state.
-
-### Single Responsibility
-
-Each helper function does exactly one thing:
-- `_log_y0_diagnostics` — prints Y0 layer stats
-- `_attach_build_region` — attaches build region to MapContext in-place
-- `_assign_teams` — mutates `island.team` from symmetry + XML data
-- `_update_intra_team_symmetry` — detects per-team symmetry and appends to `symmetry.json`
-- `_build_island_dicts` — converts Island objects to plain attribute dicts
-
-## Data Format
-
-### Match Data (Parquet)
-
-| Column | Description |
-|--------|-------------|
-| `timestamp` | Event time |
-| `event_type` | 0=MATCH_START, 1=MATCH_END, 2=SPAWN, 3=KILL, 4=DEATH, 5=POSITION, 6=WOOL_TOUCH, 7=WOOL_CAPTURE |
-| `player_id` | Player identifier |
-| `x`, `y`, `z` | World coordinates |
-| `held_item` | Currently held item |
-| `inventory_count` | Inventory item count |
-| `wool_id` | Wool identifier (for wool events) |
-
-### Coordinate Convention
-
-Block at integer index `(x, z)` occupies world space `[x, x+1] x [z, z+1]` with center at `(x+0.5, z+0.5)`. Parquet files store block positions as integer indices. XML regions use corner coordinates (world-space boundaries).
+Input files in `map_folders/<map>/` are never modified.
 
 ## Project Structure
 
@@ -395,55 +152,43 @@ CTWAnalysisWithClaudeCode/
 │       ├── islands.py               # Island geometry (standalone)
 │       ├── xml.py                   # XML parsing
 │       ├── matches.py               # Match analysis
+│       ├── maps.py                  # Map metadata (load/spawns/resources)
+│       ├── debug.py                 # Diagnostic tools
 │       ├── info.py                  # Map status
 │       └── docs.py                  # API docs generation
-├── map_analysis/                    # Pipeline orchestration
-│   ├── pipeline.py                  # Public API: run_island_geometry, run_symmetry, assemble_map
-│   ├── datatypes.py                 # IslandGeometryResult, MapContext
-│   ├── builder.py                   # MapContext construction
-│   ├── exporter.py                  # map_context.json serialization
-│   ├── poi_annotation.py            # Map center computation, island center classification
-│   └── team_assignment.py           # Team / intra-team symmetry assignment
-├── island_analysis/                 # Island detection, polygon construction, visualization
-│   ├── detection.py                 # Island labeling (connected components)
-│   ├── triangulation.py             # Polygon triangulation
-│   └── visualization.py            # Island layout plots
-├── skeleton_analysis/               # Skeleton extraction, POI annotation, pathfinding
-│   ├── canonicalize.py              # D4 dihedral group canonicalization
-│   ├── skeletonize.py               # Morphological thinning
-│   ├── poi_annotation.py            # Spawn/wool POI classification
-│   ├── pathfinding.py               # Intra-island path analysis
-│   ├── visualize.py                 # Skeleton and POI visualization
-│   ├── builder.py                   # Skeleton dict construction
-│   ├── exporter.py                  # map_graph.json serialization
-│   └── connectivity/                # Inter-island connectivity graph
-├── symmetry_analysis/               # Symmetry detection
-│   ├── datatypes.py                 # SymmetryResult
-│   └── exporter.py                  # symmetry.json serialization
-├── xml_analysis/                    # PGM XML parsing
-│   ├── datatypes.py                 # MapXmlContext, MapData, Team, Spawn, Wool
-│   ├── parser.py                    # Map XML parser
-│   ├── regions.py                   # Region type hierarchy
-│   ├── build_regions.py             # Build region extraction
-│   └── exporter.py                  # map_data.json serialization
 ├── layout_analysis/                 # Layout extraction from region files
-├── match_analysis/                  # Match event processing
-│   ├── match_indexer.py             # Match file indexing (DuckDB)
-│   ├── match_processor.py           # Per-match processing orchestrator
-│   ├── extractors.py                # Event extraction (life segments, combat, etc.)
-│   ├── position_classifier.py       # Position classification
-│   └── visualization.py            # Player trace plotting
+├── island_analysis/                 # Island detection and polygon construction
+├── skeleton_analysis/               # Skeleton extraction, POI annotation, pathfinding
+├── symmetry_analysis/               # Symmetry detection
+├── xml_analysis/                    # PGM XML parsing
+├── match_analysis/                  # Match event processing and database
 ├── visualization/                   # Shared visualization utilities
-│   ├── map_primitives.py            # Map base layer rendering
-│   └── colors.py                    # Team/POI color definitions
+├── common/                          # Geometry types, coordinate utilities
+├── notebooks/                       # Jupyter analysis notebooks
 ├── docs/                            # Documentation
 │   ├── cli.md                       # CLI reference
-│   └── api_index.json               # Auto-generated API docs
+│   ├── analysis_overview.md         # Match data pipeline and feature definitions
+│   ├── contributing.md              # Developer guidelines
+│   └── demo/                        # Visual walkthroughs
 ├── map_folders/                     # Map data (not tracked in git)
 ├── output/                          # Pipeline outputs (not tracked in git)
 ├── match_logs/                      # Match parquet files (not tracked in git)
 └── requirements.txt                 # Python dependencies
 ```
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/cli.md](docs/cli.md) | Full CLI reference for all commands and flags |
+| [docs/analysis_overview.md](docs/analysis_overview.md) | Raw data format, match pipeline, feature definitions, clustering |
+| [docs/contributing.md](docs/contributing.md) | Logging conventions, type annotations, domain types |
+| [docs/demo/README.md](docs/demo/README.md) | Visual walkthroughs of pipeline output |
+| [xml_analysis/README.md](xml_analysis/README.md) | PGM XML schema, region types, build region extraction |
+| [layout_analysis/README.md](layout_analysis/README.md) | Region file format, extractors, feature classifiers |
+| [match_analysis/README.md](match_analysis/README.md) | Database schema, setup workflow, clustering notebook |
+| [symmetry_analysis/README.md](symmetry_analysis/README.md) | Symmetry detection stages and confidence scoring |
+| [common/geometry/COORDINATE_SYSTEMS.md](common/geometry/COORDINATE_SYSTEMS.md) | Coordinate spaces, the +1 rule, plotting recipes |
 
 ## License
 
