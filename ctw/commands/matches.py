@@ -682,10 +682,10 @@ def handle_kills(args):
 def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     import duckdb
     from ctw.common import DEFAULT_OUTPUT_ROOT
-    from match_analysis.traffic_graph import (
+    from match_analysis.traffic.graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
     )
-    from match_analysis.traffic_strategy_plot import (
+    from match_analysis.traffic.strategy_plot import (
         plot_traffic_strategy_comparison, _adaptive_grid_size,
     )
 

@@ -23,7 +23,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from match_analysis.traffic_snapping import bresenham_cells
+from match_analysis.traffic.snapping import bresenham_cells
 
 logger = logging.getLogger("ctw")
 

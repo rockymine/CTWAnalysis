@@ -29,10 +29,10 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from match_analysis.traffic_graph        import load_traffic_graph, build_traffic_topology
-from match_analysis.traffic_snapping     import snap_positions, reconstruct_full_path, simplify_sequence
-from match_analysis.traffic_diagnostics_plot import plot_life_segment_diagnostic
-from match_analysis.defense_plot         import (
+from match_analysis.traffic.graph        import load_traffic_graph, build_traffic_topology
+from match_analysis.traffic.snapping     import snap_positions, reconstruct_full_path, simplify_sequence
+from match_analysis.traffic.diagnostics_plot import plot_life_segment_diagnostic
+from match_analysis.traffic.defense_plot import (
     classify_defense_activity, plot_defense_overview,
 )
 

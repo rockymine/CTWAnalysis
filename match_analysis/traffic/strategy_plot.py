@@ -40,7 +40,7 @@ try:
 except ImportError:
     _SKLEARN_AVAILABLE = False
 
-from match_analysis.traffic_snapping import bresenham_cells
+from match_analysis.traffic.snapping import bresenham_cells
 
 # ---------------------------------------------------------------------------
 # Colour palettes (copied from traffic_graph.py — module-private there)
