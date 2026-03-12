@@ -20,6 +20,82 @@ logger = logging.getLogger('ctw')
 _CHEST_IDS = frozenset({'Chest', 'TrappedChest'})
 
 
+def detect_double_chests(chest_df: 'pd.DataFrame') -> 'pd.DataFrame':
+    """
+    Detect double chests among a set of chest positions.
+
+    Two chest blocks form a double chest when they share the same Y level and
+    are exactly 1 block apart in either the X or Z direction. In vanilla
+    Minecraft, adjacent chests always merge into a double chest — no two
+    independent single chests can be horizontally adjacent.
+
+    Args:
+        chest_df: DataFrame with at least columns ``world_x``, ``world_z``, ``y``.
+                  Typically the output of :class:`ChestExtractor`.
+
+    Returns:
+        Copy of ``chest_df`` with two extra columns added:
+
+        ``is_double``      — True if this chest block is part of a double chest.
+        ``chest_group_id`` — Integer ID shared by both halves of a double chest;
+                             single chests get their own unique ID.
+    """
+    import pandas as pd
+
+    if chest_df.empty:
+        result = chest_df.copy()
+        result['is_double'] = pd.Series(dtype=bool)
+        result['chest_group_id'] = pd.Series(dtype='Int64')
+        return result
+
+    # Build a lookup from position → row index (use first occurrence per position)
+    pos_cols = ['world_x', 'world_z', 'y']
+    positions = chest_df[pos_cols].drop_duplicates()
+    pos_set: set[tuple[int, int, int]] = set(
+        (int(r.world_x), int(r.world_z), int(r.y))
+        for r in positions.itertuples()
+    )
+
+    group_id: dict[tuple[int, int, int], int] = {}
+    is_double: dict[tuple[int, int, int], bool] = {}
+    next_id = 0
+
+    for pos in sorted(pos_set):
+        x, z, y = pos
+        if pos in group_id:
+            continue  # already assigned as part of a pair
+
+        # Check adjacent positions (same Y, ±1 in X or Z)
+        partner = None
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            candidate = (x + dx, z + dz, y)
+            if candidate in pos_set:
+                partner = candidate
+                break
+
+        if partner is not None and partner not in group_id:
+            group_id[pos] = next_id
+            group_id[partner] = next_id
+            is_double[pos] = True
+            is_double[partner] = True
+        else:
+            group_id[pos] = next_id
+            is_double[pos] = False
+
+        next_id += 1
+
+    result = chest_df.copy()
+    result['is_double'] = result.apply(
+        lambda r: is_double.get((int(r.world_x), int(r.world_z), int(r.y)), False),
+        axis=1,
+    )
+    result['chest_group_id'] = result.apply(
+        lambda r: group_id.get((int(r.world_x), int(r.world_z), int(r.y)), -1),
+        axis=1,
+    ).astype('Int64')
+    return result
+
+
 def _nbt_val(tag):
     """Return the Python value of an NBT tag, or the tag itself if plain."""
     return tag.value if hasattr(tag, 'value') else tag

@@ -7,9 +7,12 @@ Extracts map features that are not captured by the standard layout layers:
 """
 
 from .resource_blocks import ResourceBlockExtractor
-from .chests import ChestExtractor
+from .chests import ChestExtractor, detect_double_chests
+from .zone_classifier import ZoneClassifier
 
 __all__ = [
     "ResourceBlockExtractor",
     "ChestExtractor",
+    "detect_double_chests",
+    "ZoneClassifier",
 ]
