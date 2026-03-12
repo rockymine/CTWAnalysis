@@ -402,7 +402,7 @@ def handle_reset(args):
 def handle_post_process(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.processing.post_processor import run_post_processing
+    from match_analysis.processing.pipeline import run_post_processing
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
