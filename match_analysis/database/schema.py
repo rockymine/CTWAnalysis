@@ -282,6 +282,54 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table N: Map resource blocks (iron/gold/diamond blocks, classified by zone)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_resource_blocks (
+            map_id        INTEGER NOT NULL,
+            world_x       INTEGER NOT NULL,
+            world_z       INTEGER NOT NULL,
+            y             INTEGER NOT NULL,
+            resource_type TEXT NOT NULL,
+            zone          TEXT NOT NULL,
+            team          TEXT,
+            PRIMARY KEY (map_id, world_x, world_z, y),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+1: Map chests (located and zone-classified)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_chests (
+            map_id         INTEGER NOT NULL,
+            world_x        INTEGER NOT NULL,
+            world_z        INTEGER NOT NULL,
+            y              INTEGER NOT NULL,
+            chest_type     TEXT NOT NULL,
+            zone           TEXT NOT NULL,
+            team           TEXT,
+            is_double      BOOLEAN NOT NULL DEFAULT FALSE,
+            chest_group_id INTEGER,
+            PRIMARY KEY (map_id, world_x, world_z, y),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+2: Map chest contents (inventory items per chest)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_chest_contents (
+            map_id      INTEGER NOT NULL,
+            world_x     INTEGER NOT NULL,
+            world_z     INTEGER NOT NULL,
+            y           INTEGER NOT NULL,
+            slot        INTEGER NOT NULL,
+            item_id     TEXT NOT NULL,
+            item_damage INTEGER NOT NULL DEFAULT 0,
+            count       INTEGER NOT NULL,
+            PRIMARY KEY (map_id, world_x, world_z, y, slot),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -466,6 +514,57 @@ def migrate_log_interval_column(db_path: str | None = None) -> None:
 
     conn.close()
     print(f"log_interval column added and backfilled in {db_path}")
+
+
+def migrate_resource_tables(db_path: str | None = None) -> None:
+    """Create map_resource_blocks, map_chests, and map_chest_contents if missing."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_resource_blocks (
+            map_id        INTEGER NOT NULL,
+            world_x       INTEGER NOT NULL,
+            world_z       INTEGER NOT NULL,
+            y             INTEGER NOT NULL,
+            resource_type TEXT NOT NULL,
+            zone          TEXT NOT NULL,
+            team          TEXT,
+            PRIMARY KEY (map_id, world_x, world_z, y),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_chests (
+            map_id         INTEGER NOT NULL,
+            world_x        INTEGER NOT NULL,
+            world_z        INTEGER NOT NULL,
+            y              INTEGER NOT NULL,
+            chest_type     TEXT NOT NULL,
+            zone           TEXT NOT NULL,
+            team           TEXT,
+            is_double      BOOLEAN NOT NULL DEFAULT FALSE,
+            chest_group_id INTEGER,
+            PRIMARY KEY (map_id, world_x, world_z, y),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_chest_contents (
+            map_id      INTEGER NOT NULL,
+            world_x     INTEGER NOT NULL,
+            world_z     INTEGER NOT NULL,
+            y           INTEGER NOT NULL,
+            slot        INTEGER NOT NULL,
+            item_id     TEXT NOT NULL,
+            item_damage INTEGER NOT NULL DEFAULT 0,
+            count       INTEGER NOT NULL,
+            PRIMARY KEY (map_id, world_x, world_z, y, slot),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+    print(f"Resource tables created in {db_path}")
 
 
 if __name__ == "__main__":

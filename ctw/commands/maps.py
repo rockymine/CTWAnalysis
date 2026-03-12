@@ -83,12 +83,14 @@ def register(subparsers):
 Actions:
   load         Load map metadata into the maps table
   spawns       Load spawn data into the map_spawns table
+  resources    Classify resource blocks and chests by zone, store in DB
 
 Examples:
   python ctw.py maps load --map annealing_iv
   python ctw.py maps load                       # all maps with output data
   python ctw.py maps spawns --map annealing_iv
-  python ctw.py maps spawns                      # all maps
+  python ctw.py maps resources --map arabia
+  python ctw.py maps resources                  # all maps
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -106,6 +108,19 @@ Examples:
     p.add_argument('--map', help='Map name to load (default: all maps)')
     p.add_argument('--output', help='Output root directory (default: output/)')
     p.set_defaults(func=handle_spawns)
+
+    # maps resources
+    p = maps_sub.add_parser(
+        'resources',
+        help='Classify resource blocks and chests by zone, store in DB',
+    )
+    p.add_argument('--map', help='Map name (default: all maps)')
+    p.add_argument('--output', help='Output root directory (default: output/)')
+    p.add_argument('--defense-buffer', type=float, default=10.0,
+                   help='Blocks outside wool room counted as defense (default: 10)')
+    p.add_argument('--near-spawn-buffer', type=float, default=15.0,
+                   help='Blocks outside spawn counted as near_spawn (default: 15)')
+    p.set_defaults(func=handle_resources)
 
 
 def _resolve_map_dirs(args):
@@ -361,3 +376,171 @@ def _upsert_map(conn, row: dict):
             row['symmetry_type'], row['has_intra_team_symmetry'],
             row['last_updated'],
         ])
+
+
+def handle_resources(args) -> None:
+    """Classify resource blocks and chests by zone and store results in the DB."""
+    import duckdb
+    from layout_analysis.features import ZoneClassifier, detect_double_chests
+    from match_analysis.database.schema import migrate_resource_tables
+
+    ensure_match_db()
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
+        return
+
+    db_path = Path('match_analysis/metadata.db')
+    conn = duckdb.connect(str(db_path))
+    migrate_resource_tables(str(db_path))
+
+    loaded = 0
+    skipped = 0
+
+    for map_dir in map_dirs:
+        map_slug = map_dir.name
+        map_data_path = map_dir / 'map_data.json'
+        rb_path = map_dir / 'layout_resource_blocks.parquet'
+        cc_path = map_dir / 'layout_chest_contents.parquet'
+
+        if not map_data_path.exists():
+            print(f"  Skip {map_slug}: map_data.json not found")
+            skipped += 1
+            continue
+        if not rb_path.exists() and not cc_path.exists():
+            print(f"  Skip {map_slug}: layout parquets not found (run 'layout' first)")
+            skipped += 1
+            continue
+
+        # Look up map_id
+        result = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        if result is None:
+            print(f"  Skip {map_slug}: not in maps table (run 'maps load' first)")
+            skipped += 1
+            continue
+        map_id = result[0]
+
+        with open(map_data_path, 'r', encoding='utf-8') as f:
+            map_data = json.load(f)
+
+        clf = ZoneClassifier(
+            map_data,
+            defense_buffer=args.defense_buffer,
+            near_spawn_buffer=args.near_spawn_buffer,
+        )
+
+        # --- Resource blocks ---
+        rb_rows = 0
+        if rb_path.exists():
+            rb_df = pd.read_parquet(str(rb_path))
+            if not rb_df.empty:
+                rb_classified = clf.classify_dataframe(rb_df)
+                conn.execute(
+                    "DELETE FROM map_resource_blocks WHERE map_id = ?", [map_id]
+                )
+                for _, row in rb_classified.iterrows():
+                    conn.execute("""
+                        INSERT INTO map_resource_blocks
+                            (map_id, world_x, world_z, y, resource_type, zone, team)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, [
+                        map_id,
+                        int(row['world_x']), int(row['world_z']), int(row['y']),
+                        str(row['resource_type']), str(row['zone']),
+                        row['team'] if row['team'] is not None else None,
+                    ])
+                rb_rows = len(rb_classified)
+
+        # --- Chests ---
+        chest_rows = 0
+        content_rows = 0
+        if cc_path.exists():
+            cc_df = pd.read_parquet(str(cc_path))
+            if not cc_df.empty:
+                cc_dbl = detect_double_chests(cc_df)
+                # Unique chest locations
+                chest_loc_cols = ['world_x', 'world_z', 'y', 'chest_type', 'is_double', 'chest_group_id']
+                chests_df = cc_dbl[chest_loc_cols].drop_duplicates(
+                    subset=['world_x', 'world_z', 'y']
+                )
+                chests_classified = clf.classify_dataframe(chests_df)
+
+                conn.execute("DELETE FROM map_chests WHERE map_id = ?", [map_id])
+                conn.execute("DELETE FROM map_chest_contents WHERE map_id = ?", [map_id])
+
+                for _, row in chests_classified.iterrows():
+                    conn.execute("""
+                        INSERT INTO map_chests
+                            (map_id, world_x, world_z, y, chest_type, zone, team,
+                             is_double, chest_group_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [
+                        map_id,
+                        int(row['world_x']), int(row['world_z']), int(row['y']),
+                        str(row['chest_type']), str(row['zone']),
+                        row['team'] if row['team'] is not None else None,
+                        bool(row['is_double']),
+                        int(row['chest_group_id']) if row['chest_group_id'] is not None else None,
+                    ])
+                chest_rows = len(chests_classified)
+
+                # Insert chest contents (items)
+                for _, row in cc_dbl.iterrows():
+                    conn.execute("""
+                        INSERT INTO map_chest_contents
+                            (map_id, world_x, world_z, y, slot, item_id, item_damage, count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [
+                        map_id,
+                        int(row['world_x']), int(row['world_z']), int(row['y']),
+                        int(row['slot']), str(row['item_id']),
+                        int(row['item_damage']), int(row['count']),
+                    ])
+                content_rows = len(cc_dbl)
+
+        # Print summary
+        _print_resources_summary(
+            map_slug,
+            rb_classified if rb_rows > 0 else None,
+            chests_classified if chest_rows > 0 else None,
+        )
+        loaded += 1
+
+    conn.close()
+    print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
+
+
+def _print_resources_summary(
+    map_slug: str,
+    rb_classified: Optional[pd.DataFrame],
+    chests_classified: Optional[pd.DataFrame],
+) -> None:
+    """Print a per-map resource summary to stdout."""
+    print(f"\n  {map_slug}")
+
+    if rb_classified is not None and not rb_classified.empty:
+        rb_summary = (
+            rb_classified
+            .fillna({'team': '?'})
+            .groupby(['resource_type', 'zone', 'team'], observed=True)
+            .size()
+            .reset_index(name='n')
+        )
+        print("    Resource blocks:")
+        for _, r in rb_summary.iterrows():
+            print(f"      {r.resource_type:18s}  zone={r.zone:12s}  team={str(r.team):14s}  n={r.n}")
+    else:
+        print("    (no resource blocks)")
+
+    if chests_classified is not None and not chests_classified.empty:
+        print("    Chests:")
+        c = chests_classified.fillna({'team': '?'})
+        for (zone, team), grp in c.groupby(['zone', 'team'], observed=True):
+            dbl = int(grp['is_double'].sum())
+            singles = len(grp) - dbl
+            print(f"      zone={zone:12s}  team={str(team):14s}  "
+                  f"n={len(grp)}  (double={dbl//2} pairs, single={singles})")
+    else:
+        print("    (no chests)")
