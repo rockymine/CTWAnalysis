@@ -53,6 +53,8 @@ def register(subparsers):
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--skip-features', action='store_true',
+                   help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--threshold', type=int, default=10,
                    help='Density threshold (default: 10)')
     p.add_argument('--density-mode', default='run', metavar='{run,count}',
@@ -102,6 +104,7 @@ def _process_single_map(map_folder, args, output_override=None):
                 skip_surface=args.skip_surface,
                 skip_density=args.skip_density,
                 skip_bedrock=args.skip_bedrock,
+                skip_features=args.skip_features,
                 threshold=args.threshold,
                 density_mode=args.density_mode,
             )

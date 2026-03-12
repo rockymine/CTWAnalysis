@@ -14,6 +14,8 @@ from layout_analysis import (
     TopSurfaceExtractor,
     VerticalDensityExtractor,
     LowestBedrockExtractor,
+    ResourceBlockExtractor,
+    ChestExtractor,
 )
 
 def register(subparsers, map_parent):
@@ -30,6 +32,8 @@ def register(subparsers, map_parent):
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--skip-features', action='store_true',
+                   help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--output', help='Override output directory')
     p.add_argument('--plots', action='store_true',
                    help='Generate plots alongside data files')
@@ -134,6 +138,7 @@ def analyze_layout(
     skip_surface: bool = False,
     skip_density: bool = False,
     skip_bedrock: bool = False,
+    skip_features: bool = False,
     threshold: int = 10,
     density_mode: str = 'run',
 ):
@@ -148,6 +153,7 @@ def analyze_layout(
         skip_surface: Skip top surface extraction.
         skip_density: Skip vertical density extraction.
         skip_bedrock: Skip bedrock extraction.
+        skip_features: Skip feature extraction (resource blocks and chests).
         threshold: Density threshold for vertical density extractor.
         density_mode: Mode for vertical density extractor ('run' or 'count').
 
@@ -169,6 +175,9 @@ def analyze_layout(
         parquet_files['vertical_density'] = out / 'layout_vertical_density.parquet'
     if not skip_bedrock:
         parquet_files['bedrock'] = out / 'layout_bedrock.parquet'
+    if not skip_features:
+        parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
+        parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
 
     if not parquet_files:
         logger.debug("  All extractors skipped.")
@@ -228,5 +237,29 @@ def analyze_layout(
             df = extractor.extract()
             df.to_parquet(parquet_files['bedrock'])
             logger.debug(f"    Saved {parquet_files['bedrock'].name} ({len(df)} blocks)")
+
+    # Extract resource blocks (iron, gold, diamond blocks at all Y levels)
+    if 'resource_blocks' in parquet_files:
+        if not parquet_files['resource_blocks'].exists() or force_rerun:
+            logger.debug("  Extracting resource blocks...")
+            extractor = ResourceBlockExtractor(reader)
+            df = extractor.extract()
+            df.to_parquet(parquet_files['resource_blocks'])
+            logger.debug(
+                f"    Saved {parquet_files['resource_blocks'].name} ({len(df)} blocks)"
+            )
+
+    # Extract chest contents (tile entities)
+    if 'chest_contents' in parquet_files:
+        if not parquet_files['chest_contents'].exists() or force_rerun:
+            logger.debug("  Extracting chest contents...")
+            extractor = ChestExtractor(reader)
+            df = extractor.extract()
+            df.to_parquet(parquet_files['chest_contents'])
+            unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
+            logger.debug(
+                f"    Saved {parquet_files['chest_contents'].name} "
+                f"({len(unique_chests)} chests, {len(df)} item slots)"
+            )
 
     return parquet_files
