@@ -172,7 +172,7 @@ def plot_player_traces(
     # Build classifier when needed
     classifier = None
     if color_mode in ('team', 'location') and map_graph is not None:
-        from match_analysis.position_classifier import PositionClassifier
+        from match_analysis.processing.position_classifier import PositionClassifier
         classifier = PositionClassifier(map_context, map_graph)
 
     # Build zone color map when needed (uses all nodes from map_graph)

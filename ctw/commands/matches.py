@@ -299,7 +299,7 @@ def handle_index(args):
 
 def handle_process(args):
     ensure_match_db()
-    from match_analysis.match_processor import process_match
+    from match_analysis.processing.processor import process_match
 
     if getattr(args, 'force', False):
         import duckdb
@@ -316,7 +316,7 @@ def handle_process(args):
 def handle_process_all(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.match_processor import process_match
+    from match_analysis.processing.processor import process_match
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
@@ -402,7 +402,7 @@ def handle_reset(args):
 def handle_post_process(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.post_processor import run_post_processing
+    from match_analysis.processing.post_processor import run_post_processing
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
