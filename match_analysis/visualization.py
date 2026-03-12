@@ -57,6 +57,23 @@ _LOCATION_COLORS = {
     'void': '#e74c3c',
 }
 
+# Zone color mode: color each position by nearest skeleton node (all types)
+_ZONE_UNCLASSIFIED = '#95a5a6'  # gray for positions with no nearest_graph_node
+
+
+def _build_zone_color_map(n_nodes: int) -> dict[int, str]:
+    """Return a stable dict mapping map_node_id -> hex color, cycling tab20."""
+    import matplotlib.cm as cm
+    cmap = cm.get_cmap('tab20', 20)
+    return {
+        node_id: '#{:02x}{:02x}{:02x}'.format(
+            int(cmap(node_id % 20)[0] * 255),
+            int(cmap(node_id % 20)[1] * 255),
+            int(cmap(node_id % 20)[2] * 255),
+        )
+        for node_id in range(n_nodes)
+    }
+
 
 # Custom marker: tombstone (death)
 # Rectangle body with arched top, traced as a single closed outline.
@@ -158,6 +175,12 @@ def plot_player_traces(
         from match_analysis.position_classifier import PositionClassifier
         classifier = PositionClassifier(map_context, map_graph)
 
+    # Build zone color map when needed (uses all nodes from map_graph)
+    zone_color_map: dict[int, str] = {}
+    if color_mode == 'zone' and map_graph is not None:
+        n_nodes = len(map_graph.get('map_graph', {}).get('nodes', []))
+        zone_color_map = _build_zone_color_map(max(n_nodes, 1))
+
     # Collect life segments across all requested players (and matches)
     overlay_mode = match_ids is not None and len(match_ids) > 0
     all_segments = []  # (player_id, seg_index, segment)
@@ -194,6 +217,8 @@ def plot_player_traces(
         mode_label = ' [Team View]'
     elif color_mode == 'location':
         mode_label = ' [Location View]'
+    elif color_mode == 'zone':
+        mode_label = ' [Zone View]'
 
     if show_title:
         if overlay_mode:
@@ -255,6 +280,18 @@ def plot_player_traces(
         enriched_df = None
         if classifier is not None and len(trace) > 0:
             enriched_df = classifier.classify_dataframe(trace)
+
+        # For zone mode, use per-position nearest_graph_node from DB
+        zone_pos_colors: list[str] = []
+        if color_mode == 'zone' and zone_color_map:
+            positions = seg['positions']
+            if 'nearest_graph_node' in positions.columns:
+                zone_pos_colors = [
+                    zone_color_map.get(int(n), _ZONE_UNCLASSIFIED)
+                    if n is not None and not (isinstance(n, float) and np.isnan(n))
+                    else _ZONE_UNCLASSIFIED
+                    for n in positions['nearest_graph_node']
+                ]
         trace_xs = trace['x'].values
         trace_zs = trace['z'].values
 
@@ -273,6 +310,11 @@ def plot_player_traces(
                 lc = LineCollection(line_segs, colors=seg_colors,
                                     linewidths=trace_lw, alpha=trace_alpha, zorder=3)
                 ax.add_collection(lc)
+            elif color_mode == 'zone' and zone_pos_colors and len(zone_pos_colors) >= 2:
+                # Zone mode: dots only (no connecting lines — zones may not be contiguous)
+                pos = seg['positions']
+                ax.scatter(pos['x'].values, pos['z'].values,
+                           c=zone_pos_colors, s=4, alpha=trace_alpha, zorder=3)
             elif len(xs) >= 2:
                 label = None
                 if not multi_player:
@@ -289,6 +331,10 @@ def plot_player_traces(
                               for lt in enriched_df['location_type']]
                 ax.scatter(trace_xs, trace_zs, c=dot_colors, s=4,
                            alpha=trace_alpha, zorder=3)
+            elif color_mode == 'zone' and zone_pos_colors:
+                pos = seg['positions']
+                ax.scatter(pos['x'].values, pos['z'].values,
+                           c=zone_pos_colors, s=4, alpha=trace_alpha, zorder=3)
             elif len(trace_xs) > 0:
                 ax.scatter(trace_xs, trace_zs, c=color, s=4,
                            alpha=trace_alpha, zorder=3)
@@ -355,6 +401,10 @@ def plot_player_traces(
                 legend_handles.append(
                     plt.Line2D([0], [0], color=loc_hex, linewidth=2,
                                label=loc_name.replace('_', ' ').capitalize()))
+        elif color_mode == 'zone':
+            legend_handles.append(
+                plt.Line2D([0], [0], color=_ZONE_UNCLASSIFIED, linewidth=2,
+                           label='Color = nearest skeleton node'))
 
         ax.legend(handles=legend_handles, loc='upper right',
                   fontsize=8, framealpha=0.9)

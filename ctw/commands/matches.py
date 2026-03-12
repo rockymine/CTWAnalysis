@@ -37,16 +37,18 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Actions:
-  parse        Parse a structured match log file into a history CSV
-  scan         Scan a <map>/<files>.parquet folder tree into a history CSV
-  index        Index all match parquet files into the database
-  process      Process a specific match by ID
-  process-all  Process all unprocessed matches
-  list         List matches in the database
-  stats        Show database statistics
-  reset        Reset processing state (clears trajectory files)
-  trace        Visualize player traces on map
-  kills        Visualize kill-death pairs on map
+  parse          Parse a structured match log file into a history CSV
+  scan           Scan a <map>/<files>.parquet folder tree into a history CSV
+  index          Index all match parquet files into the database
+  process        Process a specific match by ID
+  process-all    Process all unprocessed matches
+  list           List matches in the database
+  stats          Show database statistics
+  reset          Reset processing state (clears trajectory files)
+  post-process   Build life_segment_features from processed matches
+  trace          Visualize player traces on map
+  kills          Visualize kill-death pairs on map
+  traffic-graph  Build data-driven traffic graph from player position traces (--map or --all)
 
 Examples:
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
@@ -65,6 +67,8 @@ Examples:
   python ctw.py matches kills --map Ingwaz --match 406
   python ctw.py matches kills --map Ingwaz --match ALL --overlay
   python ctw.py matches kills --map Ingwaz --match ALL --overlay --color-mode distance
+  python ctw.py matches post-process --match 1
+  python ctw.py matches post-process --all
 """,
     )
     matches_sub = matches_parser.add_subparsers(
@@ -158,6 +162,22 @@ Examples:
                         '(use with --match ALL)')
     p.set_defaults(func=handle_trace)
 
+    # matches post-process
+    p = matches_sub.add_parser(
+        'post-process',
+        help='Run post-processing to build life segment features',
+    )
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        '--match', type=int, metavar='ID',
+        help='Post-process a specific match by ID',
+    )
+    group.add_argument(
+        '--all', action='store_true',
+        help='Post-process all processed matches',
+    )
+    p.set_defaults(func=handle_post_process)
+
     # matches kills
     p = matches_sub.add_parser('kills', help='Visualize kill-death pairs on map')
     p.add_argument('--map', required=True,
@@ -181,6 +201,32 @@ Examples:
                    help='Map base layer: outline (polygon outlines) or '
                         'blocks (individual blocks from layout parquet)')
     p.set_defaults(func=handle_kills, color_mode='team')
+
+    # matches traffic-graph
+    p = matches_sub.add_parser(
+        'traffic-graph',
+        help='Build data-driven traffic graph from player position traces',
+    )
+    map_group = p.add_mutually_exclusive_group(required=True)
+    map_group.add_argument('--map',
+                           help='Map slug (e.g. tumbleweed) to build the graph for')
+    map_group.add_argument('--all', action='store_true',
+                           help='Build traffic graphs for all maps with recorded matches')
+    p.add_argument('--grid-size', type=int, default=None,
+                   help='Block-side of each grid cell (default: auto from map size)')
+    p.add_argument('--min-occupation', type=int, default=5,
+                   help='Min position ticks to keep a node (default: 5)')
+    p.add_argument('--min-transitions', type=int, default=2,
+                   help='Min crossings to keep an edge (default: 2)')
+    p.add_argument('--log-interval', type=int, default=2, choices=[2, 5],
+                   help='Only use matches logged at this interval in seconds (default: 2)')
+    p.add_argument('--strategy', default='grid', choices=['grid', 'voronoi'],
+                   help='Graph construction strategy: grid (default) or voronoi (k-means)')
+    p.add_argument('--compare', action='store_true',
+                   help='Generate strategy comparison plot instead of building the graph')
+    p.add_argument('--force', action='store_true',
+                   help='Overwrite existing traffic_graph.json')
+    p.set_defaults(func=handle_traffic_graph)
 
 
 def handle_parse(args):
@@ -351,6 +397,31 @@ def handle_reset(args):
         print(f"Reset all matches. Deleted {count} trajectory files.")
 
     conn.close()
+
+
+def handle_post_process(args):
+    ensure_match_db()
+    import duckdb
+    from match_analysis.post_processor import run_post_processing
+
+    conn = duckdb.connect('match_analysis/metadata.db')
+
+    try:
+        if getattr(args, 'all', False):
+            rows = conn.execute(
+                "SELECT match_id FROM matches WHERE processed = TRUE ORDER BY match_id"
+            ).fetchall()
+            if not rows:
+                print("No processed matches found. Run 'ctw matches process' first.")
+                conn.close()
+                return
+            print(f"Post-processing {len(rows)} match(es)...")
+            for (match_id,) in rows:
+                run_post_processing(conn, match_id)
+        else:
+            run_post_processing(conn, args.match)
+    finally:
+        conn.close()
 
 
 def _find_map_file(map_output_dir: Path, map_folder: Path, rel_path: str):
@@ -606,6 +677,145 @@ def handle_kills(args):
 
     if len(valid_match_ids) > 1:
         print(f"\nPlotted kills for {plotted}/{len(valid_match_ids)} matches.")
+
+
+def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
+    import duckdb
+    from ctw.common import DEFAULT_OUTPUT_ROOT
+    from match_analysis.traffic_graph import (
+        build_traffic_graph, save_traffic_graph, plot_traffic_graph,
+    )
+    from match_analysis.traffic_strategy_plot import (
+        plot_traffic_strategy_comparison, _adaptive_grid_size,
+    )
+
+    map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
+    if not map_folder_candidate.is_dir():
+        map_folder_candidate = None
+
+    map_output_dir = DEFAULT_OUTPUT_ROOT / map_slug
+    if not map_output_dir.is_dir():
+        print(f"Error: No output directory found for '{map_slug}' at {map_output_dir}")
+        print("Run 'ctw run --map ...' first, or ensure the map has been processed.")
+        return
+    map_output_dir.mkdir(parents=True, exist_ok=True)
+
+    fallback = map_folder_candidate if map_folder_candidate else map_output_dir
+    map_context = _load_map_context(map_output_dir, fallback)
+
+    log_interval  = getattr(args, 'log_interval', 2)
+    strategy      = getattr(args, 'strategy', 'grid')
+    do_compare    = getattr(args, 'compare', False)
+
+    # ── Strategy comparison mode ────────────────────────────────────────────
+    if do_compare:
+        import pandas as pd
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        try:
+            pos_df = conn.execute("""
+                SELECT pe.player_id, pe.match_id, pe.segment_idx,
+                       pe.timestamp, pe.x, pe.z, pe.y, pe.location_type
+                FROM position_events pe
+                JOIN matches mat ON mat.match_id = pe.match_id
+                JOIN maps m      ON m.map_id = mat.map_id
+                WHERE m.map_slug = ?
+                  AND mat.processed = TRUE
+                  AND (mat.log_interval = ? OR mat.log_interval IS NULL)
+                  AND pe.y > 0
+                ORDER BY pe.player_id, pe.match_id, pe.segment_idx, pe.timestamp
+            """, [map_slug, log_interval]).df()
+            total_blocks = conn.execute(
+                "SELECT total_blocks FROM maps WHERE map_slug = ?", [map_slug]
+            ).fetchone()
+            total_blocks = int(total_blocks[0]) if total_blocks and total_blocks[0] else 5000
+            n_matches = int(pos_df["match_id"].nunique()) if not pos_df.empty else 0
+        finally:
+            conn.close()
+
+        if pos_df.empty:
+            print(f"No position data for '{map_slug}' with log_interval={log_interval}.")
+            return
+
+        out_compare = map_output_dir / "traffic_strategy_comparison.png"
+        plot_traffic_strategy_comparison(
+            map_slug=map_slug,
+            pos_df=pos_df,
+            total_blocks=total_blocks,
+            n_matches=n_matches,
+            map_context=map_context,
+            min_occupation=args.min_occupation,
+            min_transitions=args.min_transitions,
+            output_path=out_compare,
+        )
+        print(f"Saved: {out_compare}")
+        return
+
+    # ── Normal graph build mode ─────────────────────────────────────────────
+    out_json = map_output_dir / "traffic_graph.json"
+    out_png  = map_output_dir / "traffic_graph.png"
+
+    if out_json.exists() and not getattr(args, 'force', False):
+        print(f"Skipping '{map_slug}': traffic_graph.json already exists (use --force to rebuild).")
+        return
+
+    # Resolve grid_size: explicit > adaptive
+    grid_size = getattr(args, 'grid_size', None)
+    if grid_size is None:
+        conn_tmp = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        tb = conn_tmp.execute(
+            "SELECT total_blocks FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        conn_tmp.close()
+        total_blocks = int(tb[0]) if tb and tb[0] else 5000
+        grid_size = _adaptive_grid_size(total_blocks)
+        print(f"  grid_size auto-set to {grid_size} (total_blocks={total_blocks})")
+
+    conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+    try:
+        graph = build_traffic_graph(
+            map_slug,
+            conn,
+            output_dir      = map_output_dir,
+            grid_size       = grid_size,
+            min_occupation  = args.min_occupation,
+            min_transitions = args.min_transitions,
+            log_interval    = log_interval,
+        )
+    finally:
+        conn.close()
+
+    save_traffic_graph(graph, out_json)
+    print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
+
+    plot_traffic_graph(graph, map_context, out_png)
+    print(f"Saved: {out_png}")
+
+
+def handle_traffic_graph(args):
+    import logging
+    import duckdb
+
+    ensure_match_db()
+    logging.basicConfig(level=logging.INFO)
+
+    if getattr(args, 'all', False):
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        slugs = [
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT m.map_slug FROM matches mat "
+                "JOIN maps m ON mat.map_id = m.map_id ORDER BY m.map_slug"
+            ).fetchall()
+        ]
+        conn.close()
+        if not slugs:
+            print("No maps with matches found in the database.")
+            return
+        print(f"Building traffic graphs for {len(slugs)} map(s): {', '.join(slugs)}")
+        for slug in slugs:
+            print(f"\n--- {slug} ---")
+            _build_traffic_graph_for_slug(args, slug)
+    else:
+        _build_traffic_graph_for_slug(args, args.map)
 
 
 def handle_list(args):

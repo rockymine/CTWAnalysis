@@ -8,7 +8,6 @@
 # ─────────────────────────────────────────────────────────────
 
 global:
-  force: true
   plots: false
   output: "output/"
 
@@ -36,6 +35,7 @@ xml:
   no-json: false
 
 run:
+  force: true
   no-layout: false
   no-islands: false
   no-symmetry: false
