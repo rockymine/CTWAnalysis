@@ -60,10 +60,11 @@ builds polygons from world-space blocks.
 | `layout_chest_contents.parquet` | Chest inventories (`world_x, world_z, y, chest_type, slot, item_id, item_damage, count`) |
 | `map_context.json` | Aggregated map context |
 | `map_graph.json` | Inter-island connectivity graph |
-| `island_analysis/island_triangulation_detail.png` | Triangulation overview (essential) |
-| `island_analysis/skeleton/unique_islands.png` | Canonical shapes (essential) |
-| `island_analysis/skeleton/map_overview.png` | Skeleton with polygons + build regions (essential) |
-| `island_analysis/map_connectivity.png` | Connectivity graph (essential) |
+| `island_analysis/island_triangulation_detail.png` | Triangulation overview |
+| `island_analysis/unique_islands.png` | Canonical shapes |
+| `island_analysis/map_overview.png` | Skeleton with polygons + build regions |
+| `island_analysis/map_connectivity.png` | Connectivity graph |
+| `island_analysis/skeleton/world_overview.png` | Full-map skeleton overview |
 
 ### Feature Extractor Details
 
