@@ -141,64 +141,31 @@ Six maps were chosen to cover a wide range of sizes, shapes, and wool counts:
 
 The `--compare` flag generates a 6-panel diagnostic showing four grid strategies
 (raw scatter, Grid-5, Grid-3, adaptive) plus a Voronoi/k-means alternative and a
-statistics summary. This is primarily used to sanity-check the adaptive formula
-and the Bresenham filter on new maps.
+statistics summary. Run it for any map with `ctw matches traffic-graph --map <slug> --compare`.
 
-### Dromedary (1 466 blocks, grid 2)
+Two contrasting examples are shown below. The remaining four maps show consistent
+behaviour: Expedition and Research Base (both grid 3, single-corridor layouts) behave
+similarly to Dynamo; Level Up (grid 8, 4-tier bridge) is the other large-map extreme.
+
+### Dromedary (1 466 blocks, grid 2) — tiny map, many small islands
 
 ![Dromedary strategy comparison](demo/assets/dromedary/traffic_strategy_comparison.png)
 
 Dense, closely-spaced islands require a small cell to separate them correctly.
-Adaptive 2-block grid produces ~457 nodes with clean island boundaries.
-Grid-5 merges several adjacent small islands into single nodes.
+Grid-5 merges several adjacent small islands into single nodes; the adaptive
+2-block grid keeps them distinct at ~457 nodes.
 
-### Expedition (2 300 blocks, grid 3)
-
-![Expedition strategy comparison](demo/assets/expedition/traffic_strategy_comparison.png)
-
-The elongated single-corridor layout suits a 3-block grid well. Grid-5 begins to
-merge the narrow bridge lanes. Voronoi centres align naturally along the corridor
-axis.
-
-### Research Base (2 808 blocks, grid 3)
-
-![Research Base strategy comparison](demo/assets/research_base/traffic_strategy_comparison.png)
-
-Compact island cluster. Adaptive 3-block grid gives good island separation with
-326 nodes. Grid-5 is acceptable but loses detail in the densely built central
-areas.
-
-### Dynamo (2 957 blocks, grid 3)
-
-![Dynamo strategy comparison](demo/assets/dynamo/traffic_strategy_comparison.png)
-
-The extreme aspect ratio (171×37) is handled correctly by the adaptive grid —
-the narrow axis retains enough nodes to represent bridges. Voronoi centroids fall
-into void in several places due to the asymmetric shape, making it less reliable
-here.
-
-### Fourchette (16 306 blocks, grid 7)
+### Fourchette (16 306 blocks, grid 7) — large map, three wools per team
 
 ![Fourchette strategy comparison](demo/assets/fourchette/traffic_strategy_comparison.png)
 
-The widest map in the validation set (363 blocks across) with three wools per
-team. The adaptive 7-block grid produces 372 nodes at a density that still
-distinguishes the six per-team wool islands from the four central islands.
-Grid-5 overshoots to ~550 nodes on this size; Grid-3 would approach 1 500.
-Voronoi with 90 clusters is competitive here — the large open areas between
-islands allow k-means to find meaningful centroids without falling into void.
-The strategy comparison also confirms the Bresenham filter is working: the
-wide void gaps between the lateral wool islands do not produce crossing edges.
+The widest map in the validation set (363 blocks across). The adaptive 7-block
+grid produces 372 nodes — enough to distinguish all six per-team wool islands
+from the four central islands. Grid-5 overshoots to ~550 nodes; Grid-3 would
+approach 1 500. The Bresenham filter is clearly working: the wide void gaps
+between lateral wool islands produce no crossing edges.
 
 ![Fourchette traffic graph overview](demo/assets/fourchette/traffic_graph_overview.png)
-
-### Level Up (20 288 blocks, grid 8)
-
-![Level Up strategy comparison](demo/assets/level_up/traffic_strategy_comparison.png)
-
-The 4-tier vertical bridge map benefits from a coarse 8-block grid: 374 nodes
-captures each tier without redundancy. Grid-5 at 879 nodes is expensive and
-noisy. Voronoi is a viable alternative for a very compact summary.
 
 ---
 
@@ -283,12 +250,14 @@ enemy area.
 
 ### Traffic graph overviews
 
-| | | |
-|---|---|---|
-| ![Dromedary](demo/assets/dromedary/traffic_graph_overview.png) | ![Expedition](demo/assets/expedition/traffic_graph_overview.png) | ![Research Base](demo/assets/research_base/traffic_graph_overview.png) |
-| Dromedary (grid 2) | Expedition (grid 3) | Research Base (grid 3) |
-| ![Dynamo](demo/assets/dynamo/traffic_graph_overview.png) | ![Fourchette](demo/assets/fourchette/traffic_graph_overview.png) | ![Level Up](demo/assets/level_up/traffic_graph_overview.png) |
-| Dynamo (grid 3) | Fourchette (grid 7) | Level Up (grid 8) |
+Dromedary (grid 2) and Level Up (grid 8) represent opposite ends of the size range:
+
+![Dromedary](demo/assets/dromedary/traffic_graph_overview.png)
+
+![Level Up](demo/assets/level_up/traffic_graph_overview.png)
+
+Overviews for Expedition, Research Base, Dynamo, and Fourchette are generated
+alongside their strategy comparisons by `ctw debug prepare-demo --map <slug>`.
 
 ---
 
