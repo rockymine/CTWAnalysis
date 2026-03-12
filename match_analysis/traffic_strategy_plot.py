@@ -40,6 +40,8 @@ try:
 except ImportError:
     _SKLEARN_AVAILABLE = False
 
+from match_analysis.traffic_snapping import bresenham_cells
+
 # ---------------------------------------------------------------------------
 # Colour palettes (copied from traffic_graph.py — module-private there)
 # ---------------------------------------------------------------------------
@@ -71,51 +73,6 @@ _BG_COLOR   = "#0d0d18"
 _GRID_COLOR = "#222233"
 
 logger = logging.getLogger("ctw")
-
-# ---------------------------------------------------------------------------
-# Bresenham helper (copied from traffic_graph.py — module-private there)
-# ---------------------------------------------------------------------------
-
-
-def _bresenham_cells(
-    cx1: int, cz1: int, cx2: int, cz2: int, grid_size: int
-) -> list[tuple[int, int]]:
-    """Return all grid cells on the Bresenham line from (cx1,cz1) to (cx2,cz2).
-
-    Coordinates are grid-cell origins (i.e. already snapped to grid_size
-    multiples).  The returned list always starts with (cx1,cz1) and ends
-    with (cx2,cz2), with every intermediate cell included.
-    """
-    cells: list[tuple[int, int]] = [(cx1, cz1)]
-    if cx1 == cx2 and cz1 == cz2:
-        return cells
-
-    dx = abs(cx2 - cx1) // grid_size
-    dz = abs(cz2 - cz1) // grid_size
-    sx = grid_size if cx2 > cx1 else -grid_size
-    sz = grid_size if cz2 > cz1 else -grid_size
-
-    cx, cz = cx1, cz1
-    if dx >= dz:
-        err = dx // 2
-        while cx != cx2:
-            err -= dz
-            if err < 0:
-                cz += sz
-                err += dx
-            cx += sx
-            cells.append((cx, cz))
-    else:
-        err = dz // 2
-        while cz != cz2:
-            err -= dx
-            if err < 0:
-                cx += sx
-                err += dz
-            cz += sz
-            cells.append((cx, cz))
-    return cells
-
 
 # ---------------------------------------------------------------------------
 # Strategy build functions
@@ -200,7 +157,7 @@ def _build_grid_graph(
         pcz_arr = hops["prev_cz"].astype(int).values
 
         for cx1, cz1, cx2, cz2 in zip(pcx_arr, pcz_arr, cx_arr, cz_arr):
-            cells = _bresenham_cells(cx1, cz1, cx2, cz2, grid_size)
+            cells = bresenham_cells(cx1, cz1, cx2, cz2, grid_size)
             for a, b in zip(cells, cells[1:]):
                 if a in strategy_valid and b in strategy_valid:
                     transition_list.append((*a, *b))
