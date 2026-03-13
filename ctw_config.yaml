@@ -15,7 +15,7 @@ layout:
   threshold: 10
   density-mode: "run"
   skip-y0: false
-  skip-surface: true
+  skip-surface: false
   skip-density: true
   skip-bedrock: false
 

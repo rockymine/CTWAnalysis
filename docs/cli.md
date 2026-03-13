@@ -412,6 +412,29 @@ python ctw.py debug compare --map acapulco
 python ctw.py debug compare --all --summary
 ```
 
+#### `debug audit`
+
+Scan layout parquet files (y0, bedrock, top_surface) across maps and populate two
+audit tables in the database: `layout_layer_stats` (block count and y-range per layer)
+and `layout_block_inventory` (per-block-ID counts per layer). Idempotent — safe to
+re-run; existing rows for the affected maps are replaced.
+
+```
+python ctw.py debug audit (--map MAP[,MAP,...] | --all) [--dir DIR]
+```
+
+| Flag | Description |
+|---|---|
+| `--dir DIR` | Root directory containing per-map output folders (default: `output`) |
+
+```bash
+python ctw.py debug audit --all
+python ctw.py debug audit --map acapulco,arabia
+```
+
+Maps not yet registered in the `maps` table are skipped with a warning. Run
+`ctw maps load` first if needed.
+
 #### `debug resources`
 
 Plot chest and resource block locations on the map layout. Runs the same
