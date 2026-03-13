@@ -10,10 +10,105 @@ detection heuristics and match-stage classification._
 
 A CTW map consists of **islands** — clusters of blocks — separated by **void gaps**.
 Each team has a home island containing a wool room with one or more wool objectives.
-Teams win by capturing the enemy's wool and returning it to their own monument.
+Teams win by capturing **all** of the enemy's wool and returning each piece to their
+own monument (located at spawn, ~99% of cases).
 
 Islands are connected over the course of a match by player-built bridges.
 At match start, only spawn-area connections exist; everything else must be bridged.
+
+**Build constraints:** Only specific regions of the map are buildable. Void gaps
+are outside all build regions — no blocks can be placed there. Islands are bounded
+below by y=0 or by block-36 underneath. A per-map **maximum build height** caps
+skybridge construction. These constraints make it feasible to interpret positional
+data as a traffic network of nodes and edges.
+
+---
+
+## Wool Objectives
+
+### Counts and match duration (from database, 177 maps)
+
+| Wools per team | Maps | Avg match duration |
+|---|---|---|
+| 1 | 58 | ~5.7 min |
+| 2 | 94 | ~14.9 min |
+| 3 | 20 | ~7.2 min |
+| 5–7 | 4 | ~8–12 min |
+
+Two-wool maps are significantly longer than one-wool maps, and the distribution
+is wide (see extreme cases below under _Map Examples_). Three-wool maps
+are shorter on average than two-wool, possibly because at least one wool tends
+to be easier to access.
+
+### How wool is obtained ("touching" the wool)
+
+A player gets a touch by one of three means:
+- **Breaking** the wool block in the wool room
+- **Picking up** the item from a chest that regenerates wool automatically
+- **Walking over** the item if the map has a spawner that drops wool on the floor
+
+The wool room is inside a **protected region** that only the attacking team can
+enter. Defenders cannot cross this boundary even if a chest is within reach.
+Defenders camp and fortify *outside* the boundary.
+
+Once touched, the wool item sits in the player's inventory and **travels with
+them until they die**, at which point it drops to the floor (unless drop-on-death
+is disabled in the map XML — uncommon, exact XML mechanism TBD).
+
+### Safeties
+
+A player carrying wool can **place the block** anywhere on their route home.
+This "safety" lets teammates pick it up from a less contested position. Safety
+placement can also be disabled per-map in XML (exact mechanism TBD).
+
+### Double-capping
+
+Players can carry **multiple wools simultaneously**. On maps with multiple wool
+objectives per team, attackers almost always single-cap (capture one, return,
+capture the next). Occasionally a brave player will move directly from one wool
+room to another before returning. A double-cap attempt is detectable in data as
+two wool-touch events at different wool-room locations without an intervening death.
+
+### Capturing (scoring)
+
+Wool is scored by **physically placing the block on the wool monument** — a single
+defined block, located at spawn on the home island. Already-captured wools become
+inert building material; their wool room remains accessible only to the attacking team
+(sometimes used as a safe staging area or loot source).
+
+---
+
+## Respawn and Kit
+
+### Respawn
+- Players **click to respawn** (vanilla Minecraft mechanic) — not instant.
+- Rarely an additional server-side spawn delay.
+- Spawn point is **fixed on the home island**. Multiple spawns per team are rare;
+  no example found in the current match database.
+- Players start **fresh each life** — no inventory persistence across deaths.
+
+### Starter kit (defined in map XML `<kit>` tags, per team)
+
+| Item | Notes |
+|---|---|
+| Sword | Stone or iron, varies per map |
+| Bow | Usually Infinity (one arrow sufficient) |
+| Tools | Pick, axe, shovel |
+| Blocks | Up to ~3 stacks for bridging, varies |
+| Armor | Weak leather starter set |
+| Golden apple | Usually 1, for health regeneration |
+
+Food is rarely provided. Additional armor pieces may be craftable if the map
+provides gold, iron, or diamond blocks (diamond is extremely rare).
+
+### Kill rewards
+Default: 1 golden apple per kill + sometimes a small quantity of blocks.
+Exact reward is defined per map in XML.
+
+### Renewable resources
+Chests and resource spawners regenerate over time, controlled by the XML
+`<renewables>` module. Wool chests in the wool room auto-refill. Kit and
+renewable data are **not yet parsed** — a gap in the current pipeline.
 
 ---
 
@@ -55,9 +150,17 @@ Once dug, ground-level crossing becomes very difficult.
 Materials include crafting tables, water, fences, fence gates, buttons, pressure plates,
 and whatever defensive blocks are available in the chests.
 
+**Water walls:** A common defensive technique is building a 3-block-thick wall with
+water placed every other layer in the middle section. This makes the wall extremely
+slow to push through at ground level (water slows movement). Bypassed entirely by
+a successful skybridge.
+
 **Denial items:** After the pit is dug, defenders place crafting tables, furnaces,
 fences, buttons, and pressure plates on the remaining surfaces in front of the room.
 These slow attackers (right-clicking inventory blocks) and funnel movement.
+
+**Note on lava:** Lava is forbidden and not available on the vast majority of maps.
+Water/buckets are available on most maps but not all (detectable from the data).
 
 **Signals (defenders):**
 - Stays close to the objective (high proximity to wool room)
@@ -109,6 +212,23 @@ Late-game scenarios include:
   are respawning, distracted, or overstretched across ground and sky simultaneously
 - **Extraction difficulty:** A player who entered the wool room but cannot exit
   may stay trapped for a very long time until teammates create an opening
+
+---
+
+## Wool Room Combat
+
+The wool region is accessible **only to the attacking team** — defenders cannot
+enter. However, combat across the boundary is fully permitted:
+
+- **Bow fire** passes through the region boundary in both directions
+- **Melee** is possible when attacker and defender are close to the boundary edge
+- Both teams can take damage regardless of who is inside/outside the region
+- Attackers can sometimes **build inside the wool room** (defined per-map in XML,
+  not of general interest for current analysis)
+
+A trapped attacker can still interact freely within the wool room — they simply
+cannot leave through a heavily defended entrance. Options: wait for an opening,
+attempt a desperate solo run, or wait for teammates to make a coordinated push.
 
 ---
 
@@ -237,6 +357,35 @@ This is a key hypothesis for the resource/chest analysis:
 
 Maps also vary in how many void gaps must be bridged, whether bedrock closes off
 the pit option, whether there are floating islands reachable only by skybridge, etc.
+
+### Map examples (anchored by database)
+
+**Pirates I** — pico-tier, 2 teams × 5 players, 1 wool each, avg match duration **1.7 min**.
+No defensive materials beyond starter kit blocks. Water connects islands; some lily pads.
+Rectangular layout: home island is a long rectangle, wool and spawn at opposite ends
+~15 blocks apart. Designed for early-hour play. Ends fast by design.
+Representative of _pure Phase 1 rush_ maps; rarely if ever reaches Phase 3.
+
+**Sanctum Wasser** — milli-tier, 2 teams × 24 players, 2 wools each, avg match duration
+**101.8 min** (range 8–222 min). The wool closer to spawn is heavily defended; sky
+control is the dominant path in. Representative of _classic Phase 3 skybridge grind_.
+
+---
+
+## Known XML Parsing Gaps
+
+The following mechanics are defined in map XML but **not yet parsed** by the pipeline:
+
+| Feature | Notes |
+|---|---|
+| Kit contents | `<kits>` module per team — starter items not extracted |
+| Renewable resources | `<renewables>` module — regeneration rules not extracted |
+| Wool drop on death | Disabling is uncommon; exact XML attribute TBD |
+| Safety placement | Disabling is uncommon; exact XML attribute TBD |
+| Attacker build rights | Whether attackers can place blocks inside wool room |
+
+These gaps mean kit-based signals (material availability, block type analysis) require
+manual inspection of map XML until parsing is implemented.
 
 ---
 
