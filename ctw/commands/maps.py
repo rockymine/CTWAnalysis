@@ -92,8 +92,9 @@ Examples:
   python ctw.py maps spawns --map annealing_iv
   python ctw.py maps resources --map arabia
   python ctw.py maps resources                  # all maps
-  python ctw.py maps kits --map arabia          # parses map.xml directly
+  python ctw.py maps kits --map arabia
   python ctw.py maps kits                       # all maps
+  python ctw.py maps kits --map-dir /path/to/CommunityMaps  # external map dir
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -128,10 +129,14 @@ Examples:
     # maps kits
     p = maps_sub.add_parser(
         'kits',
-        help='Load kit items and armor from parquets into the DB',
+        help='Load kit items and armor into the DB',
     )
     p.add_argument('--map', help='Map name (default: all maps)')
     p.add_argument('--output', help='Output root directory (default: output/)')
+    p.add_argument('--map-dir',
+                   help='Directory containing map folders for XML lookup '
+                        '(default: map_folders/). Use when maps live outside '
+                        'the project, e.g. CommunityMaps.')
     p.set_defaults(func=handle_kits)
 
 
@@ -547,9 +552,10 @@ def handle_kits(args) -> None:
     for map_dir in map_dirs:
         map_slug = map_dir.name
 
-        # Locate map.xml in the corresponding map folder
-        from ctw.common import resolve_map_folder
-        xml_path = resolve_map_folder(map_slug) / 'map.xml'
+        # Locate map.xml — use --map-dir if given, else default map_folders/
+        from ctw.common import PROJECT_ROOT
+        xml_root = Path(args.map_dir) if getattr(args, 'map_dir', None) else PROJECT_ROOT / 'map_folders'
+        xml_path = xml_root / map_slug / 'map.xml'
         if not xml_path.exists():
             print(f"  Skip {map_slug}: map.xml not found at {xml_path}")
             skipped += 1

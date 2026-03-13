@@ -79,8 +79,8 @@ def analyze_xml(map_folder: Path, force_rerun: bool = False, output_dir: Path = 
 
     Args:
         map_folder: Path to map folder (read-only input).
-        force_rerun: If True, overwrite map_data.json even if it exists.
-        output_dir: Where to write map_data.json (default: map_folder).
+        force_rerun: If True, overwrite outputs even if they exist.
+        output_dir: Where to write outputs (default: map_folder).
 
     Returns:
         MapXmlContext on success, None if map.xml is missing or unparseable.
