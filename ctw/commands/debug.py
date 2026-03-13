@@ -232,9 +232,10 @@ def handle_prepare_demo(args: object) -> None:
 
 
 _AUDIT_LAYERS: list[tuple[str, str]] = [
-    ('y0',          'layout_y0.parquet'),
-    ('bedrock',     'layout_bedrock.parquet'),
-    ('top_surface', 'layout_top_surface.parquet'),
+    ('y0',           'layout_y0.parquet'),
+    ('bedrock',      'layout_bedrock.parquet'),
+    ('top_surface',  'layout_top_surface.parquet'),
+    ('lowest_solid', 'layout_lowest_solid.parquet'),
 ]
 
 

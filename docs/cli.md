@@ -51,7 +51,7 @@ python ctw.py run (--map NAME | --all) [--force]
 | `--no-islands` | Skip island/skeleton analysis |
 | `--no-xml` | Skip XML parsing |
 | `--no-matches` | Skip match analysis (use this for map-only runs) |
-| `--island-layout` | Layout file for islands: `bedrock` (default), `y0`, `top`, `density` |
+| `--island-layout` | Layout file for islands: `bedrock` (default), `y0`, `top`, `density`, `solid` |
 | `--canonical-triangulation` | Identical islands share the same mesh |
 | `--plots` | Generate debug plots |
 
@@ -76,6 +76,7 @@ python ctw.py layout --map NAME [--force]
 | `--skip-surface` | Skip top surface |
 | `--skip-density` | Skip vertical density |
 | `--skip-bedrock` | Skip lowest bedrock |
+| `--skip-lowest-solid` | Skip lowest-solid-layer extraction |
 | `--output DIR` | Save to custom directory instead of map folder |
 | `--plots` | Generate visualization plots alongside data |
 
@@ -100,7 +101,7 @@ python ctw.py islands --map NAME [--force]
 | `--buffer F` | Buffer distance for polygon smoothing (default: 0.0) |
 | `--simplify F` | Simplification tolerance (default: 1.0) |
 | `--no-holes` | Disable internal hole detection |
-| `--layout` | Which layout file to use (default: `bedrock`) |
+| `--layout` | Which layout file to use: `bedrock` (default), `y0`, `top`, `density`, `solid` |
 | `--canonical-triangulation` | D4-symmetric islands share mesh |
 | `--basic` | Detection + triangulation only, no skeleton/POI/connectivity |
 | `--output DIR` | Save to custom directory |

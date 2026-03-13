@@ -53,6 +53,8 @@ def register(subparsers):
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--skip-lowest-solid', action='store_true',
+                   help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--threshold', type=int, default=10,
@@ -61,7 +63,7 @@ def register(subparsers):
                    help='Density mode (default: run)')
 
     # Island settings (also settable via islands: section in config)
-    p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density'],
+    p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density', 'solid'],
                    default='bedrock', help='Layout file for island analysis')
     p.add_argument('--canonical-polygons', action='store_true',
                    help='Use canonical-consistent polygon construction')
@@ -104,6 +106,7 @@ def _process_single_map(map_folder, args, output_override=None):
                 skip_surface=args.skip_surface,
                 skip_density=args.skip_density,
                 skip_bedrock=args.skip_bedrock,
+                skip_lowest_solid=args.skip_lowest_solid,
                 skip_features=args.skip_features,
                 threshold=args.threshold,
                 density_mode=args.density_mode,

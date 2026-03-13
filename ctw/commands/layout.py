@@ -14,6 +14,7 @@ from layout_analysis import (
     TopSurfaceExtractor,
     VerticalDensityExtractor,
     LowestBedrockExtractor,
+    LowestSolidLayerExtractor,
     ResourceBlockExtractor,
     ChestExtractor,
 )
@@ -32,6 +33,8 @@ def register(subparsers, map_parent):
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--skip-lowest-solid', action='store_true',
+                   help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--output', help='Override output directory')
@@ -126,6 +129,7 @@ def handler(args):
             skip_surface=args.skip_surface,
             skip_density=args.skip_density,
             skip_bedrock=args.skip_bedrock,
+            skip_lowest_solid=args.skip_lowest_solid,
             threshold=args.threshold,
             density_mode=args.density_mode,
         )
@@ -138,6 +142,7 @@ def analyze_layout(
     skip_surface: bool = False,
     skip_density: bool = False,
     skip_bedrock: bool = False,
+    skip_lowest_solid: bool = False,
     skip_features: bool = False,
     threshold: int = 10,
     density_mode: str = 'run',
@@ -175,6 +180,8 @@ def analyze_layout(
         parquet_files['vertical_density'] = out / 'layout_vertical_density.parquet'
     if not skip_bedrock:
         parquet_files['bedrock'] = out / 'layout_bedrock.parquet'
+    if not skip_lowest_solid:
+        parquet_files['lowest_solid'] = out / 'layout_lowest_solid.parquet'
     if not skip_features:
         parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
         parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
@@ -237,6 +244,15 @@ def analyze_layout(
             df = extractor.extract()
             df.to_parquet(parquet_files['bedrock'])
             logger.debug(f"    Saved {parquet_files['bedrock'].name} ({len(df)} blocks)")
+
+    # Extract lowest solid layer (first non-air, non-void block from below)
+    if 'lowest_solid' in parquet_files:
+        if not parquet_files['lowest_solid'].exists() or force_rerun:
+            logger.debug("  Extracting lowest solid layer...")
+            extractor = LowestSolidLayerExtractor(reader)
+            df = extractor.extract()
+            df.to_parquet(parquet_files['lowest_solid'])
+            logger.debug(f"    Saved {parquet_files['lowest_solid'].name} ({len(df)} blocks)")
 
     # Extract resource blocks (iron, gold, diamond blocks at all Y levels)
     if 'resource_blocks' in parquet_files:
