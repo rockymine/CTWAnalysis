@@ -59,7 +59,15 @@ def register(subparsers):
                    help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--plots', action='store_true',
                    help='Generate plots alongside data files')
+    p.add_argument('--workers', type=int, default=1,
+                   help='Number of maps to process in parallel (default: 1)')
     p.set_defaults(func=handler)
+
+
+def _run_layout_worker(map_folder: Path, output_override: str | None, kwargs: dict):
+    """Top-level worker function for ProcessPoolExecutor (must be picklable)."""
+    map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
+    return analyze_layout(map_folder, output_dir=map_output_dir, **kwargs)
 
 
 def handler(args):
@@ -126,27 +134,31 @@ def handler(args):
         return
 
     # Standard workflow mode: parquets into output/<map_name>/
-    n_ok = 0
-    n_fail = 0
-    for map_folder in map_folders:
-        map_output_dir = resolve_output_dir(map_folder, args.output, create=True)
-        result = analyze_layout(
-            map_folder,
-            force_rerun=args.force,
-            output_dir=map_output_dir,
-            skip_y0=args.skip_y0,
-            skip_surface=args.skip_surface,
-            skip_density=args.skip_density,
-            skip_bedrock=args.skip_bedrock,
-            skip_lowest_solid=args.skip_lowest_solid,
-            threshold=args.threshold,
-            density_mode=args.density_mode,
-        )
-        if result is None:
-            n_fail += 1
-        else:
-            n_ok += 1
+    layout_kwargs = dict(
+        force_rerun=args.force,
+        skip_y0=args.skip_y0,
+        skip_surface=args.skip_surface,
+        skip_density=args.skip_density,
+        skip_bedrock=args.skip_bedrock,
+        skip_lowest_solid=args.skip_lowest_solid,
+        skip_features=args.skip_features,
+        threshold=args.threshold,
+        density_mode=args.density_mode,
+    )
 
+    if args.workers > 1 and len(map_folders) > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        results = []
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(_run_layout_worker, mf, args.output, layout_kwargs): mf
+                       for mf in map_folders}
+            for future in as_completed(futures):
+                results.append(future.result())
+    else:
+        results = [_run_layout_worker(mf, args.output, layout_kwargs) for mf in map_folders]
+
+    n_ok = sum(1 for r in results if r is not None)
+    n_fail = len(results) - n_ok
     if len(map_folders) > 1:
         logger.info(f"Layout extraction complete: {n_ok} succeeded, {n_fail} failed")
 

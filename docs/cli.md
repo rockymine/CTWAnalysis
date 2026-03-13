@@ -84,6 +84,7 @@ python ctw.py layout (--map NAME | --all) [--map-dir DIR] [--force]
 | `--skip-lowest-solid` | Skip lowest-solid-layer extraction |
 | `--skip-features` | Skip resource block and chest extraction |
 | `--plots` | Generate visualization plots (single map only) |
+| `--workers N` | Process N maps in parallel (default: 1) |
 
 ---
 
