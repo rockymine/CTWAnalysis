@@ -669,6 +669,9 @@ def run_island_geometry(
     # Load layout and detect islands
     logger.debug(f"  Loading layout: {layout_file.name}")
     df = pd.read_parquet(layout_file)
+    if df.empty or 'world_x' not in df.columns:
+        logger.warning(f"  Layout file is empty: {layout_filename}. Try a different --island-layout.")
+        return None
     if 'block_id' in df.columns:
         n_before = len(df)
         df = df[df['block_id'] != 36]
