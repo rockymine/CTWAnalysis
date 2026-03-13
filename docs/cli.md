@@ -172,6 +172,20 @@ python ctw.py maps resources [--map NAME]
 Reads `layout_resource_blocks.parquet` and `layout_chest_contents.parquet` produced
 by `ctw layout`. Omit `--map` to process all maps.
 
+#### `maps kits`
+
+Parse starter kit definitions from `map.xml` and store results in `map_kit_items`
+and `map_kit_armor`.
+
+```
+python ctw.py maps kits [--map NAME]
+```
+
+Reads `map.xml` directly — no prior pipeline step required beyond `maps load`.
+Parses the `<kits>` section and resolves team association via `<spawn kit="...">`.
+Only kits with at least one item or armor slot are stored; secondary utility kits
+(e.g. `reset-resistance-kit`) are skipped. Omit `--map` to process all maps.
+
 ---
 
 ### `ctw matches` — Match Data Analysis
