@@ -18,6 +18,28 @@ from .regions import (
 )
 
 
+def _safe_float(value: str, default: float = 0.0) -> float:
+    """Convert string to float, returning default for template variables like ${...}."""
+    value = value.strip()
+    if '$' in value:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _safe_int(value: str, default: Optional[int] = None) -> Optional[int]:
+    """Convert string to int, returning default for template variables like ${...}."""
+    value = value.strip()
+    if '$' in value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 class MapXMLParser:
     """Parser for Minecraft map XML files."""
 
@@ -149,7 +171,7 @@ class MapXMLParser:
             spawn = Spawn(
                 team=spawn_elem.get('team', ''),
                 kit=spawn_elem.get('kit', ''),
-                yaw=float(spawn_elem.get('yaw', '0')),
+                yaw=_safe_float(spawn_elem.get('yaw', '0')),
                 region=region
             )
             spawns.append(spawn)
@@ -238,7 +260,7 @@ class MapXMLParser:
         """Parse max build height."""
         elem = self.root.find('maxbuildheight')
         if elem is not None and elem.text:
-            return int(elem.text)
+            return _safe_int(elem.text)
         return None
 
     def _parse_region_element(self, parent_elem: ET.Element) -> Optional[Region]:
