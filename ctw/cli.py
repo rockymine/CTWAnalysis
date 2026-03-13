@@ -54,7 +54,7 @@ Examples:
     # Commands that use the shared --map/--force parent receive map_parent;
     # commands that define their own flags (run, docs, matches) do not.
     run.register(subparsers)
-    layout.register(subparsers, map_parent)
+    layout.register(subparsers)
     islands.register(subparsers, map_parent)
     xml.register(subparsers, map_parent)
     info.register(subparsers, map_parent)

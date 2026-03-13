@@ -4,7 +4,7 @@ import logging
 import sys
 from pathlib import Path
 
-from ctw.common import resolve_map_folder, resolve_output_dir
+from ctw.common import collect_map_folders, resolve_map_folder, resolve_output_dir
 
 logger = logging.getLogger('ctw')
 
@@ -19,11 +19,31 @@ from layout_analysis import (
     ChestExtractor,
 )
 
-def register(subparsers, map_parent):
+def register(subparsers):
     p = subparsers.add_parser(
-        'layout', parents=[map_parent],
+        'layout',
         help='Extract layout data from Minecraft region files',
     )
+    map_group = p.add_mutually_exclusive_group(required=True)
+    map_group.add_argument(
+        '--map', default=None,
+        help='Map name or path (e.g. tumbleweed, or /path/to/map)',
+    )
+    map_group.add_argument(
+        '--all', action='store_true', dest='all',
+        help='Process all maps found in --map-dir',
+    )
+    p.add_argument(
+        '--map-dir', default=None,
+        help='Directory to scan for map folders when using --all '
+             '(default: map_folders/). Use this to target CommunityMaps, '
+             'PublicMaps, or any other external collection.',
+    )
+    p.add_argument('--force', action='store_true',
+                   help='Force regeneration of existing outputs')
+    p.add_argument('--output', default=None,
+                   help='Output root directory (default: output/). Each map '
+                        'writes to <output>/<map_name>/.')
     p.add_argument('--threshold', type=int, default=10,
                    help='Density threshold (default: 10)')
     p.add_argument('--density-mode', default='run,count',
@@ -37,46 +57,37 @@ def register(subparsers, map_parent):
                    help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
-    p.add_argument('--output', help='Override output directory')
     p.add_argument('--plots', action='store_true',
                    help='Generate plots alongside data files')
     p.set_defaults(func=handler)
 
 
 def handler(args):
-    map_folder = resolve_map_folder(args.map)
+    map_folders = collect_map_folders(args)
 
-    if args.plots or args.output:
-        # Full standalone mode: CSV + Parquet + plots
+    if args.plots and len(map_folders) > 1:
+        print("Error: --plots is only supported for a single map (--map NAME)", file=sys.stderr)
+        sys.exit(1)
+
+    if args.plots:
+        # Standalone plot mode (single map only)
         import pandas as pd
-        from layout_analysis import (
-            RegionReader, Y0LayerExtractor, TopSurfaceExtractor,
-            VerticalDensityExtractor, LowestBedrockExtractor,
-        )
         from layout_analysis.visualization import save_all_plots
 
+        map_folder = map_folders[0]
         region_folder = map_folder / 'region'
         if not region_folder.exists():
             print(f"Error: No region folder at {region_folder}", file=sys.stderr)
             sys.exit(1)
 
-        output_dir = Path(args.output) if args.output else map_folder / 'layout_output'
+        output_dir = Path(args.output) / map_folder.name if args.output else map_folder / 'layout_output'
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f"Layout extraction: {map_folder.name}")
 
         reader = RegionReader(str(region_folder))
         results = {}
-
-        density_modes = []
-        if not args.skip_density:
-            for mode in args.density_mode.split(','):
-                mode = mode.strip()
-                if mode in ('run', 'count'):
-                    density_modes.append(mode)
+        density_results = {}
 
         if not args.skip_y0:
-            logger.debug("  Extracting Y=0 layer...")
             df = Y0LayerExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'y0_layer_points.parquet'))
             results['y0'] = df
@@ -84,44 +95,42 @@ def handler(args):
             results['y0'] = pd.DataFrame()
 
         if not args.skip_surface:
-            logger.debug("  Extracting top surface...")
             df = TopSurfaceExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'top_surface_points.parquet'))
             results['top_surface'] = df
         else:
             results['top_surface'] = pd.DataFrame()
 
-        density_results = {}
-        for mode in density_modes:
-            logger.debug(f"  Extracting density ({mode})...")
-            df = VerticalDensityExtractor(reader, threshold=args.threshold, mode=mode).extract()
-            name = f"{mode}_N{args.threshold}"
-            df.to_parquet(str(output_dir / f'density_{name}_points.parquet'))
-            density_results[name] = df
+        if not args.skip_density:
+            for mode in (m.strip() for m in args.density_mode.split(',') if m.strip() in ('run', 'count')):
+                df = VerticalDensityExtractor(reader, threshold=args.threshold, mode=mode).extract()
+                name = f"{mode}_N{args.threshold}"
+                df.to_parquet(str(output_dir / f'density_{name}_points.parquet'))
+                density_results[name] = df
 
         if not args.skip_bedrock:
-            logger.debug("  Extracting bedrock...")
             df = LowestBedrockExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'lowest_bedrock_points.parquet'))
             results['bedrock'] = df
         else:
             results['bedrock'] = pd.DataFrame()
 
-        if args.plots:
-            logger.debug("  Generating plots...")
-            save_all_plots(
-                y0_df=results.get('y0', pd.DataFrame()),
-                top_surface_df=results.get('top_surface', pd.DataFrame()),
-                density_dfs=density_results,
-                bedrock_df=results.get('bedrock', pd.DataFrame()),
-                output_dir=str(output_dir),
-            )
-
+        save_all_plots(
+            y0_df=results.get('y0', pd.DataFrame()),
+            top_surface_df=results.get('top_surface', pd.DataFrame()),
+            density_dfs=density_results,
+            bedrock_df=results.get('bedrock', pd.DataFrame()),
+            output_dir=str(output_dir),
+        )
         logger.debug(f"  Output saved to: {output_dir}")
-    else:
-        # Simple workflow mode: parquets into output dir
-        map_output_dir = resolve_output_dir(map_folder, create=True)
-        analyze_layout(
+        return
+
+    # Standard workflow mode: parquets into output/<map_name>/
+    n_ok = 0
+    n_fail = 0
+    for map_folder in map_folders:
+        map_output_dir = resolve_output_dir(map_folder, args.output, create=True)
+        result = analyze_layout(
             map_folder,
             force_rerun=args.force,
             output_dir=map_output_dir,
@@ -133,6 +142,13 @@ def handler(args):
             threshold=args.threshold,
             density_mode=args.density_mode,
         )
+        if result is None:
+            n_fail += 1
+        else:
+            n_ok += 1
+
+    if len(map_folders) > 1:
+        logger.info(f"Layout extraction complete: {n_ok} succeeded, {n_fail} failed")
 
 def analyze_layout(
     map_folder: Path,

@@ -62,14 +62,19 @@ python ctw.py run (--map NAME | --all) [--force]
 Extract block data from Minecraft region files into parquet files.
 
 ```
-python ctw.py layout --map NAME [--force]
+python ctw.py layout (--map NAME | --all) [--map-dir DIR] [--force]
+    [--output DIR]
     [--threshold N] [--density-mode run,count]
     [--skip-y0] [--skip-surface] [--skip-density] [--skip-bedrock]
-    [--output DIR] [--plots]
+    [--skip-lowest-solid] [--skip-features] [--plots]
 ```
 
 | Flag | Description |
 |---|---|
+| `--map NAME` | Single map name or path |
+| `--all` | Process all maps found in `--map-dir` |
+| `--map-dir DIR` | Directory to scan with `--all` (default: `map_folders/`). Use this for external collections such as CommunityMaps or PublicMaps. |
+| `--output DIR` | Output root directory (default: `output/`). Each map writes to `<DIR>/<map_name>/`. |
 | `--threshold N` | Density threshold (default: 10) |
 | `--density-mode` | Comma-separated modes: `run`, `count` |
 | `--skip-y0` | Skip Y=0 layer |
@@ -77,8 +82,8 @@ python ctw.py layout --map NAME [--force]
 | `--skip-density` | Skip vertical density |
 | `--skip-bedrock` | Skip lowest bedrock |
 | `--skip-lowest-solid` | Skip lowest-solid-layer extraction |
-| `--output DIR` | Save to custom directory instead of map folder |
-| `--plots` | Generate visualization plots alongside data |
+| `--skip-features` | Skip resource block and chest extraction |
+| `--plots` | Generate visualization plots (single map only) |
 
 ---
 
