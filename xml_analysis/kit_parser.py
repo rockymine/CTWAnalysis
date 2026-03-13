@@ -34,7 +34,7 @@ _KIT_ARMOR_COLUMNS = [
 
 
 def _parse_enchantment_attr(value: str) -> str:
-    """Parse enchantment attribute value into normalised "name:level" string.
+    """Parse a single enchantment attribute token into a normalised "name:level" string.
 
     Handles forms:
       "infinity"          → "infinity:1"
@@ -70,7 +70,7 @@ def _collect_enchantments(elem: ET.Element) -> str:
     """Collect all enchantments from an item/armor element.
 
     Checks for:
-      - enchantment= attribute on the element itself
+      - enchantment= attribute on the element itself (semicolons separate multiple values)
       - <enchantment> child elements
     Returns comma-joined string, or '' if none.
     """
@@ -78,7 +78,10 @@ def _collect_enchantments(elem: ET.Element) -> str:
 
     attr = elem.get('enchantment', '').strip()
     if attr:
-        parts.append(_parse_enchantment_attr(attr))
+        for token in attr.split(';'):
+            token = token.strip()
+            if token:
+                parts.append(_parse_enchantment_attr(token))
 
     for child in elem:
         if child.tag == 'enchantment':
