@@ -84,6 +84,7 @@ Actions:
   load         Load map metadata into the maps table
   spawns       Load spawn data into the map_spawns table
   resources    Classify resource blocks and chests by zone, store in DB
+  kits         Load kit items and armor into the DB
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -91,6 +92,8 @@ Examples:
   python ctw.py maps spawns --map annealing_iv
   python ctw.py maps resources --map arabia
   python ctw.py maps resources                  # all maps
+  python ctw.py maps kits --map arabia          # parses map.xml directly
+  python ctw.py maps kits                       # all maps
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -121,6 +124,15 @@ Examples:
     p.add_argument('--near-spawn-buffer', type=float, default=15.0,
                    help='Blocks outside spawn counted as near_spawn (default: 15)')
     p.set_defaults(func=handle_resources)
+
+    # maps kits
+    p = maps_sub.add_parser(
+        'kits',
+        help='Load kit items and armor from parquets into the DB',
+    )
+    p.add_argument('--map', help='Map name (default: all maps)')
+    p.add_argument('--output', help='Output root directory (default: output/)')
+    p.set_defaults(func=handle_kits)
 
 
 def _resolve_map_dirs(args):
@@ -510,6 +522,96 @@ def handle_resources(args) -> None:
 
     conn.close()
     print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
+
+
+def handle_kits(args) -> None:
+    """Parse kit items and armor from map.xml and store in the DB."""
+    import duckdb
+    from xml_analysis.builder import MapXMLParser
+    from xml_analysis.kit_parser import parse_kits
+    from match_analysis.database.schema import migrate_kit_tables
+
+    ensure_match_db()
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
+        return
+
+    db_path = Path('match_analysis/metadata.db')
+    migrate_kit_tables(str(db_path))
+    conn = duckdb.connect(str(db_path))
+
+    loaded = 0
+    skipped = 0
+
+    for map_dir in map_dirs:
+        map_slug = map_dir.name
+
+        # Locate map.xml in the corresponding map folder
+        from ctw.common import resolve_map_folder
+        xml_path = resolve_map_folder(map_slug) / 'map.xml'
+        if not xml_path.exists():
+            print(f"  Skip {map_slug}: map.xml not found at {xml_path}")
+            skipped += 1
+            continue
+
+        result = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        if result is None:
+            print(f"  Skip {map_slug}: not in maps table (run 'maps load' first)")
+            skipped += 1
+            continue
+        map_id = result[0]
+
+        try:
+            parser = MapXMLParser(str(xml_path))
+            map_data = parser.parse()
+            items_df, armor_df = parse_kits(parser.root, map_data.spawns)
+        except Exception as e:
+            print(f"  Skip {map_slug}: failed to parse XML — {e}")
+            skipped += 1
+            continue
+
+        conn.execute("DELETE FROM map_kit_items WHERE map_id = ?", [map_id])
+        conn.execute("DELETE FROM map_kit_armor WHERE map_id = ?", [map_id])
+
+        for _, row in items_df.iterrows():
+            enc = row['enchantments']
+            conn.execute("""
+                INSERT INTO map_kit_items
+                    (map_id, kit_id, team, slot, material, amount,
+                     item_damage, unbreakable, team_color, enchantments)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                map_id,
+                str(row['kit_id']), str(row['team']),
+                int(row['slot']), str(row['material']),
+                int(row['amount']), int(row['item_damage']),
+                bool(row['unbreakable']), bool(row['team_color']),
+                str(enc) if enc is not None and enc == enc else None,
+            ])
+
+        for _, row in armor_df.iterrows():
+            enc = row['enchantments']
+            conn.execute("""
+                INSERT INTO map_kit_armor
+                    (map_id, kit_id, team, slot_name, material,
+                     unbreakable, team_color, enchantments)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                map_id,
+                str(row['kit_id']), str(row['team']),
+                str(row['slot_name']), str(row['material']),
+                bool(row['unbreakable']), bool(row['team_color']),
+                str(enc) if enc is not None and enc == enc else None,
+            ])
+
+        print(f"  [OK] {map_slug}: {len(items_df)} item rows, {len(armor_df)} armor rows")
+        loaded += 1
+
+    conn.close()
+    print(f"\nDone: {loaded} map(s) loaded, {skipped} skipped.")
 
 
 def _print_resources_summary(

@@ -7,13 +7,13 @@ Parses Minecraft CTW map XML configuration files (`map.xml`) and extracts struct
 ```
 xml_analysis/
 ├── __init__.py              # Public API: MapXMLParser, MapVisualizer, MapDataEncoder
-├── parser.py                # XML parsing and data extraction
+├── builder.py               # XML parsing and data extraction
+├── datatypes.py             # MapData, Team, Spawn, Wool, ApplyRule, MapXmlContext
 ├── regions.py               # Region class hierarchy with Shapely integration
 ├── build_regions.py         # Build region / void area extraction
+├── kit_parser.py            # Kit item and armor parsing → DataFrames for DB
 ├── exporter.py              # JSON serialization (MapDataEncoder)
 ├── visualization.py         # Matplotlib region plots
-├── services/
-│   └── xml_service.py       # Pipeline step 3 orchestration
 └── tests/
     ├── test_parser.py       # Parser and region tests
     └── test_exporter.py     # JSON encoding tests
@@ -55,6 +55,53 @@ The parser produces a `MapData` dataclass containing:
 | `wools` | `List[Wool]` | Wool objectives with location and monument coords |
 | `regions` | `Dict[str, Region]` | Named regions by ID |
 | `apply_rules` | `List[ApplyRule]` | Block filter rules referencing regions |
+
+## Kit Parsing
+
+`kit_parser.py` reads the `<kits>` section and returns two DataFrames ready for
+DB insertion via `ctw maps kits`.
+
+### What is parsed
+
+Each `<kit id="...">` element is scanned for:
+
+| Element | Maps to | Notes |
+|---------|---------|-------|
+| `<item slot="N" material="..." .../>` | `map_kit_items` row | Handles `amount`, `damage`, `unbreakable`, `team-color` |
+| `<helmet/chestplate/leggings/boots material="..." .../>` | `map_kit_armor` row | Same attributes as items |
+| `<enchantment level="N">name</enchantment>` | `enchantments` column | Normalised to `"name:level"` |
+| `enchantment="name:level"` attribute | `enchantments` column | Both inline and nested forms handled |
+
+Kits with no items and no armor (e.g. `reset-resistance-kit`) are silently skipped.
+Effects (`<effect>`) are not stored.
+
+### Team association
+
+Each kit's team is resolved by scanning `<spawn kit="kit-id" team="...">` elements.
+If both teams reference the same kit (the common case), one row per team is produced.
+If a kit is not referenced by any spawn, `team` is stored as an empty string.
+
+### Enchantment format
+
+Enchantments are stored as a comma-separated string of `name:level` pairs
+(e.g. `"infinity:1"` or `"dig_speed:2,protection:1"`). Level is always present;
+spaces in names are replaced with underscores.
+
+### DB tables
+
+| Table | PK | Description |
+|---|---|---|
+| `map_kit_items` | `(map_id, kit_id, team, slot)` | Inventory item slots |
+| `map_kit_armor` | `(map_id, kit_id, team, slot_name)` | Armor slots (helmet/chestplate/leggings/boots) |
+
+Load with:
+
+```bash
+python ctw.py maps kits --map tumbleweed   # single map
+python ctw.py maps kits                    # all maps
+```
+
+---
 
 ## Region Types
 

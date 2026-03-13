@@ -330,6 +330,40 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table N+3: Map kit items (inventory slots from spawn kit)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_kit_items (
+            map_id       INTEGER NOT NULL,
+            kit_id       TEXT NOT NULL,
+            team         TEXT NOT NULL DEFAULT '',
+            slot         INTEGER NOT NULL,
+            material     TEXT NOT NULL,
+            amount       INTEGER NOT NULL DEFAULT 1,
+            item_damage  INTEGER NOT NULL DEFAULT 0,
+            unbreakable  BOOLEAN NOT NULL DEFAULT FALSE,
+            team_color   BOOLEAN NOT NULL DEFAULT FALSE,
+            enchantments TEXT,
+            PRIMARY KEY (map_id, kit_id, team, slot),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+4: Map kit armor (armor slots from spawn kit)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_kit_armor (
+            map_id       INTEGER NOT NULL,
+            kit_id       TEXT NOT NULL,
+            team         TEXT NOT NULL DEFAULT '',
+            slot_name    TEXT NOT NULL,
+            material     TEXT NOT NULL,
+            unbreakable  BOOLEAN NOT NULL DEFAULT FALSE,
+            team_color   BOOLEAN NOT NULL DEFAULT FALSE,
+            enchantments TEXT,
+            PRIMARY KEY (map_id, kit_id, team, slot_name),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -565,6 +599,45 @@ def migrate_resource_tables(db_path: str | None = None) -> None:
     """)
     conn.close()
     print(f"Resource tables created in {db_path}")
+
+
+def migrate_kit_tables(db_path: str | None = None) -> None:
+    """Create map_kit_items and map_kit_armor tables if they do not exist yet."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_kit_items (
+            map_id       INTEGER NOT NULL,
+            kit_id       TEXT NOT NULL,
+            team         TEXT NOT NULL DEFAULT '',
+            slot         INTEGER NOT NULL,
+            material     TEXT NOT NULL,
+            amount       INTEGER NOT NULL DEFAULT 1,
+            item_damage  INTEGER NOT NULL DEFAULT 0,
+            unbreakable  BOOLEAN NOT NULL DEFAULT FALSE,
+            team_color   BOOLEAN NOT NULL DEFAULT FALSE,
+            enchantments TEXT,
+            PRIMARY KEY (map_id, kit_id, team, slot),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_kit_armor (
+            map_id       INTEGER NOT NULL,
+            kit_id       TEXT NOT NULL,
+            team         TEXT NOT NULL DEFAULT '',
+            slot_name    TEXT NOT NULL,
+            material     TEXT NOT NULL,
+            unbreakable  BOOLEAN NOT NULL DEFAULT FALSE,
+            team_color   BOOLEAN NOT NULL DEFAULT FALSE,
+            enchantments TEXT,
+            PRIMARY KEY (map_id, kit_id, team, slot_name),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+    print(f"Kit tables created in {db_path}")
 
 
 if __name__ == "__main__":
