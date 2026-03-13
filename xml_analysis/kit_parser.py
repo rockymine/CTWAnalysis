@@ -98,7 +98,7 @@ def _kit_teams(kit_id: str, spawns: list[Spawn]) -> list[str]:
 
     If no spawn references this kit, returns [''] (empty string = all/unassigned).
     """
-    teams = [s.team for s in spawns if s.kit == kit_id]
+    teams = list(dict.fromkeys(s.team for s in spawns if s.kit == kit_id))
     return teams if teams else ['']
 
 
