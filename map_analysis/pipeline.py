@@ -654,8 +654,20 @@ def run_island_geometry(
     layout_filename = LAYOUT_FILES.get(layout_type, 'layout_bedrock.parquet')
     layout_file = layout_dir / layout_filename
     if not layout_file.exists():
-        logger.warning(f"  Layout file not found: {layout_filename}. Run layout analysis first.")
-        return None
+        if layout_type == 'decided':
+            fallback_file = layout_dir / 'layout_bedrock.parquet'
+            if fallback_file.exists():
+                logger.warning(
+                    f"  layout_decided.parquet not found — falling back to layout_bedrock.parquet. "
+                    f"Re-run layout step to generate the decided layer."
+                )
+                layout_file = fallback_file
+            else:
+                logger.warning(f"  Layout file not found: {layout_filename}. Run layout analysis first.")
+                return None
+        else:
+            logger.warning(f"  Layout file not found: {layout_filename}. Run layout analysis first.")
+            return None
 
     island_output_dir.mkdir(parents=True, exist_ok=True)
 
