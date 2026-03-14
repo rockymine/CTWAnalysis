@@ -470,6 +470,35 @@ python ctw.py debug prepare-demo --map MAP [--force]
 
 ---
 
+### `ctw purge` — Delete Output Folders
+
+Delete per-map output folders under `output/`. The `output/` root is never
+touched — only the per-map subdirectories are removed.
+
+```
+python ctw.py purge (--map NAME[,NAME,...] | --all | --no-matches)
+    [--output DIR] [--yes]
+```
+
+| Flag | Description |
+|---|---|
+| `--map NAME` | Delete output for specific map slug(s) (comma-separated) |
+| `--all` | Delete all per-map output folders |
+| `--no-matches` | Delete output for every map with no match data in the database |
+| `--output DIR` | Output root to scan (default: `output/`) |
+| `--yes` / `-y` | Skip confirmation prompt |
+
+Prints folder names and sizes before deleting. Without `--yes`, prompts
+for confirmation.
+
+```bash
+python ctw.py purge --no-matches
+python ctw.py purge --map some_old_map
+python ctw.py purge --all --yes
+```
+
+---
+
 ### `ctw db` — SQL Query Runner
 
 Run SQL queries against the analysis database (`match_analysis/metadata.db`).

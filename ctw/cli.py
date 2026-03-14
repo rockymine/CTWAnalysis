@@ -4,7 +4,7 @@ import argparse
 import os
 
 from ctw.common import PROJECT_ROOT
-from ctw.commands import run, layout, islands, xml, info, docs, matches, maps, debug, db
+from ctw.commands import run, layout, islands, xml, info, docs, matches, maps, debug, db, purge
 
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.Action]:
@@ -63,6 +63,7 @@ Examples:
     maps.register(subparsers)
     debug.register(subparsers)
     db.register(subparsers)
+    purge.register(subparsers)
 
     return parser, subparsers
 
