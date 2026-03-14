@@ -47,16 +47,18 @@ def _count_surface_blocks(map_dir: Path) -> Optional[int]:
     return int((df['block_id'] != 36).sum())
 
 
-def _read_symmetry(map_dir: Path) -> tuple[Optional[str], Optional[bool]]:
-    """Return (primary_symmetry_type, has_intra_team_symmetry) from symmetry.json.
+def _read_symmetry(map_dir: Path) -> tuple[Optional[str], Optional[float], Optional[bool]]:
+    """Return (primary_symmetry_type, symmetry_confidence, has_intra_team_symmetry) from symmetry.json.
 
-    primary_symmetry_type is the highest-confidence detected global symmetry,
-    or None if symmetry.json is absent or no symmetry is detected.
+    primary_symmetry_type is the type string of the highest-confidence detected
+    global symmetry, or 'none' if no symmetry is detected.
+    symmetry_confidence is the confidence of the primary symmetry (0.0–1.0), or
+    None if symmetry.json is absent.
     has_intra_team_symmetry is True if any team has intra-team symmetry detected.
     """
     sym_path = map_dir / 'symmetry.json'
     if not sym_path.exists():
-        return None, None
+        return None, None, None
 
     with open(sym_path, 'r', encoding='utf-8') as f:
         sym = json.load(f)
@@ -65,13 +67,15 @@ def _read_symmetry(map_dir: Path) -> tuple[Optional[str], Optional[bool]]:
     if detected:
         primary = max(detected, key=lambda s: s.get('confidence', 0.0))
         symmetry_type = primary['type']
+        symmetry_confidence = primary.get('confidence')
     else:
         symmetry_type = 'none'
+        symmetry_confidence = 0.0
 
     intra = sym.get('intra_team_symmetry', [])
     has_intra = any(t.get('symmetry_detected') for t in intra) if intra else False
 
-    return symmetry_type, has_intra
+    return symmetry_type, symmetry_confidence, has_intra
 
 
 def register(subparsers):
@@ -302,7 +306,7 @@ def _collect_map_row(map_dir: Path) -> dict | None:
     player_counts = [t.get('max_players') for t in teams if t.get('max_players')]
     max_players_per_team = round(sum(player_counts) / len(player_counts)) if player_counts else None
 
-    symmetry_type, has_intra_team_symmetry = _read_symmetry(map_dir)
+    symmetry_type, symmetry_confidence, has_intra_team_symmetry = _read_symmetry(map_dir)
     total_blocks = _count_surface_blocks(map_dir)
 
     return {
@@ -322,6 +326,7 @@ def _collect_map_row(map_dir: Path) -> dict | None:
         'total_blocks': total_blocks,
         'size_tier': _size_tier(max_players_per_team),
         'symmetry_type': symmetry_type,
+        'symmetry_confidence': symmetry_confidence,
         'has_intra_team_symmetry': has_intra_team_symmetry,
         'last_updated': datetime.now(),
     }
@@ -357,6 +362,7 @@ def _upsert_map(conn, row: dict):
                 total_blocks = ?,
                 size_tier = ?,
                 symmetry_type = ?,
+                symmetry_confidence = ?,
                 has_intra_team_symmetry = ?,
                 last_updated = ?
             WHERE map_slug = ?
@@ -368,7 +374,8 @@ def _upsert_map(conn, row: dict):
             row['island_count'], row['team_count'],
             row['wools_per_team'], row['max_players_per_team'],
             row['total_blocks'], row['size_tier'],
-            row['symmetry_type'], row['has_intra_team_symmetry'],
+            row['symmetry_type'], row['symmetry_confidence'],
+            row['has_intra_team_symmetry'],
             row['last_updated'],
             row['map_slug'],
         ])
@@ -380,9 +387,9 @@ def _upsert_map(conn, row: dict):
                 center_x, center_z,
                 island_count, team_count,
                 wools_per_team, max_players_per_team, total_blocks,
-                size_tier, symmetry_type, has_intra_team_symmetry,
-                last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                size_tier, symmetry_type, symmetry_confidence,
+                has_intra_team_symmetry, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
             row['map_slug'], row['map_name'], row['max_build_height'],
             row['min_x'], row['max_x'], row['min_z'], row['max_z'],
@@ -390,7 +397,8 @@ def _upsert_map(conn, row: dict):
             row['island_count'], row['team_count'],
             row['wools_per_team'], row['max_players_per_team'],
             row['total_blocks'], row['size_tier'],
-            row['symmetry_type'], row['has_intra_team_symmetry'],
+            row['symmetry_type'], row['symmetry_confidence'],
+            row['has_intra_team_symmetry'],
             row['last_updated'],
         ])
 

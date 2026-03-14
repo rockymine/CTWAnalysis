@@ -498,6 +498,7 @@ def migrate_map_classification_columns(db_path: str | None = None) -> None:
         ("total_blocks", "INTEGER"),
         ("size_tier", "VARCHAR"),
         ("symmetry_type", "VARCHAR"),
+        ("symmetry_confidence", "FLOAT"),
         ("has_intra_team_symmetry", "BOOLEAN"),
     ]:
         conn.execute(
