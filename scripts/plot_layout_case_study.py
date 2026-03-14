@@ -84,7 +84,7 @@ _add(26, 180, 100, 100)   # bed
 _add(30, 220, 220, 220)   # cobweb
 _add(31,   0, 160,   0)   # tall grass
 _add(35,  -1,  -1,  -1)   # wool — stained (overridden below)
-_add(36, 200, 200, 200)   # piston extension / block36
+_add(36, 255,   0, 255)   # piston extension / block36 — vibrant magenta for visibility
 _add(41, 250, 238,  77)   # gold block
 _add(42, 200, 200, 210)   # iron block
 _add(43, 120, 120, 120)   # stone double slab
