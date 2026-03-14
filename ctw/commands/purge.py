@@ -17,7 +17,6 @@ _MAP_CHILD_TABLES = [
     'map_kit_armor',
     'map_kit_items',
     'map_resource_blocks',
-    'map_size_buckets',
     'map_spawns',
     'wool_spawn_baselines',
 ]
