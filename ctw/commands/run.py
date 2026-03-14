@@ -91,11 +91,30 @@ def _process_single_map(map_folder, args, output_override=None):
     from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
+    from layout_analysis.map_layout_config import get_map_layout
 
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
     setup_map_file_logging(map_output_dir)
 
-    logger.info(f"Processing: {map_folder.name}")
+    map_name = map_folder.name
+    map_layout_cfg = get_map_layout(map_name)
+
+    # Skip maps explicitly excluded in map_layouts.yaml
+    if map_layout_cfg is not None and map_layout_cfg.skip:
+        logger.info(f"Skipping {map_name}: excluded in map_layouts.yaml")
+        return map_name, True, None
+
+    logger.info(f"Processing: {map_name}")
+
+    # Determine which layout type to pass to island analysis
+    if map_layout_cfg is not None:
+        # Use decided file unless it's a plain y0 (no exclusions) — then reuse y0 directly
+        if map_layout_cfg.layer == 'y0' and not map_layout_cfg.exclude:
+            island_layout_type = 'y0'
+        else:
+            island_layout_type = 'decided'
+    else:
+        island_layout_type = args.island_layout
 
     try:
         # [1/6] Layout
@@ -112,6 +131,7 @@ def _process_single_map(map_folder, args, output_override=None):
                 skip_features=args.skip_features,
                 threshold=args.threshold,
                 density_mode=args.density_mode,
+                map_layout_config=map_layout_cfg,
             )
             n = len(parquet_files) if parquet_files else 0
             logger.info(f"  [1/6] Layout: {n} parquet files")
@@ -124,7 +144,7 @@ def _process_single_map(map_folder, args, output_override=None):
             geometry = run_island_geometry(
                 map_folder,
                 force_rerun=args.force,
-                layout_type=args.island_layout,
+                layout_type=island_layout_type,
                 canonical_polygons=args.canonical_polygons,
                 simplify_tolerance=args.simplify,
                 buffer_distance=args.buffer,

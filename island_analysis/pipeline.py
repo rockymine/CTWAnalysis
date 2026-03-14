@@ -25,6 +25,7 @@ LAYOUT_FILES = {
     'top': 'layout_top_surface.parquet',
     'density': 'layout_vertical_density.parquet',
     'solid': 'layout_lowest_solid.parquet',
+    'decided': 'layout_decided.parquet',
 }
 
 

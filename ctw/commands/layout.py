@@ -3,6 +3,7 @@
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 from ctw.common import collect_map_folders, resolve_map_folder, resolve_output_dir
 
@@ -18,6 +19,7 @@ from layout_analysis import (
     ResourceBlockExtractor,
     ChestExtractor,
 )
+from layout_analysis.map_layout_config import MapLayoutConfig
 
 def register(subparsers):
     p = subparsers.add_parser(
@@ -178,21 +180,36 @@ def analyze_layout(
     skip_features: bool = False,
     threshold: int = 10,
     density_mode: str = 'run',
+    map_layout_config: Optional[MapLayoutConfig] = None,
 ):
     """
     Step 1: Extract layout data from world folder.
+
+    When *map_layout_config* is provided the extraction is driven by the
+    per-map configuration from map_layouts.yaml:
+
+    * ``layout_y0.parquet`` is always generated (needed for build-region
+      detection via block-36 markers).
+    * ``layout_decided.parquet`` is generated using the configured layer and
+      exclusion list and is used by the island-detection step.  Exception:
+      when the configured layer is ``y0`` with no exclusions the y0 file is
+      reused directly and no ``layout_decided.parquet`` is written.
+    * The generic bedrock, lowest_solid, and top_surface parquet files are
+      skipped (those are only useful for exploratory comparison).
 
     Args:
         map_folder: Path to map folder (read-only input).
         force_rerun: If True, regenerate even if parquet files exist.
         output_dir: Where to write parquet files (default: map_folder).
-        skip_y0: Skip Y=0 layer extraction.
+        skip_y0: Skip Y=0 layer extraction (ignored when map_layout_config is set).
         skip_surface: Skip top surface extraction.
         skip_density: Skip vertical density extraction.
         skip_bedrock: Skip bedrock extraction.
         skip_features: Skip feature extraction (resource blocks and chests).
         threshold: Density threshold for vertical density extractor.
         density_mode: Mode for vertical density extractor ('run' or 'count').
+        map_layout_config: Per-map config from map_layouts.yaml.  When
+            provided, drives which layer and exclusions to use.
 
     Returns:
         dict: Paths to generated parquet files
@@ -201,6 +218,15 @@ def analyze_layout(
     out.mkdir(parents=True, exist_ok=True)
 
     logger.debug(f"[1/6] Layout Analysis: {map_folder.name}")
+
+    if map_layout_config is not None:
+        return _analyze_layout_configured(
+            map_folder, out, force_rerun, map_layout_config, skip_features,
+        )
+
+    # -----------------------------------------------------------------------
+    # Standard (unconfigured) extraction: respect explicit skip flags
+    # -----------------------------------------------------------------------
 
     # Define output paths for enabled extractors only
     parquet_files = {}
@@ -307,6 +333,116 @@ def analyze_layout(
             unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
             logger.debug(
                 f"    Saved {parquet_files['chest_contents'].name} "
+                f"({len(unique_chests)} chests, {len(df)} item slots)"
+            )
+
+    return parquet_files
+
+
+def _analyze_layout_configured(
+    map_folder: Path,
+    out: Path,
+    force_rerun: bool,
+    cfg: MapLayoutConfig,
+    skip_features: bool,
+) -> Optional[dict]:
+    """Configured extraction path driven by map_layouts.yaml.
+
+    Always produces layout_y0.parquet.  Produces layout_decided.parquet when
+    the configured layer is not y0 or when y0 is configured with exclusions.
+    Skips the generic bedrock/lowest_solid/top_surface parquets.
+    """
+    import pandas as pd
+
+    layer = cfg.layer
+    exclude = cfg.exclude
+
+    # Determine which files this run is responsible for
+    y0_path = out / 'layout_y0.parquet'
+    # layout_decided is needed when layer != y0 OR when y0 has exclusions
+    need_decided = layer != 'y0' or bool(exclude)
+    decided_path = out / 'layout_decided.parquet' if need_decided else None
+
+    parquet_files: dict[str, Path] = {'y0_layer': y0_path}
+    if decided_path is not None:
+        parquet_files['decided'] = decided_path
+    if not skip_features:
+        parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
+        parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
+
+    all_exist = all(p.exists() for p in parquet_files.values())
+    if all_exist and not force_rerun:
+        logger.debug("  Layout files already exist. Skipping extraction.")
+        for path in parquet_files.values():
+            logger.debug(f"    {path.name}")
+        return parquet_files
+
+    region_folder = map_folder / 'region'
+    if not region_folder.exists():
+        logger.warning(f"  No region folder found at {region_folder}")
+        return None
+
+    logger.debug(f"  Extracting layout from: {region_folder} (layer={layer}, exclude={exclude})")
+    reader = RegionReader(str(region_folder))
+
+    # --- Y=0 layer (always, unfiltered — needed for block-36 build-region detection) ---
+    if not y0_path.exists() or force_rerun:
+        logger.debug("  Extracting Y=0 layer...")
+        df_y0 = Y0LayerExtractor(reader).extract()
+        df_y0.to_parquet(y0_path)
+        logger.debug(f"    Saved {y0_path.name} ({len(df_y0)} blocks)")
+    else:
+        df_y0 = None  # already on disk, load only if needed for decided
+
+    # --- Decided layer ---
+    if decided_path is not None and (not decided_path.exists() or force_rerun):
+        if layer == 'y0':
+            # Post-filter: load y0 and remove excluded block IDs
+            if df_y0 is None:
+                df_y0 = pd.read_parquet(y0_path)
+            df_decided = df_y0[~df_y0['block_id'].isin(exclude)].copy()
+            df_decided.to_parquet(decided_path)
+            logger.debug(
+                f"    Saved {decided_path.name} ({len(df_decided)} blocks, "
+                f"filtered {len(df_y0) - len(df_decided)} excluded)"
+            )
+        elif layer == 'lowest_solid':
+            # Merge config exclusions with the mandatory block-36 exclusion
+            exclude_set = set(exclude) | {36}
+            extractor = LowestSolidLayerExtractor(reader, exclude_ids=exclude_set)
+            df = extractor.extract()
+            df.to_parquet(decided_path)
+            logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
+        elif layer == 'top_surface':
+            extractor = TopSurfaceExtractor(reader, exclude_ids=set(exclude))
+            df = extractor.extract()
+            df.to_parquet(decided_path)
+            logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
+        elif layer == 'bedrock':
+            # Bedrock has no scanning concept; exclusion lists don't apply
+            extractor = LowestBedrockExtractor(reader)
+            df = extractor.extract()
+            df.to_parquet(decided_path)
+            logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
+
+    # --- Feature extractors ---
+    if 'resource_blocks' in parquet_files:
+        rb_path = parquet_files['resource_blocks']
+        if not rb_path.exists() or force_rerun:
+            logger.debug("  Extracting resource blocks...")
+            df = ResourceBlockExtractor(reader).extract()
+            df.to_parquet(rb_path)
+            logger.debug(f"    Saved {rb_path.name} ({len(df)} blocks)")
+
+    if 'chest_contents' in parquet_files:
+        cc_path = parquet_files['chest_contents']
+        if not cc_path.exists() or force_rerun:
+            logger.debug("  Extracting chest contents...")
+            df = ChestExtractor(reader).extract()
+            df.to_parquet(cc_path)
+            unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
+            logger.debug(
+                f"    Saved {cc_path.name} "
                 f"({len(unique_chests)} chests, {len(df)} item slots)"
             )
 
