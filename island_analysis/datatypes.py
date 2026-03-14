@@ -46,7 +46,8 @@ class Island(IslandPolygon):
     """
     has_spawn: bool = False
     has_wool: bool = False
-    team: Optional[str] = None  # team id if spawn island
+    team: Optional[str] = None          # team id if spawn island
+    is_observer_island: bool = False    # True when this island holds the observer spawn
 
 
 @dataclass

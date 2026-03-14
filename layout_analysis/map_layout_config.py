@@ -19,9 +19,10 @@ VALID_LAYERS = frozenset({'y0', 'bedrock', 'lowest_solid', 'top_surface'})
 @dataclass
 class MapLayoutConfig:
     """Layout configuration for a single map."""
-    layer: str                         # extraction mode: y0 | bedrock | lowest_solid | top_surface
+    layer: str                              # extraction mode: y0 | bedrock | lowest_solid | top_surface
     exclude: list[int] = field(default_factory=list)
     skip: bool = False
+    exclude_observer_island: bool = False   # True → find and exclude observer island from symmetry
 
 
 def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutConfig]:
@@ -61,7 +62,12 @@ def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutC
             continue
         exclude_raw = entry.get('exclude', []) or []
         exclude = [int(v) for v in exclude_raw]
-        configs[slug] = MapLayoutConfig(layer=layer, exclude=exclude)
+        exclude_observer = bool(entry.get('exclude_observer_island', False))
+        configs[slug] = MapLayoutConfig(
+            layer=layer,
+            exclude=exclude,
+            exclude_observer_island=exclude_observer,
+        )
 
     return configs
 

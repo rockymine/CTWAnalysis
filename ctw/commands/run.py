@@ -189,8 +189,13 @@ def _process_single_map(map_folder, args, output_override=None):
         # [5/6] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
             if geometry is not None:
+                exclude_obs = (
+                    map_layout_cfg.exclude_observer_island
+                    if map_layout_cfg is not None else False
+                )
                 assemble_map(map_folder, geometry, map_output_dir,
-                             symmetry=symmetry, xml_context=xml_context, plots=args.plots)
+                             symmetry=symmetry, xml_context=xml_context, plots=args.plots,
+                             exclude_observer_island=exclude_obs)
                 logger.info("  [5/6] Assembly: done")
             else:
                 logger.info("  [5/6] Assembly: skipped (no geometry)")

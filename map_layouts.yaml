@@ -1,10 +1,14 @@
 # Per-map layout configuration for island detection.
 #
-# layer:   which extraction mode to use for island analysis.
-#          one of: y0, bedrock, lowest_solid, top_surface
-# exclude: block IDs to skip during extraction (or post-filter for y0).
-#          omit or leave empty when no exclusions are needed.
-# skip:    true to exclude this map from the pipeline entirely.
+# layer:                   which extraction mode to use for island analysis.
+#                          one of: y0, bedrock, lowest_solid, top_surface
+# exclude:                 block IDs to skip during extraction (or post-filter for y0).
+#                          omit or leave empty when no exclusions are needed.
+# exclude_observer_island: true → find the observer (default) spawn island after
+#                          extraction and exclude it from symmetry analysis.
+#                          only set for maps where the observer spawn produces
+#                          a spurious island not part of the playable area.
+# skip:                    true to exclude this map from the pipeline entirely.
 
 maps:
   2d:
@@ -23,6 +27,7 @@ maps:
     layer: bedrock
   agrostid:
     layer: bedrock
+    exclude_observer_island: true
   amphitheater:
     layer: lowest_solid
     exclude: [30, 68, 95, 96, 131, 160]
@@ -36,6 +41,7 @@ maps:
     layer: bedrock
   araxa:
     layer: lowest_solid
+    exclude_observer_island: true
   autumn_breeze:
     layer: y0
   bamboo_valley_v:
@@ -56,9 +62,11 @@ maps:
     layer: y0
   cargo:
     layer: lowest_solid
+    exclude_observer_island: true
   catscratch:
     layer: lowest_solid
     exclude: [55]
+    exclude_observer_island: true
   chestnut:
     layer: bedrock
   circus_ctw:
@@ -74,6 +82,7 @@ maps:
   colorado:
     layer: lowest_solid
     exclude: [8, 9, 30]
+    exclude_observer_island: true
   columbia_ctw:
     layer: lowest_solid
     exclude: [30]
@@ -92,6 +101,7 @@ maps:
     layer: y0
   desert_country:
     layer: bedrock
+    exclude_observer_island: true
   desert_eclipse:
     layer: bedrock
   desolate_gully_ctw:
@@ -117,9 +127,11 @@ maps:
     layer: bedrock
   exitium:
     layer: lowest_solid
+    exclude_observer_island: true
   exogrid:
     layer: lowest_solid
     exclude: [30]
+    exclude_observer_island: true
   expedition:
     layer: bedrock
   factorio_mainbus:
@@ -134,6 +146,7 @@ maps:
   fall_of_babylon:
     layer: lowest_solid
     exclude: [18, 55]
+    exclude_observer_island: true
   feel_good_inc:
     layer: lowest_solid
     exclude: [30]
@@ -155,13 +168,17 @@ maps:
     layer: bedrock
   golden_drought:
     layer: lowest_solid
+    exclude_observer_island: true
   golden_drought_iii:
     layer: lowest_solid
+    exclude_observer_island: true
   golden_drought_iv:
     layer: lowest_solid
+    exclude_observer_island: true
   golden_drought_v:
     layer: lowest_solid
     exclude: [30]
+    exclude_observer_island: true
   gongua_ctw:
     layer: lowest_solid
   goo_lagoon:
@@ -175,11 +192,14 @@ maps:
     layer: bedrock
   gridlock_2:
     layer: lowest_solid
+    exclude_observer_island: true
   hallows:
     layer: lowest_solid
+    exclude_observer_island: true
   harbor_ctw:
     layer: top_surface
     exclude: [8, 9, 30, 166]
+    exclude_observer_island: true
   hauoli_mau_lanui:
     layer: y0
   hello_world:
@@ -194,6 +214,7 @@ maps:
     exclude: [159]
   hotel_overcast:
     layer: bedrock
+    exclude_observer_island: true
   huanxiang:
     layer: y0
     exclude: [8, 9, 166]
@@ -204,11 +225,14 @@ maps:
   ingwaz:
     layer: lowest_solid
     exclude: [8, 9]
+    exclude_observer_island: true
   istana_ctw:
     layer: lowest_solid
     exclude: [30]
+    exclude_observer_island: true
   jungle_beat:
     layer: bedrock
+    exclude_observer_island: true
   kanto:
     layer: y0
   keipha_ctw:
@@ -227,6 +251,7 @@ maps:
     layer: y0
   lupa:
     layer: lowest_solid
+    exclude_observer_island: true
   lupain:
     layer: bedrock
   madness_on_rails:
@@ -237,8 +262,10 @@ maps:
     skip: true
   mini_drought:
     layer: lowest_solid
+    exclude_observer_island: true
   mushroom_gorge:
     layer: lowest_solid
+    exclude_observer_island: true
   nether_war_ctw:
     layer: y0
   nextgen:
@@ -253,6 +280,7 @@ maps:
     layer: bedrock
   oasis_ctw:
     layer: bedrock
+    exclude_observer_island: true
   oceano_ctw:
     layer: y0
   onier:
@@ -323,6 +351,7 @@ maps:
     layer: y0
   stalactites_a_land_down_under:
     layer: y0
+    exclude_observer_island: true
   standstill:
     layer: y0
   summertime_at_browns_farms:
@@ -359,8 +388,10 @@ maps:
     layer: bedrock
   two_tier:
     layer: lowest_solid
+    exclude_observer_island: true
   underpass:
     layer: lowest_solid
+    exclude_observer_island: true
   vegas:
     layer: y0
   veld:
@@ -386,6 +417,7 @@ maps:
     layer: bedrock
   wits_end:
     layer: lowest_solid
+    exclude_observer_island: true
   xion:
     layer: bedrock
   xunkohtli:

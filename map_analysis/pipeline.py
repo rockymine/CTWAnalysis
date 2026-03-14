@@ -738,6 +738,114 @@ def run_island_geometry(
 
 
 # ---------------------------------------------------------------------------
+# Observer island helpers
+# ---------------------------------------------------------------------------
+
+def _find_observer_island(map_data_obj: Optional[MapData], df: pd.DataFrame) -> Optional[int]:
+    """Return the island_id that contains the observer (default) spawn, or None.
+
+    Uses the centroid of the observer spawn region's 2D bounding box.  If the
+    centroid block is not found in the layout dataframe the closest island
+    center is used as a fallback.
+    """
+    if map_data_obj is None or map_data_obj.observer_spawn is None:
+        return None
+    region = map_data_obj.observer_spawn.region
+    if region is None:
+        return None
+    bounds = region.get_bounds_2d()
+    if bounds is None:
+        return None
+
+    (min_x, min_z), (max_x, max_z) = bounds
+    centroid_x = (min_x + max_x) / 2.0
+    centroid_z = (min_z + max_z) / 2.0
+
+    if 'island_id' not in df.columns:
+        return None
+
+    # Primary: look up the block at the centroid coordinate
+    block_x = int(round(centroid_x))
+    block_z = int(round(centroid_z))
+    hit = df.loc[(df['world_x'] == block_x) & (df['world_z'] == block_z), 'island_id']
+    if not hit.empty:
+        island_id = int(hit.iloc[0])
+        if island_id > 0:
+            return island_id
+
+    # Fallback: search a small neighbourhood (±2 blocks) around the centroid
+    for dx in range(-2, 3):
+        for dz in range(-2, 3):
+            hit = df.loc[
+                (df['world_x'] == block_x + dx) & (df['world_z'] == block_z + dz),
+                'island_id',
+            ]
+            if not hit.empty:
+                island_id = int(hit.iloc[0])
+                if island_id > 0:
+                    return island_id
+
+    logger.debug(
+        f"  Observer spawn centroid ({block_x}, {block_z}) not found in layout — "
+        "observer island will not be marked"
+    )
+    return None
+
+
+def _rerun_symmetry_without_observer(
+    final_islands: list[Island],
+    df: pd.DataFrame,
+    map_output_dir: Path,
+    symmetry: Optional[SymmetryResult],
+) -> Optional[SymmetryResult]:
+    """Re-run symmetry analysis excluding observer islands and update symmetry.json.
+
+    Returns the updated SymmetryResult (or the original if no observer islands
+    exist or symmetry was not run).
+    """
+    if symmetry is None:
+        return symmetry
+    if not any(isl.is_observer_island for isl in final_islands):
+        return symmetry
+
+    from symmetry_analysis import detect_symmetry_from_data
+    from symmetry_analysis import exporter as symmetry_exporter
+    from common.geometry import get_grid_extent
+
+    x_col = 'world_x' if 'world_x' in df.columns else 'x'
+    z_col = 'world_z' if 'world_z' in df.columns else 'z'
+    bbox = list(get_grid_extent(df[x_col], df[z_col]))
+
+    island_dicts = [
+        {
+            'id': isl.id,
+            'area': isl.area,
+            'center': list(isl.center),
+            'simplified_polygon': isl.simplified_polygon,
+        }
+        for isl in final_islands
+        if not isl.is_observer_island
+    ]
+    data = {
+        'map_name': map_output_dir.name,
+        'bounding_box': bbox,
+        'islands': island_dicts,
+    }
+    updated = detect_symmetry_from_data(data)
+    symmetry_exporter.save(updated, map_output_dir / 'symmetry.json')
+
+    if updated.primary:
+        logger.debug(
+            f"  Symmetry (no observer): {updated.primary['description']} "
+            f"({updated.primary['confidence']:.0%})"
+        )
+    else:
+        logger.debug("  Symmetry (no observer): none detected")
+
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # Public API: assembly pipeline
 # ---------------------------------------------------------------------------
 
@@ -748,6 +856,7 @@ def assemble_map(
     symmetry: Optional[SymmetryResult] = None,
     xml_context: Optional[MapXmlContext] = None,
     plots: bool = False,
+    exclude_observer_island: bool = False,
 ) -> MapContext:
     """Map assembly pipeline (Stages 5–7).
 
@@ -821,7 +930,25 @@ def assemble_map(
             has_spawn=ann.get('has_spawn', False),
             has_wool=ann.get('has_wool', False),
             team=ann.get('team'),
+            is_observer_island=False,
         ))
+
+    # Mark observer island and (if found) re-run symmetry excluding it.
+    # Only applies to maps where the observer spawn produces a spurious island
+    # that must be excluded from symmetry analysis.
+    if exclude_observer_island:
+        observer_island_id = _find_observer_island(map_data_obj, df)
+        if observer_island_id is not None:
+            for isl in final_islands:
+                if isl.id == observer_island_id:
+                    isl.is_observer_island = True
+                    logger.debug(f"  Observer island: island {observer_island_id}")
+                    break
+            else:
+                logger.debug(f"  Observer island id={observer_island_id} not found in final_islands")
+            symmetry = _rerun_symmetry_without_observer(
+                final_islands, df, map_output_dir, symmetry,
+            )
 
     # Team assignment + intra-team symmetry (mutates final_islands[].team)
     _assign_teams(final_islands, map_data_obj, map_output_dir,
