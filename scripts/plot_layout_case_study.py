@@ -238,13 +238,44 @@ def _load_layer(map_slug: str, layer_key: str) -> pd.DataFrame | None:
     return df
 
 
-def _make_colors(df: pd.DataFrame) -> np.ndarray:
-    """Return (N, 3) float array of colours normalised to [0, 1]."""
-    data_col = df['block_data'].values if 'block_data' in df.columns else np.zeros(len(df), dtype=int)
-    ids = df['block_id'].values.astype(int) if 'block_id' in df.columns else np.zeros(len(df), dtype=int)
-    rgb = np.array([block_color(int(bid), int(dat)) for bid, dat in zip(ids, data_col)],
-                   dtype=np.float32) / 255.0
-    return rgb
+def _make_image(
+    df: pd.DataFrame,
+    default_block_id: int = 0,
+) -> tuple[np.ndarray, list[float]]:
+    """Build an RGBA image (H×W×4 uint8) from block data.
+
+    Each block at integer index (x, z) occupies exactly one pixel, which
+    covers the world-space square [x, x+1] × [z, z+1].
+
+    Returns (rgba, extent) where extent=[x_min, x_max+1, z_max+1, z_min]
+    is suitable for ``ax.imshow(..., origin='upper', extent=extent)``.
+    """
+    xs = df['world_x'].values.astype(int)
+    zs = df['world_z'].values.astype(int)
+    data_col = (df['block_data'].values.astype(int)
+                if 'block_data' in df.columns
+                else np.zeros(len(df), dtype=int))
+    ids = (df['block_id'].values.astype(int)
+           if 'block_id' in df.columns
+           else np.full(len(df), default_block_id, dtype=int))
+
+    x_min, x_max = int(xs.min()), int(xs.max())
+    z_min, z_max = int(zs.min()), int(zs.max())
+
+    rgba = np.full((z_max - z_min + 1, x_max - x_min + 1, 4), 255, dtype=np.uint8)
+
+    rows = zs - z_min
+    cols = xs - x_min
+    rgb = np.array(
+        [block_color(int(bid), int(dat)) for bid, dat in zip(ids, data_col)],
+        dtype=np.uint8,
+    )
+    rgba[rows, cols, :3] = rgb
+
+    # extent=[left, right, bottom, top] with origin='upper':
+    # row 0 sits at z=z_min (top), row H-1 sits at z=z_max+1 (bottom).
+    extent = [x_min, x_max + 1, z_max + 1, z_min]
+    return rgba, extent
 
 
 def _legend_patches(df: pd.DataFrame, max_entries: int = 15) -> list[mpatches.Patch]:
@@ -270,8 +301,6 @@ def plot_map(map_slug: str, map_label: str, output_dir: Path) -> None:
     for ax, (layer_key, layer_label) in zip(axes.flat, LAYERS):
         df = _load_layer(map_slug, layer_key)
         ax.set_title(layer_label, fontsize=10)
-        ax.set_aspect('equal')
-        ax.invert_yaxis()
         ax.set_xlabel('X')
         ax.set_ylabel('Z')
 
@@ -280,24 +309,27 @@ def plot_map(map_slug: str, map_label: str, output_dir: Path) -> None:
                     ha='center', va='center', color='gray')
             continue
 
-        xs = df['world_x'].values + 0.5
-        zs = df['world_z'].values + 0.5
-        colors = _make_colors(df)
-
-        ax.scatter(xs, zs, c=colors, s=1.5, linewidths=0, rasterized=True)
+        # Default block_id for layers that don't store it (e.g. bedrock → 7)
+        default_id = 7 if layer_key == 'layout_bedrock' else 0
+        rgba, extent = _make_image(df, default_block_id=default_id)
+        # origin='upper' puts z increasing downward; extent aligns each pixel
+        # to exactly one 1×1 world-space block square.
+        ax.imshow(rgba, origin='upper', extent=extent,
+                  interpolation='nearest', aspect='equal')
 
         patches = _legend_patches(df)
         if patches:
-            ax.legend(handles=patches, loc='upper right', fontsize=5,
-                      framealpha=0.85, markerscale=1.5,
+            ax.legend(handles=patches, loc='upper left',
+                      bbox_to_anchor=(1.02, 1), borderaxespad=0,
+                      fontsize=5, framealpha=0.85,
                       title='block id (count)', title_fontsize=5)
 
-        # y axis label: include height info if present
+        # x label: include height info if present
         if 'y' in df.columns:
             y_min, y_max = int(df['y'].min()), int(df['y'].max())
             ax.set_xlabel(f'X   (y range {y_min}–{y_max})')
 
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=[0, 0, 0.85, 0.97])
     out_path = output_dir / 'layout_case_study.png'
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
