@@ -470,31 +470,43 @@ python ctw.py debug prepare-demo --map MAP [--force]
 
 ---
 
-### `ctw purge` — Delete Output Folders
+### `ctw purge` — Delete Output Folders and Database Records
 
-Delete per-map output folders under `output/`. The `output/` root is never
-touched — only the per-map subdirectories are removed.
+Delete per-map output folders under `output/` and/or their records from the
+analysis database. The `output/` root is never touched — only per-map
+subdirectories are removed.
 
 ```
 python ctw.py purge (--map NAME[,NAME,...] | --all | --no-matches)
-    [--output DIR] [--yes]
+    [--output DIR] [--db] [--yes]
 ```
 
 | Flag | Description |
 |---|---|
-| `--map NAME` | Delete output for specific map slug(s) (comma-separated) |
-| `--all` | Delete all per-map output folders |
-| `--no-matches` | Delete output for every map with no match data in the database |
+| `--map NAME` | Target specific map slug(s) (comma-separated) |
+| `--all` | Target all maps |
+| `--no-matches` | Target every map with no match data in the database |
 | `--output DIR` | Output root to scan (default: `output/`) |
+| `--db` | Also remove map records from the database (`maps` table and all dependents) |
 | `--yes` / `-y` | Skip confirmation prompt |
 
-Prints folder names and sizes before deleting. Without `--yes`, prompts
-for confirmation.
+Prints folder names and sizes (for file targets) and map names (for DB
+targets) before acting. Without `--yes`, shows a combined count and prompts
+for confirmation. `--db` can be used alone (without deleting files) or
+together with file deletion.
 
 ```bash
+# Remove output folders for maps with no match data
 python ctw.py purge --no-matches
-python ctw.py purge --map some_old_map
-python ctw.py purge --all --yes
+
+# Remove both output folders AND database records for maps with no match data
+python ctw.py purge --no-matches --db
+
+# Wipe database records only (keep output files) for a specific map
+python ctw.py purge --map some_old_map --db --output /dev/null
+
+# Delete everything for all maps, no prompt
+python ctw.py purge --all --db --yes
 ```
 
 ---
