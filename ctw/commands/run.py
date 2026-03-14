@@ -32,6 +32,8 @@ def register(subparsers):
     )
     p.add_argument('--map', help='Map name to analyze')
     p.add_argument('--all', action='store_true', help='Analyze all maps')
+    p.add_argument('--all-matches', action='store_true', dest='all_matches',
+                   help='Analyze only maps that have match data in the database')
     p.add_argument('--map-dir',
                    help='Directory containing map folders (default: map_folders/). '
                         'Used with --all to scan an external map collection.')

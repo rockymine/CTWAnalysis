@@ -36,7 +36,7 @@ direct path to a map folder.
 Runs layout extraction, island analysis, XML parsing, and map assembly in sequence.
 
 ```
-python ctw.py run (--map NAME | --all) [--force]
+python ctw.py run (--map NAME | --all | --all-matches) [--force]
     [--no-layout] [--no-islands] [--no-xml] [--no-matches]
     [--island-layout bedrock|y0|top|density]
     [--canonical-triangulation] [--plots]
@@ -46,6 +46,7 @@ python ctw.py run (--map NAME | --all) [--force]
 |---|---|
 | `--map NAME` | Map name to analyze |
 | `--all` | Analyze all maps in `map_folders/` |
+| `--all-matches` | Analyze only maps that have match data in the database |
 | `--force` | Regenerate even if outputs exist |
 | `--no-layout` | Skip layout extraction |
 | `--no-islands` | Skip island/skeleton analysis |
@@ -62,7 +63,7 @@ python ctw.py run (--map NAME | --all) [--force]
 Extract block data from Minecraft region files into parquet files.
 
 ```
-python ctw.py layout (--map NAME | --all) [--map-dir DIR] [--force]
+python ctw.py layout (--map NAME | --all | --all-matches) [--map-dir DIR] [--force]
     [--output DIR]
     [--threshold N] [--density-mode run,count]
     [--skip-y0] [--skip-surface] [--skip-density] [--skip-bedrock]
@@ -73,7 +74,8 @@ python ctw.py layout (--map NAME | --all) [--map-dir DIR] [--force]
 |---|---|
 | `--map NAME` | Single map name or path |
 | `--all` | Process all maps found in `--map-dir` |
-| `--map-dir DIR` | Directory to scan with `--all` (default: `map_folders/`). Use this for external collections such as CommunityMaps or PublicMaps. |
+| `--all-matches` | Process only maps that have match data in the database |
+| `--map-dir DIR` | Directory to scan with `--all` or `--all-matches` (default: `map_folders/`). Use this for external collections such as CommunityMaps or PublicMaps. |
 | `--output DIR` | Output root directory (default: `output/`). Each map writes to `<DIR>/<map_name>/`. |
 | `--threshold N` | Density threshold (default: 10) |
 | `--density-mode` | Comma-separated modes: `run`, `count` |

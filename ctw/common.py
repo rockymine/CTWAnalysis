@@ -25,23 +25,60 @@ def resolve_map_folder(map_arg: str) -> Path:
     sys.exit(1)
 
 
-def collect_map_folders(args) -> list:
-    """Return list of map folder Paths from --map or --all.
+def _slugs_with_matches() -> list[str]:
+    """Return map slugs that have at least one match recorded in the DB."""
+    import duckdb
+    db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
+    if not db_path.exists():
+        print("Error: match database not found; run 'ctw matches index' first",
+              file=sys.stderr)
+        sys.exit(1)
+    con = duckdb.connect(str(db_path), read_only=True)
+    rows = con.execute(
+        "SELECT DISTINCT m.map_slug FROM maps m "
+        "JOIN matches mt ON m.map_id = mt.map_id"
+    ).fetchall()
+    con.close()
+    return [row[0] for row in rows]
 
-    When --all is used, scans --map-dir (if provided) or the default
-    map_folders/ directory.
+
+def collect_map_folders(args) -> list:
+    """Return list of map folder Paths from --map, --all, or --all-matches.
+
+    --all          scans --map-dir (default: map_folders/)
+    --all-matches  uses only maps that have match data in the database,
+                   looked up under --map-dir (default: map_folders/)
+    --map NAME     single map name or comma-separated list
     """
+    map_dir = getattr(args, 'map_dir', None)
+    mf_dir = Path(map_dir) if map_dir else PROJECT_ROOT / 'map_folders'
+
     if getattr(args, 'all', False):
-        map_dir = getattr(args, 'map_dir', None)
-        mf_dir = Path(map_dir) if map_dir else PROJECT_ROOT / 'map_folders'
         if not mf_dir.exists():
             print(f"Error: map directory not found: {mf_dir}", file=sys.stderr)
             sys.exit(1)
         return sorted(f for f in mf_dir.iterdir() if f.is_dir())
+
+    if getattr(args, 'all_matches', False):
+        if not mf_dir.exists():
+            print(f"Error: map directory not found: {mf_dir}", file=sys.stderr)
+            sys.exit(1)
+        slugs = _slugs_with_matches()
+        folders = [mf_dir / slug for slug in slugs if (mf_dir / slug).is_dir()]
+        missing = [slug for slug in slugs if not (mf_dir / slug).is_dir()]
+        if missing:
+            import logging
+            logging.getLogger('ctw').debug(
+                f"--all-matches: {len(missing)} slugs not found in {mf_dir}: "
+                + ', '.join(missing[:10]) + ('…' if len(missing) > 10 else '')
+            )
+        return sorted(folders)
+
     if getattr(args, 'map', None):
         names = [n.strip() for n in args.map.split(',') if n.strip()]
         return [resolve_map_folder(n) for n in names]
-    print("Error: Must specify either --map or --all", file=sys.stderr)
+
+    print("Error: Must specify --map, --all, or --all-matches", file=sys.stderr)
     sys.exit(1)
 
 

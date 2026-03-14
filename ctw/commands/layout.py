@@ -33,6 +33,10 @@ def register(subparsers):
         '--all', action='store_true', dest='all',
         help='Process all maps found in --map-dir',
     )
+    map_group.add_argument(
+        '--all-matches', action='store_true', dest='all_matches',
+        help='Process only maps that have match data in the database',
+    )
     p.add_argument(
         '--map-dir', default=None,
         help='Directory to scan for map folders when using --all '
