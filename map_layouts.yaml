@@ -268,7 +268,7 @@ maps:
   mahatma:
     layer: y0
   mame_i_shrunk_the_pvpers:
-    skip: true
+    layer: bedrock
   mini_drought:
     layer: lowest_solid
     exclude_observer_island: true
@@ -370,7 +370,8 @@ maps:
     layer: y0
   super_happy_fun_world:
     layer: top_surface
-    exclude: [11]
+    exclude: [11,7]
+    exclude_observer_island: true
   sweetopia:
     layer: bedrock
   tangier:
