@@ -46,6 +46,7 @@ def to_dict(data: MapData, categories: Optional[dict[str, list[str]]] = None) ->
         'max_build_height': data.max_build_height,
         'teams': [_encode_team(team) for team in data.teams],
         'spawns': [_encode_spawn(spawn) for spawn in data.spawns],
+        'observer_spawn': _encode_spawn(data.observer_spawn) if data.observer_spawn else None,
         'wools': [_encode_wool(wool) for wool in data.wools],
         'regions': {
             region_id: _encode_region(region)

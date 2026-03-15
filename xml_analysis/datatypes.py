@@ -54,6 +54,7 @@ class MapData:
     objective: str = ""
     teams: list[Team] = field(default_factory=list)
     spawns: list[Spawn] = field(default_factory=list)
+    observer_spawn: Optional[Spawn] = None
     wools: list[Wool] = field(default_factory=list)
     regions: dict[str, Region] = field(default_factory=dict)
     apply_rules: list[ApplyRule] = field(default_factory=list)

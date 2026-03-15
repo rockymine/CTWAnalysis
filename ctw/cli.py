@@ -4,7 +4,7 @@ import argparse
 import os
 
 from ctw.common import PROJECT_ROOT
-from ctw.commands import run, layout, islands, xml, info, docs, matches, maps, debug, db
+from ctw.commands import run, layout, islands, xml, info, docs, matches, maps, debug, db, purge
 
 
 def build_parser() -> tuple[argparse.ArgumentParser, argparse.Action]:
@@ -54,7 +54,7 @@ Examples:
     # Commands that use the shared --map/--force parent receive map_parent;
     # commands that define their own flags (run, docs, matches) do not.
     run.register(subparsers)
-    layout.register(subparsers, map_parent)
+    layout.register(subparsers)
     islands.register(subparsers, map_parent)
     xml.register(subparsers, map_parent)
     info.register(subparsers, map_parent)
@@ -63,6 +63,7 @@ Examples:
     maps.register(subparsers)
     debug.register(subparsers)
     db.register(subparsers)
+    purge.register(subparsers)
 
     return parser, subparsers
 

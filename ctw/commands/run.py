@@ -32,6 +32,8 @@ def register(subparsers):
     )
     p.add_argument('--map', help='Map name to analyze')
     p.add_argument('--all', action='store_true', help='Analyze all maps')
+    p.add_argument('--all-matches', action='store_true', dest='all_matches',
+                   help='Analyze only maps that have match data in the database')
     p.add_argument('--map-dir',
                    help='Directory containing map folders (default: map_folders/). '
                         'Used with --all to scan an external map collection.')
@@ -53,6 +55,8 @@ def register(subparsers):
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
     p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
+    p.add_argument('--skip-lowest-solid', action='store_true',
+                   help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
     p.add_argument('--threshold', type=int, default=10,
@@ -61,7 +65,7 @@ def register(subparsers):
                    help='Density mode (default: run)')
 
     # Island settings (also settable via islands: section in config)
-    p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density'],
+    p.add_argument('--island-layout', choices=['bedrock', 'y0', 'top', 'density', 'solid'],
                    default='bedrock', help='Layout file for island analysis')
     p.add_argument('--canonical-polygons', action='store_true',
                    help='Use canonical-consistent polygon construction')
@@ -87,11 +91,30 @@ def _process_single_map(map_folder, args, output_override=None):
     from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
     from ctw.commands.layout import analyze_layout
     from ctw.commands.xml import analyze_xml
+    from layout_analysis.map_layout_config import get_map_layout
 
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
     setup_map_file_logging(map_output_dir)
 
-    logger.info(f"Processing: {map_folder.name}")
+    map_name = map_folder.name
+    map_layout_cfg = get_map_layout(map_name)
+
+    # Skip maps explicitly excluded in map_layouts.yaml
+    if map_layout_cfg is not None and map_layout_cfg.skip:
+        logger.info(f"Skipping {map_name}: excluded in map_layouts.yaml")
+        return map_name, True, None
+
+    logger.info(f"Processing: {map_name}")
+
+    # Determine which layout type to pass to island analysis
+    if map_layout_cfg is not None:
+        # Use decided file unless it's a plain y0 (no exclusions) — then reuse y0 directly
+        if map_layout_cfg.layer == 'y0' and not map_layout_cfg.exclude:
+            island_layout_type = 'y0'
+        else:
+            island_layout_type = 'decided'
+    else:
+        island_layout_type = args.island_layout
 
     try:
         # [1/6] Layout
@@ -104,9 +127,11 @@ def _process_single_map(map_folder, args, output_override=None):
                 skip_surface=args.skip_surface,
                 skip_density=args.skip_density,
                 skip_bedrock=args.skip_bedrock,
+                skip_lowest_solid=args.skip_lowest_solid,
                 skip_features=args.skip_features,
                 threshold=args.threshold,
                 density_mode=args.density_mode,
+                map_layout_config=map_layout_cfg,
             )
             n = len(parquet_files) if parquet_files else 0
             logger.info(f"  [1/6] Layout: {n} parquet files")
@@ -119,7 +144,7 @@ def _process_single_map(map_folder, args, output_override=None):
             geometry = run_island_geometry(
                 map_folder,
                 force_rerun=args.force,
-                layout_type=args.island_layout,
+                layout_type=island_layout_type,
                 canonical_polygons=args.canonical_polygons,
                 simplify_tolerance=args.simplify,
                 buffer_distance=args.buffer,
@@ -137,14 +162,11 @@ def _process_single_map(map_folder, args, output_override=None):
             logger.info("  [2/6] Islands: skipped")
 
         # [3/6] Symmetry (geometric only — uses in-memory geometry when available)
+        # Note: if assembly re-runs symmetry after excluding non-playable islands,
+        # the final result is logged at step [5/6] instead.
         symmetry = None
         if not args.no_symmetry:
             symmetry = run_symmetry(map_output_dir, geometry=geometry)
-            if symmetry and symmetry.primary:
-                logger.info(f"  [3/6] Symmetry: {symmetry.primary['description']} "
-                            f"({symmetry.primary['confidence']:.0%})")
-            else:
-                logger.info("  [3/6] Symmetry: none detected")
         else:
             logger.info("  [3/6] Symmetry: skipped")
 
@@ -164,13 +186,54 @@ def _process_single_map(map_folder, args, output_override=None):
         # [5/6] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
             if geometry is not None:
-                assemble_map(map_folder, geometry, map_output_dir,
-                             symmetry=symmetry, xml_context=xml_context, plots=args.plots)
+                exclude_obs = (
+                    map_layout_cfg.exclude_observer_island
+                    if map_layout_cfg is not None else False
+                )
+                exclude_isl = (
+                    map_layout_cfg.exclude_islands
+                    if map_layout_cfg is not None else []
+                )
+                bbox = (
+                    map_layout_cfg.playable_bbox
+                    if map_layout_cfg is not None else None
+                )
+                _, final_symmetry = assemble_map(
+                    map_folder, geometry, map_output_dir,
+                    symmetry=symmetry, xml_context=xml_context, plots=args.plots,
+                    exclude_observer_island=exclude_obs,
+                    exclude_islands=exclude_isl,
+                    playable_bbox=bbox,
+                )
                 logger.info("  [5/6] Assembly: done")
+                if not args.no_symmetry:
+                    if final_symmetry and final_symmetry.primary:
+                        logger.info(
+                            f"  [3/6] Symmetry: {final_symmetry.primary['description']} "
+                            f"({final_symmetry.primary['confidence']:.0%})"
+                        )
+                    else:
+                        logger.info("  [3/6] Symmetry: none detected")
             else:
                 logger.info("  [5/6] Assembly: skipped (no geometry)")
+                if not args.no_symmetry:
+                    if symmetry and symmetry.primary:
+                        logger.info(
+                            f"  [3/6] Symmetry: {symmetry.primary['description']} "
+                            f"({symmetry.primary['confidence']:.0%})"
+                        )
+                    else:
+                        logger.info("  [3/6] Symmetry: none detected")
         else:
             logger.info("  [5/6] Assembly: skipped")
+            if not args.no_symmetry:
+                if symmetry and symmetry.primary:
+                    logger.info(
+                        f"  [3/6] Symmetry: {symmetry.primary['description']} "
+                        f"({symmetry.primary['confidence']:.0%})"
+                    )
+                else:
+                    logger.info("  [3/6] Symmetry: none detected")
 
         logger.info("  [6/6] Match analysis: not supported")
 

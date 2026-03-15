@@ -12,10 +12,11 @@ Minecraft 1.8.9 block IDs for resource blocks:
 
 import logging
 from typing import Optional
+import numpy as np
 import pandas as pd
 
 from ..region_reader import RegionReader
-from ..utils import decode_block_id, get_block_index
+from ..extractors import _iter_chunk_sections
 
 logger = logging.getLogger('ctw')
 
@@ -25,18 +26,6 @@ DEFAULT_RESOURCE_BLOCKS: dict[int, str] = {
     42: 'iron_block',
     57: 'diamond_block',
 }
-
-
-def _nbt_int(tag) -> int:
-    """Extract a Python int from an NBT tag or plain int."""
-    return tag.value if hasattr(tag, 'value') else int(tag)
-
-
-def _nbt_bytes(tag) -> Optional[bytes]:
-    """Extract bytes from an NBT byte-array tag, or None."""
-    if tag is None:
-        return None
-    return bytes(tag.value) if hasattr(tag, 'value') else bytes(tag)
 
 
 class ResourceBlockExtractor:
@@ -75,9 +64,11 @@ class ResourceBlockExtractor:
         Returns:
             DataFrame with columns: world_x, world_z, y, resource_type
         """
-        rows: list[dict] = []
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_y:  list[np.ndarray] = []
+        all_rt: list[np.ndarray] = []
         chunk_count = 0
-        target_ids = set(self.target_blocks)
 
         logger.debug(
             f"Scanning for resource blocks: {list(self.target_blocks.values())}"
@@ -86,52 +77,32 @@ class ResourceBlockExtractor:
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
+                n = sum(len(a) for a in all_wx)
                 logger.debug(
-                    f"  Processed {chunk_count} chunks, found {len(rows)} resource blocks..."
+                    f"  Processed {chunk_count} chunks, found {n} resource blocks..."
                 )
 
-            try:
-                sections = chunk.data.get('Sections', [])
-            except Exception:
-                continue
-
-            for section in sections:
-                blocks_tag = section.get('Blocks')
-                if blocks_tag is None:
-                    continue
-
-                blocks = _nbt_bytes(blocks_tag)
-                add = _nbt_bytes(section.get('Add'))
-
-                sy_tag = section.get('Y')
-                if sy_tag is None:
-                    continue
-                section_y = _nbt_int(sy_tag)
-
-                # Single pass through the 4096-element Blocks array
-                for index in range(4096):
-                    block_id = decode_block_id(blocks, add, index)
-                    if block_id not in target_ids:
+            for section_y, blocks_3d, _ in _iter_chunk_sections(chunk):
+                for block_id, label in self.target_blocks.items():
+                    yy, zz, xx = np.where(blocks_3d == block_id)
+                    if len(yy) == 0:
                         continue
+                    all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                    all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                    all_y.append((section_y * 16 + yy).astype(np.int32))
+                    all_rt.append(np.full(len(yy), label, dtype=object))
 
-                    # Decode local coords from index: (y*16 + z)*16 + x
-                    x_local = index % 16
-                    z_local = (index // 16) % 16
-                    y_local = index // 256
-
-                    rows.append({
-                        'world_x': chunk_x * 16 + x_local,
-                        'world_z': chunk_z * 16 + z_local,
-                        'y': section_y * 16 + y_local,
-                        'resource_type': self.target_blocks[block_id],
-                    })
-
+        total = sum(len(a) for a in all_wx)
         logger.debug(
             f"Completed resource block scan: {chunk_count} chunks, "
-            f"{len(rows)} blocks found"
+            f"{total} blocks found"
         )
 
-        df = pd.DataFrame(rows)
-        if df.empty:
+        if not all_wx:
             return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'resource_type'])
-        return df
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'y': np.concatenate(all_y),
+            'resource_type': np.concatenate(all_rt),
+        })

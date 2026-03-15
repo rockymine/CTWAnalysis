@@ -4,6 +4,12 @@
 -- Usage: ctw db --list | ctw db --run <id> | ctw db --all
 -- =============================================================================
 
+-- 0a. All maps with matches
+
+SELECT mp.map_slug
+FROM maps mp
+ORDER BY mp.map_slug ASC
+
 -- =====================
 -- 1. INVENTORY
 -- =====================
@@ -290,3 +296,16 @@ FROM maps mp
 LEFT JOIN map_spawns ms ON mp.map_id = ms.map_id
 WHERE ms.spawn_id IS NULL
 ORDER BY mp.map_slug;
+
+-- 6a. Maps with block 36 in y0 layer
+SELECT m.map_slug, m.map_name,
+        SUM(CASE WHEN inv.block_id = 36 THEN inv.block_count ELSE 0 END) as block36,
+        ls.block_count as total,
+        ROUND(100.0 * SUM(CASE WHEN inv.block_id = 36 THEN inv.block_count ELSE 0 END) / ls.block_count, 1) as pct
+FROM layout_block_inventory inv
+JOIN maps m ON inv.map_id = m.map_id
+JOIN layout_layer_stats ls ON inv.map_id = ls.map_id AND ls.layer = 'y0'
+WHERE inv.layer = 'y0'
+GROUP BY m.map_slug, m.map_name, ls.block_count
+HAVING block36 > 0
+ORDER BY m.map_slug ASC

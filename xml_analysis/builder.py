@@ -74,8 +74,8 @@ class MapXMLParser:
         # Parse teams
         data.teams = self._parse_teams()
 
-        # Parse spawns
-        data.spawns = self._parse_spawns()
+        # Parse spawns (team spawns + optional observer default spawn)
+        data.spawns, data.observer_spawn = self._parse_spawns()
 
         # Parse wools
         data.wools = self._parse_wools()
@@ -147,36 +147,48 @@ class MapXMLParser:
 
         return teams
 
-    def _parse_spawns(self) -> list[Spawn]:
-        """Parse spawn elements."""
-        spawns = []
+    def _parse_spawns(self) -> tuple[list[Spawn], Optional[Spawn]]:
+        """Parse spawn and default (observer) elements.
+
+        Returns:
+            Tuple of (team_spawns, observer_spawn).  observer_spawn is None
+            when no <default> element is present.
+        """
+        spawns: list[Spawn] = []
+        observer_spawn: Optional[Spawn] = None
         spawns_elem = self.root.find('spawns')
         if spawns_elem is None:
-            return spawns
+            return spawns, observer_spawn
 
         for spawn_elem in spawns_elem.findall('spawn'):
-            region = None
-            # Check for region attribute (e.g. <spawn region="blue-spawn-point"/>)
-            region_attr = spawn_elem.get('region', '')
-            if region_attr:
-                region = RegionReference(ref_id=region_attr)
-            else:
-                # Try singular <region> child first, then plural <regions>
-                region_elem = spawn_elem.find('region')
-                if region_elem is None:
-                    region_elem = spawn_elem.find('regions')
-                if region_elem is not None:
-                    region = self._parse_region_element(region_elem)
-
-            spawn = Spawn(
-                team=spawn_elem.get('team', ''),
-                kit=spawn_elem.get('kit', ''),
-                yaw=_safe_float(spawn_elem.get('yaw', '0')),
-                region=region
-            )
+            spawn = self._parse_spawn_element(spawn_elem)
             spawns.append(spawn)
 
-        return spawns
+        default_elem = spawns_elem.find('default')
+        if default_elem is not None:
+            observer_spawn = self._parse_spawn_element(default_elem)
+
+        return spawns, observer_spawn
+
+    def _parse_spawn_element(self, elem) -> 'Spawn':
+        """Parse a single <spawn> or <default> element into a Spawn."""
+        region = None
+        region_attr = elem.get('region', '')
+        if region_attr:
+            region = RegionReference(ref_id=region_attr)
+        else:
+            region_elem = elem.find('region')
+            if region_elem is None:
+                region_elem = elem.find('regions')
+            if region_elem is not None:
+                region = self._parse_region_element(region_elem)
+
+        return Spawn(
+            team=elem.get('team', ''),
+            kit=elem.get('kit', ''),
+            yaw=_safe_float(elem.get('yaw', '0')),
+            region=region,
+        )
 
     @staticmethod
     def _resolve_spawn_regions(data: MapData):
@@ -184,6 +196,12 @@ class MapXMLParser:
         for spawn in data.spawns:
             if isinstance(spawn.region, RegionReference) and spawn.region.ref_id in data.regions:
                 spawn.region = data.regions[spawn.region.ref_id]
+        if (
+            data.observer_spawn is not None
+            and isinstance(data.observer_spawn.region, RegionReference)
+            and data.observer_spawn.region.ref_id in data.regions
+        ):
+            data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
 
     def _parse_wools(self) -> list[Wool]:
         """Parse wool elements."""

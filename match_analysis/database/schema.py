@@ -364,6 +364,32 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table N+5: Layout layer statistics (block counts per map per layer)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS layout_layer_stats (
+            map_id      INTEGER NOT NULL,
+            layer       TEXT NOT NULL,
+            block_count INTEGER NOT NULL,
+            y_min       INTEGER,
+            y_max       INTEGER,
+            scanned_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (map_id, layer),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+6: Layout block inventory (unique block IDs per map per layer)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS layout_block_inventory (
+            map_id      INTEGER NOT NULL,
+            layer       TEXT NOT NULL,
+            block_id    INTEGER NOT NULL,
+            block_count INTEGER NOT NULL,
+            PRIMARY KEY (map_id, layer, block_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -472,6 +498,7 @@ def migrate_map_classification_columns(db_path: str | None = None) -> None:
         ("total_blocks", "INTEGER"),
         ("size_tier", "VARCHAR"),
         ("symmetry_type", "VARCHAR"),
+        ("symmetry_confidence", "FLOAT"),
         ("has_intra_team_symmetry", "BOOLEAN"),
     ]:
         conn.execute(
@@ -638,6 +665,37 @@ def migrate_kit_tables(db_path: str | None = None) -> None:
     """)
     conn.close()
     print(f"Kit tables created in {db_path}")
+
+
+def migrate_layout_audit_tables(db_path: str | None = None) -> None:
+    """Create layout_layer_stats and layout_block_inventory tables if missing."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS layout_layer_stats (
+            map_id      INTEGER NOT NULL,
+            layer       TEXT NOT NULL,
+            block_count INTEGER NOT NULL,
+            y_min       INTEGER,
+            y_max       INTEGER,
+            scanned_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (map_id, layer),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS layout_block_inventory (
+            map_id      INTEGER NOT NULL,
+            layer       TEXT NOT NULL,
+            block_id    INTEGER NOT NULL,
+            block_count INTEGER NOT NULL,
+            PRIMARY KEY (map_id, layer, block_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+    print(f"Layout audit tables created/verified in {db_path}")
 
 
 if __name__ == "__main__":

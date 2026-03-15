@@ -1,19 +1,112 @@
 """
 Extraction modes for analyzing Minecraft world layouts.
 
-Provides three extractors:
-1. Y0LayerExtractor - Extracts non-air blocks at world y=0
-2. TopSurfaceExtractor - Finds highest non-air block in each column
-3. VerticalDensityExtractor - Filters columns by density metrics
+Provides five extractors:
+1. Y0LayerExtractor          - Extracts non-air blocks at world y=0
+2. TopSurfaceExtractor       - Finds highest non-excluded non-air block in each column
+3. VerticalDensityExtractor  - Filters columns by density metrics
+4. LowestBedrockExtractor    - Finds lowest bedrock (block 7) in each column
+5. LowestSolidLayerExtractor - Finds lowest non-excluded non-air block in each column
+
+All extractors read Minecraft Anvil section data as NumPy arrays (one section read per
+section_y rather than one get_block call per block), giving a large speedup for
+full-column scans.
 """
 
 import logging
-from typing import Literal
+from typing import Iterator, Literal
+import numpy as np
 import pandas as pd
 from .region_reader import RegionReader
 
 logger = logging.getLogger('ctw')
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _iter_chunk_sections(chunk) -> Iterator[tuple[int, np.ndarray, np.ndarray]]:
+    """
+    Yield ``(section_y, blocks_3d, data_3d)`` for every section in *chunk*.
+
+    ``blocks_3d`` — ``(16, 16, 16)`` uint16 array, axis order **[y, z, x]**,
+    containing block IDs (base Blocks byte + optional Add nibbles).
+
+    ``data_3d``   — ``(16, 16, 16)`` uint8  array, same axis order,
+    containing block damage/variant nibbles.
+
+    Sections are yielded in ascending Y order.  Malformed or empty sections
+    are silently skipped.
+    """
+    try:
+        sections_nbt = chunk.data.get('Sections', [])
+    except Exception:
+        return
+
+    parsed: list[tuple[int, np.ndarray, np.ndarray]] = []
+    for sec in sections_nbt:
+        try:
+            y_raw = sec.get('Y')
+            blocks_raw = sec.get('Blocks')
+            data_raw = sec.get('Data')
+            if y_raw is None or blocks_raw is None or data_raw is None:
+                continue
+
+            # NBT numeric tags expose their int value via .value
+            y_val: int = y_raw.value if hasattr(y_raw, 'value') else int(y_raw)
+
+            # Convert NBT byte arrays to plain bytes
+            blocks_bytes = bytes(blocks_raw.value) if hasattr(blocks_raw, 'value') else bytes(blocks_raw)
+            data_bytes = bytes(data_raw.value) if hasattr(data_raw, 'value') else bytes(data_raw)
+            if len(blocks_bytes) != 4096 or len(data_bytes) != 2048:
+                continue
+
+            # Block IDs (base, one byte per block)
+            blocks = np.frombuffer(blocks_bytes, dtype=np.uint8).astype(np.uint16)
+
+            # Optional Add nibble array — extends block IDs beyond 255
+            add_raw = sec.get('Add')
+            if add_raw is not None:
+                add_bytes = bytes(add_raw.value) if hasattr(add_raw, 'value') else bytes(add_raw)
+                if len(add_bytes) == 2048:
+                    add_packed = np.frombuffer(add_bytes, dtype=np.uint8)
+                    add_nibbles = np.empty(4096, dtype=np.uint16)
+                    add_nibbles[0::2] = add_packed & 0x0F
+                    add_nibbles[1::2] = (add_packed >> 4) & 0x0F
+                    blocks |= (add_nibbles << 8)
+
+            # Data values: two nibbles per byte
+            data_packed = np.frombuffer(data_bytes, dtype=np.uint8)
+            data_nibbles = np.empty(4096, dtype=np.uint8)
+            data_nibbles[0::2] = data_packed & 0x0F
+            data_nibbles[1::2] = (data_packed >> 4) & 0x0F
+
+            # Layout in memory: YZX order (index = y*256 + z*16 + x)
+            blocks_3d = blocks.reshape(16, 16, 16)        # [y, z, x]
+            data_3d = data_nibbles.reshape(16, 16, 16)    # [y, z, x]
+            parsed.append((y_val, blocks_3d, data_3d))
+        except Exception:
+            continue
+
+    for item in sorted(parsed, key=lambda t: t[0]):
+        yield item
+
+
+def _col_max_run(col: np.ndarray) -> int:
+    """Maximum consecutive True run length in a 1-D boolean array."""
+    if not np.any(col):
+        return 0
+    extended = np.concatenate([[False], col, [False]])
+    diff = np.diff(extended.astype(np.int8))
+    starts = np.where(diff == 1)[0]
+    ends = np.where(diff == -1)[0]
+    return int((ends - starts).max())
+
+
+# ---------------------------------------------------------------------------
+# Extractors
+# ---------------------------------------------------------------------------
 
 class Y0LayerExtractor:
     """
@@ -22,13 +115,7 @@ class Y0LayerExtractor:
     Criterion: block_id != 0 at y=0
     """
 
-    def __init__(self, region_reader: RegionReader):
-        """
-        Initialize the extractor.
-
-        Args:
-            region_reader: RegionReader instance for the world
-        """
+    def __init__(self, region_reader: RegionReader) -> None:
         self.reader = region_reader
 
     def extract(self) -> pd.DataFrame:
@@ -38,7 +125,10 @@ class Y0LayerExtractor:
         Returns:
             DataFrame with columns: world_x, world_z, block_id, block_data
         """
-        points = []
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_id: list[np.ndarray] = []
+        all_dt: list[np.ndarray] = []
         chunk_count = 0
 
         logger.debug("Extracting Y0 layer...")
@@ -46,58 +136,75 @@ class Y0LayerExtractor:
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
 
-            # Iterate over all x,z positions in the chunk at y=0
-            for local_x in range(16):
-                for local_z in range(16):
-                    try:
-                        block = chunk.get_block(local_x, 0, local_z)
+            for section_y, blocks_3d, data_3d in _iter_chunk_sections(chunk):
+                if section_y != 0:
+                    continue  # y=0 is always in section 0
+                # Local y=0 slice: shape (16, 16) [z, x]
+                y0_blocks = blocks_3d[0]
+                y0_data = data_3d[0]
+                zz, xx = np.where(y0_blocks != 0)
+                if len(zz):
+                    all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                    all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                    all_id.append(y0_blocks[zz, xx].astype(np.uint16))
+                    all_dt.append(y0_data[zz, xx])
+                break  # Only need section 0
 
-                        # Check if non-air
-                        if block.id != 0:
-                            world_x = chunk_x * 16 + local_x
-                            world_z = chunk_z * 16 + local_z
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed Y0 extraction: {chunk_count} chunks, {total} matching points")
 
-                            points.append({
-                                'world_x': world_x,
-                                'world_z': world_z,
-                                'block_id': block.id,
-                                'block_data': block.data,
-                            })
-                    except Exception:
-                        # Block doesn't exist or error, skip
-                        continue
-
-        logger.debug(f"Completed Y0 extraction: {chunk_count} chunks, {len(points)} matching points")
-
-        return pd.DataFrame(points)
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'block_id', 'block_data'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'block_id': np.concatenate(all_id),
+            'block_data': np.concatenate(all_dt),
+        })
 
 
 class TopSurfaceExtractor:
     """
-    Finds the highest non-air block in each column.
+    Finds the highest non-excluded non-air block in each column.
 
-    Criterion: column has at least one non-air block
+    Scans each column from y=255 downward and returns the first block whose
+    ID is not air (0) and not in exclude_ids. When exclude_ids is non-empty
+    this produces a "structural" surface that skips decoration blocks
+    (e.g. leaves, tall grass, build-region markers).
+
+    Criterion: column contains at least one qualifying block
     """
 
-    def __init__(self, region_reader: RegionReader):
+    def __init__(
+        self,
+        region_reader: RegionReader,
+        exclude_ids: set[int] | None = None,
+    ) -> None:
         """
-        Initialize the extractor.
-
         Args:
             region_reader: RegionReader instance for the world
+            exclude_ids: Block IDs to skip when searching top-down.
+                         Air (0) is always excluded regardless of this set.
+                         Pass an empty set or None for the raw top surface.
         """
         self.reader = region_reader
+        self._exclude_ids: set[int] = set(exclude_ids) if exclude_ids else set()
 
     def extract(self) -> pd.DataFrame:
         """
-        Extract the highest non-air block in each column.
+        Extract the highest qualifying block in each column.
 
         Returns:
             DataFrame with columns: world_x, world_z, y, block_id, block_data
         """
-        points = []
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_y:  list[np.ndarray] = []
+        all_id: list[np.ndarray] = []
+        all_dt: list[np.ndarray] = []
         chunk_count = 0
 
         logger.debug("Extracting top surface...")
@@ -105,46 +212,70 @@ class TopSurfaceExtractor:
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
 
-            # For each x,z column in the chunk, find the highest non-air block
-            for local_x in range(16):
-                for local_z in range(16):
-                    highest_y = None
-                    highest_id = None
-                    highest_data = None
+            # found_y[z, x] — highest qualifying y found; -1 = not found yet
+            found_y = np.full((16, 16), -1, dtype=np.int16)
+            found_id = np.zeros((16, 16), dtype=np.uint16)
+            found_dt = np.zeros((16, 16), dtype=np.uint8)
 
-                    # Scan from top to bottom (y=255 down to y=0)
-                    for y in range(255, -1, -1):
-                        try:
-                            block = chunk.get_block(local_x, y, local_z)
+            # Collect sections sorted descending (top → bottom)
+            sections = list(_iter_chunk_sections(chunk))
+            sections.sort(key=lambda t: t[0], reverse=True)
 
-                            if block.id != 0:
-                                # Found the highest non-air block
-                                highest_y = y
-                                highest_id = block.id
-                                highest_data = block.data
-                                break
-                        except Exception:
-                            # Block doesn't exist or error, continue
-                            continue
+            for section_y, blocks_3d, data_3d in sections:
+                if np.all(found_y >= 0):
+                    break  # All columns resolved
 
-                    # Add to results if we found a non-air block
-                    if highest_y is not None:
-                        world_x = chunk_x * 16 + local_x
-                        world_z = chunk_z * 16 + local_z
+                # Solid mask: non-air and not excluded
+                solid = blocks_3d != 0
+                for exc in self._exclude_ids:
+                    solid &= blocks_3d != exc
 
-                        points.append({
-                            'world_x': world_x,
-                            'world_z': world_z,
-                            'y': highest_y,
-                            'block_id': highest_id,
-                            'block_data': highest_data,
-                        })
+                # Columns still unfound that have any qualifying block in this section
+                not_found = found_y < 0                  # (16, 16)
+                has_any = solid.any(axis=0)              # (16, 16)
+                to_process = not_found & has_any
 
-        logger.debug(f"Completed top surface extraction: {chunk_count} chunks, {len(points)} matching points")
+                if not np.any(to_process):
+                    continue
 
-        return pd.DataFrame(points)
+                # Find the highest (largest local_y) qualifying block per column
+                # solid[::-1] reverses so argmax finds the highest first
+                solid_rev = solid[::-1]                          # [y_desc, z, x]
+                argmax_rev = np.argmax(solid_rev, axis=0)        # (16, 16)
+                highest_local_y = (15 - argmax_rev).astype(np.int16)
+
+                zz, xx = np.where(to_process)
+                local_ys = highest_local_y[zz, xx]
+                world_ys = (section_y * 16 + local_ys).astype(np.int16)
+
+                found_y[zz, xx] = world_ys
+                found_id[zz, xx] = blocks_3d[local_ys, zz, xx]
+                found_dt[zz, xx] = data_3d[local_ys, zz, xx]
+
+            # Collect results for this chunk
+            zz, xx = np.where(found_y >= 0)
+            if len(zz):
+                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                all_y.append(found_y[zz, xx])
+                all_id.append(found_id[zz, xx])
+                all_dt.append(found_dt[zz, xx])
+
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed top surface extraction: {chunk_count} chunks, {total} matching points")
+
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_id', 'block_data'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'y': np.concatenate(all_y),
+            'block_id': np.concatenate(all_id),
+            'block_data': np.concatenate(all_dt),
+        })
 
 
 class VerticalDensityExtractor:
@@ -162,16 +293,8 @@ class VerticalDensityExtractor:
         self,
         region_reader: RegionReader,
         threshold: int = 10,
-        mode: Literal['run', 'count'] = 'run'
-    ):
-        """
-        Initialize the extractor.
-
-        Args:
-            region_reader: RegionReader instance for the world
-            threshold: Minimum metric value to include the column
-            mode: Density calculation mode ('run' or 'count')
-        """
+        mode: Literal['run', 'count'] = 'run',
+    ) -> None:
         self.reader = region_reader
         self.threshold = threshold
         self.mode = mode
@@ -183,7 +306,9 @@ class VerticalDensityExtractor:
         Returns:
             DataFrame with columns: world_x, world_z, metric
         """
-        points = []
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_m:  list[np.ndarray] = []
         chunk_count = 0
 
         logger.debug(f"Extracting vertical density (mode={self.mode}, threshold={self.threshold})...")
@@ -191,78 +316,46 @@ class VerticalDensityExtractor:
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
 
-            # For each x,z column in the chunk, calculate the metric
-            for local_x in range(16):
-                for local_z in range(16):
-                    # Collect all block IDs in the column from bottom to top
-                    column_blocks = []
+            # Build full (256, 16, 16) block array from all sections
+            full_blocks = np.zeros((256, 16, 16), dtype=np.uint16)
+            for section_y, blocks_3d, _ in _iter_chunk_sections(chunk):
+                y_start = section_y * 16
+                if 0 <= y_start < 256:
+                    full_blocks[y_start:y_start + 16] = blocks_3d
 
-                    for y in range(256):  # y=0 to y=255
-                        try:
-                            block = chunk.get_block(local_x, y, local_z)
-                            column_blocks.append(block.id)
-                        except Exception:
-                            # Block doesn't exist, treat as air
-                            column_blocks.append(0)
+            non_air = full_blocks != 0  # (256, 16, 16)
 
-                    # Calculate metric based on mode
-                    if self.mode == 'run':
-                        metric = self._calculate_max_run(column_blocks)
-                    elif self.mode == 'count':
-                        metric = self._calculate_count(column_blocks)
-                    else:
-                        raise ValueError(f"Invalid mode: {self.mode}")
+            if self.mode == 'count':
+                metrics = np.sum(non_air, axis=0).astype(np.int32)   # (16, 16)
+            else:  # 'run'
+                # Compute max consecutive run per column (256 columns, 256 y-steps)
+                flat = non_air.reshape(256, 256)  # [y, col]
+                metrics = np.zeros(256, dtype=np.int32)
+                for col_i in range(256):
+                    metrics[col_i] = _col_max_run(flat[:, col_i])
+                metrics = metrics.reshape(16, 16)
 
-                    # Check if meets threshold
-                    if metric >= self.threshold:
-                        world_x = chunk_x * 16 + local_x
-                        world_z = chunk_z * 16 + local_z
+            # Filter by threshold
+            mask = metrics >= self.threshold
+            zz, xx = np.where(mask)
+            if len(zz):
+                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                all_m.append(metrics[zz, xx])
 
-                        points.append({
-                            'world_x': world_x,
-                            'world_z': world_z,
-                            'metric': metric,
-                        })
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed density extraction: {chunk_count} chunks, {total} matching points")
 
-        logger.debug(f"Completed density extraction: {chunk_count} chunks, {len(points)} matching points")
-
-        return pd.DataFrame(points)
-
-    def _calculate_max_run(self, column_blocks: list[int]) -> int:
-        """
-        Calculate the maximum consecutive run length of non-air blocks.
-
-        Args:
-            column_blocks: List of block IDs from bottom to top
-
-        Returns:
-            Maximum consecutive run length
-        """
-        max_run = 0
-        current_run = 0
-
-        for block_id in column_blocks:
-            if block_id != 0:
-                current_run += 1
-                max_run = max(max_run, current_run)
-            else:
-                current_run = 0
-
-        return max_run
-
-    def _calculate_count(self, column_blocks: list[int]) -> int:
-        """
-        Calculate the total count of non-air blocks.
-
-        Args:
-            column_blocks: List of block IDs from bottom to top
-
-        Returns:
-            Count of non-air blocks
-        """
-        return sum(1 for block_id in column_blocks if block_id != 0)
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'metric'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'metric': np.concatenate(all_m),
+        })
 
 
 class LowestBedrockExtractor:
@@ -272,13 +365,7 @@ class LowestBedrockExtractor:
     Criterion: column contains at least one bedrock block
     """
 
-    def __init__(self, region_reader: RegionReader):
-        """
-        Initialize the extractor.
-
-        Args:
-            region_reader: RegionReader instance for the world
-        """
+    def __init__(self, region_reader: RegionReader) -> None:
         self.reader = region_reader
 
     def extract(self) -> pd.DataFrame:
@@ -288,7 +375,10 @@ class LowestBedrockExtractor:
         Returns:
             DataFrame with columns: world_x, world_z, y, block_data
         """
-        points = []
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_y:  list[np.ndarray] = []
+        all_dt: list[np.ndarray] = []
         chunk_count = 0
 
         logger.debug("Extracting lowest bedrock blocks...")
@@ -296,40 +386,166 @@ class LowestBedrockExtractor:
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
             if chunk_count % 100 == 0:
-                logger.debug(f"  Processed {chunk_count} chunks, found {len(points)} points...")
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
 
-            # For each x,z column in the chunk, find the lowest bedrock block
-            for local_x in range(16):
-                for local_z in range(16):
-                    lowest_y = None
-                    lowest_data = None
+            found_y = np.full((16, 16), -1, dtype=np.int16)
+            found_dt = np.zeros((16, 16), dtype=np.uint8)
 
-                    # Scan from bottom to top (y=0 to y=255)
-                    for y in range(256):
-                        try:
-                            block = chunk.get_block(local_x, y, local_z)
+            for section_y, blocks_3d, data_3d in _iter_chunk_sections(chunk):
+                if np.all(found_y >= 0):
+                    break
 
-                            if block.id == 7:  # Bedrock
-                                # Found the lowest bedrock block
-                                lowest_y = y
-                                lowest_data = block.data
-                                break
-                        except Exception:
-                            # Block doesn't exist or error, continue
-                            continue
+                bedrock_mask = blocks_3d == 7          # (16, 16, 16)
+                not_found = found_y < 0                # (16, 16)
+                has_any = bedrock_mask.any(axis=0)     # (16, 16)
+                to_process = not_found & has_any
 
-                    # Add to results if we found a bedrock block
-                    if lowest_y is not None:
-                        world_x = chunk_x * 16 + local_x
-                        world_z = chunk_z * 16 + local_z
+                if not np.any(to_process):
+                    continue
 
-                        points.append({
-                            'world_x': world_x,
-                            'world_z': world_z,
-                            'y': lowest_y,
-                            'block_data': lowest_data,
-                        })
+                # Lowest bedrock: first True along y axis
+                first_y = np.argmax(bedrock_mask, axis=0)  # (16, 16)
+                zz, xx = np.where(to_process)
+                local_ys = first_y[zz, xx]
 
-        logger.debug(f"Completed lowest bedrock extraction: {chunk_count} chunks, {len(points)} matching points")
+                found_y[zz, xx] = (section_y * 16 + local_ys).astype(np.int16)
+                found_dt[zz, xx] = data_3d[local_ys, zz, xx]
 
-        return pd.DataFrame(points)
+            zz, xx = np.where(found_y >= 0)
+            if len(zz):
+                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                all_y.append(found_y[zz, xx])
+                all_dt.append(found_dt[zz, xx])
+
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed lowest bedrock extraction: {chunk_count} chunks, {total} matching points")
+
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_data'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'y': np.concatenate(all_y),
+            'block_data': np.concatenate(all_dt),
+        })
+
+
+# Default block IDs excluded by LowestSolidLayerExtractor.
+# Block 36 (PISTON_MOVING_PIECE) is used by many maps as a build-region
+# boundary marker and should never be treated as part of an island.
+_DEFAULT_SOLID_EXCLUDE: frozenset[int] = frozenset({36})
+
+
+class LowestSolidLayerExtractor:
+    """
+    Finds the lowest non-excluded non-air block in each column.
+
+    Scans each column from y=0 upward and returns the first block whose
+    ID is not air (0) and not in exclude_ids.  This gives a "view from
+    below" that is robust across map styles:
+
+    - Standard bedrock maps: returns the bedrock block (same footprint as
+      LowestBedrockExtractor, but also captures the block_id).
+    - Maps with raised or non-bedrock floors: returns whatever the actual
+      floor material is.
+    - Floating-island maps: returns the underside of each island (columns
+      above void simply yield no result).
+
+    Unlike LowestBedrockExtractor this extractor also returns the block_id,
+    making it useful for both island detection and material analysis.
+
+    Criterion: column contains at least one qualifying block
+    """
+
+    def __init__(
+        self,
+        region_reader: RegionReader,
+        exclude_ids: set[int] | None = None,
+    ) -> None:
+        """
+        Args:
+            region_reader: RegionReader instance for the world
+            exclude_ids: Block IDs to skip when searching bottom-up.
+                         Air (0) is always excluded.  Defaults to {36}
+                         (build-region marker).  Pass an explicit set to
+                         override (an empty set means only air is excluded).
+        """
+        self.reader = region_reader
+        self._exclude_ids: frozenset[int] = (
+            frozenset(exclude_ids) if exclude_ids is not None
+            else _DEFAULT_SOLID_EXCLUDE
+        )
+
+    def extract(self) -> pd.DataFrame:
+        """
+        Extract the lowest qualifying block in each column.
+
+        Returns:
+            DataFrame with columns: world_x, world_z, y, block_id, block_data
+        """
+        all_wx: list[np.ndarray] = []
+        all_wz: list[np.ndarray] = []
+        all_y:  list[np.ndarray] = []
+        all_id: list[np.ndarray] = []
+        all_dt: list[np.ndarray] = []
+        chunk_count = 0
+
+        logger.debug("Extracting lowest solid layer...")
+
+        for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
+            chunk_count += 1
+            if chunk_count % 100 == 0:
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
+
+            found_y = np.full((16, 16), -1, dtype=np.int16)
+            found_id = np.zeros((16, 16), dtype=np.uint16)
+            found_dt = np.zeros((16, 16), dtype=np.uint8)
+
+            for section_y, blocks_3d, data_3d in _iter_chunk_sections(chunk):
+                if np.all(found_y >= 0):
+                    break
+
+                # Solid mask: non-air and not in exclude set
+                solid = blocks_3d != 0
+                for exc in self._exclude_ids:
+                    solid &= blocks_3d != exc
+
+                not_found = found_y < 0               # (16, 16)
+                has_any = solid.any(axis=0)            # (16, 16)
+                to_process = not_found & has_any
+
+                if not np.any(to_process):
+                    continue
+
+                # Lowest solid: first True along y axis (argmax on bool = first True)
+                first_y = np.argmax(solid, axis=0)    # (16, 16)
+                zz, xx = np.where(to_process)
+                local_ys = first_y[zz, xx]
+
+                found_y[zz, xx] = (section_y * 16 + local_ys).astype(np.int16)
+                found_id[zz, xx] = blocks_3d[local_ys, zz, xx]
+                found_dt[zz, xx] = data_3d[local_ys, zz, xx]
+
+            zz, xx = np.where(found_y >= 0)
+            if len(zz):
+                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
+                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
+                all_y.append(found_y[zz, xx])
+                all_id.append(found_id[zz, xx])
+                all_dt.append(found_dt[zz, xx])
+
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed lowest solid extraction: {chunk_count} chunks, {total} matching points")
+
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_id', 'block_data'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'y': np.concatenate(all_y),
+            'block_id': np.concatenate(all_id),
+            'block_data': np.concatenate(all_dt),
+        })

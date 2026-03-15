@@ -19,6 +19,7 @@ Actions:
   data         Scan output JSON files across all maps and report empty/missing fields
   symmetry     Analyze map symmetry from preprocessed geometry
   compare      Compare layout layers side-by-side (y0 vs bedrock vs difference)
+  audit        Populate layout audit tables in the database (layer stats + block inventory)
   prepare-demo Build traffic graph assets for a map and copy them to docs/demo/assets/
   resources    Plot chest and resource block locations on the map layout
 
@@ -32,6 +33,8 @@ Examples:
   python ctw.py debug compare --map acapulco
   python ctw.py debug compare --all --summary
   python ctw.py debug compare --all
+  python ctw.py debug audit --all
+  python ctw.py debug audit --map acapulco
   python ctw.py debug prepare-demo --map fourchette
   python ctw.py debug prepare-demo --map fourchette --force
   python ctw.py debug resources --map arabia
@@ -108,6 +111,20 @@ Examples:
     p.add_argument('--near-spawn-buffer', type=float, default=15.0,
                    help='Near-spawn zone width in blocks (default: 15)')
     p.set_defaults(func=handle_resources)
+
+    # debug audit
+    p = debug_sub.add_parser(
+        'audit',
+        help='Populate layout audit tables in the database (layer stats + block inventory)',
+    )
+    audit_group = p.add_mutually_exclusive_group(required=True)
+    audit_group.add_argument('--map', default=None,
+                             help='Comma-separated map names (e.g. acapulco,arabia)')
+    audit_group.add_argument('--all', action='store_true', dest='all_maps',
+                             help='Audit all maps in output/')
+    p.add_argument('--dir', default='output',
+                   help='Root directory containing per-map output folders (default: output)')
+    p.set_defaults(func=handle_audit)
 
     # debug compare
     p = debug_sub.add_parser(
@@ -212,6 +229,118 @@ def handle_prepare_demo(args: object) -> None:
 
     print(f"\nAssets written to: {assets_dir}")
     print(f"  {len(copies)} files copied: {', '.join(copies)}")
+
+
+_AUDIT_LAYERS: list[tuple[str, str]] = [
+    ('y0',           'layout_y0.parquet'),
+    ('bedrock',      'layout_bedrock.parquet'),
+    ('top_surface',  'layout_top_surface.parquet'),
+    ('lowest_solid', 'layout_lowest_solid.parquet'),
+]
+
+
+def handle_audit(args: object) -> None:
+    """Populate layout_layer_stats and layout_block_inventory in the database."""
+    import duckdb
+    import pandas as pd
+
+    from ctw.common import ensure_match_db
+    from match_analysis.database.schema import migrate_layout_audit_tables
+
+    ensure_match_db()
+    migrate_layout_audit_tables()
+
+    output_root = Path(args.dir)
+    if not output_root.is_dir():
+        print(f"Error: directory not found: {output_root}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.all_maps:
+        map_slugs = [d.name for d in sorted(output_root.iterdir()) if d.is_dir()]
+    else:
+        map_slugs = [m.strip() for m in args.map.split(',') if m.strip()]
+
+    conn = duckdb.connect('match_analysis/metadata.db')
+
+    n_processed = 0
+    n_skipped = 0
+
+    for map_slug in map_slugs:
+        map_dir = output_root / map_slug
+        if not map_dir.is_dir():
+            print(f"  Warning: output dir not found for '{map_slug}', skipping")
+            n_skipped += 1
+            continue
+
+        row = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        if row is None:
+            print(f"  Warning: '{map_slug}' not in maps table, skipping")
+            n_skipped += 1
+            continue
+
+        map_id: int = row[0]
+
+        for layer_name, filename in _AUDIT_LAYERS:
+            parquet_path = map_dir / filename
+            if not parquet_path.exists():
+                continue
+
+            try:
+                df = pd.read_parquet(parquet_path)
+            except Exception as e:
+                print(f"  Warning: failed to read {parquet_path}: {e}")
+                continue
+
+            if df.empty:
+                continue
+
+            block_count = len(df)
+            y_min: int | None = None
+            y_max: int | None = None
+            if 'y' in df.columns:
+                y_min = int(df['y'].min())
+                y_max = int(df['y'].max())
+
+            # Upsert layer stats (delete + insert to handle re-runs)
+            conn.execute(
+                "DELETE FROM layout_layer_stats WHERE map_id = ? AND layer = ?",
+                [map_id, layer_name],
+            )
+            conn.execute(
+                """
+                INSERT INTO layout_layer_stats (map_id, layer, block_count, y_min, y_max, scanned_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                [map_id, layer_name, block_count, y_min, y_max],
+            )
+
+            # Refresh block inventory for this (map_id, layer)
+            conn.execute(
+                "DELETE FROM layout_block_inventory WHERE map_id = ? AND layer = ?",
+                [map_id, layer_name],
+            )
+            if 'block_id' in df.columns:
+                counts = (
+                    df.groupby('block_id', sort=False)
+                    .size()
+                    .reset_index(name='cnt')
+                )
+                conn.executemany(
+                    "INSERT INTO layout_block_inventory VALUES (?, ?, ?, ?)",
+                    [
+                        (map_id, layer_name, int(r['block_id']), int(r['cnt']))
+                        for _, r in counts.iterrows()
+                    ],
+                )
+
+        n_processed += 1
+        if n_processed % 50 == 0:
+            print(f"  {n_processed}/{len(map_slugs)} maps processed...")
+
+    conn.close()
+    print(f"\nAudit complete: {n_processed} maps processed, {n_skipped} skipped")
 
 
 def handle_compare(args):

@@ -36,7 +36,7 @@ direct path to a map folder.
 Runs layout extraction, island analysis, XML parsing, and map assembly in sequence.
 
 ```
-python ctw.py run (--map NAME | --all) [--force]
+python ctw.py run (--map NAME | --all | --all-matches) [--force]
     [--no-layout] [--no-islands] [--no-xml] [--no-matches]
     [--island-layout bedrock|y0|top|density]
     [--canonical-triangulation] [--plots]
@@ -46,12 +46,13 @@ python ctw.py run (--map NAME | --all) [--force]
 |---|---|
 | `--map NAME` | Map name to analyze |
 | `--all` | Analyze all maps in `map_folders/` |
+| `--all-matches` | Analyze only maps that have match data in the database |
 | `--force` | Regenerate even if outputs exist |
 | `--no-layout` | Skip layout extraction |
 | `--no-islands` | Skip island/skeleton analysis |
 | `--no-xml` | Skip XML parsing |
 | `--no-matches` | Skip match analysis (use this for map-only runs) |
-| `--island-layout` | Layout file for islands: `bedrock` (default), `y0`, `top`, `density` |
+| `--island-layout` | Layout file for islands: `bedrock` (default), `y0`, `top`, `density`, `solid` |
 | `--canonical-triangulation` | Identical islands share the same mesh |
 | `--plots` | Generate debug plots |
 
@@ -62,22 +63,30 @@ python ctw.py run (--map NAME | --all) [--force]
 Extract block data from Minecraft region files into parquet files.
 
 ```
-python ctw.py layout --map NAME [--force]
+python ctw.py layout (--map NAME | --all | --all-matches) [--map-dir DIR] [--force]
+    [--output DIR]
     [--threshold N] [--density-mode run,count]
     [--skip-y0] [--skip-surface] [--skip-density] [--skip-bedrock]
-    [--output DIR] [--plots]
+    [--skip-lowest-solid] [--skip-features] [--plots]
 ```
 
 | Flag | Description |
 |---|---|
+| `--map NAME` | Single map name or path |
+| `--all` | Process all maps found in `--map-dir` |
+| `--all-matches` | Process only maps that have match data in the database |
+| `--map-dir DIR` | Directory to scan with `--all` or `--all-matches` (default: `map_folders/`). Use this for external collections such as CommunityMaps or PublicMaps. |
+| `--output DIR` | Output root directory (default: `output/`). Each map writes to `<DIR>/<map_name>/`. |
 | `--threshold N` | Density threshold (default: 10) |
 | `--density-mode` | Comma-separated modes: `run`, `count` |
 | `--skip-y0` | Skip Y=0 layer |
 | `--skip-surface` | Skip top surface |
 | `--skip-density` | Skip vertical density |
 | `--skip-bedrock` | Skip lowest bedrock |
-| `--output DIR` | Save to custom directory instead of map folder |
-| `--plots` | Generate visualization plots alongside data |
+| `--skip-lowest-solid` | Skip lowest-solid-layer extraction |
+| `--skip-features` | Skip resource block and chest extraction |
+| `--plots` | Generate visualization plots (single map only) |
+| `--workers N` | Process N maps in parallel (default: 1) |
 
 ---
 
@@ -100,7 +109,7 @@ python ctw.py islands --map NAME [--force]
 | `--buffer F` | Buffer distance for polygon smoothing (default: 0.0) |
 | `--simplify F` | Simplification tolerance (default: 1.0) |
 | `--no-holes` | Disable internal hole detection |
-| `--layout` | Which layout file to use (default: `bedrock`) |
+| `--layout` | Which layout file to use: `bedrock` (default), `y0`, `top`, `density`, `solid` |
 | `--canonical-triangulation` | D4-symmetric islands share mesh |
 | `--basic` | Detection + triangulation only, no skeleton/POI/connectivity |
 | `--output DIR` | Save to custom directory |
@@ -412,6 +421,29 @@ python ctw.py debug compare --map acapulco
 python ctw.py debug compare --all --summary
 ```
 
+#### `debug audit`
+
+Scan layout parquet files (y0, bedrock, top_surface) across maps and populate two
+audit tables in the database: `layout_layer_stats` (block count and y-range per layer)
+and `layout_block_inventory` (per-block-ID counts per layer). Idempotent — safe to
+re-run; existing rows for the affected maps are replaced.
+
+```
+python ctw.py debug audit (--map MAP[,MAP,...] | --all) [--dir DIR]
+```
+
+| Flag | Description |
+|---|---|
+| `--dir DIR` | Root directory containing per-map output folders (default: `output`) |
+
+```bash
+python ctw.py debug audit --all
+python ctw.py debug audit --map acapulco,arabia
+```
+
+Maps not yet registered in the `maps` table are skipped with a warning. Run
+`ctw maps load` first if needed.
+
 #### `debug resources`
 
 Plot chest and resource block locations on the map layout. Runs the same
@@ -434,6 +466,47 @@ Build traffic graph assets for a map and copy them to `docs/demo/assets/`.
 
 ```
 python ctw.py debug prepare-demo --map MAP [--force]
+```
+
+---
+
+### `ctw purge` — Delete Output Folders and Database Records
+
+Delete per-map output folders under `output/` and/or their records from the
+analysis database. The `output/` root is never touched — only per-map
+subdirectories are removed.
+
+```
+python ctw.py purge (--map NAME[,NAME,...] | --all | --no-matches)
+    [--output DIR] [--db] [--yes]
+```
+
+| Flag | Description |
+|---|---|
+| `--map NAME` | Target specific map slug(s) (comma-separated) |
+| `--all` | Target all maps |
+| `--no-matches` | Target every map with no match data in the database |
+| `--output DIR` | Output root to scan (default: `output/`) |
+| `--db` | Also remove map records from the database (`maps` table and all dependents) |
+| `--yes` / `-y` | Skip confirmation prompt |
+
+Prints folder names and sizes (for file targets) and map names (for DB
+targets) before acting. Without `--yes`, shows a combined count and prompts
+for confirmation. `--db` can be used alone (without deleting files) or
+together with file deletion.
+
+```bash
+# Remove output folders for maps with no match data
+python ctw.py purge --no-matches
+
+# Remove both output folders AND database records for maps with no match data
+python ctw.py purge --no-matches --db
+
+# Wipe database records only (keep output files) for a specific map
+python ctw.py purge --map some_old_map --db --output /dev/null
+
+# Delete everything for all maps, no prompt
+python ctw.py purge --all --db --yes
 ```
 
 ---
