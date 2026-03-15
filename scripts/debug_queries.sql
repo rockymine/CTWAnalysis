@@ -4,6 +4,12 @@
 -- Usage: ctw db --list | ctw db --run <id> | ctw db --all
 -- =============================================================================
 
+-- 0a. All maps with matches
+
+SELECT mp.map_slug
+FROM maps mp
+ORDER BY mp.map_slug ASC
+
 -- =====================
 -- 1. INVENTORY
 -- =====================
