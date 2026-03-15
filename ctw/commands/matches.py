@@ -681,6 +681,7 @@ def handle_kills(args):
 
 def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     import duckdb
+    from datetime import datetime, timezone
     from ctw.common import DEFAULT_OUTPUT_ROOT
     from match_analysis.traffic.graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
@@ -688,6 +689,33 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     from match_analysis.traffic.strategy_plot import (
         plot_traffic_strategy_comparison, _adaptive_grid_size,
     )
+    from match_analysis.traffic.segment_features import (
+        build_traffic_segment_features, compute_match_set_hash,
+    )
+
+    log_interval  = getattr(args, 'log_interval', 2)
+    strategy      = getattr(args, 'strategy', 'grid')
+    do_compare    = getattr(args, 'compare', False)
+
+    # ── Step 1: Check map has processed 2s-interval matches ─────────────────
+    conn_ro = duckdb.connect('match_analysis/metadata.db', read_only=True)
+    try:
+        processed_count = conn_ro.execute(
+            """
+            SELECT COUNT(*) FROM matches mat
+            JOIN maps m ON m.map_id = mat.map_id
+            WHERE m.map_slug = ?
+              AND mat.processed = TRUE
+              AND (mat.log_interval = ? OR mat.log_interval IS NULL)
+            """,
+            [map_slug, log_interval],
+        ).fetchone()[0]
+    finally:
+        conn_ro.close()
+
+    if processed_count == 0:
+        print(f"Skipping '{map_slug}': no processed matches with log_interval={log_interval}.")
+        return
 
     map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
     if not map_folder_candidate.is_dir():
@@ -702,10 +730,6 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
 
     fallback = map_folder_candidate if map_folder_candidate else map_output_dir
     map_context = _load_map_context(map_output_dir, fallback)
-
-    log_interval  = getattr(args, 'log_interval', 2)
-    strategy      = getattr(args, 'strategy', 'grid')
-    do_compare    = getattr(args, 'compare', False)
 
     # ── Strategy comparison mode ────────────────────────────────────────────
     if do_compare:
@@ -756,11 +780,27 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     (map_output_dir / 'images').mkdir(exist_ok=True)
     out_png  = map_output_dir / 'images' / "traffic_graph.png"
 
-    if out_json.exists() and not getattr(args, 'force', False):
-        print(f"Skipping '{map_slug}': traffic_graph.json already exists (use --force to rebuild).")
+    # ── Step 2: Get map_id + stored hash, compute current hash ─────────────
+    conn_ro = duckdb.connect('match_analysis/metadata.db', read_only=True)
+    try:
+        row = conn_ro.execute(
+            "SELECT map_id, traffic_graph_match_hash FROM maps WHERE map_slug = ?",
+            [map_slug],
+        ).fetchone()
+        if row is None:
+            print(f"Error: map '{map_slug}' not found in maps table. Run 'ctw maps load' first.")
+            return
+        map_id, stored_hash = row
+        current_hash = compute_match_set_hash(conn_ro, map_id, log_interval)
+    finally:
+        conn_ro.close()
+
+    # ── Step 3: Hash-based staleness check ──────────────────────────────────
+    if out_json.exists() and stored_hash == current_hash and not getattr(args, 'force', False):
+        print(f"Skipping '{map_slug}': traffic graph is up to date (hash match).")
         return
 
-    # Resolve grid_size: explicit > adaptive
+    # ── Step 4: Resolve grid_size ────────────────────────────────────────────
     grid_size = getattr(args, 'grid_size', None)
     if grid_size is None:
         conn_tmp = duckdb.connect('match_analysis/metadata.db', read_only=True)
@@ -772,6 +812,7 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
         grid_size = _adaptive_grid_size(total_blocks)
         print(f"  grid_size auto-set to {grid_size} (total_blocks={total_blocks})")
 
+    # ── Step 5: Build graph ──────────────────────────────────────────────────
     conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
     try:
         graph = build_traffic_graph(
@@ -786,11 +827,25 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     finally:
         conn.close()
 
+    # ── Step 6: Save JSON + plot PNG ─────────────────────────────────────────
     save_traffic_graph(graph, out_json)
     print(f"Saved: {out_json}  ({len(graph['nodes'])} nodes, {len(graph['edges'])} edges)")
 
     plot_traffic_graph(graph, map_context, out_png)
     print(f"Saved: {out_png}")
+
+    # ── Step 7: Populate life_segment_traffic_features + update hash ─────────
+    print(f"  Populating life_segment_traffic_features for '{map_slug}' ...")
+    conn_rw = duckdb.connect('match_analysis/metadata.db')
+    try:
+        n_rows = build_traffic_segment_features(map_slug, conn_rw, graph)
+        print(f"  Inserted {n_rows} traffic feature rows.")
+        conn_rw.execute(
+            "UPDATE maps SET traffic_graph_match_hash = ?, traffic_graph_built_at = ? WHERE map_slug = ?",
+            [current_hash, datetime.now(timezone.utc), map_slug],
+        )
+    finally:
+        conn_rw.close()
 
 
 def handle_traffic_graph(args):
