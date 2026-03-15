@@ -18,6 +18,7 @@ import pandas as pd
 from matplotlib.collections import PolyCollection
 
 from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
+from .block_colors import block_color
 from common.geometry import blocks_to_unit_squares
 
 
@@ -279,6 +280,53 @@ def draw_map_base(
 
     draw_pois(ax, map_context, style=poi_style)
     return has_build
+
+
+def draw_layout_image(
+    ax,
+    df: pd.DataFrame,
+    default_block_id: int = 0,
+) -> None:
+    """Render a layout parquet DataFrame as block-coloured unit squares.
+
+    Each block at index (world_x, world_z) is drawn as a filled 1×1 polygon
+    covering [x, x+1] × [z, z+1] in world space, using PolyCollection for
+    geometrically correct rendering at any zoom level or DPI.
+
+    Axis setup follows the project world-space convention: equal aspect ratio
+    with z increasing downward (ax.axis('equal') + ax.invert_yaxis()).
+
+    Args:
+        ax: Matplotlib axes.
+        df: DataFrame with columns world_x, world_z and optionally block_id,
+            block_data (as stored in layout_*.parquet files).
+        default_block_id: Block ID to use when the DataFrame has no block_id
+            column (e.g. 7 for bedrock-only layers).
+    """
+    if df is None or df.empty:
+        return
+
+    xs = df['world_x'].values.astype(int)
+    zs = df['world_z'].values.astype(int)
+    data_col = (df['block_data'].values.astype(int)
+                if 'block_data' in df.columns else np.zeros(len(df), dtype=int))
+    ids = (df['block_id'].values.astype(int)
+           if 'block_id' in df.columns
+           else np.full(len(df), default_block_id, dtype=int))
+
+    squares = blocks_to_unit_squares(xs, zs)  # (N, 4, 2)
+    facecolors = np.array(
+        [block_color(int(bid), int(dat)) for bid, dat in zip(ids, data_col)],
+        dtype=np.float32,
+    ) / 255.0
+
+    pc = PolyCollection(squares, facecolors=facecolors, edgecolors='none', linewidths=0,
+                        antialiased=False)
+    ax.add_collection(pc)
+    ax.set_xlim(int(xs.min()), int(xs.max()) + 1)
+    ax.set_ylim(int(zs.min()), int(zs.max()) + 1)
+    ax.axis('equal')
+    ax.invert_yaxis()
 
 
 def map_base_legend_handles(
