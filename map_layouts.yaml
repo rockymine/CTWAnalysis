@@ -8,11 +8,14 @@
 #                          extraction and exclude it from symmetry analysis.
 #                          only set for maps where the observer spawn produces
 #                          a spurious island not part of the playable area.
-# additional_observer_islands: list of island IDs to also mark as observer,
-#                          beyond the single island found by auto-detection.
-#                          use when multiple nearby small islands are all part
-#                          of the observer area (e.g. golden_drought, lupa,
-#                          mini_drought). requires exclude_observer_island: true.
+# exclude_islands:         list of island IDs to exclude from symmetry analysis,
+#                          beyond the one found by observer auto-detection.
+#                          use for any non-playable islands (scenery, platforms,
+#                          extra observer areas) that are not auto-detected.
+# playable_bbox:           [min_x, min_z, max_x, max_z] — any island whose
+#                          center falls outside this box is excluded from
+#                          symmetry analysis. use for maps with many scenery
+#                          islands surrounding the playable area (e.g. oumuamua).
 # skip:                    true to exclude this map from the pipeline entirely.
 
 maps:
@@ -175,7 +178,7 @@ maps:
   golden_drought:
     layer: lowest_solid
     exclude_observer_island: true
-    additional_observer_islands: [14, 15]
+    exclude_islands: [14, 15]
   golden_drought_iii:
     layer: lowest_solid
     exclude_observer_island: true
@@ -260,7 +263,7 @@ maps:
   lupa:
     layer: lowest_solid
     exclude_observer_island: true
-    additional_observer_islands: [5, 10]
+    exclude_islands: [5, 10]
   lupain:
     layer: bedrock
   madness_on_rails:
@@ -272,7 +275,7 @@ maps:
   mini_drought:
     layer: lowest_solid
     exclude_observer_island: true
-    additional_observer_islands: [6, 7]
+    exclude_islands: [6, 7]
   mushroom_gorge:
     layer: lowest_solid
     exclude_observer_island: true
@@ -298,6 +301,7 @@ maps:
     exclude: [8, 9]
   oumuamua:
     layer: bedrock
+    playable_bbox: [-70, -70, 70, 70]
   ouroboros:
     layer: bedrock
   outback_mini:

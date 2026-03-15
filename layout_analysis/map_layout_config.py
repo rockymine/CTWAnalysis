@@ -23,10 +23,12 @@ class MapLayoutConfig:
     exclude: list[int] = field(default_factory=list)
     skip: bool = False
     exclude_observer_island: bool = False   # True → find and exclude observer island from symmetry
-    additional_observer_islands: list[int] = field(default_factory=list)
-    # Extra island IDs to also mark as observer, beyond the one found by
-    # auto-detection.  Use when multiple nearby small islands are all part
-    # of the observer area.  Only active when exclude_observer_island=True.
+    exclude_islands: list[int] = field(default_factory=list)
+    # Island IDs to exclude from symmetry analysis (scenery, extra observer
+    # platforms, etc.) beyond whatever auto-detection finds.
+    playable_bbox: Optional[tuple[float, float, float, float]] = None
+    # (min_x, min_z, max_x, max_z) — islands whose center falls outside
+    # this box are excluded from symmetry analysis.
 
 
 def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutConfig]:
@@ -67,13 +69,18 @@ def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutC
         exclude_raw = entry.get('exclude', []) or []
         exclude = [int(v) for v in exclude_raw]
         exclude_observer = bool(entry.get('exclude_observer_island', False))
-        additional_raw = entry.get('additional_observer_islands', []) or []
-        additional_observer = [int(v) for v in additional_raw]
+        exclude_islands_raw = entry.get('exclude_islands', []) or []
+        exclude_islands = [int(v) for v in exclude_islands_raw]
+        bbox_raw = entry.get('playable_bbox')
+        playable_bbox: Optional[tuple[float, float, float, float]] = (
+            tuple(float(v) for v in bbox_raw) if bbox_raw else None  # type: ignore[assignment]
+        )
         configs[slug] = MapLayoutConfig(
             layer=layer,
             exclude=exclude,
             exclude_observer_island=exclude_observer,
-            additional_observer_islands=additional_observer,
+            exclude_islands=exclude_islands,
+            playable_bbox=playable_bbox,
         )
 
     return configs

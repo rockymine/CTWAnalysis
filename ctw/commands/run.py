@@ -193,14 +193,19 @@ def _process_single_map(map_folder, args, output_override=None):
                     map_layout_cfg.exclude_observer_island
                     if map_layout_cfg is not None else False
                 )
-                additional_obs = (
-                    map_layout_cfg.additional_observer_islands
+                exclude_isl = (
+                    map_layout_cfg.exclude_islands
                     if map_layout_cfg is not None else []
+                )
+                bbox = (
+                    map_layout_cfg.playable_bbox
+                    if map_layout_cfg is not None else None
                 )
                 assemble_map(map_folder, geometry, map_output_dir,
                              symmetry=symmetry, xml_context=xml_context, plots=args.plots,
                              exclude_observer_island=exclude_obs,
-                             additional_observer_islands=additional_obs)
+                             exclude_islands=exclude_isl,
+                             playable_bbox=bbox)
                 logger.info("  [5/6] Assembly: done")
             else:
                 logger.info("  [5/6] Assembly: skipped (no geometry)")

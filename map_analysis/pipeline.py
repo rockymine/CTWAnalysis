@@ -869,7 +869,8 @@ def assemble_map(
     xml_context: Optional[MapXmlContext] = None,
     plots: bool = False,
     exclude_observer_island: bool = False,
-    additional_observer_islands: Optional[list[int]] = None,
+    exclude_islands: Optional[list[int]] = None,
+    playable_bbox: Optional[tuple[float, float, float, float]] = None,
 ) -> MapContext:
     """Map assembly pipeline (Stages 5–7).
 
@@ -946,22 +947,31 @@ def assemble_map(
             is_observer_island=False,
         ))
 
-    # Mark observer island(s) and re-run symmetry excluding them.
-    # Only applies to maps where the observer spawn produces spurious islands
-    # that must be excluded from symmetry analysis.
-    _extra_obs = set(additional_observer_islands or [])
-    if exclude_observer_island or _extra_obs:
-        observer_ids: set[int] = set(_extra_obs)
+    # Mark non-playable island(s) and re-run symmetry excluding them.
+    # Three sources:
+    #   1. auto-detected observer spawn island (exclude_observer_island=True)
+    #   2. explicit island ID list (exclude_islands)
+    #   3. bbox filter — islands whose center falls outside playable_bbox
+    _extra_ids = set(exclude_islands or [])
+    needs_exclusion = exclude_observer_island or _extra_ids or playable_bbox is not None
+    if needs_exclusion:
+        observer_ids: set[int] = set(_extra_ids)
         if exclude_observer_island:
             auto_id = _find_observer_island(map_data_obj, df)
             if auto_id is not None:
                 observer_ids.add(auto_id)
+        if playable_bbox is not None:
+            min_x, min_z, max_x, max_z = playable_bbox
+            for isl in final_islands:
+                cx, cz = isl.center
+                if cx < min_x or cx > max_x or cz < min_z or cz > max_z:
+                    observer_ids.add(isl.id)
         if observer_ids:
             for isl in final_islands:
                 if isl.id in observer_ids:
                     isl.is_observer_island = True
             marked = sorted(isl.id for isl in final_islands if isl.is_observer_island)
-            logger.debug(f"  Observer islands: {marked}")
+            logger.debug(f"  Excluded islands (non-playable): {marked}")
             symmetry = _rerun_symmetry_without_observer(
                 final_islands, df, map_output_dir, symmetry,
             )
