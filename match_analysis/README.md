@@ -8,7 +8,7 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 
 ```
 0. Initialize database      python match_analysis/database/schema.py
-1. Preprocess maps          ctw run --map <name> --no-matches
+1. Preprocess maps          ctw run --map <name>
 2. Load map metadata        ctw maps load
 3. Load spawn data          ctw maps spawns
 4. Load resource data       ctw maps resources --map <name>   (optional)
@@ -18,6 +18,7 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
 8. Post-process features    runs automatically inside step 7; re-run with:
                             ctw matches post-process --all
 9. Build traffic graph      ctw matches traffic-graph --map <name>
+                            (also populates life_segment_traffic_features)
 10. Cluster archetypes      notebooks/life_segment_clustering.ipynb
 ```
 
@@ -38,19 +39,20 @@ If you have an existing database that predates a schema addition, use the migrat
 | Migration function | What it adds |
 |-------------------|-------------|
 | `migrate_map_classification_columns()` | `wools_per_team`, `max_players_per_team`, `total_blocks`, `size_tier`, `symmetry_type`, `has_intra_team_symmetry` to `maps` |
-| `migrate_y_columns()` | `y_avg`, `y_max`, `frac_time_elevated` to `life_segment_features`; creates `wool_carry_chains` table |
-| `migrate_node_path_columns()` | Nine node-path metric columns to `life_segment_features` |
+| `migrate_traffic_graph_tables()` | Splits old `life_segment_features` TABLE into `life_segment_summary` + `life_segment_skeleton_features` + `life_segment_traffic_features`; recreates `life_segment_features` as a backward-compat VIEW; adds `traffic_graph_match_hash` / `traffic_graph_built_at` to `maps`. **Drops old data — re-run post-processing afterwards.** |
 | `migrate_log_interval_column()` | `log_interval` to `matches` (2 or 5 — position sampling interval in seconds) |
-| `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`) |
+| `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`, `life_segment_features`) |
 
 Run any migration directly:
 
 ```python
 from match_analysis.database.schema import (
     migrate_map_classification_columns,
+    migrate_traffic_graph_tables,
     migrate_views,
 )
 migrate_map_classification_columns()   # safe if columns already exist
+migrate_traffic_graph_tables()         # drops old life_segment_features table
 migrate_views()                        # recreates all views
 ```
 
@@ -66,8 +68,8 @@ Each map must be run through the analysis pipeline first to generate `map_contex
 and `map_graph.json`:
 
 ```bash
-ctw run --map ingwaz --no-matches
-ctw run --all --no-matches          # all maps at once
+ctw run --map ingwaz
+ctw run --all          # all maps at once
 ```
 
 ### Step 2: Load map metadata
@@ -155,9 +157,12 @@ Processing populates: `life_segments`, `combat_events`, `position_events`,
 ### Step 8: Post-processing (automatic)
 
 Post-processing runs at the end of every `ctw matches process` call and produces
-three derived tables: `wool_spawn_baselines`, `life_segment_region_visits`, and
-`life_segment_features`. It can also be triggered manually, for example to recompute
-features after a code change without reprocessing raw events:
+derived tables: `wool_spawn_baselines`, `life_segment_region_visits`,
+`life_segment_summary`, and `life_segment_skeleton_features`. The
+`life_segment_features` name remains available as a backward-compat VIEW over
+`life_segment_summary LEFT JOIN life_segment_skeleton_features`. It can also be
+triggered manually, for example to recompute features after a code change without
+reprocessing raw events:
 
 ```python
 import duckdb
@@ -170,8 +175,8 @@ conn.close()
 
 The function runs five internal steps in order:
 
-1. **Migrate columns** — adds any new `life_segment_features` columns that are missing
-   from an existing database using `ALTER TABLE … ADD COLUMN IF NOT EXISTS`.
+1. **Ensure schema** — calls `migrate_traffic_graph_tables()` to ensure all three
+   life-segment tables exist (idempotent).
 2. **Wool spawn baselines** — for each team/wool pair, computes the Euclidean distance
    from that team's spawn center to the enemy wool location. Used to normalise
    `max_attack_depth` to [0, 1].
@@ -182,8 +187,8 @@ The function runs five internal steps in order:
    For build-region visits, infers `bridge_node_1` / `bridge_node_2` from the
    adjacent island visits.
 4. **Life features** — aggregates all visits for a life into one row of
-   `life_segment_features`, computing both region-level time fractions and the nine
-   node-path skeleton metrics.
+   `life_segment_summary` (core facts) and one row of `life_segment_skeleton_features`
+   (the nine node-path skeleton metrics).
 5. **Wool carry chains** — groups wool touch events into coordinated carry waves,
    determines the outcome (captured / dropped in void / dropped on land / incomplete),
    and populates `wool_carry_chains`.
@@ -192,17 +197,22 @@ The function runs five internal steps in order:
 
 Build a data-driven navigation graph from aggregated player position traces.
 This is used as the default graph for Section 4 of `match_time_series.ipynb`
-and produces a standalone visualisation:
+and produces a standalone visualisation. It also populates
+`life_segment_traffic_features` with snapped sequences and movement metrics:
 
 ```bash
-ctw matches traffic-graph --map-name tumbleweed
-ctw matches traffic-graph --map-name tumbleweed --force    # rebuild if exists
-ctw matches traffic-graph --map-name tumbleweed --grid-size 3   # finer grid
+ctw matches traffic-graph --map tumbleweed
+ctw matches traffic-graph --map tumbleweed --force    # rebuild if exists
+ctw matches traffic-graph --map tumbleweed --grid-size 3   # finer grid
 ```
+
+The command skips maps with no processed 2s-interval matches, and uses a hash
+of the current processed-match set to skip rebuilding if nothing has changed
+since the last run.
 
 Output files:
 - `output/<map_slug>/traffic_graph.json` — nodes, edges, aggregate statistics
-- `output/<map_slug>/traffic_graph.png` — visualisation with island fills and edge heatmap
+- `output/<map_slug>/images/traffic_graph.png` — visualisation with island fills and edge heatmap
 
 The graph is built from all processed matches for the map. See
 `docs/analysis_overview.md` § *The skeleton graph and the traffic graph* for a
@@ -221,7 +231,7 @@ Parameters:
 | `--compare` | off | Generate a 6-panel strategy comparison plot instead of building the graph |
 | `--force` | off | Rebuild even if `traffic_graph.json` already exists |
 
-The comparison plot is saved to `output/<map_slug>/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
+The comparison plot is saved to `output/<map_slug>/images/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
 
 ### Step 10: Cluster archetypes
 
@@ -255,9 +265,14 @@ maps                        Map metadata (bbox, island count, teams)
      │   ├─ position_events      Type-5 events with spatial annotation
      │   ├─ player_team_segments Team membership over time
      │   ├─ processing_log       Audit trail for processing steps
-     │   ├─ life_segment_region_visits  Per-visit breakdown of each life
-     │   └─ life_segment_features       Per-life clustering features
+     │   ├─ life_segment_region_visits    Per-visit breakdown of each life
+     │   ├─ life_segment_summary          Core facts per life
+     │   ├─ life_segment_skeleton_features  Skeleton-graph node-path metrics
+     │   └─ life_segment_traffic_features   Traffic-graph snapped sequence + metrics
 ```
+
+`life_segment_features` is available as a backward-compat VIEW over
+`life_segment_summary LEFT JOIN life_segment_skeleton_features`.
 
 ### Processing tables
 
@@ -281,8 +296,12 @@ maps                        Map metadata (bbox, island count, teams)
 |-------|-------------|-------------|
 | `wool_spawn_baselines` | `map_id` (FK), `team`, `wool_id`, `baseline_distance` | `run_post_processing` |
 | `life_segment_region_visits` | `segment_id` (FK), `visit_idx`, `location_type`, `entry_node`, `exit_node`, `node_path` | `run_post_processing` |
-| `life_segment_features` | `segment_id` (FK), movement fractions, node-path metrics, `cluster_label` | `run_post_processing` |
+| `life_segment_summary` | `segment_id` (FK), movement fractions, `cluster_label` | `run_post_processing` |
+| `life_segment_skeleton_features` | `segment_id` (FK), nine node-path metrics | `run_post_processing` |
+| `life_segment_traffic_features` | `segment_id` (FK), `snapped_sequence`, `unique_nodes`, `min_enemy_wool_dist`, `avg_home_wool_dist`, `span_m`, `tortuosity` | `ctw matches traffic-graph` |
 | `wool_carry_chains` | `match_id` (FK), `wool_id`, `wave_idx`, `attacking_team`, `n_carriers`, `n_handoffs`, `outcome`, `approach_type` | `run_post_processing` |
+
+`life_segment_features` is a VIEW over `life_segment_summary LEFT JOIN life_segment_skeleton_features` kept for backward compatibility.
 
 ### `maps` classification columns
 
@@ -296,6 +315,8 @@ These columns are populated by `ctw maps load` from pipeline output files (`map_
 | `size_tier` | VARCHAR | derived from `max_players_per_team` | Server tier: `pico`/`nano`/`micro`/`milli`/`centi`/`hecto`/`mega`/`giga` |
 | `symmetry_type` | VARCHAR | `symmetry.json` global_symmetry | Highest-confidence detected global symmetry type, or `none` |
 | `has_intra_team_symmetry` | BOOLEAN | `symmetry.json` intra_team_symmetry | True if any team's island cluster has intra-team symmetry |
+| `traffic_graph_match_hash` | TEXT | computed by `ctw matches traffic-graph` | MD5 of the sorted processed-match IDs used for staleness detection |
+| `traffic_graph_built_at` | TIMESTAMP | set by `ctw matches traffic-graph` | UTC timestamp of the last successful traffic graph build |
 
 Size tier thresholds (players per team, lower-bound inclusive):
 
@@ -340,6 +361,8 @@ Each row is one contiguous spell in a region (island or build/void area) within 
 
 #### `life_segment_features` — region-level metrics
 
+`life_segment_features` is now a VIEW over `life_segment_summary LEFT JOIN life_segment_skeleton_features`. It exposes the same columns as before for backward compatibility.
+
 | Column | Description |
 |--------|-------------|
 | `n_islands_visited` | Count of distinct islands touched |
@@ -365,7 +388,8 @@ since they depend on imputation choices:
 
 #### `life_segment_features` — node-path metrics
 
-Nine columns derived from `node_path`, `entry_node`, `exit_node`, and `bridge_node_1/2`
+Nine columns from `life_segment_skeleton_features`, surfaced in the `life_segment_features`
+view. They are derived from `node_path`, `entry_node`, `exit_node`, and `bridge_node_1/2`
 in `life_segment_region_visits`. They require `map_graph.json` at post-processing time
 to resolve each global node ID's degree and type.
 
@@ -421,7 +445,7 @@ jupyter notebook life_segment_clustering.ipynb
 
 The notebook connects to `../match_analysis/metadata.db` (relative to `notebooks/`).
 Run all cells in order from top to bottom; the final cell writes `cluster_id` and
-`cluster_label` back to `life_segment_features`.
+`cluster_label` back to `life_segment_summary`.
 
 ### Notebook structure
 
@@ -437,7 +461,7 @@ Run all cells in order from top to bottom; the final cell writes `cluster_id` an
 | **8. Choose final clustering** | Set `BEST_K` and `USE` (`'kmeans'` or `'hdbscan'`) |
 | **9. Cluster characterisation** | Mean profile table across all `PROFILE_COLS` including node-path metrics |
 | **10. Assign archetype labels** | Edit `CLUSTER_LABELS` dict to map cluster IDs to human names |
-| **11. Write labels to database** | Batch `UPDATE life_segment_features` via a registered DataFrame |
+| **11. Write labels to database** | Batch `UPDATE life_segment_summary` via a registered DataFrame |
 | **12. Cross-map distribution** | Bar chart: archetype % of lives per map; checks cross-map consistency |
 | **13. Node-path deep dive** | Bar charts and scatter plot of junction penetration, traversal rate, and position entropy per archetype |
 
