@@ -502,24 +502,8 @@ def _ensure_wool_carry_chains_table(conn) -> None:
     """)
 
 
-def migrate_traffic_graph_tables(db_path: str | None = None) -> None:
-    """Migrate database to the split life_segment_features schema.
-
-    - Drops life_segment_features VIEW if it exists
-    - Drops life_segment_features TABLE if it exists (old schema — wipes data,
-      user must reprocess)
-    - Creates life_segment_summary with CREATE TABLE IF NOT EXISTS
-    - Creates life_segment_skeleton_features with CREATE TABLE IF NOT EXISTS
-    - Creates life_segment_traffic_features with CREATE TABLE IF NOT EXISTS
-    - Recreates the life_segment_features VIEW
-    - Adds traffic_graph_match_hash and traffic_graph_built_at to maps table
-
-    Safe to run repeatedly — IF NOT EXISTS guards prevent re-creation.
-    """
-    if db_path is None:
-        db_path = str(Path('match_analysis/metadata.db'))
-    conn = duckdb.connect(db_path)
-
+def _run_traffic_graph_migration(conn) -> None:
+    """Execute all traffic-graph schema migration statements on an existing conn."""
     # Drop the old TABLE (if it exists as a table, not a view)
     conn.execute("DROP VIEW IF EXISTS life_segment_features")
     conn.execute("DROP TABLE IF EXISTS life_segment_features")
@@ -617,12 +601,51 @@ def migrate_traffic_graph_tables(db_path: str | None = None) -> None:
         "ALTER TABLE maps ADD COLUMN IF NOT EXISTS traffic_graph_built_at TIMESTAMP"
     )
 
-    conn.close()
-    print(
-        f"Traffic graph tables migrated in {db_path}. "
-        "Re-run post-processing to repopulate life_segment_summary and "
-        "life_segment_skeleton_features."
-    )
+
+def migrate_traffic_graph_tables(
+    db_path: str | None = None,
+    conn=None,
+) -> None:
+    """Migrate database to the split life_segment_features schema.
+
+    - Drops life_segment_features VIEW if it exists
+    - Drops life_segment_features TABLE if it exists (old schema — wipes data,
+      user must reprocess)
+    - Creates life_segment_summary with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_skeleton_features with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_traffic_features with CREATE TABLE IF NOT EXISTS
+    - Recreates the life_segment_features VIEW
+    - Adds traffic_graph_match_hash and traffic_graph_built_at to maps table
+
+    Safe to run repeatedly — IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Ignored if ``conn`` is provided.
+    conn:
+        Existing DuckDB connection to reuse. When provided, no new connection
+        is opened — useful when called from within an active transaction to
+        avoid DuckDB's single-writer lock.
+    """
+    _owns_conn = conn is None
+    if _owns_conn:
+        if db_path is None:
+            db_path = str(Path('match_analysis/metadata.db'))
+        conn = duckdb.connect(db_path)
+
+    try:
+        _run_traffic_graph_migration(conn)
+    finally:
+        if _owns_conn:
+            conn.close()
+
+    if _owns_conn:
+        print(
+            f"Traffic graph tables migrated in {db_path}. "
+            "Re-run post-processing to repopulate life_segment_summary and "
+            "life_segment_skeleton_features."
+        )
 
 
 def migrate_views(db_path: str | None = None) -> None:

@@ -45,7 +45,7 @@ def run_post_processing(
     print(f"Post-processing match {match_id} (map: {map_slug})")
 
     print("Step 0/5: ensure schema tables exist")
-    migrate_traffic_graph_tables()
+    migrate_traffic_graph_tables(conn=conn)
 
     print("Step 1/5: wool spawn baselines")
     populate_wool_spawn_baselines(conn, map_slug)
