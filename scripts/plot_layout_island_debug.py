@@ -240,14 +240,16 @@ def _read_symmetry_confidence(map_slug: str) -> Optional[float]:
 
 
 def _maps_below_threshold(threshold: float) -> list[str]:
-    """Return slugs of all maps that have a primary symmetry result with confidence < threshold."""
+    """Return slugs of all maps whose displayed symmetry confidence (whole %) is below threshold."""
     results = []
     for sym_path in sorted(OUTPUT_ROOT.glob('*/symmetry.json')):
         slug = sym_path.parent.name
         confidence = _read_symmetry_confidence(slug)
         if confidence is None:
             continue
-        if confidence < threshold:
+        # Compare as whole-number percentage to match the :.0% display in plot titles.
+        # e.g. 0.9996 displays as "100%" and should be excluded at threshold=100.
+        if round(confidence * 100) < threshold:
             results.append((confidence, slug))
     results.sort()
     return [slug for _, slug in results]
