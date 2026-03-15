@@ -6,7 +6,8 @@ database to produce derived tables for clustering and analysis.
 Tables produced:
   - wool_spawn_baselines        (once per map)
   - life_segment_region_visits  (once per match)
-  - life_segment_features       (once per match)
+  - life_segment_summary        (once per match)
+  - life_segment_skeleton_features  (once per match)
   - wool_carry_chains           (once per match)
 """
 
@@ -31,24 +32,20 @@ def run_post_processing(
     """Run all post-processing steps for a match in order.
 
     Steps:
-      0. Schema migrations (node-path columns, Y columns, carry-chains table)
+      0. Schema migrations (ensure traffic graph tables exist)
       1. populate_wool_spawn_baselines  (idempotent, per-map)
       2. build_region_visits            (per-match)
       3. build_life_features            (per-match)
       4. build_y_features               (per-match)
       5. build_wool_carry_chains        (per-match)
     """
-    from match_analysis.database.schema import (
-        migrate_node_path_columns,
-        migrate_y_columns,
-    )
+    from match_analysis.database.schema import migrate_traffic_graph_tables
 
     map_slug = _get_map_slug(conn, match_id)
     print(f"Post-processing match {match_id} (map: {map_slug})")
 
-    print("Step 0/5: migrate schema columns if needed")
-    migrate_node_path_columns()
-    migrate_y_columns()
+    print("Step 0/5: ensure schema tables exist")
+    migrate_traffic_graph_tables()
 
     print("Step 1/5: wool spawn baselines")
     populate_wool_spawn_baselines(conn, map_slug)

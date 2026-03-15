@@ -1,4 +1,4 @@
-"""Build life_segment_features and Y-level features per life segment."""
+"""Build life_segment_summary and life_segment_skeleton_features per life segment."""
 
 from __future__ import annotations
 
@@ -142,7 +142,8 @@ def build_life_features(
     conn: '_duckdb.DuckDBPyConnection',
     match_id: int,
 ) -> None:
-    """Build life_segment_features for all life segments in a match.
+    """Build life_segment_summary and life_segment_skeleton_features for all
+    life segments in a match.
 
     Idempotent — deletes existing rows for the match before inserting.
     Requires wool_spawn_baselines and life_segment_region_visits to be
@@ -220,7 +221,16 @@ def build_life_features(
     # Delete existing rows for this match
     conn.execute(
         """
-        DELETE FROM life_segment_features
+        DELETE FROM life_segment_summary
+        WHERE segment_id IN (
+            SELECT segment_id FROM life_segments WHERE match_id = ?
+        )
+        """,
+        [match_id],
+    )
+    conn.execute(
+        """
+        DELETE FROM life_segment_skeleton_features
         WHERE segment_id IN (
             SELECT segment_id FROM life_segments WHERE match_id = ?
         )
@@ -401,9 +411,10 @@ def build_life_features(
             if first_departure_ts is not None else None
         )
 
+        # Insert core facts into life_segment_summary
         conn.execute(
             """
-            INSERT INTO life_segment_features (
+            INSERT INTO life_segment_summary (
                 segment_id,
                 n_islands_visited, n_build_regions_visited, n_transitions,
                 frac_time_home_island, frac_time_enemy_island,
@@ -412,11 +423,7 @@ def build_life_features(
                 ended_on_enemy_island, ended_in_build,
                 duration_s, time_to_first_departure_s,
                 kills, deaths, kill_in_build, kill_on_enemy_island,
-                wool_touches, wool_captures,
-                visited_junction, frac_island_visits_with_junction,
-                max_node_degree_visited, traversal_rate,
-                avg_nodes_per_island_visit, died_at_endpoint,
-                n_unique_corridors, position_entropy, dominant_node_frac
+                wool_touches, wool_captures
             ) VALUES (
                 ?,
                 ?, ?, ?,
@@ -425,8 +432,7 @@ def build_life_features(
                 ?, ?,
                 ?, ?,
                 ?, ?, ?, ?,
-                ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?
             )
             """,
             [
@@ -438,6 +444,25 @@ def build_life_features(
                 life_dur, time_to_first_dep,
                 kills, deaths, kill_in_build, kill_on_enemy_island,
                 wool_touches, wool_captures,
+            ],
+        )
+
+        # Insert skeleton node-path metrics into life_segment_skeleton_features
+        conn.execute(
+            """
+            INSERT INTO life_segment_skeleton_features (
+                segment_id,
+                visited_junction, frac_island_visits_with_junction,
+                max_node_degree_visited, traversal_rate,
+                avg_nodes_per_island_visit, died_at_endpoint,
+                n_unique_corridors, position_entropy, dominant_node_frac
+            ) VALUES (
+                ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                segment_id,
                 visited_junction, frac_visits_with_junction,
                 max_degree_visited, traversal_rate,
                 avg_nodes_per_island_visit, died_at_endpoint,
@@ -446,14 +471,14 @@ def build_life_features(
         )
         total += 1
 
-    print(f"  life_segment_features: inserted {total} rows for match {match_id}")
+    print(f"  life_segment_summary + life_segment_skeleton_features: inserted {total} rows for match {match_id}")
 
 
 def build_y_features(
     conn: '_duckdb.DuckDBPyConnection',
     match_id: int,
 ) -> None:
-    """Populate y_avg, y_max, frac_time_elevated in life_segment_features.
+    """Populate y_avg, y_max, frac_time_elevated in life_segment_summary.
 
     Reads from position_events for each life segment and updates the row
     that was already inserted by build_life_features.  Idempotent.
@@ -482,10 +507,10 @@ def build_y_features(
             continue
 
         conn.execute("""
-            UPDATE life_segment_features
+            UPDATE life_segment_summary
             SET y_avg = ?, y_max = ?, frac_time_elevated = ?
             WHERE segment_id = ?
         """, [result[0], result[1], result[2], seg_id])
         updated += 1
 
-    print(f"  life_segment_features (Y): updated {updated} rows for match {match_id}")
+    print(f"  life_segment_summary (Y): updated {updated} rows for match {match_id}")
