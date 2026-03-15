@@ -249,7 +249,7 @@ def _maps_below_threshold(threshold: float) -> list[str]:
             continue
         # Compare as whole-number percentage to match the :.0% display in plot titles.
         # e.g. 0.9996 displays as "100%" and should be excluded at threshold=100.
-        if round(confidence * 100) < threshold:
+        if round(confidence * 100) < round(threshold * 100):
             results.append((confidence, slug))
     results.sort()
     return [slug for _, slug in results]
