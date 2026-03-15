@@ -3,6 +3,15 @@
 from dataclasses import dataclass
 from typing import Any, Optional
 
+# Symmetry-group order for tie-breaking in primary selection.
+# rot_90 (order 4) > rot_180 (order 2) > mirrors (order 1).
+_SYMMETRY_ORDER: dict[str, int] = {
+    'rot_90': 4,
+    'rot_180': 2,
+    'mirror_x': 1,
+    'mirror_z': 1,
+}
+
 
 @dataclass
 class SymmetryResult:
@@ -34,9 +43,16 @@ class SymmetryResult:
 
     @property
     def primary(self) -> Optional[dict[str, Any]]:
-        """Highest-confidence detected global symmetry entry, or None."""
+        """Highest-confidence detected global symmetry entry, or None.
+
+        Ties in confidence are broken by symmetry order (rot_90 > rot_180 > mirror)
+        so that the strongest applicable symmetry type is always reported.
+        """
         detected = [s for s in self.global_symmetry if s['detected']]
-        return max(detected, key=lambda s: s['confidence']) if detected else None
+        return (
+            max(detected, key=lambda s: (s['confidence'], _SYMMETRY_ORDER.get(s['type'], 0)))
+            if detected else None
+        )
 
     # ------------------------------------------------------------------
     # Serialisation

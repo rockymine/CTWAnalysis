@@ -826,7 +826,16 @@ def _rerun_symmetry_without_observer(
 
     x_col = 'world_x' if 'world_x' in df.columns else 'x'
     z_col = 'world_z' if 'world_z' in df.columns else 'z'
-    bbox = list(get_grid_extent(df[x_col], df[z_col]))
+
+    # Compute bbox from playable blocks only — excluded islands near the map
+    # edge would otherwise pull the bbox midpoint away from the true centre
+    # of symmetry, degrading IoU for the correct symmetry type.
+    excluded_ids = {isl.id for isl in final_islands if isl.is_observer_island}
+    if 'island_id' in df.columns and excluded_ids:
+        df_playable = df[~df['island_id'].isin(excluded_ids)]
+    else:
+        df_playable = df
+    bbox = list(get_grid_extent(df_playable[x_col], df_playable[z_col]))
 
     island_dicts = [
         {

@@ -367,6 +367,7 @@ def _apply_transform_center(
         return x, z
 
 
+
 def _geometric_pair_support(
     islands: list[dict],
     transform_type: str,
@@ -535,13 +536,13 @@ def _detect_global_symmetry(
         ("rot_90", "90-degree rotational symmetry"),
     ]
 
+    GROUP_IOU_THRESHOLD = 0.85
+
     # First pass: compute polygon IoU for all candidates
     ious = {}
     for sym_type, _ in candidates:
         iou, _ = _verify_polygon_symmetry(islands, center_x, center_z, sym_type)
         ious[sym_type] = iou
-
-    GROUP_IOU_THRESHOLD = 0.85
 
     # Second pass: compute group-aware pair support and confidence
     results = []
