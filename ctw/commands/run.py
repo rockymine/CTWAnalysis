@@ -162,14 +162,11 @@ def _process_single_map(map_folder, args, output_override=None):
             logger.info("  [2/6] Islands: skipped")
 
         # [3/6] Symmetry (geometric only — uses in-memory geometry when available)
+        # Note: if assembly re-runs symmetry after excluding non-playable islands,
+        # the final result is logged at step [5/6] instead.
         symmetry = None
         if not args.no_symmetry:
             symmetry = run_symmetry(map_output_dir, geometry=geometry)
-            if symmetry and symmetry.primary:
-                logger.info(f"  [3/6] Symmetry: {symmetry.primary['description']} "
-                            f"({symmetry.primary['confidence']:.0%})")
-            else:
-                logger.info("  [3/6] Symmetry: none detected")
         else:
             logger.info("  [3/6] Symmetry: skipped")
 
@@ -201,16 +198,42 @@ def _process_single_map(map_folder, args, output_override=None):
                     map_layout_cfg.playable_bbox
                     if map_layout_cfg is not None else None
                 )
-                assemble_map(map_folder, geometry, map_output_dir,
-                             symmetry=symmetry, xml_context=xml_context, plots=args.plots,
-                             exclude_observer_island=exclude_obs,
-                             exclude_islands=exclude_isl,
-                             playable_bbox=bbox)
+                _, final_symmetry = assemble_map(
+                    map_folder, geometry, map_output_dir,
+                    symmetry=symmetry, xml_context=xml_context, plots=args.plots,
+                    exclude_observer_island=exclude_obs,
+                    exclude_islands=exclude_isl,
+                    playable_bbox=bbox,
+                )
                 logger.info("  [5/6] Assembly: done")
+                if not args.no_symmetry:
+                    if final_symmetry and final_symmetry.primary:
+                        logger.info(
+                            f"  [3/6] Symmetry: {final_symmetry.primary['description']} "
+                            f"({final_symmetry.primary['confidence']:.0%})"
+                        )
+                    else:
+                        logger.info("  [3/6] Symmetry: none detected")
             else:
                 logger.info("  [5/6] Assembly: skipped (no geometry)")
+                if not args.no_symmetry:
+                    if symmetry and symmetry.primary:
+                        logger.info(
+                            f"  [3/6] Symmetry: {symmetry.primary['description']} "
+                            f"({symmetry.primary['confidence']:.0%})"
+                        )
+                    else:
+                        logger.info("  [3/6] Symmetry: none detected")
         else:
             logger.info("  [5/6] Assembly: skipped")
+            if not args.no_symmetry:
+                if symmetry and symmetry.primary:
+                    logger.info(
+                        f"  [3/6] Symmetry: {symmetry.primary['description']} "
+                        f"({symmetry.primary['confidence']:.0%})"
+                    )
+                else:
+                    logger.info("  [3/6] Symmetry: none detected")
 
         logger.info("  [6/6] Match analysis: not supported")
 

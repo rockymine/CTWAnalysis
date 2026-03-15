@@ -880,7 +880,7 @@ def assemble_map(
     exclude_observer_island: bool = False,
     exclude_islands: Optional[list[int]] = None,
     playable_bbox: Optional[tuple[float, float, float, float]] = None,
-) -> MapContext:
+) -> tuple[MapContext, Optional[SymmetryResult]]:
     """Map assembly pipeline (Stages 5–7).
 
     Combines island geometry, symmetry results, and XML data into the
@@ -900,7 +900,9 @@ def assemble_map(
         - Updates symmetry.json with intra_team_symmetry (if applicable)
 
     Returns:
-        MapContext instance.
+        (MapContext, SymmetryResult) — the map context and the final symmetry
+        result (which may differ from the input *symmetry* when non-playable
+        islands were excluded and symmetry was re-run during assembly).
 
     Args:
         map_folder: Path to map folder (for map.xml fallback).
@@ -1023,4 +1025,4 @@ def assemble_map(
     )
 
     logger.debug("  map_context.json written")
-    return map_ctx
+    return map_ctx, symmetry
