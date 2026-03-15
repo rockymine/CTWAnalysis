@@ -344,6 +344,122 @@ def _verify_polygon_symmetry(
 
 
 # ---------------------------------------------------------------------------
+# Geometric pair-support helpers
+# ---------------------------------------------------------------------------
+
+def _apply_transform_center(
+    x: float, z: float,
+    transform_type: str,
+    center_x: float, center_z: float,
+) -> tuple[float, float]:
+    """Return the expected partner position for a given point under *transform_type*."""
+    if transform_type == 'mirror_x':
+        return 2.0 * center_x - x, z
+    elif transform_type == 'mirror_z':
+        return x, 2.0 * center_z - z
+    elif transform_type == 'rot_180':
+        return 2.0 * center_x - x, 2.0 * center_z - z
+    elif transform_type == 'rot_90':
+        return center_x + (z - center_z), center_z - (x - center_x)
+    elif transform_type == 'rot_270':
+        return center_x - (z - center_z), center_z + (x - center_x)
+    else:
+        return x, z
+
+
+def _geometric_pair_support(
+    islands: list[dict],
+    transform_type: str,
+    center_x: float,
+    center_z: float,
+    tolerance: float = 3.0,
+) -> tuple[int, int]:
+    """Compute (supporting, total) pairs using geometry-based island assignment.
+
+    Replaces all-combinations counting for groups of identical-area islands.
+    Handles two cases that the old counting cannot:
+
+    1. Groups of 4+ identical islands (e.g. four 300-block corner islands that
+       form two rot_180 pairs).  All-combinations produces C(4,2)=6 candidates
+       of which only 2 have the right transform → pair_support = 2/6 ≈ 0.33.
+       Geometric assignment finds the 2 correct pairs → pair_support = 2/2 = 1.0.
+
+    2. Self-symmetric islands that lie on the symmetry axis (e.g. wintertime
+       center-line islands under mirror_x).  They map to themselves; the old code
+       tried to pair them with each other and failed.  Here they are detected by
+       dist(transform(center), center) < tolerance and counted as automatically
+       satisfied without consuming a partner slot.
+
+    Groups of any even size are supported; odd-sized groups treat the leftover
+    island as unsupported.
+    """
+    from collections import defaultdict
+
+    by_area: dict[int, list[dict]] = defaultdict(list)
+    for isl in islands:
+        by_area[isl['area']].append(isl)
+
+    supporting = 0
+    total = 0
+
+    for _area, group in by_area.items():
+        self_sym = []
+        needs_partner = []
+        for isl in group:
+            ix, iz = isl['center']
+            ex, ez = _apply_transform_center(ix, iz, transform_type, center_x, center_z)
+            if ((ex - ix) ** 2 + (ez - iz) ** 2) ** 0.5 < tolerance:
+                self_sym.append(isl)
+            else:
+                needs_partner.append(isl)
+
+        # Self-symmetric islands: each is its own "pair" → fully supported
+        for _ in self_sym:
+            supporting += 1
+            total += 1
+
+        n = len(needs_partner)
+        if n == 0:
+            continue
+        if n == 1:
+            total += 1          # lone island with no partner → unsupported
+            continue
+
+        # Greedy geometric pairing for n >= 2
+        n_pairs = n // 2
+        total += n_pairs
+        if n % 2 == 1:
+            total += 1          # odd island out → unsupported
+
+        unassigned = list(range(n))
+        paired = 0
+        while len(unassigned) >= 2:
+            i = unassigned[0]
+            ix, iz = needs_partner[i]['center']
+            ex, ez = _apply_transform_center(ix, iz, transform_type, center_x, center_z)
+
+            best_j = None
+            best_dist = float('inf')
+            for j in unassigned[1:]:
+                bx, bz = needs_partner[j]['center']
+                d = ((ex - bx) ** 2 + (ez - bz) ** 2) ** 0.5
+                if d < best_dist:
+                    best_dist = d
+                    best_j = j
+
+            unassigned.remove(i)
+            if best_j is not None and best_dist < tolerance:
+                unassigned.remove(best_j)
+                paired += 1
+            # Island i is unsupported if no partner within tolerance;
+            # it has already been counted in total via n_pairs.
+
+        supporting += paired
+
+    return supporting, total
+
+
+# ---------------------------------------------------------------------------
 # Island pair transform aggregation
 # ---------------------------------------------------------------------------
 
@@ -433,11 +549,11 @@ def _detect_global_symmetry(
         iou = ious[sym_type]
 
         if sym_type == "rot_90":
-            # Must have both rot_90 and rot_270 present
+            # rot_90 forms cycles of 4, not pairs — keep compatible-set counting.
+            # Must have both rot_90 and rot_270 present.
             if counts.get("rot_90", 0) == 0 or counts.get("rot_270", 0) == 0:
                 pair_support = 0.0
             else:
-                # rot_270 is the inverse, rot_180 is rot_90 applied twice
                 compatible = {"rot_90", "rot_270"}
                 if ious.get("rot_180", 0) >= GROUP_IOU_THRESHOLD:
                     compatible.add("rot_180")
@@ -449,21 +565,20 @@ def _detect_global_symmetry(
                 )
                 pair_support = supporting / n_pairs if n_pairs > 0 else 0.0
 
-        elif sym_type == "rot_180":
-            # mirror_x + mirror_z = rot_180, so mirror pairs are evidence
-            compatible = {"rot_180"}
-            if (ious.get("mirror_x", 0) >= GROUP_IOU_THRESHOLD and
-                    ious.get("mirror_z", 0) >= GROUP_IOU_THRESHOLD):
-                compatible.update(["mirror_x", "mirror_z"])
-            supporting = sum(
-                1 for p in pairs if compatible & set(p["transforms"])
-            )
-            pair_support = supporting / n_pairs if n_pairs > 0 else 0.0
-
         else:
-            # mirror_x / mirror_z: count direct matches only
-            pair_count = counts.get(sym_type, 0)
-            pair_support = pair_count / n_pairs if n_pairs > 0 else 0.0
+            # rot_180 / mirror_x / mirror_z: use geometry-based assignment.
+            #
+            # All-combinations counting under-counts when there are groups of 4+
+            # identical-area islands (only 2 of C(4,2)=6 pairs have the right
+            # transform → pair_support ≈ 0.33 for a perfectly symmetric map).
+            # Geometric assignment finds the N/2 correct pairs directly.
+            #
+            # Islands that lie on the symmetry axis (self-symmetric) are
+            # automatically satisfied and don't penalise pair_support.
+            sup, tot = _geometric_pair_support(
+                islands, sym_type, center_x, center_z
+            )
+            pair_support = sup / tot if tot > 0 else 0.0
 
         # Combined confidence: weighted average of pair and polygon signals
         if n_pairs > 0:
