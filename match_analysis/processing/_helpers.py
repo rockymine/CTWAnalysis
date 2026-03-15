@@ -64,8 +64,10 @@ def _euclidean_2d(x1: float, z1: float, x2: float, z2: float) -> float:
 # Domain helpers
 # ---------------------------------------------------------------------------
 
-def _normalize_team(team: str) -> str:
+def _normalize_team(team: str | None) -> str:
     """Normalize team name to short form: 'red-team' -> 'red'."""
+    if not team:
+        return ''
     return team.removesuffix('-team')
 
 

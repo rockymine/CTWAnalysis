@@ -31,21 +31,19 @@ def run_post_processing(
 ) -> None:
     """Run all post-processing steps for a match in order.
 
+    Prerequisite: run migrate_traffic_graph_tables() once before first use
+    to ensure life_segment_summary, life_segment_skeleton_features, and
+    life_segment_traffic_features exist.
+
     Steps:
-      0. Schema migrations (ensure traffic graph tables exist)
       1. populate_wool_spawn_baselines  (idempotent, per-map)
       2. build_region_visits            (per-match)
       3. build_life_features            (per-match)
       4. build_y_features               (per-match)
       5. build_wool_carry_chains        (per-match)
     """
-    from match_analysis.database.schema import migrate_traffic_graph_tables
-
     map_slug = _get_map_slug(conn, match_id)
     print(f"Post-processing match {match_id} (map: {map_slug})")
-
-    print("Step 0/5: ensure schema tables exist")
-    migrate_traffic_graph_tables(conn=conn)
 
     print("Step 1/5: wool spawn baselines")
     populate_wool_spawn_baselines(conn, map_slug)

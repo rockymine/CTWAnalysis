@@ -113,8 +113,10 @@ def process_match(match_id: int) -> None:
 
         # Delete child tables first to avoid FK constraint violations when
         # re-inserting life_segments (child tables reference segment_id FK)
-        conn.execute("DELETE FROM life_segment_features WHERE segment_id IN "
-                     "(SELECT segment_id FROM life_segments WHERE match_id = ?)", [match_id])
+        seg_subquery = "(SELECT segment_id FROM life_segments WHERE match_id = ?)"
+        conn.execute(f"DELETE FROM life_segment_summary WHERE segment_id IN {seg_subquery}", [match_id])
+        conn.execute(f"DELETE FROM life_segment_skeleton_features WHERE segment_id IN {seg_subquery}", [match_id])
+        conn.execute(f"DELETE FROM life_segment_traffic_features WHERE segment_id IN {seg_subquery}", [match_id])
         conn.execute("DELETE FROM life_segment_region_visits WHERE match_id = ?", [match_id])
 
         n = _bulk_insert(conn, 'life_segments', match_id, life_segments_df,

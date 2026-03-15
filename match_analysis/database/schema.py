@@ -504,9 +504,18 @@ def _ensure_wool_carry_chains_table(conn) -> None:
 
 def _run_traffic_graph_migration(conn) -> None:
     """Execute all traffic-graph schema migration statements on an existing conn."""
-    # Drop the old TABLE (if it exists as a table, not a view)
-    conn.execute("DROP VIEW IF EXISTS life_segment_features")
-    conn.execute("DROP TABLE IF EXISTS life_segment_features")
+    # Drop the old life_segment_features object. On a legacy DB it is a TABLE;
+    # after migration it is a VIEW. DuckDB raises a type-mismatch error if the
+    # wrong DROP variant is used, so check the catalog first.
+    obj_type = conn.execute(
+        "SELECT table_type FROM information_schema.tables "
+        "WHERE table_name = 'life_segment_features'"
+    ).fetchone()
+    if obj_type is not None:
+        if obj_type[0] == 'VIEW':
+            conn.execute("DROP VIEW life_segment_features")
+        else:
+            conn.execute("DROP TABLE life_segment_features")
 
     # Create the three new tables
     conn.execute("""
