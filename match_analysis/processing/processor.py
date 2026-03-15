@@ -46,11 +46,22 @@ def _bulk_insert(conn, table: str, match_id: int, df: pd.DataFrame,
     return len(df)
 
 
+_classifier_cache: dict[str, 'PositionClassifier | None'] = {}
+
+
 def _get_classifier(map_slug: str) -> 'PositionClassifier | None':
-    """Build a PositionClassifier for the given map, or None if data missing."""
+    """Build a PositionClassifier for the given map, or None if data missing.
+
+    Results are cached in-process by map_slug — reading the JSON files once
+    per map slug instead of once per match call.
+    """
+    if map_slug in _classifier_cache:
+        return _classifier_cache[map_slug]
+
     context_path = Path(f'output/{map_slug}/map_context.json')
     graph_path = Path(f'output/{map_slug}/map_graph.json')
     if not context_path.exists() or not graph_path.exists():
+        _classifier_cache[map_slug] = None
         return None
 
     from match_analysis.processing.position_classifier import PositionClassifier
@@ -60,7 +71,9 @@ def _get_classifier(map_slug: str) -> 'PositionClassifier | None':
     with open(graph_path) as f:
         map_graph = json.load(f)
 
-    return PositionClassifier(map_context, map_graph)
+    classifier = PositionClassifier(map_context, map_graph)
+    _classifier_cache[map_slug] = classifier
+    return classifier
 
 
 def process_match(match_id: int) -> None:
