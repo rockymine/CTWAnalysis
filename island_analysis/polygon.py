@@ -10,12 +10,16 @@ Provides two modes:
     all symmetrically identical islands share the same polygon
 """
 
+import logging
+
 import numpy as np
 from typing import Any, Optional
 
 from .datatypes import IslandPolygon
 from .detection import find_island_holes
 from common.geometry import world_blocks_to_shapely
+
+logger = logging.getLogger('ctw')
 
 
 def build_island_polygon(
@@ -157,6 +161,11 @@ def _build_union_polygon(
 
     Polygon construction is delegated to :func:`~common.geometry.world_blocks_to_shapely`
     so that the "+1 extent" per block is applied exactly once, in world space.
+
+    8-connected islands with diagonal-only block connections create unit-square
+    unions that touch at a single point.  Shapely's make_valid() splits these
+    into a MultiPolygon.  When that happens the largest sub-polygon (by area) is
+    kept and the tiny pinch-point fragments are discarded.
     """
     from shapely.validation import make_valid
 
@@ -175,5 +184,13 @@ def _build_union_polygon(
 
     if simplify_tolerance > 0:
         polygon = polygon.simplify(simplify_tolerance, preserve_topology=True)
+
+    if polygon.geom_type == 'MultiPolygon':
+        sub = max(polygon.geoms, key=lambda g: g.area)
+        logger.debug(
+            f"    MultiPolygon ({len(polygon.geoms)} parts) — keeping largest "
+            f"({sub.area:.0f} of {polygon.area:.0f} total area)"
+        )
+        polygon = sub
 
     return polygon
