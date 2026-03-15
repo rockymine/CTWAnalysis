@@ -147,25 +147,34 @@ def plot_map(map_slug: str) -> str:
     # ── Right: island polygons ────────────────────────────────────────
     if ctx is not None:
         has_build = draw_build_region(ax_r, ctx, style=BuildRegionStyle())
+
+        # Draw normal islands without observer islands so they don't get team colour
+        observer_ids = {isl['id'] for isl in ctx.get('islands', []) if isl.get('is_observer_island')}
+        if observer_ids:
+            ctx_no_obs = dict(ctx, islands=[i for i in ctx.get('islands', []) if i['id'] not in observer_ids])
+        else:
+            ctx_no_obs = ctx
         draw_island_outlines(
-            ax_r, ctx,
+            ax_r, ctx_no_obs,
             style=IslandOutlineStyle(exterior_linewidth=1.0, exterior_alpha=0.95),
         )
         draw_pois(ax_r, ctx, style=POIStyle(spawn_size=120, wool_size=80))
 
-        # Mark observer islands with a distinct hatch / label
+        # Draw observer islands with a grey hatched style so they're clearly "excluded"
         for isl in ctx.get('islands', []):
             if isl.get('is_observer_island'):
                 poly = isl.get('simplified_polygon')
                 if poly and poly.get('exterior'):
                     pts = np.array(poly['exterior'])
                     ax_r.fill(pts[:, 0], pts[:, 1],
-                              facecolor='cyan', alpha=0.25, zorder=2)
-                    ax_r.text(
-                        isl['center'][0], isl['center'][1],
-                        'OBS', color='cyan', fontsize=6, ha='center', va='center',
-                        fontweight='bold', zorder=9,
-                    )
+                              facecolor='none', edgecolor='grey', linewidth=1.5,
+                              hatch='////', alpha=0.8, zorder=3)
+                ax_r.text(
+                    isl['center'][0], isl['center'][1],
+                    'OBS', color='white', fontsize=5.5, ha='center', va='center',
+                    fontweight='bold', zorder=9,
+                    bbox=dict(boxstyle='round,pad=0.1', fc='grey', alpha=0.8, lw=0),
+                )
 
         # Annotate each island: id + area
         for isl in ctx.get('islands', []):
