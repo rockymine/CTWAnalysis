@@ -29,7 +29,9 @@ def initialize_database() -> None:
             center_z FLOAT NOT NULL,
             island_count INTEGER NOT NULL,
             team_count INTEGER,
-            last_updated TIMESTAMP
+            last_updated TIMESTAMP,
+            traffic_graph_match_hash TEXT,
+            traffic_graph_built_at TIMESTAMP
         )
     """)
 
@@ -243,9 +245,9 @@ def initialize_database() -> None:
         )
     """)
 
-    # Table 11: Life segment features (post-processing)
+    # Table 11: Life segment summary (core facts per life — post-processing)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_features (
+        CREATE TABLE IF NOT EXISTS life_segment_summary (
             segment_id INTEGER PRIMARY KEY,
             n_islands_visited INTEGER,
             n_build_regions_visited INTEGER,
@@ -266,7 +268,19 @@ def initialize_database() -> None:
             kill_on_enemy_island INTEGER,
             wool_touches INTEGER,
             wool_captures INTEGER,
-            -- Node-path metrics (require life_segment_region_visits.node_path)
+            y_avg FLOAT,
+            y_max INTEGER,
+            frac_time_elevated FLOAT,
+            cluster_id INTEGER,
+            cluster_label TEXT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    # Table 12: Life segment skeleton features (node-path metrics — post-processing)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_skeleton_features (
+            segment_id INTEGER PRIMARY KEY,
             visited_junction BOOLEAN,
             frac_island_visits_with_junction FLOAT,
             max_node_degree_visited INTEGER,
@@ -276,8 +290,20 @@ def initialize_database() -> None:
             n_unique_corridors INTEGER,
             position_entropy FLOAT,
             dominant_node_frac FLOAT,
-            cluster_id INTEGER,
-            cluster_label TEXT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    # Table 13: Life segment traffic features (traffic-graph snapped sequence + metrics)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_traffic_features (
+            segment_id INTEGER PRIMARY KEY,
+            snapped_sequence TEXT,
+            unique_nodes INTEGER,
+            min_enemy_wool_dist FLOAT,
+            avg_home_wool_dist FLOAT,
+            span_m FLOAT,
+            tortuosity FLOAT,
             FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
         )
     """)
@@ -427,6 +453,29 @@ def _create_views(conn) -> None:
         FROM ranked
     """)
 
+    conn.execute("DROP VIEW IF EXISTS life_segment_features")
+    conn.execute("""
+        CREATE VIEW life_segment_features AS
+        SELECT
+            s.segment_id,
+            s.n_islands_visited, s.n_build_regions_visited, s.n_transitions,
+            s.frac_time_home_island, s.frac_time_enemy_island,
+            s.frac_time_neutral_island, s.frac_time_build,
+            s.max_attack_depth, s.target_wool_id,
+            s.ended_on_enemy_island, s.ended_in_build,
+            s.duration_s, s.time_to_first_departure_s,
+            s.kills, s.deaths, s.kill_in_build, s.kill_on_enemy_island,
+            s.wool_touches, s.wool_captures,
+            s.y_avg, s.y_max, s.frac_time_elevated,
+            s.cluster_id, s.cluster_label,
+            sk.visited_junction, sk.frac_island_visits_with_junction,
+            sk.max_node_degree_visited, sk.traversal_rate,
+            sk.avg_nodes_per_island_visit, sk.died_at_endpoint,
+            sk.n_unique_corridors, sk.position_entropy, sk.dominant_node_frac
+        FROM life_segment_summary s
+        LEFT JOIN life_segment_skeleton_features sk USING (segment_id)
+    """)
+
 
 def _ensure_wool_carry_chains_table(conn) -> None:
     """Create wool_carry_chains table if it does not exist yet."""
@@ -453,24 +502,127 @@ def _ensure_wool_carry_chains_table(conn) -> None:
     """)
 
 
-def migrate_y_columns(db_path: str | None = None) -> None:
-    """Add Y-level feature columns to life_segment_features and create
-    wool_carry_chains table if missing."""
+def migrate_traffic_graph_tables(db_path: str | None = None) -> None:
+    """Migrate database to the split life_segment_features schema.
+
+    - Drops life_segment_features VIEW if it exists
+    - Drops life_segment_features TABLE if it exists (old schema — wipes data,
+      user must reprocess)
+    - Creates life_segment_summary with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_skeleton_features with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_traffic_features with CREATE TABLE IF NOT EXISTS
+    - Recreates the life_segment_features VIEW
+    - Adds traffic_graph_match_hash and traffic_graph_built_at to maps table
+
+    Safe to run repeatedly — IF NOT EXISTS guards prevent re-creation.
+    """
     if db_path is None:
         db_path = str(Path('match_analysis/metadata.db'))
     conn = duckdb.connect(db_path)
-    for col_name, col_type in [
-        ("y_avg", "FLOAT"),
-        ("y_max", "INTEGER"),
-        ("frac_time_elevated", "FLOAT"),
-    ]:
-        conn.execute(
-            f"ALTER TABLE life_segment_features "
-            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+
+    # Drop the old TABLE (if it exists as a table, not a view)
+    conn.execute("DROP VIEW IF EXISTS life_segment_features")
+    conn.execute("DROP TABLE IF EXISTS life_segment_features")
+
+    # Create the three new tables
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_summary (
+            segment_id INTEGER PRIMARY KEY,
+            n_islands_visited INTEGER,
+            n_build_regions_visited INTEGER,
+            n_transitions INTEGER,
+            frac_time_home_island FLOAT,
+            frac_time_enemy_island FLOAT,
+            frac_time_neutral_island FLOAT,
+            frac_time_build FLOAT,
+            max_attack_depth FLOAT,
+            target_wool_id INTEGER,
+            ended_on_enemy_island BOOLEAN,
+            ended_in_build BOOLEAN,
+            duration_s FLOAT,
+            time_to_first_departure_s FLOAT,
+            kills INTEGER,
+            deaths INTEGER,
+            kill_in_build INTEGER,
+            kill_on_enemy_island INTEGER,
+            wool_touches INTEGER,
+            wool_captures INTEGER,
+            y_avg FLOAT,
+            y_max INTEGER,
+            frac_time_elevated FLOAT,
+            cluster_id INTEGER,
+            cluster_label TEXT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
         )
-    _ensure_wool_carry_chains_table(conn)
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_skeleton_features (
+            segment_id INTEGER PRIMARY KEY,
+            visited_junction BOOLEAN,
+            frac_island_visits_with_junction FLOAT,
+            max_node_degree_visited INTEGER,
+            traversal_rate FLOAT,
+            avg_nodes_per_island_visit FLOAT,
+            died_at_endpoint BOOLEAN,
+            n_unique_corridors INTEGER,
+            position_entropy FLOAT,
+            dominant_node_frac FLOAT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_traffic_features (
+            segment_id INTEGER PRIMARY KEY,
+            snapped_sequence TEXT,
+            unique_nodes INTEGER,
+            min_enemy_wool_dist FLOAT,
+            avg_home_wool_dist FLOAT,
+            span_m FLOAT,
+            tortuosity FLOAT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    # Recreate the backward-compat view
+    conn.execute("DROP VIEW IF EXISTS life_segment_features")
+    conn.execute("""
+        CREATE VIEW life_segment_features AS
+        SELECT
+            s.segment_id,
+            s.n_islands_visited, s.n_build_regions_visited, s.n_transitions,
+            s.frac_time_home_island, s.frac_time_enemy_island,
+            s.frac_time_neutral_island, s.frac_time_build,
+            s.max_attack_depth, s.target_wool_id,
+            s.ended_on_enemy_island, s.ended_in_build,
+            s.duration_s, s.time_to_first_departure_s,
+            s.kills, s.deaths, s.kill_in_build, s.kill_on_enemy_island,
+            s.wool_touches, s.wool_captures,
+            s.y_avg, s.y_max, s.frac_time_elevated,
+            s.cluster_id, s.cluster_label,
+            sk.visited_junction, sk.frac_island_visits_with_junction,
+            sk.max_node_degree_visited, sk.traversal_rate,
+            sk.avg_nodes_per_island_visit, sk.died_at_endpoint,
+            sk.n_unique_corridors, sk.position_entropy, sk.dominant_node_frac
+        FROM life_segment_summary s
+        LEFT JOIN life_segment_skeleton_features sk USING (segment_id)
+    """)
+
+    # Add new columns to maps table
+    conn.execute(
+        "ALTER TABLE maps ADD COLUMN IF NOT EXISTS traffic_graph_match_hash TEXT"
+    )
+    conn.execute(
+        "ALTER TABLE maps ADD COLUMN IF NOT EXISTS traffic_graph_built_at TIMESTAMP"
+    )
+
     conn.close()
-    print(f"Y-level columns and wool_carry_chains migrated in {db_path}")
+    print(
+        f"Traffic graph tables migrated in {db_path}. "
+        "Re-run post-processing to repopulate life_segment_summary and "
+        "life_segment_skeleton_features."
+    )
 
 
 def migrate_views(db_path: str | None = None) -> None:
@@ -506,35 +658,6 @@ def migrate_map_classification_columns(db_path: str | None = None) -> None:
         )
     conn.close()
     print(f"Map classification columns migrated in {db_path}")
-
-
-def migrate_node_path_columns(db_path: str | None = None) -> None:
-    """Add node-path feature columns to an existing life_segment_features table.
-
-    Safe to run on an already-migrated database — DuckDB silently skips
-    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
-    """
-    if db_path is None:
-        db_path = str(Path('match_analysis/metadata.db'))
-    conn = duckdb.connect(db_path)
-    new_columns = [
-        ("visited_junction", "BOOLEAN"),
-        ("frac_island_visits_with_junction", "FLOAT"),
-        ("max_node_degree_visited", "INTEGER"),
-        ("traversal_rate", "FLOAT"),
-        ("avg_nodes_per_island_visit", "FLOAT"),
-        ("died_at_endpoint", "BOOLEAN"),
-        ("n_unique_corridors", "INTEGER"),
-        ("position_entropy", "FLOAT"),
-        ("dominant_node_frac", "FLOAT"),
-    ]
-    for col_name, col_type in new_columns:
-        conn.execute(
-            f"ALTER TABLE life_segment_features "
-            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-        )
-    conn.close()
-    print(f"Node-path columns migrated in {db_path}")
 
 
 def migrate_log_interval_column(db_path: str | None = None) -> None:
