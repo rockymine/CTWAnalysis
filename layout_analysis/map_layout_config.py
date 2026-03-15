@@ -23,6 +23,10 @@ class MapLayoutConfig:
     exclude: list[int] = field(default_factory=list)
     skip: bool = False
     exclude_observer_island: bool = False   # True → find and exclude observer island from symmetry
+    additional_observer_islands: list[int] = field(default_factory=list)
+    # Extra island IDs to also mark as observer, beyond the one found by
+    # auto-detection.  Use when multiple nearby small islands are all part
+    # of the observer area.  Only active when exclude_observer_island=True.
 
 
 def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutConfig]:
@@ -63,10 +67,13 @@ def load_map_layouts(config_path: Optional[Path] = None) -> dict[str, MapLayoutC
         exclude_raw = entry.get('exclude', []) or []
         exclude = [int(v) for v in exclude_raw]
         exclude_observer = bool(entry.get('exclude_observer_island', False))
+        additional_raw = entry.get('additional_observer_islands', []) or []
+        additional_observer = [int(v) for v in additional_raw]
         configs[slug] = MapLayoutConfig(
             layer=layer,
             exclude=exclude,
             exclude_observer_island=exclude_observer,
+            additional_observer_islands=additional_observer,
         )
 
     return configs

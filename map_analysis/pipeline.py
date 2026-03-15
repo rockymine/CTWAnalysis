@@ -869,6 +869,7 @@ def assemble_map(
     xml_context: Optional[MapXmlContext] = None,
     plots: bool = False,
     exclude_observer_island: bool = False,
+    additional_observer_islands: Optional[list[int]] = None,
 ) -> MapContext:
     """Map assembly pipeline (Stages 5–7).
 
@@ -945,19 +946,22 @@ def assemble_map(
             is_observer_island=False,
         ))
 
-    # Mark observer island and (if found) re-run symmetry excluding it.
-    # Only applies to maps where the observer spawn produces a spurious island
+    # Mark observer island(s) and re-run symmetry excluding them.
+    # Only applies to maps where the observer spawn produces spurious islands
     # that must be excluded from symmetry analysis.
-    if exclude_observer_island:
-        observer_island_id = _find_observer_island(map_data_obj, df)
-        if observer_island_id is not None:
+    _extra_obs = set(additional_observer_islands or [])
+    if exclude_observer_island or _extra_obs:
+        observer_ids: set[int] = set(_extra_obs)
+        if exclude_observer_island:
+            auto_id = _find_observer_island(map_data_obj, df)
+            if auto_id is not None:
+                observer_ids.add(auto_id)
+        if observer_ids:
             for isl in final_islands:
-                if isl.id == observer_island_id:
+                if isl.id in observer_ids:
                     isl.is_observer_island = True
-                    logger.debug(f"  Observer island: island {observer_island_id}")
-                    break
-            else:
-                logger.debug(f"  Observer island id={observer_island_id} not found in final_islands")
+            marked = sorted(isl.id for isl in final_islands if isl.is_observer_island)
+            logger.debug(f"  Observer islands: {marked}")
             symmetry = _rerun_symmetry_without_observer(
                 final_islands, df, map_output_dir, symmetry,
             )
