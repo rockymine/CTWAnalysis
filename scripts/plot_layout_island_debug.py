@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'scripts'))
 
-from plot_layout_case_study import _make_image
+from common.visualization import draw_layout_image
 from common.visualization.map_primitives import (
     draw_build_region, draw_island_outlines, draw_pois,
     map_base_legend_handles,
@@ -117,7 +117,7 @@ def plot_map(map_slug: str) -> str:
     if layout_path is None and ctx is None:
         return f'SKIP {map_slug} — no layout or map_context found'
 
-    fig, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(18, 9))
+    fig, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(18, 9), layout='constrained')
     cfg = get_map_layout(map_slug)
     layer_str = cfg.layer if (cfg and not cfg.skip) else 'bedrock (default)'
     fig.suptitle(
@@ -128,13 +128,7 @@ def plot_map(map_slug: str) -> str:
     # ── Left: coloured block image ───────────────────────────────────
     if layout_path is not None:
         df = pd.read_parquet(layout_path)
-        if not df.empty:
-            rgba, extent = _make_image(df)
-            # origin='upper' + extent puts z increasing downward — matches world view
-            ax_l.imshow(rgba, origin='upper', extent=extent,
-                        interpolation='nearest', aspect='equal')
-            ax_l.set_xlim(extent[0], extent[1])
-            ax_l.set_ylim(extent[2], extent[3])  # extent[2]=z_max+1, [3]=z_min
+        draw_layout_image(ax_l, df)
         ax_l.set_title(_layer_label(map_slug, layout_path), fontsize=8)
     else:
         ax_l.text(0.5, 0.5, 'No layout data', transform=ax_l.transAxes,
@@ -187,8 +181,8 @@ def plot_map(map_slug: str) -> str:
                 zorder=10,
             )
 
+        ax_r.axis('equal')
         ax_r.invert_yaxis()
-        ax_r.set_aspect('equal')
 
         n_islands = len(ctx.get('islands', []))
         symmetry_desc = ''
@@ -217,7 +211,6 @@ def plot_map(map_slug: str) -> str:
     ax_r.set_xlabel('X')
     ax_r.set_ylabel('Z')
 
-    plt.tight_layout()
     out_path = OUTPUT_ROOT / f'{map_slug}_layout_debug.png'
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
