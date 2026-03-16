@@ -110,6 +110,9 @@ Examples:
     p.add_argument('--map-name', help='Only process matches for this map')
     p.add_argument('--force', action='store_true',
                    help='Reprocess all matches, not just unprocessed ones')
+    p.add_argument('--workers', type=int, default=1,
+                   help='Number of parallel extraction workers (default: 1). '
+                        'Extraction runs in parallel; DB writes remain serial.')
     p.set_defaults(func=handle_process_all)
 
     # matches reset
@@ -316,7 +319,12 @@ def handle_process(args):
 def handle_process_all(args):
     ensure_match_db()
     import duckdb
-    from match_analysis.processing.processor import process_match
+    from match_analysis.processing.processor import (
+        process_match,
+        extract_match_data,
+        insert_match_data,
+        _log_failure,
+    )
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
@@ -350,7 +358,9 @@ def handle_process_all(args):
             return
         query += " AND map_id = ?"
         params.append(map_id[0])
-    query += " ORDER BY match_id"
+    # Group by map so matches from the same map are processed consecutively.
+    # This keeps the PositionClassifier cache effective within each worker.
+    query += " ORDER BY map_id, match_id"
 
     results = conn.execute(query, params).fetchall()
     conn.close()
@@ -360,11 +370,51 @@ def handle_process_all(args):
         print("No unprocessed matches found.")
         return
 
-    print(f"Processing {total} matches...")
+    workers = getattr(args, 'workers', 1)
+    print(f"Processing {total} matches" +
+          (f" with {workers} workers" if workers > 1 else "") + "...")
 
-    for i, (match_id,) in enumerate(results, 1):
-        print(f"\n[{i}/{total}] Processing match {match_id}")
-        process_match(match_id)
+    if workers > 1 and total > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        from match_analysis.processing.processor import _fetch_all_match_meta
+
+        # Pre-fetch all metadata before spawning workers.  DuckDB blocks even
+        # read-only connections while a write connection is open, so workers
+        # must receive metadata as arguments and never open the DB themselves.
+        match_ids = [mid for (mid,) in results]
+        meta_conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+        try:
+            all_meta = _fetch_all_match_meta(match_ids, meta_conn)
+        finally:
+            meta_conn.close()
+
+        write_conn = duckdb.connect('match_analysis/metadata.db')
+        done = 0
+        try:
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(extract_match_data, mid, all_meta[mid]): mid
+                    for mid in match_ids
+                    if mid in all_meta
+                }
+                for future in as_completed(futures):
+                    mid = futures[future]
+                    done += 1
+                    try:
+                        data = future.result()
+                        print(f"\n[{done}/{total}] Inserting match {mid}")
+                        insert_match_data(write_conn, data)
+                    except Exception as e:
+                        print(f"\n[{done}/{total}] Error on match {mid}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        _log_failure(mid, str(e))
+        finally:
+            write_conn.close()
+    else:
+        for i, (match_id,) in enumerate(results, 1):
+            print(f"\n[{i}/{total}] Processing match {match_id}")
+            process_match(match_id)
 
 
 def handle_reset(args):
