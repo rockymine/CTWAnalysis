@@ -40,23 +40,27 @@ Actions:
   parse          Parse a structured match log file into a history CSV
   scan           Scan a <map>/<files>.parquet folder tree into a history CSV
   index          Index all match parquet files into the database
-  process        Process a specific match by ID
-  process-all    Process all unprocessed matches
+  extract        Extract events from unprocessed matches (fast, no spatial work)
+  classify       Annotate position_events spatially + compute traffic features
+  process        Process a specific match by ID (extract only)
+  process-all    Alias for 'extract' (deprecated)
   list           List matches in the database
   stats          Show database statistics
   reset          Reset processing state (clears trajectory files)
-  post-process   Build life_segment_features from processed matches
+  post-process   Run wool carry chain post-processing
   trace          Visualize player traces on map
   kills          Visualize kill-death pairs on map
   traffic-graph  Build data-driven traffic graph from player position traces (--map or --all)
 
 Examples:
+  python ctw.py matches extract --map-name arabia --workers 4
+  python ctw.py matches classify --map-name arabia
+  python ctw.py matches extract --map-name arabia --force
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
   python ctw.py matches scan --folder data/ --output data/match_history.csv
   python ctw.py matches index --match-dir data --history data/match_history.csv
   python ctw.py matches list
   python ctw.py matches process 57
-  python ctw.py matches process-all --force
   python ctw.py matches reset
   python ctw.py matches stats
   python ctw.py matches trace --map Ingwaz --match 1 --player 0
@@ -98,21 +102,46 @@ Examples:
     p.add_argument('--history', help='Path to history CSV (parquet_file,map_name) to set map names')
     p.set_defaults(func=handle_index)
 
+    # matches extract (new primary command)
+    p = matches_sub.add_parser(
+        'extract',
+        help='Extract events from unprocessed matches (no spatial annotation)',
+    )
+    p.add_argument('--map-name', help='Only extract matches for this map')
+    p.add_argument('--force', action='store_true',
+                   help='Re-extract already-processed matches')
+    p.add_argument('--workers', type=int, default=1,
+                   help='Number of parallel extraction workers (default: 1). '
+                        'Extraction runs in parallel; DB writes remain serial.')
+    p.set_defaults(func=handle_extract)
+
+    # matches classify (new spatial command)
+    p = matches_sub.add_parser(
+        'classify',
+        help='Spatially annotate position_events and compute traffic features',
+    )
+    p.add_argument('--map-name', help='Only classify matches for this map')
+    p.add_argument('--force', action='store_true',
+                   help='Re-classify already-classified matches')
+    p.set_defaults(func=handle_classify)
+
     # matches process
-    p = matches_sub.add_parser('process', help='Process a specific match by ID')
+    p = matches_sub.add_parser('process', help='Extract a specific match by ID')
     p.add_argument('match_id', type=int, help='Match ID to process')
     p.add_argument('--force', action='store_true',
                    help='Reprocess even if already processed')
     p.set_defaults(func=handle_process)
 
-    # matches process-all
-    p = matches_sub.add_parser('process-all', help='Process all unprocessed matches')
+    # matches process-all (kept as alias for extract)
+    p = matches_sub.add_parser(
+        'process-all',
+        help='Deprecated: use "extract" instead',
+    )
     p.add_argument('--map-name', help='Only process matches for this map')
     p.add_argument('--force', action='store_true',
                    help='Reprocess all matches, not just unprocessed ones')
     p.add_argument('--workers', type=int, default=1,
-                   help='Number of parallel extraction workers (default: 1). '
-                        'Extraction runs in parallel; DB writes remain serial.')
+                   help='Number of parallel extraction workers (default: 1).')
     p.set_defaults(func=handle_process_all)
 
     # matches reset
@@ -317,49 +346,64 @@ def handle_process(args):
 
 
 def handle_process_all(args):
+    """Deprecated alias for handle_extract."""
+    print("Note: 'process-all' is deprecated — use 'extract' instead.")
+    handle_extract(args)
+
+
+def _resolve_map_id(conn, map_name: str) -> int | None:
+    """Return map_id for map_name slug, printing an error and returning None if missing."""
+    row = conn.execute(
+        "SELECT map_id FROM maps WHERE map_slug = ?", [map_name]
+    ).fetchone()
+    if row is None:
+        print(f"Error: map '{map_name}' not found in maps table")
+        return None
+    return row[0]
+
+
+def handle_extract(args):
+    """Extract events from unprocessed matches (no spatial annotation).
+
+    Sets processed=TRUE, spatial_classified=FALSE.
+    Run 'classify' afterwards to fill in location_type/island_id and
+    compute traffic features.
+    """
     ensure_match_db()
     import duckdb
     from match_analysis.processing.processor import (
         process_match,
         extract_match_data,
         insert_match_data,
+        _fetch_all_match_meta,
         _log_failure,
     )
 
     conn = duckdb.connect('match_analysis/metadata.db')
 
     if getattr(args, 'force', False):
-        reset_query = "UPDATE matches SET processed = FALSE"
-        reset_params = []
-        if args.map_name:
-            map_id = conn.execute(
-                "SELECT map_id FROM maps WHERE map_slug = ?",
-                [args.map_name],
-            ).fetchone()
+        reset_query = "UPDATE matches SET processed = FALSE, spatial_classified = FALSE"
+        reset_params: list = []
+        if getattr(args, 'map_name', None):
+            map_id = _resolve_map_id(conn, args.map_name)
             if map_id is None:
-                print(f"Error: map '{args.map_name}' not found in maps table")
                 conn.close()
                 return
             reset_query += " WHERE map_id = ?"
-            reset_params.append(map_id[0])
+            reset_params.append(map_id)
         conn.execute(reset_query, reset_params)
         print("Reset processing flags (--force).")
 
     query = "SELECT match_id FROM matches WHERE processed = FALSE"
-    params = []
-    if args.map_name:
-        map_id = conn.execute(
-            "SELECT map_id FROM maps WHERE map_slug = ?",
-            [args.map_name],
-        ).fetchone()
+    params: list = []
+    if getattr(args, 'map_name', None):
+        map_id = _resolve_map_id(conn, args.map_name)
         if map_id is None:
-            print(f"Error: map '{args.map_name}' not found in maps table")
             conn.close()
             return
         query += " AND map_id = ?"
-        params.append(map_id[0])
-    # Group by map so matches from the same map are processed consecutively.
-    # This keeps the PositionClassifier cache effective within each worker.
+        params.append(map_id)
+    # Process same-map matches consecutively so PositionClassifier cache stays warm
     query += " ORDER BY map_id, match_id"
 
     results = conn.execute(query, params).fetchall()
@@ -371,16 +415,12 @@ def handle_process_all(args):
         return
 
     workers = getattr(args, 'workers', 1)
-    print(f"Processing {total} matches" +
+    print(f"Extracting {total} matches" +
           (f" with {workers} workers" if workers > 1 else "") + "...")
 
     if workers > 1 and total > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
-        from match_analysis.processing.processor import _fetch_all_match_meta
 
-        # Pre-fetch all metadata before spawning workers.  DuckDB blocks even
-        # read-only connections while a write connection is open, so workers
-        # must receive metadata as arguments and never open the DB themselves.
         match_ids = [mid for (mid,) in results]
         meta_conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
         try:
@@ -413,8 +453,72 @@ def handle_process_all(args):
             write_conn.close()
     else:
         for i, (match_id,) in enumerate(results, 1):
-            print(f"\n[{i}/{total}] Processing match {match_id}")
+            print(f"\n[{i}/{total}] Extracting match {match_id}")
             process_match(match_id)
+
+
+def handle_classify(args):
+    """Spatially annotate position_events and compute traffic features.
+
+    Requires 'extract' (or 'process') to have run first.
+    Updates location_type and island_id in position_events, then computes
+    life_segment_traffic_features.  Sets spatial_classified=TRUE.
+    """
+    ensure_match_db()
+    import duckdb
+    from match_analysis.processing.processor import classify_match
+
+    conn = duckdb.connect('match_analysis/metadata.db')
+
+    if getattr(args, 'force', False):
+        reset_query = "UPDATE matches SET spatial_classified = FALSE WHERE processed = TRUE"
+        reset_params: list = []
+        if getattr(args, 'map_name', None):
+            map_id = _resolve_map_id(conn, args.map_name)
+            if map_id is None:
+                conn.close()
+                return
+            reset_query += " AND map_id = ?"
+            reset_params.append(map_id)
+        conn.execute(reset_query, reset_params)
+        print("Reset spatial_classified flags (--force).")
+
+    query = (
+        "SELECT match_id FROM matches "
+        "WHERE processed = TRUE AND (spatial_classified = FALSE OR spatial_classified IS NULL)"
+    )
+    params: list = []
+    if getattr(args, 'map_name', None):
+        map_id = _resolve_map_id(conn, args.map_name)
+        if map_id is None:
+            conn.close()
+            return
+        query += " AND map_id = ?"
+        params.append(map_id)
+    query += " ORDER BY map_id, match_id"
+
+    results = conn.execute(query, params).fetchall()
+    conn.close()
+
+    total = len(results)
+    if total == 0:
+        print("No unclassified matches found.")
+        return
+
+    print(f"Classifying {total} matches...")
+
+    conn_w = duckdb.connect('match_analysis/metadata.db')
+    try:
+        for i, (match_id,) in enumerate(results, 1):
+            print(f"\n[{i}/{total}] Classifying match {match_id}")
+            try:
+                classify_match(conn_w, match_id)
+            except Exception as e:
+                print(f"  Error classifying match {match_id}: {e}")
+                import traceback
+                traceback.print_exc()
+    finally:
+        conn_w.close()
 
 
 def handle_reset(args):
@@ -427,7 +531,8 @@ def handle_reset(args):
 
     if args.match_id:
         conn.execute(
-            "UPDATE matches SET processed = FALSE, processed_at = NULL, processing_time = NULL WHERE match_id = ?",
+            "UPDATE matches SET processed = FALSE, spatial_classified = FALSE, "
+            "processed_at = NULL, processing_time = NULL WHERE match_id = ?",
             [args.match_id],
         )
         traj_file = Path(f'match_analysis/trajectories/{args.match_id}.parquet')
@@ -437,7 +542,8 @@ def handle_reset(args):
         print(f"Reset match {args.match_id}.")
     else:
         conn.execute(
-            "UPDATE matches SET processed = FALSE, processed_at = NULL, processing_time = NULL"
+            "UPDATE matches SET processed = FALSE, spatial_classified = FALSE, "
+            "processed_at = NULL, processing_time = NULL"
         )
         traj_dir = Path('match_analysis/trajectories')
         count = 0
@@ -739,9 +845,7 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     from match_analysis.traffic.strategy_plot import (
         plot_traffic_strategy_comparison, _adaptive_grid_size,
     )
-    from match_analysis.traffic.segment_features import (
-        build_traffic_segment_features, compute_match_set_hash,
-    )
+    from match_analysis.traffic.segment_features import compute_match_set_hash
 
     log_interval  = getattr(args, 'log_interval', 2)
     strategy      = getattr(args, 'strategy', 'grid')
@@ -884,18 +988,20 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     plot_traffic_graph(graph, map_context, out_png)
     print(f"Saved: {out_png}")
 
-    # ── Step 7: Populate life_segment_traffic_features + update hash ─────────
-    print(f"  Populating life_segment_traffic_features for '{map_slug}' ...")
+    # ── Step 7: Update traffic graph hash ────────────────────────────────────
+    # life_segment_traffic_features is now populated by 'matches classify'.
+    # Run 'matches classify --map-name <slug> --force' to recompute features
+    # after rebuilding the traffic graph.
     conn_rw = duckdb.connect('match_analysis/metadata.db')
     try:
-        n_rows = build_traffic_segment_features(map_slug, conn_rw, graph)
-        print(f"  Inserted {n_rows} traffic feature rows.")
         conn_rw.execute(
             "UPDATE maps SET traffic_graph_match_hash = ?, traffic_graph_built_at = ? WHERE map_slug = ?",
             [current_hash, datetime.now(timezone.utc), map_slug],
         )
     finally:
         conn_rw.close()
+    print(f"  Traffic graph hash updated. Run 'matches classify --map-name {map_slug} --force'"
+          " to recompute traffic features.")
 
 
 def handle_traffic_graph(args):
