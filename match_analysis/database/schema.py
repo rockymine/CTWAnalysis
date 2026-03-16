@@ -68,6 +68,7 @@ def initialize_database() -> None:
             processed BOOLEAN DEFAULT FALSE,
             processed_at TIMESTAMP,
             processing_time FLOAT,
+            spatial_classified BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
     """)
@@ -153,11 +154,6 @@ def initialize_database() -> None:
             segment_idx INTEGER,
             location_type TEXT,
             island_id INTEGER,
-            nearest_node_1 INTEGER,
-            nearest_node_2 INTEGER,
-            nearest_island_1 INTEGER,
-            nearest_island_2 INTEGER,
-            nearest_graph_node INTEGER,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
     """)
@@ -213,97 +209,13 @@ def initialize_database() -> None:
         )
     """)
 
-    # Table 10: Life segment region visits (post-processing)
-    conn.execute("""
-        CREATE SEQUENCE IF NOT EXISTS seq_visit_id START 1
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_region_visits (
-            visit_id INTEGER PRIMARY KEY DEFAULT nextval('seq_visit_id'),
-            segment_id INTEGER NOT NULL,
-            match_id INTEGER NOT NULL,
-            player_id INTEGER NOT NULL,
-            visit_idx INTEGER NOT NULL,
-            location_type TEXT NOT NULL,
-            island_id INTEGER,
-            bridge_island_1 INTEGER,
-            bridge_island_2 INTEGER,
-            entry_timestamp BIGINT NOT NULL,
-            exit_timestamp BIGINT NOT NULL,
-            duration_s FLOAT NOT NULL,
-            is_home_island BOOLEAN,
-            is_enemy_island BOOLEAN,
-            kill_count INTEGER NOT NULL DEFAULT 0,
-            was_death BOOLEAN NOT NULL DEFAULT FALSE,
-            entry_node INTEGER,
-            exit_node INTEGER,
-            bridge_node_1 INTEGER,
-            bridge_node_2 INTEGER,
-            node_path TEXT,
-            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id),
-            FOREIGN KEY (match_id) REFERENCES matches(match_id)
-        )
-    """)
-
-    # Table 11: Life segment summary (core facts per life — post-processing)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_summary (
-            segment_id INTEGER PRIMARY KEY,
-            n_islands_visited INTEGER,
-            n_build_regions_visited INTEGER,
-            n_transitions INTEGER,
-            frac_time_home_island FLOAT,
-            frac_time_enemy_island FLOAT,
-            frac_time_neutral_island FLOAT,
-            frac_time_build FLOAT,
-            max_attack_depth FLOAT,
-            target_wool_id INTEGER,
-            ended_on_enemy_island BOOLEAN,
-            ended_in_build BOOLEAN,
-            duration_s FLOAT,
-            time_to_first_departure_s FLOAT,
-            kills INTEGER,
-            deaths INTEGER,
-            kill_in_build INTEGER,
-            kill_on_enemy_island INTEGER,
-            wool_touches INTEGER,
-            wool_captures INTEGER,
-            y_avg FLOAT,
-            y_max INTEGER,
-            frac_time_elevated FLOAT,
-            cluster_id INTEGER,
-            cluster_label TEXT,
-            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
-        )
-    """)
-
-    # Table 12: Life segment skeleton features (node-path metrics — post-processing)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_skeleton_features (
-            segment_id INTEGER PRIMARY KEY,
-            visited_junction BOOLEAN,
-            frac_island_visits_with_junction FLOAT,
-            max_node_degree_visited INTEGER,
-            traversal_rate FLOAT,
-            avg_nodes_per_island_visit FLOAT,
-            died_at_endpoint BOOLEAN,
-            n_unique_corridors INTEGER,
-            position_entropy FLOAT,
-            dominant_node_frac FLOAT,
-            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
-        )
-    """)
-
-    # Table 13: Life segment traffic features (traffic-graph snapped sequence + metrics)
+    # Table 10: Life segment traffic features (spatial classify step output)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS life_segment_traffic_features (
-            segment_id INTEGER PRIMARY KEY,
+            segment_id     INTEGER PRIMARY KEY,
             snapped_sequence TEXT,
-            unique_nodes INTEGER,
-            min_enemy_wool_dist FLOAT,
-            avg_home_wool_dist FLOAT,
-            span_m FLOAT,
-            tortuosity FLOAT,
+            max_attack_depth FLOAT,
+            death_region   TEXT,
             FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
         )
     """)
@@ -452,29 +364,7 @@ def _create_views(conn) -> None:
             END AS map_size_bucket
         FROM ranked
     """)
-
-    conn.execute("DROP VIEW IF EXISTS life_segment_features")
-    conn.execute("""
-        CREATE VIEW life_segment_features AS
-        SELECT
-            s.segment_id,
-            s.n_islands_visited, s.n_build_regions_visited, s.n_transitions,
-            s.frac_time_home_island, s.frac_time_enemy_island,
-            s.frac_time_neutral_island, s.frac_time_build,
-            s.max_attack_depth, s.target_wool_id,
-            s.ended_on_enemy_island, s.ended_in_build,
-            s.duration_s, s.time_to_first_departure_s,
-            s.kills, s.deaths, s.kill_in_build, s.kill_on_enemy_island,
-            s.wool_touches, s.wool_captures,
-            s.y_avg, s.y_max, s.frac_time_elevated,
-            s.cluster_id, s.cluster_label,
-            sk.visited_junction, sk.frac_island_visits_with_junction,
-            sk.max_node_degree_visited, sk.traversal_rate,
-            sk.avg_nodes_per_island_visit, sk.died_at_endpoint,
-            sk.n_unique_corridors, sk.position_entropy, sk.dominant_node_frac
-        FROM life_segment_summary s
-        LEFT JOIN life_segment_skeleton_features sk USING (segment_id)
-    """)
+    # life_segment_features view removed — skeleton tables dropped in migration
 
 
 def _ensure_wool_carry_chains_table(conn) -> None:
