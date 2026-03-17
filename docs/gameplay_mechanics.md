@@ -24,6 +24,45 @@ data as a traffic network of nodes and edges.
 
 ---
 
+## Map Layout Archetypes
+
+CTW maps share common structural patterns that shape their gameplay and role
+distributions. Understanding which archetype a map belongs to provides important
+context for interpreting movement and spatial data.
+
+### Single-lane
+One bridge corridor connects home islands, with the wool room at the far end.
+Defences form perpendicular to the lane; attack has no flanking option. Classic
+examples: Race for Victory 1, early Overcast-era maps. Rare in the modern map pool.
+
+### H-layout (two-lane)
+Two parallel lanes connect home islands, with spawn accessible from both.
+Players can rotate between lanes; teams must cover two fronts simultaneously.
+Introduced by Race for Victory 2. Doubles strategic options — teams can apply
+split pressure or commit fully to one lane to create an overstretch.
+
+### Dynamic frontline (grid / island cluster)
+Multiple mid-map islands arranged in a cluster or grid create a contested
+no-man's-land zone. Neither team can cross directly; they advance through
+intermediate islands, gaining and losing ground. Neither pure attack nor pure
+defence can hold a match indefinitely — there is always a flanking route.
+Introduced by Reshif (Golden Drought, Sky Traffic); became a CTW design signature.
+
+### Vertical / elevation-based
+Maps with significant elevation differences built into the terrain — islands at
+different heights, cliffs, ramps. Players are _expected_ to staircase between
+platforms as part of normal traversal, not just for skybridging. Introduced in
+the Kung Fu Capture tournament era (Bamboo Valley, etc.) as a partial solution to
+communal skybridge and defence scaling. Because staircases reach fixed platforms,
+height gain has defined endpoints rather than open-air exposure.
+
+**Analytical implication:** The traffic graph is a 2D (x/z) projection. On
+vertically complex maps, nodes at different y-levels but the same x/z position
+are collapsed together. Role and route analysis on vertically complex maps should
+be treated with caution until a y-aware spatial layer is developed.
+
+---
+
 ## Wool Objectives
 
 ### Counts and match duration (from database, 177 maps)
@@ -172,32 +211,138 @@ Water/buckets are available on most maps but not all (detectable from the data).
 
 ### Phase 3 — Mid Game (Stalemate / Skybridging)
 
-Once the ground path is denied, teams escalate to the **skybridge** — a bridge
-built at or near the maximum build height, approaching the enemy room from above.
+Once the ground path is denied or heavily fortified, teams escalate to the
+**skybridge** — a bridge built at or near the maximum build height that bypasses
+ground-level terrain entirely.
 
-**Building a skybridge:**
-- A player (or multiple) ascends from spawn or a mid-island platform
-- They bridge horizontally at the height limit toward the enemy room
-- Inventory count drops steadily; y-level is at maximum
-- The attacker is now exposed — no cover, above everything
+#### The Skybridge as a Parallel Transport Layer
 
-**Counter-skybridge:**
-- The defending team builds their own skybridge to intercept
-- A back-and-forth fight at height ensues — primarily bow combat, some sword fighting
-- One team may gain a foothold, expand their skybridge forward, and gain proximity advantage
+The skybridge is not a new route — it follows the same underlying island and
+void-gap topology as the ground route, projected upward. A player crossing at
+y ≈ max_build_height travels the same x/z positions as a ground crosser, but
+entirely above all constructed defences (pits, water walls, denial items).
 
-**Tunneling:** Separately from skybridging, some attackers attempt to tunnel
-diagonally or laterally through remaining terrain to bypass the fortified entrance.
-This happens mainly where the pit is not yet fully dug.
+**Critical data implication:** The traffic graph is 2D (x/z only). Skybridge
+movement and ground movement at the same x/z snap to the _same_ traffic graph
+nodes. The `position_events.y` column is the only signal that distinguishes
+them. A player who skybrided and one who flat-bridged may produce identical
+snapped sequences with different y-profiles.
+
+#### Building a Skybridge
+
+A player starts near spawn, constructs a staircase upward, then bridges
+horizontally at the build limit toward the enemy island. The staircase is
+water-protected (fences and iron bars placed at intervals let players run up
+but resist flooding) to prevent opponents from destroying it. Building is slow
+and deliberate — the builder cannot fight effectively while placing blocks.
+The staircase is a **commitment signal**: it locks a player out of ground combat
+while under construction and announces intent.
+
+Once the staircase reaches the height limit, teammates can run up and extend the
+bridge forward. The skybridge grows incrementally over match time and may eventually
+expand into a full aerial platform that mirrors the map's island layout.
+
+#### Drop-Down Attack
+
+A player uses the completed or partially-built skybridge to gain height, then
+deliberately drops off the structure to land on enemy territory below, bypassing
+the fortified ground approach. This is a distinct attack mode:
+
+- Y rises near home spawn → plateaus at max_build_height → drops sharply near
+  enemy island → ground-level movement toward enemy wool
+- A single life segment can contain: ground traversal → staircase build →
+  sky traverse → deliberate drop → ground attack near enemy wool room
+
+Drop-down attacks are likely more common on longer matches where the ground route
+is heavily defended, and should be detectable as a characteristic y-profile shape.
+
+#### Counter-Skybridge and Sky Combat
+
+The defending team builds their own staircase from near the wool room toward the
+enemy (the **anti-skybridge** or **defensive staircase**). This provides:
+- A height advantage to shoot down at the approaching attacker
+- A rapid-response route when the enemy's skybridge approaches the wool room
+
+Once both teams have structures at height, bow combat dominates. Attackers push
+forward; defenders hold or destroy attacker bridges. Winning sky combat opens a
+clean approach to the wool room roof or a drop-in point.
+
+#### Public vs Competitive Skybridge Behaviour
+
+In competitive play, a **communal skybridge** stalemate could form: both teams
+build partway toward each other but neither closes the gap — shooting at the
+other's builder discourages completing the bridge. This was a major balance problem
+that broke several competitive CTW maps.
+
+**In public matches (our dataset), skybridges complete and connect.** The communal
+skybridge stalemate is a competitive-tier phenomenon and does not apply to public
+match analysis. Skybridge detection in our data can assume that high y-activity
+at mid-map x/z positions represents genuine crossing attempts.
+
+#### Tunneling
+
+Separately from skybridging, attackers may dig horizontally or diagonally through
+remaining terrain to bypass a surface defence. Only viable where terrain is not
+yet fully dug to bedrock. Detectable by sustained y-decrease followed by lateral
+movement at low y. Becomes rare or impossible once the pit is complete.
 
 **Signals (attacker on skybridge):**
-- Y-level at or near build height limit
+- Y-level at or near build height limit (y ≥ max_build_height − 2)
 - Inventory dropping (bridge construction)
 - Bow combat events (aerial exchanges)
 - Proximity to enemy objective increasing
+- Snapped sequence may be identical to a ground crosser — y is the distinguishing
+  signal
 
-**Signals (defender on skybridge):**
-- Similar Y pattern, but they tend to retreat back toward home when pushed
+**Signals (drop-down attacker):**
+- Y rises near home spawn, plateaus at build height, drops sharply near enemy
+- Ground-level nodes near enemy territory appear _after_ the high-y phase
+- death_region likely `enemy_island` or `bridge`
+
+**Signals (sky defender / anti-skybridger):**
+- High y-position near home island — not advancing toward enemy
+- Bow combat events at height, directed toward approaching enemy skybridge
+- Low max_attack_depth (does not penetrate enemy territory)
+
+---
+
+### Defense Scaling Over Match Time
+
+A structural property of CTW is that defences grow stronger as the match
+progresses. This is the primary cause of long stalemates and bimodal duration
+distributions:
+
+1. **Pit deepening:** As diggers work, the pit reaches bedrock and becomes
+   permanent. Once complete, the flat ground crossing route is eliminated.
+   This structural change does not reset between lives — the terrain stays dug.
+2. **Wall growth:** Defenders add layers, height, and water. Denial items
+   multiply. Escape routes from the wool room are progressively closed. Built
+   structures persist until an attacker destroys them.
+3. **Player learning:** Defenders optimise their positioning over time.
+   Attackers, starting fresh each life, face a progressively more capable setup.
+
+**Resource dynamics:** Attackers respawn with the same starter kit every life
+and have equal access to renewable armour. The material constraint lies on the
+_defensive side_: the blocks needed for walls, water placements, and denial items
+come from finite map chest supplies. Wood is the key defensive building material
+and is not always included in the spawn kit — teams sometimes coordinate to
+donate material from the chest supply to the defence. Kill rewards (extra blocks)
+can supplement this but are unreliable. In practice, defensive materials are
+limited by what the map provides, which is a key map balance lever.
+
+The combined effect: the longer a stalemate lasts, the more permanent terrain
+changes have accumulated (pit dug, walls placed) and the harder it is for
+attackers — who face the same defence fresh each life — to break through.
+This paradox was explicitly identified by CTW designer Reshif as the central
+game design problem for the genre. His Golden Drought 5 design (ice blocks
+limiting water availability, water depleted by attacker actions) was a direct
+attempt to reverse the dynamic by making defences weaker over time.
+
+**Analytical implication:** On medium- and long-duration matches, the
+distribution of `death_region` and `max_attack_depth` should shift over match
+time — attacker lives ending further from the enemy wool in the late match
+compared to early, reflecting the accumulated physical defence. This is directly
+testable from the existing data (see H9 in `analysis_roadmap.md`).
 
 ---
 
@@ -311,6 +456,27 @@ consistently produce high rusher density? Does map Y tend toward long stalemates
 - Moves toward enemy objective (proximity to enemy wool room increasing)
 - Bow combat events at height
 - Appears in mid-to-late game (not Phase 1)
+- **Note:** snapped sequence alone cannot confirm this role — y-data from
+  `position_events` is required to distinguish sky movement from ground movement
+  at the same x/z positions
+
+---
+
+### Sky Defender / Anti-Skybridger
+
+**Definition:** Builds and occupies the defensive staircase near the home wool
+room to contest an approaching enemy skybridge.
+
+**Characteristics:**
+- Y-level at or near build height limit, but positioned over home island —
+  not advancing toward enemy territory
+- Inventory drops (building staircase and defensive structure upward)
+- Bow combat events at height, directed toward an approaching skybridge
+- Low `max_attack_depth` (does not penetrate enemy territory)
+- Appears in Phase 3, in response to detected enemy sky activity
+- **Note:** like the Skybridger, requires y-data from `position_events` —
+  the snapped sequence cannot distinguish this role from a ground defender
+  at the same x/z positions
 
 ---
 
@@ -318,14 +484,17 @@ consistently produce high rusher density? Does map Y tend toward long stalemates
 
 | Signal | Source | Notes |
 |---|---|---|
-| Y-level over time | position_events | Distinguish ground vs skybridge vs digging |
+| Y-level over time | position_events | Distinguish ground vs skybridge vs digging; required for Skybridger/Sky Defender roles |
+| Y-profile shape | position_events | Rise-plateau-drop = drop-down attack; flat = ground; sustained high = skybridge |
 | Proximity to objective | position_events + map_context | Home vs enemy wool room |
 | Time on home island | position_events + island classification | Defender vs attacker |
-| Movement speed/path | traffic graph nodes | Which route taken across map |
+| Movement speed/path | traffic graph nodes | Which route taken across map (2D only) |
 | Inventory count change | position_events (inv_count) | Building (down) vs digging (up, sometimes) |
 | Combat events | combat_events | Bow vs sword, location |
 | Match time at death | life_segments | Early vs mid vs late game |
 | Materials used | position_events (held item) | Wall building heuristic |
+| death_region | life_segment_traffic_features | First-order role proxy |
+| max_attack_depth | life_segment_traffic_features | Penetration depth into enemy territory (lower = deeper) |
 
 ---
 
@@ -356,7 +525,12 @@ This is a key hypothesis for the resource/chest analysis:
 > tend to produce longer matches and more pronounced Phase 3 stalemates.
 
 Maps also vary in how many void gaps must be bridged, whether bedrock closes off
-the pit option, whether there are floating islands reachable only by skybridge, etc.
+the pit option, whether there are floating islands reachable only by skybridge,
+and how much vertical relief is built into the terrain. Vertically complex maps
+(multiple platforms at distinct heights) produce staircase movement as a normal
+traversal mechanic rather than just a Phase 3 skybridge activity. The traffic
+graph, being 2D, collapses all vertical movement — analysis on such maps should
+note this limitation explicitly.
 
 ### Map examples (anchored by database)
 
@@ -389,4 +563,4 @@ manual inspection of map XML until parsing is implemented.
 
 ---
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-03-17_

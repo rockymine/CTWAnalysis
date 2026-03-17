@@ -2,6 +2,8 @@
 
 _Last updated: 2026-03-17_
 
+_See also: `docs/glossary.md` for definitions of all gameplay and analysis terms._
+
 ---
 
 ## Purpose
@@ -58,6 +60,24 @@ Cross-map comparison is a medium-term goal; single-map depth comes first.
 | `map_wool_monuments` | Accurate monument positions from capture events. |
 | `map_spawns` | Spawn block positions per team. |
 | `maps` | `wools_per_team`, `team_count`, `max_players_per_team`, `max_build_height`, `size_tier`, `island_count`, `symmetry_type`. |
+
+### Layout parquets (`output/<map>/layout_*.parquet`)
+
+Per-map raster layers, one row per (x, z) cell with `y`, `block_id`, `block_data`:
+
+| File | Content |
+|---|---|
+| `layout_top_surface.parquet` | Highest non-air block — the surface a player walks on |
+| `layout_lowest_solid.parquet` | Lowest non-air block — bottom of terrain column |
+| `layout_bedrock.parquet` | Bedrock positions |
+| `layout_decided.parquet` | Layer chosen by island classifier; includes `island_id` |
+| `layout_y0.parquet` | Block type at y = 0 |
+| `layout_resource_blocks.parquet` | Ore and resource block positions |
+| `layout_chest_contents.parquet` | Chest positions and parsed contents |
+
+The outer vertical extent of terrain at each cell is defined by `top_surface.y` and
+`lowest_solid.y`.  Intermediate navigable floors (tunnels, stacked islands) are not
+yet extracted — see Layer 0 in Analysis Modules.
 
 ### Traffic graph JSON (`output/<map>/traffic_graph.json`)
 
@@ -264,11 +284,192 @@ provides enough information:
 Reconstruction is valuable for visualisation and path similarity, but the snapped
 sequence should be the primary analysis signal.
 
+**Known limitation (confirmed):** The traffic graph is 2D (x/z only).  The snapped
+sequence cannot distinguish ground-level movement from skybridge movement at the same
+x/z position.  The SKYBRIDGER and SKY_DEFENDER roles require y-coordinate data from
+`position_events` as a complement.  H7 holds with this stated exception.
+
+A further complication arises on vertically complex maps (e.g. `golden_drought_v`):
+the `y ≥ max_build_height − 2` heuristic for skybridge detection produces false
+positives for players standing on elevated terrain platforms that are close to the
+build limit.  Resolving this requires a **terrain height map** per map (see Layer 0
+in Analysis Modules below).
+
+---
+
+### H8 — Drop-down attack is detectable as a y-profile signature
+
+A player who uses a skybridge as a launch platform and then drops to enemy territory
+has a characteristic y-signature within a single life segment: y rises steeply near
+home spawn, plateaus near max_build_height, then drops sharply before ground-level
+movement resumes near the enemy island.  This profile is distinct from pure
+skybridging (y stays high throughout) and pure ground rushing (y stays flat).
+
+The hypothesis is that drop-down attacks are a non-trivial fraction of successful
+wool carries on long 2-wool matches — particularly in late-match life segments where
+the ground route is heavily defended and drop-down provides the cleaner approach.
+
+_Signals needed:_ `position_events.y` per life segment, segmented into thirds (early,
+mid, late within the life).  Rise-plateau-drop = drop-down signature.  Cross-reference
+with `death_region = enemy_island` and `wool_touches ≥ 1` to confirm intent.
+Terrain height map (Layer 0) required for robust floor classification on maps where
+build limit and terrain elevation are close.
+
+---
+
+### H9 — Defence accumulation is measurable via death_region shift over match time
+
+On long matches (> 75th percentile duration for that map), the fraction of attacker
+lives ending on `enemy_island` in the late third of the match
+(start_timestamp > 0.66 × match_duration) is measurably lower than in the early third
+(start_timestamp < 0.33 × match_duration).
+
+This reflects the defence scaling dynamic: physical defences accumulate (pit depth,
+wall complexity) and attackers are intercepted progressively further from the wool
+room as the match advances.
+
+_Signals needed:_ `life_segment_traffic_features.death_region` joined to
+`life_segments.start_timestamp` normalised by `matches.match_duration`.  Group by
+match third; compare `death_region` distributions.  Test on all 2-wool maps with
+≥ 15 matches; compare high-variance maps (`brittlebush_ii`, `clearcut`) against
+low-variance maps (`pirates_i`).
+
+---
+
+### H10 — Skybridge activation precedes first wool capture on long matches
+
+On 2-wool maps where the match exceeds the 75th percentile duration for that map, the
+first skybridge activation event (any player's y ≥ max_build_height − 2 for 3+
+consecutive ticks) precedes the first wool capture (event_type = 7 in `wool_events`)
+by more than 2 minutes in the majority of matches.
+
+This tests whether the skybridge is structurally _necessary_ for late-match progress
+on stalemate maps — complementing H4 (which tests only whether skybridge activity is
+present at all in long matches).
+
+_Signals needed:_ `position_events.y` (first timestamp per match where sky condition
+met) vs `wool_events` (first timestamp where event_type = 7).  Both joined via
+`matches.match_id`.  Requires `maps.max_build_height` per map.  Terrain height map
+(Layer 0) would reduce false positives from elevated terrain being misclassified
+as skybridge.
+
+---
+
+### H11 — Ground route traversal becomes slower over match time
+
+As block spamming, pit digging, and defensive construction accumulate, the ground-level
+path becomes more tortuous.  This should appear as an increase in snapped sequence
+length for life segments that successfully reach enemy territory, comparing early-match
+to late-match segments on the same map.
+
+Formally: for life segments with `death_region = enemy_island`, the mean
+`len(snapped_sequence)` in late-match segments (start_timestamp > 0.5 × match_duration)
+is higher than in early-match segments (start_timestamp < 0.25 × match_duration).
+
+The traffic graph was built from all player movement across all matches, meaning
+accumulated block debris and player-constructed terrain are implicitly captured in node
+density.  More nodes visited per crossing = more tortuous effective path.
+
+_Signals needed:_ `life_segment_traffic_features.snapped_sequence` length joined to
+`life_segments.start_timestamp` normalised by match duration.  Filter to
+`death_region = enemy_island` to control for incomplete crossings.
+
 ---
 
 ## Analysis Modules
 
 The work is structured into four layers, loosely ordered by dependency.
+
+---
+
+### Layer 0 — Terrain Geometry (Prerequisite for Vertical Analysis)
+
+**Goal:** For each x/z cell, determine all distinct navigable y-levels — positions
+where a player can stand (solid block at y, two air blocks at y+1 and y+2) —
+including intermediate floors that lie _between_ the surface and bedrock.
+
+#### What the existing parquets already give us
+
+The pipeline already outputs per-map layout parquets, each with `(world_x, world_z, y, block_id, block_data)`:
+
+| File | Content |
+|---|---|
+| `layout_top_surface.parquet` | Highest non-air block at each (x, z) — the surface a player walks on |
+| `layout_lowest_solid.parquet` | Lowest non-air block at each (x, z) — bottom of terrain |
+| `layout_bedrock.parquet` | Bedrock positions |
+| `layout_decided.parquet` | The layer selected by the island classifier (+ `island_id`) |
+| `layout_y0.parquet` | Block type at y = 0 |
+
+`top_surface.y` and `lowest_solid.y` together describe the **vertical extent** of
+terrain at each cell.  When `top_surface.y − lowest_solid.y` is small, the column
+is essentially solid.  When the gap is large, there may be internal air spaces —
+but from these layers alone we cannot tell if they are empty voids or contain
+additional navigable surfaces.
+
+#### What is still missing
+
+The gap between `lowest_solid.y` and `top_surface.y` gives a signal — large gap
+= potential internal structure — but does not reveal whether intermediate navigable
+surfaces exist.  This matters for:
+
+- **Tunnels:** A hollow passage through terrain has a floor below and a ceiling
+  above.  `top_surface` shows the ceiling; the floor is not captured.
+- **Stacked islands:** An island platform at y=10 with another platform at y=25
+  above it.  `top_surface` shows y=25; the lower platform at y=10 is invisible.
+- **Near-build-limit terrain:** On `golden_drought_v`, mid-map islands are raised
+  at +1, +3, and +8 blocks above the map base, while `max_build_height` is ~20
+  blocks above base.  A player at `top_surface.y + 1` on the highest raised island
+  and a player on a constructed skybridge are within 2–3 y-blocks of each other.
+  The global threshold `y ≥ max_build_height − 2` is unreliable here — it would
+  misclassify players standing on elevated terrain as skybridgers.
+
+#### Method A — Region file parsing (ground truth)
+
+Minecraft maps store terrain in `.mca` region files.  `PublicMaps/ctw/golden_drought_v`
+is available as the reference test case.
+
+Algorithm:
+1. Parse all chunks using `anvil-parser` (or equivalent Python `.mca` library).
+2. For each (x, z), collect all y where block(y) is solid AND block(y+1) and
+   block(y+2) are both air (walkable surface condition).
+3. Store as a per-cell list: `navigable_floors[(x, z)] = [y1, y2, …]` (sorted).
+4. Classify cells:
+   - Single floor: flat terrain
+   - Multiple floors: stacked islands or tunnel section — each floor is a distinct
+     navigable surface
+   - Top floor close to `max_build_height`: elevated island near build limit
+
+Output: `layout_navigable_floors.parquet` with `(world_x, world_z, floor_y_list)`.
+The top value of `floor_y_list` at each cell would match `layout_top_surface.parquet`,
+providing a validation check.
+
+#### Method B — Empirical y-floor inference from position_events (proxy)
+
+For maps that have accumulated match data, player movement approximates terrain floors:
+1. Per (x, z) bucket (2-block resolution), collect all y values from `position_events`
+   across all matches for that map.
+2. Apply 1D gap detection (gap > 3 blocks between consecutive y-values in a histogram)
+   to identify distinct floor clusters.
+3. Lower cluster(s) ≈ terrain floors; top cluster near `max_build_height` ≈ skybridge zone.
+
+Works from the existing DB without additional parsing.  Limitation: sparse coverage
+in low-traffic cells.  Validation: compare against Method A on `golden_drought_v`.
+
+#### Impact on downstream skybridge detection
+
+With a navigable floor map, the per-cell skybridge threshold becomes:
+
+```
+skybridge_y_threshold(x, z) = max(navigable_floors[x, z]) + Δ
+```
+
+where Δ is a small margin (e.g. 3 blocks) above the highest natural surface at that
+cell.  A player at `y > skybridge_y_threshold(x, z)` is on a constructed structure,
+not terrain.  On flat maps the formula reduces to the existing global threshold; on
+`golden_drought_v`-style maps it correctly separates elevated terrain from skybridge.
+
+Tunnel detection follows: `y < min(navigable_floors[x, z]) − Δ` where terrain exists
+overhead.
 
 ---
 
@@ -523,6 +724,22 @@ not needed for most analytical questions.
 - **Sequence direction** → is attack depth monotonically increasing (committed push),
   oscillating (back-and-forth fighting), or declining after a peak (retreat)?
 
+### What the snapped sequence cannot give us
+
+The traffic graph is 2D (x/z only).  Sky and ground movement at the same x/z snap
+to the same nodes.  Two signals require `position_events.y` as a complement:
+
+1. **Skybridge vs ground distinction** — a player crossing at build height and a
+   player crossing at map floor level produce identical snapped sequences.  Only y
+   separates them.  This affects the SKYBRIDGER and SKY_DEFENDER role assignments.
+
+2. **Drop-down attack signature** — a player who ascends via skybridge then drops
+   to enemy territory shows a characteristic y-profile within a single life segment:
+   rise near home spawn → plateau at max_build_height → sharp drop near enemy island.
+   The snapped sequence will show a valid crossing trajectory with no visible break;
+   only the y-profile reveals the transport mode used.  These two signals are
+   complementary, not redundant.
+
 ### Island transition inference
 
 The node metadata in `traffic_graph.json` stores each node's `island_id`.  Given
@@ -646,7 +863,19 @@ same life, no capture) is a special case of the carry chain analysis.
 
 ## Open Questions
 
-1. **inv_count is not in `position_events`** — the building/digging signal is
+1. **Intermediate navigable floors not yet extracted** — the pipeline already
+   produces `layout_top_surface.parquet` (surface y), `layout_lowest_solid.parquet`
+   (bottom of terrain), and `layout_decided.parquet` (island classifier layer).
+   These cover the outer vertical extent of terrain at each (x, z) cell.  What
+   is missing is the detection of navigable floors _between_ the surface and the
+   lowest solid — needed for tunnel floors and stacked island platforms.  The planned
+   solution (Layer 0) is to parse `.mca` region files from `PublicMaps/ctw/golden_drought_v`
+   as a ground-truth reference, validated against an empirical proxy derived from
+   y-clustering in `position_events`.  Until Layer 0 is available, skybridge detection
+   on maps with elevated terrain close to the build limit (like `golden_drought_v`)
+   should be treated as approximate.
+
+2. **inv_count is not in `position_events`** — the building/digging signal is
    currently missing from the DB.  It is available in the raw parquet files
    (Minecraft item count is a type-5 event field).  If the analysis needs it,
    a small extraction step can add it.  Deferred for now since the traffic graph
@@ -690,7 +919,11 @@ same life, no capture) is a special case of the carry chain analysis.
 | H4 | Long matches correlate with sustained skybridge activity | 2-wool maps, high-stddev | position_events y vs max_build_height | Untested |
 | H5 | High-variance maps have bimodal duration distributions | clearcut, brittlebush_ii, etc. | match_duration histogram | Untested |
 | H6 | death_region is a reliable role proxy | All maps | life_segment_traffic_features.death_region | Untested |
-| H7 | Snapped sequence sufficient for role inference | All maps | life_segment_traffic_features.snapped_sequence | Partially validated by diagnostics |
+| H7 | Snapped sequence sufficient for role inference (except sky roles) | All maps | snapped_sequence + position_events y for sky roles | Partially validated; y-limitation confirmed |
+| H8 | Drop-down attack detectable as rise-plateau-drop y-profile | 2-wool maps | position_events y segmented within life | Untested |
+| H9 | Defence accumulation measurable via death_region shift over match time | 2-wool maps, long matches | death_region × match_third | Untested |
+| H10 | Skybridge activation precedes first wool capture on long matches | 2-wool maps, >P75 duration | position_events y + wool_events timestamps | Untested |
+| H11 | Ground route traversal slows over match time (snapped sequence lengthens) | 2-wool maps, long matches | snapped_sequence length × match stage | Untested |
 
 ---
 
