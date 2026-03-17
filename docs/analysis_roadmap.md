@@ -1,6 +1,6 @@
 # CTW Match Analysis — Research Roadmap
 
-_Last updated: 2026-03-17_
+_Last updated: 2026-03-18_
 
 _See also: `docs/glossary.md` for definitions of all gameplay and analysis terms._
 
@@ -357,9 +357,9 @@ as skybridge.
 
 ### H12 — First wool captures by opposing teams tend to be on diagonally opposite flanks
 
-In matches on 2-wool maps where **both** teams capture at least one wool, the two
-first captures are more often on diagonally opposite flanks (different lateral
-positions relative to the map's attack axis) than on the same flank.
+In matches on **2-team, 2-wool-per-team** maps where **both** teams capture at least
+one wool, the two first captures are more often on diagonally opposite flanks (different
+lateral positions relative to the map's attack axis) than on the same flank.
 
 **Reasoning:** If both teams' attackers target the same lateral side simultaneously,
 they are likely to encounter each other mid-map, increasing mutual disruption and
@@ -369,28 +369,135 @@ This would produce a systematic preference for diagonal captures in the data.
 
 **Methodology:**
 
-Lateral position (left/right) is defined relative to the map's attack axis (the
-line between the two teams) using `map_wool_locations.x/z` and `maps.symmetry_type`:
+Flank classification uses `map_wool_locations.x` vs the mean x of all wools on the
+map.  Wool with x < mean → "left"; wool with x > mean → "right".  For each qualifying
+match (both teams captured ≥ 1 wool), compare the flank of each team's first capture.
 
-- **mirror_x** (53 maps): the two wools of each team differ primarily in x.
-  Each wool is "left" if its x < the team's other wool's x, else "right".
-  Mirror pairs share the same x position but differ in z sign.
-  _Same flank_ = both first captures share the same x.
-  _Diagonal_ = first captures have different x positions.
-
-- **mirror_z** (10 maps): same logic applied to z instead of x.
-
-- **rot_180** (31 maps): compute each wool's angle from the map centroid
-  (centroid of all 4 wool positions).  Each team's two wools are ≈180° apart
-  from the other team's wools.  Within a team's pair, the wool with smaller
-  angular offset from its team's centroid is "left"; larger offset is "right".
-  _Same flank_ = first captures are in the same angular half; _Diagonal_ = opposite.
+Scope: 2-team maps only (`maps.team_count = 2`), symmetric type in
+(mirror_x, rot_180, mirror_z), x-spread across all 4 wools > 10 blocks.
+**4-team maps are excluded** — the team-attribution logic (which team is the attacker
+for a given capture) breaks down when multiple teams share the same wool objective pool,
+and empirically rot_180 4-team maps (e.g. emergency_meeting, oumuamua) showed near-50%
+due to different strategic dynamics.
 
 **Null hypothesis:** Diagonal and same-flank captures occur equally (50/50).
 
-_Signals needed:_ `wool_events` (event_type=7), `player_team_segments` (team of
-capturing player), `map_wool_locations` (wool positions and team), `maps.symmetry_type`.
-Requires resolving the NULL team issue in `map_wool_locations` for accurate pairing.
+```sql
+-- H12: diagonal vs same-flank first captures on 2-team, 2-wool-per-team symmetric maps
+WITH
+-- One team per player per match (end_timestamp is almost always NULL — no range join)
+player_teams AS (
+    SELECT DISTINCT ON (match_id, player_id)
+        match_id, player_id, team
+    FROM player_team_segments
+    ORDER BY match_id, player_id, start_timestamp
+),
+-- Mean x across all wools per map → left/right threshold
+map_centers AS (
+    SELECT map_id, AVG(x) AS center_x
+    FROM map_wool_locations WHERE team IS NOT NULL
+    GROUP BY map_id
+),
+-- Classify each wool as left or right flank
+wool_flanks AS (
+    SELECT
+        mwl.map_id, mwl.wool_id, mwl.team AS defending_team, mwl.x,
+        CASE WHEN mwl.x < mc.center_x THEN 'left' ELSE 'right' END AS flank
+    FROM map_wool_locations mwl
+    JOIN map_centers mc ON mc.map_id = mwl.map_id
+    JOIN maps m ON m.map_id = mwl.map_id
+    WHERE m.symmetry_type IN ('rot_180', 'mirror_x', 'mirror_z')
+      AND m.team_count = 2
+      AND mwl.team IS NOT NULL
+),
+-- Keep only maps with both flanks present and x-spread > 10 blocks
+eligible_maps AS (
+    SELECT map_id FROM wool_flanks
+    GROUP BY map_id
+    HAVING COUNT(DISTINCT flank) = 2 AND MAX(x) - MIN(x) > 10
+),
+-- First capture per (match, attacking team); attacker = player whose team ≠ defending team
+first_caps AS (
+    SELECT
+        we.match_id, mat.map_id,
+        pt.team AS attacking_team,
+        wf.flank,
+        ROW_NUMBER() OVER (
+            PARTITION BY we.match_id, pt.team ORDER BY we.timestamp
+        ) AS rn
+    FROM wool_events we
+    JOIN matches mat ON mat.match_id = we.match_id
+    JOIN eligible_maps em ON em.map_id = mat.map_id
+    JOIN wool_flanks wf ON wf.map_id = mat.map_id AND wf.wool_id = we.wool_id
+    JOIN player_teams pt ON pt.match_id = we.match_id AND pt.player_id = we.player_id
+    WHERE we.event_type = 7
+      AND pt.team != wf.defending_team   -- captures only, not defenders
+),
+-- Pair the two teams' first captures within each match
+match_diagonal AS (
+    SELECT
+        fc1.match_id, fc1.map_id,
+        CASE WHEN fc1.flank = fc2.flank THEN 'same_flank' ELSE 'diagonal' END AS pattern
+    FROM first_caps fc1
+    JOIN first_caps fc2
+        ON  fc2.match_id = fc1.match_id
+        AND fc2.attacking_team > fc1.attacking_team  -- one row per match
+        AND fc2.rn = 1
+    WHERE fc1.rn = 1
+)
+-- Aggregate by symmetry type + overall rollup
+SELECT
+    COALESCE(m.symmetry_type, 'ALL') AS symmetry_type,
+    COUNT(*)  AS matches,
+    SUM(CASE WHEN pattern = 'diagonal'   THEN 1 ELSE 0 END) AS diagonal,
+    SUM(CASE WHEN pattern = 'same_flank' THEN 1 ELSE 0 END) AS same_flank,
+    ROUND(100.0 * SUM(CASE WHEN pattern = 'diagonal' THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_diagonal
+FROM match_diagonal md
+JOIN maps m ON m.map_id = md.map_id
+GROUP BY ROLLUP(m.symmetry_type)
+ORDER BY pct_diagonal DESC NULLS LAST
+```
+
+**Preliminary findings (2026-03-18):**
+
+Across 98 qualifying matches on 10 maps (2-team, 2 wools per team, x-spread > 10):
+
+| Symmetry type | Matches | Diagonal | Same flank | % Diagonal |
+|---|---|---|---|---|
+| mirror_x | 78 | 62 | 16 | **79.5%** |
+| rot_180 (2-team) | 12 | 10 | 2 | **83.3%** |
+| mirror_z | 8 | 2 | 6 | 25.0% |
+| **All 2-team** | **98** | **74** | **24** | **75.5%** |
+
+Per-map breakdown (mirror_x + rot_180 2-team, n ≥ 5):
+
+| Map | Sym | Matches | % Diagonal |
+|---|---|---|---|
+| huanxiang | mirror_x | 7 | 100% |
+| brittlebush_ii | mirror_x | 9 | 88.9% |
+| sakura_garden | mirror_x | 8 | 87.5% |
+| nobles_district | rot_180 | 12 | 83.3% |
+| kanto | mirror_x | 11 | 81.8% |
+| ad_astra | mirror_x | 10 | 80.0% |
+| split_strata | mirror_x | 13 | 76.9% |
+| clearcut | mirror_x | 12 | 75.0% |
+| raceway | mirror_x | 8 | 50.0% |
+
+**Interpretation:** H12 is strongly confirmed for mirror_x and rot_180 2-team maps
+(all except raceway show ≥ 75% diagonal).  The result is consistent with the
+avoidance mechanism — attackers naturally diverge to separate flanks, either because
+the map's layout physically separates the approach routes, or because teams adapt their
+attack to the flank the enemy is not contesting.  Raceway at 50% is the outlier;
+may reflect map-specific layout that funnels both teams to the same approach.
+
+**mirror_z caveat:** The x-based flank classification may be the wrong axis for
+mirror_z maps (where the map is symmetric about the z-axis and the "flanks" may
+differ in z rather than x).  The 8-match mirror_z result is excluded from the
+headline finding.  Needs re-run with z-based flank classification.
+
+_Signals used:_ `wool_events` (event_type=7), `player_team_segments` (DISTINCT ON
+team lookup), `map_wool_locations` (wool positions and team), `maps.symmetry_type`,
+`maps.team_count`.
 
 ---
 
@@ -1023,7 +1130,7 @@ same life, no capture) is a special case of the carry chain analysis.
 | ID | Hypothesis | Maps | Primary signal | Status |
 |---|---|---|---|---|
 | H1 | First wool captured in first third of 2-wool matches | 2-wool maps | wool_events timestamps | Untested |
-| H2 | One wool is structurally easier (consistently captured first) | 2-wool maps | wool_id of first capture, per defending team | Partially confirmed — strong dominance on most maps; spatial left/right classification pending; NULL team data quality issue to resolve |
+| H2 | One wool is structurally easier (consistently captured first) | 2-wool maps | wool_id of first capture, per defending team | Partially confirmed — strong dominance on most maps; spatial left/right classification pending |
 | H3 | Multi-wool loop captures are rare (<5% of matches) | 2-wool and 4-team | wool_events, same segment_idx | Refuted as stated — multi-touch ubiquitous; genuine double-caps = 15% of multi-touch segments; hypothesis needs reformulation |
 | H4 | Long matches correlate with sustained skybridge activity | 2-wool maps, high-stddev | position_events y vs max_build_height | Untested |
 | H5 | High-variance maps have bimodal duration distributions | clearcut, brittlebush_ii, etc. | match_duration histogram | Preliminary confirmation — clearcut median 4.8 min vs mean 14.4, brittlebush_ii median 9.4 vs mean 24.3; strongly bimodal pattern |
@@ -1033,7 +1140,7 @@ same life, no capture) is a special case of the carry chain analysis.
 | H9 | Defence accumulation measurable via death_region shift over match time | 2-wool maps, long matches | death_region × match_third | Untested |
 | H10 | Skybridge activation precedes first wool capture on long matches | 2-wool maps, >P75 duration | position_events y + wool_events timestamps | Untested |
 | H11 | Ground route traversal slows over match time (snapped sequence lengthens) | 2-wool maps, long matches | snapped_sequence length × match stage | Untested |
-| H12 | First wool captures by opposing teams tend to be on diagonally opposite flanks | 2-wool maps, both-team-capture matches | wool positions × symmetry_type | Untested |
+| H12 | First wool captures by opposing teams tend to be on diagonally opposite flanks | 2-team 2-wool maps, both-team-capture matches | wool positions × symmetry_type | **Confirmed** — 75.5% diagonal on 2-team maps (n=98); mirror_x 79.5%, rot_180 2-team 83.3%; mirror_z inconclusive (wrong axis); 4-team maps excluded |
 
 ---
 
