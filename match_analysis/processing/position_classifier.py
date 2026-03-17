@@ -1,13 +1,19 @@
-"""Position classification and skeleton path snapping for match analysis.
+"""Position classification for match analysis.
 
-Classifies player position events against map geometry (islands, build regions, void)
-and optionally snaps positions to nearest skeleton edge pixels.
+Classifies player position events against map geometry (islands, build regions,
+void).  Outputs location_type and island_id only — skeleton node columns have
+been removed.
+
+Uses Shapely 2.x STRtree for bulk polygon containment, which is significantly
+faster than the previous per-point loop.
 """
 
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+from shapely import STRtree
+from shapely import points as shp_points
 from shapely.geometry import Point, Polygon
 
 
@@ -16,24 +22,19 @@ class PositionClassifier:
 
     Args:
         map_context: Parsed map_context.json dict.
-        map_graph: Parsed map_graph.json dict.
     """
 
-    def __init__(self, map_context: dict, map_graph: dict):
+    def __init__(self, map_context: dict):
         self._island_polygons: list[tuple[int, Polygon]] = []
+        self._island_ids_arr: list[int] = []
         self._build_polygons: list[Polygon] = []
-        self._node_list: list[dict] = []
-        self._node_coords: Optional[np.ndarray] = None
-        self._edge_pixels_by_island: dict[int, np.ndarray] = {}
-        # Per-island index covering all node types (endpoints + junctions)
-        self._island_node_lists: dict[int, list[dict]] = {}
-        self._island_node_coords: dict[int, np.ndarray] = {}
+
+        self._island_tree: Optional[STRtree] = None
+        self._build_tree: Optional[STRtree] = None
 
         self._build_island_polygons(map_context)
         self._build_region_polygons(map_context)
-        self._build_node_index(map_graph)
-        self._build_island_node_index(map_graph)
-        self._build_edge_pixel_index(map_graph)
+        self._build_trees()
 
     def _build_island_polygons(self, map_context: dict) -> None:
         """Build Shapely Polygons from island simplified_polygon data."""
@@ -69,243 +70,93 @@ class PositionClassifier:
             except Exception:
                 pass
 
-    def _build_node_index(self, map_graph: dict) -> None:
-        """Extract map graph endpoint nodes into a list + numpy coords array.
-
-        Only endpoints are used for nearest_node_1/2 (global corridor context).
-        Junctions are handled by _build_island_node_index for within-island lookup.
-        """
-        graph_section = map_graph.get('map_graph', {})
-        all_nodes = graph_section.get('nodes', [])
-        # nearest_node_1/2 remain endpoint-only for bridge/corridor context
-        self._node_list = [
-            n for n in all_nodes if n.get('node_type', 'endpoint') == 'endpoint'
-        ]
-        if self._node_list:
-            self._node_coords = np.array(
-                [n['coords'] for n in self._node_list], dtype=np.float64,
-            )
-        else:
-            self._node_coords = np.empty((0, 2), dtype=np.float64)
-
-    def _build_island_node_index(self, map_graph: dict) -> None:
-        """Build per-island node coordinate arrays including all node types."""
-        graph_section = map_graph.get('map_graph', {})
-        all_nodes = graph_section.get('nodes', [])
-        by_island: dict[int, list[dict]] = {}
-        for node in all_nodes:
-            iid = node['island_id']
-            by_island.setdefault(iid, []).append(node)
-        for iid, nodes in by_island.items():
-            self._island_node_lists[iid] = nodes
-            self._island_node_coords[iid] = np.array(
-                [n['coords'] for n in nodes], dtype=np.float64,
-            )
-
-    def _build_edge_pixel_index(self, map_graph: dict) -> None:
-        """Build per-island flat numpy arrays of all edge pixel coords."""
-        for island_data in map_graph.get('islands', []):
-            island_id = island_data['island_id']
-            skeleton = island_data.get('skeleton')
-            if skeleton is None:
-                continue
-            edge_pixels = skeleton.get('edge_pixels', {})
-            all_pixels = []
-            for ep_data in edge_pixels.values():
-                pixels = ep_data.get('pixels', [])
-                if pixels:
-                    all_pixels.extend(pixels)
-            if all_pixels:
-                self._edge_pixels_by_island[island_id] = np.array(
-                    all_pixels, dtype=np.float64,
-                )
+    def _build_trees(self) -> None:
+        """Build STRtree indices for fast bulk containment queries."""
+        if self._island_polygons:
+            self._island_tree = STRtree([poly for _, poly in self._island_polygons])
+            self._island_ids_arr = [iid for iid, _ in self._island_polygons]
+        if self._build_polygons:
+            self._build_tree = STRtree(self._build_polygons)
 
     def classify_position(self, x: float, z: float) -> dict:
         """Classify a single (x, z) position.
 
-        Returns dict with: location_type, island_id,
-            nearest_node_1, nearest_node_2,
-            nearest_island_1, nearest_island_2,
-            nearest_graph_node
+        Returns dict with: location_type (str), island_id (int or None).
         """
         point = Point(x, z)
 
-        # Check islands
-        location_type = 'void'
-        island_id = None
         for iid, polygon in self._island_polygons:
             if point.within(polygon):
-                location_type = 'island'
-                island_id = iid
-                break
+                return {'location_type': 'island', 'island_id': iid}
 
-        # Check build region if not on island
-        if location_type == 'void':
-            for polygon in self._build_polygons:
-                if point.within(polygon):
-                    location_type = 'build_region'
-                    break
+        for polygon in self._build_polygons:
+            if point.within(polygon):
+                return {'location_type': 'build_region', 'island_id': None}
 
-        # Find two nearest endpoint nodes (global corridor context)
-        nearest_node_1 = None
-        nearest_node_2 = None
-        nearest_island_1 = None
-        nearest_island_2 = None
-
-        if len(self._node_list) >= 2:
-            dists = np.hypot(
-                self._node_coords[:, 0] - x,
-                self._node_coords[:, 1] - z,
-            )
-            idx = np.argsort(dists)[:2]
-            nearest_node_1 = self._node_list[idx[0]]['map_node_id']
-            nearest_island_1 = self._node_list[idx[0]]['island_id']
-            nearest_node_2 = self._node_list[idx[1]]['map_node_id']
-            nearest_island_2 = self._node_list[idx[1]]['island_id']
-        elif len(self._node_list) == 1:
-            nearest_node_1 = self._node_list[0]['map_node_id']
-            nearest_island_1 = self._node_list[0]['island_id']
-
-        # Find nearest skeleton node within the player's current island (all types)
-        nearest_graph_node = None
-        if location_type == 'island' and island_id is not None:
-            coords = self._island_node_coords.get(island_id)
-            nodes = self._island_node_lists.get(island_id)
-            if coords is not None and len(coords) > 0:
-                dists = np.hypot(coords[:, 0] - x, coords[:, 1] - z)
-                nearest_graph_node = nodes[int(np.argmin(dists))]['map_node_id']
-
-        return {
-            'location_type': location_type,
-            'island_id': island_id,
-            'nearest_node_1': nearest_node_1,
-            'nearest_node_2': nearest_node_2,
-            'nearest_island_1': nearest_island_1,
-            'nearest_island_2': nearest_island_2,
-            'nearest_graph_node': nearest_graph_node,
-        }
+        return {'location_type': 'void', 'island_id': None}
 
     def classify_bulk(
         self, xs: np.ndarray, zs: np.ndarray,
     ) -> dict[str, np.ndarray]:
-        """Classify many positions at once (vectorized).
+        """Classify many positions at once (vectorized via STRtree).
 
         Args:
             xs: 1-D array of x coordinates.
             zs: 1-D array of z coordinates.
 
         Returns:
-            Dict of arrays, each length N:
-                location_type (object), island_id (object),
-                nearest_node_1/2 (object), nearest_island_1/2 (object).
-            None values are used for missing data.
+            Dict with two arrays each of length N:
+                'location_type' (object dtype): 'island', 'build_region', or 'void'.
+                'island_id' (object dtype): integer island ID or None.
         """
-        from shapely.prepared import prep
-
         n = len(xs)
         location_type = np.full(n, 'void', dtype=object)
         island_id = np.full(n, None, dtype=object)
 
-        # Polygon containment — prepared geometries for speed
-        remaining = np.ones(n, dtype=bool)
-        for iid, polygon in self._island_polygons:
-            if not remaining.any():
-                break
-            prepped = prep(polygon)
-            for i in np.where(remaining)[0]:
-                if prepped.contains(Point(xs[i], zs[i])):
-                    location_type[i] = 'island'
-                    island_id[i] = iid
-                    remaining[i] = False
+        pts = shp_points(xs, zs)
 
-        # Build region check on remaining void positions
-        for polygon in self._build_polygons:
-            if not remaining.any():
-                break
-            prepped = prep(polygon)
-            for i in np.where(remaining)[0]:
-                if prepped.contains(Point(xs[i], zs[i])):
-                    location_type[i] = 'build_region'
-                    remaining[i] = False
+        # Island containment via STRtree
+        if self._island_tree is not None:
+            result = self._island_tree.query(pts, predicate='within')
+            # result shape: (2, k) — result[0]=point indices, result[1]=poly indices
+            if result.shape[1] > 0:
+                for pi, gi in zip(result[0], result[1]):
+                    if location_type[pi] == 'void':
+                        location_type[pi] = 'island'
+                        island_id[pi] = self._island_ids_arr[gi]
 
-        # Nearest nodes — fully vectorized
-        nearest_node_1 = np.full(n, None, dtype=object)
-        nearest_node_2 = np.full(n, None, dtype=object)
-        nearest_island_1 = np.full(n, None, dtype=object)
-        nearest_island_2 = np.full(n, None, dtype=object)
-
-        if len(self._node_list) >= 2:
-            # shape (n_nodes, n_points)
-            dx = self._node_coords[:, 0, np.newaxis] - xs[np.newaxis, :]
-            dz = self._node_coords[:, 1, np.newaxis] - zs[np.newaxis, :]
-            dists = np.hypot(dx, dz)
-            # top-2 per column (kth must be < n_nodes)
-            n_nodes = len(self._node_list)
-            if n_nodes == 2:
-                idx = np.array([np.zeros(n, dtype=int), np.ones(n, dtype=int)])
-            else:
-                idx = np.argpartition(dists, 2, axis=0)[:2]
-            for j in range(n):
-                i0, i1 = idx[0, j], idx[1, j]
-                # ensure i0 is actually closer
-                if dists[i0, j] > dists[i1, j]:
-                    i0, i1 = i1, i0
-                nearest_node_1[j] = self._node_list[i0]['map_node_id']
-                nearest_island_1[j] = self._node_list[i0]['island_id']
-                nearest_node_2[j] = self._node_list[i1]['map_node_id']
-                nearest_island_2[j] = self._node_list[i1]['island_id']
-        elif len(self._node_list) == 1:
-            nearest_node_1[:] = self._node_list[0]['map_node_id']
-            nearest_island_1[:] = self._node_list[0]['island_id']
-
-        # Nearest skeleton node within current island (all node types), island-scoped
-        nearest_graph_node = np.full(n, None, dtype=object)
-        unique_island_ids = {iid for iid in island_id if iid is not None}
-        for iid in unique_island_ids:
-            iid_int = int(iid)
-            coords = self._island_node_coords.get(iid_int)
-            nodes = self._island_node_lists.get(iid_int)
-            if coords is None or len(coords) == 0:
-                continue
-            mask = island_id == iid
-            pos_idx = np.where(mask)[0]
-            dx = coords[:, 0, np.newaxis] - xs[np.newaxis, pos_idx]
-            dz = coords[:, 1, np.newaxis] - zs[np.newaxis, pos_idx]
-            dists = np.hypot(dx, dz)
-            best = np.argmin(dists, axis=0)
-            for k, global_k in enumerate(pos_idx):
-                nearest_graph_node[global_k] = nodes[best[k]]['map_node_id']
+        # Build region containment on remaining void positions via STRtree
+        if self._build_tree is not None:
+            void_mask = location_type == 'void'
+            if void_mask.any():
+                void_idx = np.where(void_mask)[0]
+                void_pts = shp_points(xs[void_idx], zs[void_idx])
+                result2 = self._build_tree.query(void_pts, predicate='within')
+                if result2.shape[1] > 0:
+                    # result2[0] = indices into void_idx array
+                    for pi in set(result2[0]):
+                        location_type[void_idx[pi]] = 'build_region'
 
         return {
             'location_type': location_type,
             'island_id': island_id,
-            'nearest_node_1': nearest_node_1,
-            'nearest_node_2': nearest_node_2,
-            'nearest_island_1': nearest_island_1,
-            'nearest_island_2': nearest_island_2,
-            'nearest_graph_node': nearest_graph_node,
         }
 
     def classify_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Classify all positions in a DataFrame, adding new columns.
+        """Classify all positions in a DataFrame, adding location_type and island_id.
 
         Expects columns: x, z (world coords).
-        Adds columns: location_type, island_id, nearest_node_1, nearest_node_2,
-            nearest_island_1, nearest_island_2.
         """
         out = df.copy()
         if len(df) == 0:
-            for col in ['location_type', 'island_id',
-                         'nearest_node_1', 'nearest_node_2',
-                         'nearest_island_1', 'nearest_island_2',
-                         'nearest_graph_node']:
-                out[col] = pd.Series(dtype=object)
+            out['location_type'] = pd.Series(dtype=object)
+            out['island_id'] = pd.Series(dtype=object)
             return out
 
         bulk = self.classify_bulk(
             df['x'].values.astype(float),
             df['z'].values.astype(float),
         )
-        for col, arr in bulk.items():
-            out[col] = arr
+        out['location_type'] = bulk['location_type']
+        out['island_id'] = bulk['island_id']
         return out

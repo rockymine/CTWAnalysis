@@ -97,7 +97,7 @@ def extract_player_life_segments(
 
         # Fetch all position events for this player+match in one query
         all_positions = conn.execute(
-            "SELECT timestamp, x, z, segment_idx, nearest_graph_node "
+            "SELECT timestamp, x, z, segment_idx "
             "FROM position_events "
             "WHERE match_id = ? AND player_id = ? "
             "ORDER BY timestamp",

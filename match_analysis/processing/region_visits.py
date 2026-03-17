@@ -210,31 +210,41 @@ def build_region_visits(
         for sp in ctx.get('poi_assignments', {}).get('spawns', [])
     }
 
+    # Fetch all non-void position events for the match in one query,
+    # grouped by (player_id, segment_idx) in Python to avoid N per-segment queries.
+    all_pos_rows = conn.execute(
+        """
+        SELECT player_id, segment_idx, timestamp, location_type, island_id,
+               nearest_island_1, nearest_island_2, nearest_graph_node
+        FROM position_events
+        WHERE match_id = ?
+          AND location_type != ?
+        ORDER BY player_id, segment_idx, timestamp
+        """,
+        [match_id, _LOC_VOID],
+    ).fetchall()
+
+    pos_by_seg: dict[tuple[int, int], list[tuple]] = {}
+    for row in all_pos_rows:
+        key = (int(row[0]), int(row[1]))
+        # Store only the columns expected by _run_length_encode:
+        # (timestamp, location_type, island_id, nearest_island_1, nearest_island_2, nearest_graph_node)
+        pos_by_seg.setdefault(key, []).append(row[2:])
+
     # Delete existing rows for this match
     conn.execute(
         "DELETE FROM life_segment_region_visits WHERE match_id = ?",
         [match_id],
     )
 
-    total_visits = 0
+    all_records: list[list] = []
     for seg_row in segments:
         segment_id  = int(seg_row[0])
         player_id   = int(seg_row[1])
         segment_idx = int(seg_row[2])
         outcome     = seg_row[5]
 
-        pos_rows = conn.execute(
-            """
-            SELECT timestamp, location_type, island_id,
-                   nearest_island_1, nearest_island_2, nearest_graph_node
-            FROM position_events
-            WHERE match_id = ? AND player_id = ? AND segment_idx = ?
-              AND location_type != ?
-            ORDER BY timestamp
-            """,
-            [match_id, player_id, segment_idx, _LOC_VOID],
-        ).fetchall()
-
+        pos_rows = pos_by_seg.get((player_id, segment_idx), [])
         if not pos_rows:
             continue
 
@@ -246,9 +256,9 @@ def build_region_visits(
         kills_for_seg  = kills_by_seg.get((player_id, segment_idx), [])
 
         for visit_idx, visit in enumerate(visits):
-            entry_ts   = visit['entry_timestamp']
-            exit_ts    = visit['exit_timestamp']
-            loc        = visit['location_type']
+            entry_ts    = visit['entry_timestamp']
+            exit_ts     = visit['exit_timestamp']
+            loc         = visit['location_type']
             v_island_id = visit['island_id']
 
             player_team = _resolve_team(
@@ -278,27 +288,29 @@ def build_region_visits(
             was_death = (visit_idx == last_visit_idx and outcome == 'death')
 
             node_path_json = json.dumps(visit['node_path']) if visit.get('node_path') else None
-            conn.execute(
-                """
-                INSERT INTO life_segment_region_visits (
-                    segment_id, match_id, player_id, visit_idx,
-                    location_type, island_id, bridge_island_1, bridge_island_2,
-                    entry_timestamp, exit_timestamp, duration_s,
-                    is_home_island, is_enemy_island, kill_count, was_death,
-                    entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    segment_id, match_id, player_id, visit_idx,
-                    loc, v_island_id,
-                    visit['bridge_island_1'], visit['bridge_island_2'],
-                    entry_ts, exit_ts, visit['duration_s'],
-                    is_home, is_enemy, visit_kills, was_death,
-                    visit.get('entry_node'), visit.get('exit_node'),
-                    visit.get('bridge_node_1'), visit.get('bridge_node_2'),
-                    node_path_json,
-                ],
-            )
-            total_visits += 1
+            all_records.append([
+                segment_id, match_id, player_id, visit_idx,
+                loc, v_island_id,
+                visit['bridge_island_1'], visit['bridge_island_2'],
+                entry_ts, exit_ts, visit['duration_s'],
+                is_home, is_enemy, visit_kills, was_death,
+                visit.get('entry_node'), visit.get('exit_node'),
+                visit.get('bridge_node_1'), visit.get('bridge_node_2'),
+                node_path_json,
+            ])
 
-    print(f"  life_segment_region_visits: inserted {total_visits} rows for match {match_id}")
+    if all_records:
+        conn.executemany(
+            """
+            INSERT INTO life_segment_region_visits (
+                segment_id, match_id, player_id, visit_idx,
+                location_type, island_id, bridge_island_1, bridge_island_2,
+                entry_timestamp, exit_timestamp, duration_s,
+                is_home_island, is_enemy_island, kill_count, was_death,
+                entry_node, exit_node, bridge_node_1, bridge_node_2, node_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            all_records,
+        )
+
+    print(f"  life_segment_region_visits: inserted {len(all_records)} rows for match {match_id}")

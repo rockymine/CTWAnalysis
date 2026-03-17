@@ -29,7 +29,9 @@ def initialize_database() -> None:
             center_z FLOAT NOT NULL,
             island_count INTEGER NOT NULL,
             team_count INTEGER,
-            last_updated TIMESTAMP
+            last_updated TIMESTAMP,
+            traffic_graph_match_hash TEXT,
+            traffic_graph_built_at TIMESTAMP
         )
     """)
 
@@ -66,6 +68,7 @@ def initialize_database() -> None:
             processed BOOLEAN DEFAULT FALSE,
             processed_at TIMESTAMP,
             processing_time FLOAT,
+            spatial_classified BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
     """)
@@ -151,11 +154,6 @@ def initialize_database() -> None:
             segment_idx INTEGER,
             location_type TEXT,
             island_id INTEGER,
-            nearest_node_1 INTEGER,
-            nearest_node_2 INTEGER,
-            nearest_island_1 INTEGER,
-            nearest_island_2 INTEGER,
-            nearest_graph_node INTEGER,
             FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
     """)
@@ -211,73 +209,13 @@ def initialize_database() -> None:
         )
     """)
 
-    # Table 10: Life segment region visits (post-processing)
+    # Table 10: Life segment traffic features (spatial classify step output)
     conn.execute("""
-        CREATE SEQUENCE IF NOT EXISTS seq_visit_id START 1
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_region_visits (
-            visit_id INTEGER PRIMARY KEY DEFAULT nextval('seq_visit_id'),
-            segment_id INTEGER NOT NULL,
-            match_id INTEGER NOT NULL,
-            player_id INTEGER NOT NULL,
-            visit_idx INTEGER NOT NULL,
-            location_type TEXT NOT NULL,
-            island_id INTEGER,
-            bridge_island_1 INTEGER,
-            bridge_island_2 INTEGER,
-            entry_timestamp BIGINT NOT NULL,
-            exit_timestamp BIGINT NOT NULL,
-            duration_s FLOAT NOT NULL,
-            is_home_island BOOLEAN,
-            is_enemy_island BOOLEAN,
-            kill_count INTEGER NOT NULL DEFAULT 0,
-            was_death BOOLEAN NOT NULL DEFAULT FALSE,
-            entry_node INTEGER,
-            exit_node INTEGER,
-            bridge_node_1 INTEGER,
-            bridge_node_2 INTEGER,
-            node_path TEXT,
-            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id),
-            FOREIGN KEY (match_id) REFERENCES matches(match_id)
-        )
-    """)
-
-    # Table 11: Life segment features (post-processing)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS life_segment_features (
-            segment_id INTEGER PRIMARY KEY,
-            n_islands_visited INTEGER,
-            n_build_regions_visited INTEGER,
-            n_transitions INTEGER,
-            frac_time_home_island FLOAT,
-            frac_time_enemy_island FLOAT,
-            frac_time_neutral_island FLOAT,
-            frac_time_build FLOAT,
+        CREATE TABLE IF NOT EXISTS life_segment_traffic_features (
+            segment_id     INTEGER PRIMARY KEY,
+            snapped_sequence TEXT,
             max_attack_depth FLOAT,
-            target_wool_id INTEGER,
-            ended_on_enemy_island BOOLEAN,
-            ended_in_build BOOLEAN,
-            duration_s FLOAT,
-            time_to_first_departure_s FLOAT,
-            kills INTEGER,
-            deaths INTEGER,
-            kill_in_build INTEGER,
-            kill_on_enemy_island INTEGER,
-            wool_touches INTEGER,
-            wool_captures INTEGER,
-            -- Node-path metrics (require life_segment_region_visits.node_path)
-            visited_junction BOOLEAN,
-            frac_island_visits_with_junction FLOAT,
-            max_node_degree_visited INTEGER,
-            traversal_rate FLOAT,
-            avg_nodes_per_island_visit FLOAT,
-            died_at_endpoint BOOLEAN,
-            n_unique_corridors INTEGER,
-            position_entropy FLOAT,
-            dominant_node_frac FLOAT,
-            cluster_id INTEGER,
-            cluster_label TEXT,
+            death_region   TEXT,
             FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
         )
     """)
@@ -390,6 +328,39 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table N+7: Map wool chest locations (verified from first-touch events)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_locations (
+            map_id            INTEGER NOT NULL,
+            wool_id           INTEGER NOT NULL,
+            wool_color        TEXT NOT NULL,
+            team              TEXT,
+            x                 FLOAT NOT NULL,
+            z                 FLOAT NOT NULL,
+            source            TEXT NOT NULL,
+            first_touch_count INTEGER,
+            x_std             FLOAT,
+            z_std             FLOAT,
+            PRIMARY KEY (map_id, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+8: Map wool monument positions (verified from capture events)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_monuments (
+            map_id         INTEGER NOT NULL,
+            wool_id        INTEGER NOT NULL,
+            wool_color     TEXT NOT NULL,
+            monument_x     FLOAT NOT NULL,
+            monument_z     FLOAT NOT NULL,
+            capture_count  INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL,
+            PRIMARY KEY (map_id, wool_id, monument_x, monument_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -426,6 +397,7 @@ def _create_views(conn) -> None:
             END AS map_size_bucket
         FROM ranked
     """)
+    # life_segment_features view removed — skeleton tables dropped in migration
 
 
 def _ensure_wool_carry_chains_table(conn) -> None:
@@ -453,24 +425,159 @@ def _ensure_wool_carry_chains_table(conn) -> None:
     """)
 
 
-def migrate_y_columns(db_path: str | None = None) -> None:
-    """Add Y-level feature columns to life_segment_features and create
-    wool_carry_chains table if missing."""
-    if db_path is None:
-        db_path = str(Path('match_analysis/metadata.db'))
-    conn = duckdb.connect(db_path)
-    for col_name, col_type in [
-        ("y_avg", "FLOAT"),
-        ("y_max", "INTEGER"),
-        ("frac_time_elevated", "FLOAT"),
-    ]:
-        conn.execute(
-            f"ALTER TABLE life_segment_features "
-            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+def _run_traffic_graph_migration(conn) -> None:
+    """Execute all traffic-graph schema migration statements on an existing conn."""
+    # Drop the old life_segment_features object. On a legacy DB it is a TABLE;
+    # after migration it is a VIEW. DuckDB raises a type-mismatch error if the
+    # wrong DROP variant is used, so check the catalog first.
+    obj_type = conn.execute(
+        "SELECT table_type FROM information_schema.tables "
+        "WHERE table_name = 'life_segment_features'"
+    ).fetchone()
+    if obj_type is not None:
+        if obj_type[0] == 'VIEW':
+            conn.execute("DROP VIEW life_segment_features")
+        else:
+            conn.execute("DROP TABLE life_segment_features")
+
+    # Create the three new tables
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_summary (
+            segment_id INTEGER PRIMARY KEY,
+            n_islands_visited INTEGER,
+            n_build_regions_visited INTEGER,
+            n_transitions INTEGER,
+            frac_time_home_island FLOAT,
+            frac_time_enemy_island FLOAT,
+            frac_time_neutral_island FLOAT,
+            frac_time_build FLOAT,
+            max_attack_depth FLOAT,
+            target_wool_id INTEGER,
+            ended_on_enemy_island BOOLEAN,
+            ended_in_build BOOLEAN,
+            duration_s FLOAT,
+            time_to_first_departure_s FLOAT,
+            kills INTEGER,
+            deaths INTEGER,
+            kill_in_build INTEGER,
+            kill_on_enemy_island INTEGER,
+            wool_touches INTEGER,
+            wool_captures INTEGER,
+            y_avg FLOAT,
+            y_max INTEGER,
+            frac_time_elevated FLOAT,
+            cluster_id INTEGER,
+            cluster_label TEXT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
         )
-    _ensure_wool_carry_chains_table(conn)
-    conn.close()
-    print(f"Y-level columns and wool_carry_chains migrated in {db_path}")
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_skeleton_features (
+            segment_id INTEGER PRIMARY KEY,
+            visited_junction BOOLEAN,
+            frac_island_visits_with_junction FLOAT,
+            max_node_degree_visited INTEGER,
+            traversal_rate FLOAT,
+            avg_nodes_per_island_visit FLOAT,
+            died_at_endpoint BOOLEAN,
+            n_unique_corridors INTEGER,
+            position_entropy FLOAT,
+            dominant_node_frac FLOAT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS life_segment_traffic_features (
+            segment_id INTEGER PRIMARY KEY,
+            snapped_sequence TEXT,
+            unique_nodes INTEGER,
+            min_enemy_wool_dist FLOAT,
+            avg_home_wool_dist FLOAT,
+            span_m FLOAT,
+            tortuosity FLOAT,
+            FOREIGN KEY (segment_id) REFERENCES life_segments(segment_id)
+        )
+    """)
+
+    # Recreate the backward-compat view
+    conn.execute("DROP VIEW IF EXISTS life_segment_features")
+    conn.execute("""
+        CREATE VIEW life_segment_features AS
+        SELECT
+            s.segment_id,
+            s.n_islands_visited, s.n_build_regions_visited, s.n_transitions,
+            s.frac_time_home_island, s.frac_time_enemy_island,
+            s.frac_time_neutral_island, s.frac_time_build,
+            s.max_attack_depth, s.target_wool_id,
+            s.ended_on_enemy_island, s.ended_in_build,
+            s.duration_s, s.time_to_first_departure_s,
+            s.kills, s.deaths, s.kill_in_build, s.kill_on_enemy_island,
+            s.wool_touches, s.wool_captures,
+            s.y_avg, s.y_max, s.frac_time_elevated,
+            s.cluster_id, s.cluster_label,
+            sk.visited_junction, sk.frac_island_visits_with_junction,
+            sk.max_node_degree_visited, sk.traversal_rate,
+            sk.avg_nodes_per_island_visit, sk.died_at_endpoint,
+            sk.n_unique_corridors, sk.position_entropy, sk.dominant_node_frac
+        FROM life_segment_summary s
+        LEFT JOIN life_segment_skeleton_features sk USING (segment_id)
+    """)
+
+    # Add new columns to maps table
+    conn.execute(
+        "ALTER TABLE maps ADD COLUMN IF NOT EXISTS traffic_graph_match_hash TEXT"
+    )
+    conn.execute(
+        "ALTER TABLE maps ADD COLUMN IF NOT EXISTS traffic_graph_built_at TIMESTAMP"
+    )
+
+
+def migrate_traffic_graph_tables(
+    db_path: str | None = None,
+    conn=None,
+) -> None:
+    """Migrate database to the split life_segment_features schema.
+
+    - Drops life_segment_features VIEW if it exists
+    - Drops life_segment_features TABLE if it exists (old schema — wipes data,
+      user must reprocess)
+    - Creates life_segment_summary with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_skeleton_features with CREATE TABLE IF NOT EXISTS
+    - Creates life_segment_traffic_features with CREATE TABLE IF NOT EXISTS
+    - Recreates the life_segment_features VIEW
+    - Adds traffic_graph_match_hash and traffic_graph_built_at to maps table
+
+    Safe to run repeatedly — IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Ignored if ``conn`` is provided.
+    conn:
+        Existing DuckDB connection to reuse. When provided, no new connection
+        is opened — useful when called from within an active transaction to
+        avoid DuckDB's single-writer lock.
+    """
+    _owns_conn = conn is None
+    if _owns_conn:
+        if db_path is None:
+            db_path = str(Path('match_analysis/metadata.db'))
+        conn = duckdb.connect(db_path)
+
+    try:
+        _run_traffic_graph_migration(conn)
+    finally:
+        if _owns_conn:
+            conn.close()
+
+    if _owns_conn:
+        print(
+            f"Traffic graph tables migrated in {db_path}. "
+            "Re-run post-processing to repopulate life_segment_summary and "
+            "life_segment_skeleton_features."
+        )
 
 
 def migrate_views(db_path: str | None = None) -> None:
@@ -506,35 +613,6 @@ def migrate_map_classification_columns(db_path: str | None = None) -> None:
         )
     conn.close()
     print(f"Map classification columns migrated in {db_path}")
-
-
-def migrate_node_path_columns(db_path: str | None = None) -> None:
-    """Add node-path feature columns to an existing life_segment_features table.
-
-    Safe to run on an already-migrated database — DuckDB silently skips
-    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
-    """
-    if db_path is None:
-        db_path = str(Path('match_analysis/metadata.db'))
-    conn = duckdb.connect(db_path)
-    new_columns = [
-        ("visited_junction", "BOOLEAN"),
-        ("frac_island_visits_with_junction", "FLOAT"),
-        ("max_node_degree_visited", "INTEGER"),
-        ("traversal_rate", "FLOAT"),
-        ("avg_nodes_per_island_visit", "FLOAT"),
-        ("died_at_endpoint", "BOOLEAN"),
-        ("n_unique_corridors", "INTEGER"),
-        ("position_entropy", "FLOAT"),
-        ("dominant_node_frac", "FLOAT"),
-    ]
-    for col_name, col_type in new_columns:
-        conn.execute(
-            f"ALTER TABLE life_segment_features "
-            f"ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-        )
-    conn.close()
-    print(f"Node-path columns migrated in {db_path}")
 
 
 def migrate_log_interval_column(db_path: str | None = None) -> None:
@@ -696,6 +774,51 @@ def migrate_layout_audit_tables(db_path: str | None = None) -> None:
     """)
     conn.close()
     print(f"Layout audit tables created/verified in {db_path}")
+
+
+def migrate_wool_location_tables(db_path: str | None = None) -> None:
+    """Create map_wool_locations and map_wool_monuments tables if they do not exist yet.
+
+    Safe to run repeatedly — CREATE TABLE IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Defaults to 'match_analysis/metadata.db'.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_locations (
+            map_id            INTEGER NOT NULL,
+            wool_id           INTEGER NOT NULL,
+            wool_color        TEXT NOT NULL,
+            team              TEXT,
+            x                 FLOAT NOT NULL,
+            z                 FLOAT NOT NULL,
+            source            TEXT NOT NULL,
+            first_touch_count INTEGER,
+            x_std             FLOAT,
+            z_std             FLOAT,
+            PRIMARY KEY (map_id, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_monuments (
+            map_id         INTEGER NOT NULL,
+            wool_id        INTEGER NOT NULL,
+            wool_color     TEXT NOT NULL,
+            monument_x     FLOAT NOT NULL,
+            monument_z     FLOAT NOT NULL,
+            capture_count  INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL,
+            PRIMARY KEY (map_id, wool_id, monument_x, monument_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
 
 
 if __name__ == "__main__":
