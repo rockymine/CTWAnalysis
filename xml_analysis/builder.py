@@ -66,6 +66,11 @@ class MapXMLParser:
         # Resolve <if>/<unless> variant conditionals before parsing
         self._resolve_variants(self.root)
 
+        # Resolve <constant> definitions — must run after variants so that
+        # conditional constants (e.g. <if variant="halloween"><constant ...>) are
+        # already inlined or removed before we collect the final constant values.
+        self._resolve_constants(self.root)
+
         # Parse basic info
         data.name = self._get_text('name', '')
         data.version = self._get_text('version', '')
@@ -127,6 +132,35 @@ class MapXMLParser:
                 element.remove(child)
             for child in new_children:
                 element.append(child)
+
+    def _resolve_constants(self, root: ET.Element) -> None:
+        """Resolve <constant id="...">value</constant> references in attribute values.
+
+        Collects all <constant> elements from the tree (after variant resolution
+        has already run, so conditional constants are already inlined or removed),
+        then walks every element and substitutes ``${id}`` patterns in attribute
+        values.  Element text is left unchanged — constants are only used in
+        attribute positions in practice.
+        """
+        constants: dict[str, str] = {}
+        for elem in root.iter('constant'):
+            cid = elem.get('id', '').strip()
+            value = (elem.text or '').strip()
+            if cid:
+                constants[cid] = value
+
+        if not constants:
+            return
+
+        pattern = re.compile(r'\$\{([^}]+)\}')
+
+        def _sub(value: str) -> str:
+            return pattern.sub(lambda m: constants.get(m.group(1), m.group(0)), value)
+
+        for elem in root.iter():
+            for attr, val in list(elem.attrib.items()):
+                if '${' in val:
+                    elem.set(attr, _sub(val))
 
     def _parse_teams(self) -> list[Team]:
         """Parse team elements."""
@@ -204,26 +238,36 @@ class MapXMLParser:
             data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
 
     def _parse_wools(self) -> list[Wool]:
-        """Parse wool elements."""
+        """Parse wool elements.
+
+        Handles maps with multiple top-level <wools team="..."> blocks (one per
+        team) by iterating all of them with findall().  The team attribute on the
+        outer <wools> element is passed as inherited_team so that <wool> children
+        without their own team attribute still receive the correct team.
+        """
         wools = []
-        wools_elem = self.root.find('wools')
-        if wools_elem is None:
+        wools_elems = self.root.findall('wools')
+        if not wools_elems:
             return wools
 
-        for wool_elem, inherited_team in self._collect_wool_elements(wools_elem):
-            location = self._parse_coords(wool_elem.get('location', '0,0,0'))
-            monument_elem = wool_elem.find('monument/block')
-            monument = (0, 0, 0)
-            if monument_elem is not None and monument_elem.text:
-                monument = self._parse_coords(monument_elem.text)
+        for wools_elem in wools_elems:
+            outer_team = wools_elem.get('team', '')
+            for wool_elem, inherited_team in self._collect_wool_elements(
+                wools_elem, outer_team
+            ):
+                location = self._parse_coords(wool_elem.get('location', '0,0,0'))
+                monument_elem = wool_elem.find('monument/block')
+                monument = (0, 0, 0)
+                if monument_elem is not None and monument_elem.text:
+                    monument = self._parse_coords(monument_elem.text)
 
-            wool = Wool(
-                team=wool_elem.get('team', '') or inherited_team,
-                color=wool_elem.get('color', ''),
-                location=location,
-                monument=monument
-            )
-            wools.append(wool)
+                wool = Wool(
+                    team=wool_elem.get('team', '') or inherited_team,
+                    color=wool_elem.get('color', ''),
+                    location=location,
+                    monument=monument
+                )
+                wools.append(wool)
 
         return wools
 

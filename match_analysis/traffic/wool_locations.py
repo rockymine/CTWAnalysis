@@ -31,11 +31,28 @@ WOOL_ID_TO_COLOR: dict[int, str] = {
 FIRST_TOUCH_CLUSTER_RADIUS = 2
 
 
+_WOOL_COLOR_ALIASES: dict[str, str] = {
+    # Old Minecraft names → current canonical names (as in WOOL_ID_TO_COLOR)
+    "light blue":  "light_blue",
+    "light gray":  "light_gray",
+    "silver":      "light_gray",
+}
+
+
+def _normalize_wool_color(color: str) -> str:
+    """Normalize a wool color string to the canonical underscore form."""
+    normalized = color.strip().lower().replace(" ", "_")
+    return _WOOL_COLOR_ALIASES.get(color.strip().lower(), normalized)
+
+
 def _team_for_color(wool_color: str, map_context: dict) -> Optional[str]:
     """Return the owning team for *wool_color* from *map_context*, or None."""
+    canonical = _normalize_wool_color(wool_color)
     for w in map_context.get("poi_assignments", {}).get("wools", []):
-        if w.get("wool_color") == wool_color:
-            return w.get("team")
+        stored = w.get("wool_color", "")
+        if _normalize_wool_color(stored) == canonical:
+            team = w.get("team")
+            return team if team else None
     return None
 
 
