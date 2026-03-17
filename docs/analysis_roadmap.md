@@ -355,6 +355,45 @@ as skybridge.
 
 ---
 
+### H12 — First wool captures by opposing teams tend to be on diagonally opposite flanks
+
+In matches on 2-wool maps where **both** teams capture at least one wool, the two
+first captures are more often on diagonally opposite flanks (different lateral
+positions relative to the map's attack axis) than on the same flank.
+
+**Reasoning:** If both teams' attackers target the same lateral side simultaneously,
+they are likely to encounter each other mid-map, increasing mutual disruption and
+reducing the probability of both succeeding.  Attackers who take different flanks
+face less opposition from enemy attackers and more likely succeed independently.
+This would produce a systematic preference for diagonal captures in the data.
+
+**Methodology:**
+
+Lateral position (left/right) is defined relative to the map's attack axis (the
+line between the two teams) using `map_wool_locations.x/z` and `maps.symmetry_type`:
+
+- **mirror_x** (53 maps): the two wools of each team differ primarily in x.
+  Each wool is "left" if its x < the team's other wool's x, else "right".
+  Mirror pairs share the same x position but differ in z sign.
+  _Same flank_ = both first captures share the same x.
+  _Diagonal_ = first captures have different x positions.
+
+- **mirror_z** (10 maps): same logic applied to z instead of x.
+
+- **rot_180** (31 maps): compute each wool's angle from the map centroid
+  (centroid of all 4 wool positions).  Each team's two wools are ≈180° apart
+  from the other team's wools.  Within a team's pair, the wool with smaller
+  angular offset from its team's centroid is "left"; larger offset is "right".
+  _Same flank_ = first captures are in the same angular half; _Diagonal_ = opposite.
+
+**Null hypothesis:** Diagonal and same-flank captures occur equally (50/50).
+
+_Signals needed:_ `wool_events` (event_type=7), `player_team_segments` (team of
+capturing player), `map_wool_locations` (wool positions and team), `maps.symmetry_type`.
+Requires resolving the NULL team issue in `map_wool_locations` for accurate pairing.
+
+---
+
 ### H11 — Ground route traversal becomes slower over match time
 
 As block spamming, pit digging, and defensive construction accumulate, the ground-level
@@ -626,49 +665,119 @@ These are narrower, question-driven analyses that can run independently.
 
 #### 4a — Wool capture ordering on 2-wool maps (H2)
 
+The correct unit of analysis is **per defending team per match**, not per match
+overall.  `map_wool_locations.team` identifies which team defends each wool.
+
 ```sql
--- For each 2-wool map, which wool_id is captured first, and how often?
+-- For each 2-wool map, per defending team: which of their wools is captured first?
+WITH first_wool_per_team AS (
+    SELECT
+        mat.match_id, mat.map_id,
+        tw.team AS defending_team,
+        tw.wool_id, tw.wool_color
+    FROM matches mat
+    JOIN maps m ON m.map_id = mat.map_id AND m.wools_per_team = 2 AND m.team_count = 2
+    JOIN map_wool_locations tw ON tw.map_id = mat.map_id
+    JOIN wool_events we ON we.match_id = mat.match_id
+        AND we.wool_id = tw.wool_id AND we.event_type = 7
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY mat.match_id, tw.team ORDER BY we.timestamp
+    ) = 1
+),
+team_totals AS (
+    SELECT map_id, defending_team, COUNT(*) AS n
+    FROM first_wool_per_team GROUP BY map_id, defending_team
+)
 SELECT
-    m.map_slug,
-    mwl.wool_color,
-    we.wool_id,
-    COUNT(*) AS times_captured_first
-FROM wool_events we
-JOIN (
-    -- rank captures by timestamp within each match
-    SELECT match_id, wool_id,
-           ROW_NUMBER() OVER (PARTITION BY match_id ORDER BY timestamp) AS rn
-    FROM wool_events WHERE event_type = 7
-) ranked ON ranked.match_id = we.match_id AND ranked.wool_id = we.wool_id AND ranked.rn = 1
-JOIN matches mat ON mat.match_id = we.match_id
-JOIN maps m ON m.map_id = mat.map_id
-JOIN map_wool_locations mwl ON mwl.map_id = mat.map_id AND mwl.wool_id = we.wool_id
-WHERE m.wools_per_team = 2 AND m.team_count = 2
-GROUP BY m.map_slug, mwl.wool_color, we.wool_id
-ORDER BY m.map_slug, times_captured_first DESC
+    m.map_slug, fwt.defending_team, fwt.wool_color, fwt.wool_id,
+    COUNT(*) AS times_first, tt.n,
+    ROUND(COUNT(*) * 100.0 / tt.n, 1) AS pct
+FROM first_wool_per_team fwt
+JOIN team_totals tt ON tt.map_id = fwt.map_id AND tt.defending_team = fwt.defending_team
+JOIN maps m ON m.map_id = fwt.map_id
+WHERE tt.n >= 5
+GROUP BY m.map_slug, fwt.defending_team, fwt.wool_color, fwt.wool_id, tt.n
+ORDER BY m.map_slug, fwt.defending_team, times_first DESC
 ```
 
-If one wool colour dominates the "first capture" count by a large margin, H2 holds
-for that map.  If roughly 50/50, the wools are symmetric in practice.
+**Data quality note:** approximately one wool per map has `team = NULL` in
+`map_wool_locations`.  This means H2 analysis currently sees only one of a team's
+two wools for the affected team.  Before finalising H2 results the NULL team wools
+should be inferred (e.g. from which team captured the wool in match data) and
+backfilled.
+
+**Preliminary findings (15 qualifying maps, ≥ 5 captures per team):**
+
+| Map | Team | Dominant wool | Pct | Notes |
+|---|---|---|---|---|
+| `sakura_garden` | both | 100% each | Perfect single-wool dominance |
+| `kanto` | red-team | purple | 100% | 12 matches |
+| `clearcut` | red-team | cyan | 100% | 15 matches |
+| `wholething` | blue | pink | 100% | 8 matches |
+| `fairy_tales_metamorphose` | blue | lime | 100% | 11 matches |
+| `brittlebush_ii` | both | ~90% each | Strong on both sides |
+| `split_strata` | both | 92% / 85% | Strong on both sides |
+| `tranquility` | both | ~57–60% | Genuinely symmetric — H2 fails |
+| `arabia` | team-1 | pink | 58% | Essentially 50/50 |
+| `desert_country` | blue 90%, green 55% | Intra-map asymmetry: one side has clear easier wool, the other is balanced |
+
+**Conclusion:** H2 holds strongly for the majority of map/team pairs.  Exceptions
+are genuinely symmetric maps (`tranquility`) and one side of otherwise asymmetric
+maps (`desert_country` green-team, `fairy_tales_2_mini` green-team).
+
+**Next step — spatial left/right classification:** The per-team approach tells us
+*which wool_id* goes first but not *which geometric side*.  To ask "is the left wool
+or the right wool consistently easier?", we need to classify each wool as left/right
+relative to the attack axis using `map_wool_locations.x/z` and `maps.symmetry_type`
+(mirror_x: 53 maps, rot_180: 31, mirror_z: 10).  For mirror_x maps the two wools
+of each team differ in x; mirror pairs share the same x but differ in z.  A wool
+is "left" if its x is lower than its team-mate's.  This classification should be
+computed before the next round of H2 analysis.  See also H12 below.
 
 #### 4b — Multi-wool loop capture detection (H3)
 
-A loop capture by a single player in a single life requires:
-1. Touch event on wool_id A (event_type=6, segment_idx=X)
-2. Touch event on wool_id B (event_type=6, same segment_idx=X, wool_id ≠ A)
-3. No death event between the two touches (same segment_idx confirms this)
+**H3 as originally stated is decisively false.**  Multi-wool touch events (touching
+2+ distinct wool_ids in a single life) are extremely common — occurring in 50–100%
+of matches on multi-wool maps and in 40–70% of matches on many 2-wool maps.
+
+The phenomenon has two distinct sub-types that must be separated:
+
+1. **Multi-touch only (no double-cap):** 55.9% of multi-touch segments — player
+   touched 2+ wools but died or dropped one without capturing it.  Very common.
+2. **Single capture from multi-touch:** 27.4% — player touched 2 wools and
+   captured 1.  Often reflects team play (safety placement picked up later, or a
+   teammate captured the other wool independently — see wool sharing below).
+3. **Genuine double-cap (touched and captured 2+ wools):** 15.1% of multi-touch
+   segments — player delivered 2 wools in one life.
+4. **Triple or quad-cap:** 1.5% combined — vanishingly rare.
+
+The original <5% threshold applies only to genuine double-caps as a fraction of
+multi-touch segments (15%), and even that is not rare.  H3 should be reformulated.
+
+**Touch ordering in single-capture multi-touch segments:**  59.5% of the time, the
+first-touched wool was the one captured (player touched A, grabbed B en route home,
+captured A, dropped/lost B).  40.5% of the time, the second-touched wool was
+captured — consistent with the wool-sharing scenario: player touched A, placed it
+as a safety or a teammate grabbed it, then captured B.
 
 ```sql
--- Find life segments with touches on 2+ distinct wools
-SELECT match_id, player_id, segment_idx, COUNT(DISTINCT wool_id) AS distinct_wools_touched
-FROM wool_events
-WHERE event_type = 6
-GROUP BY match_id, player_id, segment_idx
-HAVING COUNT(DISTINCT wool_id) >= 2
+-- Multi-touch segments and their capture outcomes
+WITH multi_touch AS (
+    SELECT match_id, player_id, segment_idx
+    FROM wool_events WHERE event_type = 6
+    GROUP BY match_id, player_id, segment_idx
+    HAVING COUNT(DISTINCT wool_id) >= 2
+)
+SELECT
+    COUNT(DISTINCT we.wool_id) AS wools_captured,
+    COUNT(*) AS segment_count
+FROM multi_touch mt
+LEFT JOIN wool_events we ON we.match_id = mt.match_id
+    AND we.player_id = mt.player_id
+    AND we.segment_idx = mt.segment_idx
+    AND we.event_type = 7
+GROUP BY mt.match_id, mt.player_id, mt.segment_idx, wools_captured  -- then aggregate
 ```
-
-Followed by checking whether both wool_ids were also captured (event_type=7) in the
-same life or a subsequent one.
 
 #### 4c — Skybridge characterisation (H4)
 
@@ -914,17 +1023,36 @@ same life, no capture) is a special case of the carry chain analysis.
 | ID | Hypothesis | Maps | Primary signal | Status |
 |---|---|---|---|---|
 | H1 | First wool captured in first third of 2-wool matches | 2-wool maps | wool_events timestamps | Untested |
-| H2 | One wool is structurally easier (consistently captured first) | 2-wool maps | wool_id of first capture | Untested |
-| H3 | Multi-wool loop captures are rare (<5% of matches) | 2-wool and 4-team | wool_events, same segment_idx | Untested |
+| H2 | One wool is structurally easier (consistently captured first) | 2-wool maps | wool_id of first capture, per defending team | Partially confirmed — strong dominance on most maps; spatial left/right classification pending; NULL team data quality issue to resolve |
+| H3 | Multi-wool loop captures are rare (<5% of matches) | 2-wool and 4-team | wool_events, same segment_idx | Refuted as stated — multi-touch ubiquitous; genuine double-caps = 15% of multi-touch segments; hypothesis needs reformulation |
 | H4 | Long matches correlate with sustained skybridge activity | 2-wool maps, high-stddev | position_events y vs max_build_height | Untested |
-| H5 | High-variance maps have bimodal duration distributions | clearcut, brittlebush_ii, etc. | match_duration histogram | Untested |
-| H6 | death_region is a reliable role proxy | All maps | life_segment_traffic_features.death_region | Untested |
+| H5 | High-variance maps have bimodal duration distributions | clearcut, brittlebush_ii, etc. | match_duration histogram | Preliminary confirmation — clearcut median 4.8 min vs mean 14.4, brittlebush_ii median 9.4 vs mean 24.3; strongly bimodal pattern |
+| H6 | death_region is a reliable role proxy | All maps | life_segment_traffic_features.death_region | Preliminary data: 39% enemy_island, 23% home_island, 21% bridge, 18% void overall; per-map breakdown still needed |
 | H7 | Snapped sequence sufficient for role inference (except sky roles) | All maps | snapped_sequence + position_events y for sky roles | Partially validated; y-limitation confirmed |
 | H8 | Drop-down attack detectable as rise-plateau-drop y-profile | 2-wool maps | position_events y segmented within life | Untested |
 | H9 | Defence accumulation measurable via death_region shift over match time | 2-wool maps, long matches | death_region × match_third | Untested |
 | H10 | Skybridge activation precedes first wool capture on long matches | 2-wool maps, >P75 duration | position_events y + wool_events timestamps | Untested |
 | H11 | Ground route traversal slows over match time (snapped sequence lengthens) | 2-wool maps, long matches | snapped_sequence length × match stage | Untested |
+| H12 | First wool captures by opposing teams tend to be on diagonally opposite flanks | 2-wool maps, both-team-capture matches | wool positions × symmetry_type | Untested |
+
+---
+
+### Wool sharing / safety pickup detection
+
+Wool touch events (event_type=6) occurring within ~40 blocks of the touching
+player's spawn and >80 blocks from the wool room position are safety pickups, not
+primary touches.  Proximity is computed from `wool_events.(x,z)` vs
+`player_team_segments.spawn_x/spawn_z` (joined without timestamp filter — 99.8%
+of records have NULL `end_timestamp` so a timestamp-range join silently drops
+almost all data).
+
+Preliminary measurement: ~1–2% of all touch events are safety pickups.  They cluster
+tightly at 0–30 blocks from spawn with average 100–140 blocks from the wool room.
+Small enough not to bias touch-count analysis but detectable and meaningful for
+understanding team coordination patterns (raindrop farming, coordinated wool handoffs).
 
 ---
 
 _This document is intended to be updated as hypotheses are tested and results accumulate._
+
+_Last analysis run: 2026-03-17._
