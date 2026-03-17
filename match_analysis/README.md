@@ -41,6 +41,7 @@ If you have an existing database that predates a schema addition, use the migrat
 | `migrate_map_classification_columns()` | `wools_per_team`, `max_players_per_team`, `total_blocks`, `size_tier`, `symmetry_type`, `has_intra_team_symmetry` to `maps` |
 | `migrate_traffic_graph_tables()` | Splits old `life_segment_features` TABLE into `life_segment_summary` + `life_segment_skeleton_features` + `life_segment_traffic_features`; recreates `life_segment_features` as a backward-compat VIEW; adds `traffic_graph_match_hash` / `traffic_graph_built_at` to `maps`. **Drops old data — re-run post-processing afterwards.** |
 | `migrate_log_interval_column()` | `log_interval` to `matches` (2 or 5 — position sampling interval in seconds) |
+| `migrate_wool_location_tables()` | `map_wool_locations` (first-touch-confirmed wool chest positions) and `map_wool_monuments` (capture-event-confirmed monument positions) |
 | `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`, `life_segment_features`) |
 
 Run any migration directly:
@@ -204,11 +205,16 @@ and produces a standalone visualisation. It also populates
 ctw matches traffic-graph --map tumbleweed
 ctw matches traffic-graph --map tumbleweed --force    # rebuild if exists
 ctw matches traffic-graph --map tumbleweed --grid-size 3   # finer grid
+ctw matches traffic-graph --all --min-matches 10      # all maps with ≥10 matches
 ```
 
-The command skips maps with no processed 2s-interval matches, and uses a hash
-of the current processed-match set to skip rebuilding if nothing has changed
-since the last run.
+The command automatically refreshes `map_wool_locations` and `map_wool_monuments`
+from wool event data before building, so wool node positions are always derived
+from first-touch events rather than (potentially incorrect) XML coordinates.
+
+The command skips maps with fewer than `--min-matches` processed matches (default
+`10`), and uses a hash of the current processed-match set to skip rebuilding if
+nothing has changed since the last run.
 
 Output files:
 - `output/<map_slug>/traffic_graph.json` — nodes, edges, aggregate statistics
@@ -226,12 +232,34 @@ Parameters:
 | `--grid-size` | auto | Grid cell side length in blocks; auto = `max(2, round(sqrt(total_blocks/300)))` |
 | `--min-occupation` | 5 | Minimum position samples to keep a node |
 | `--min-transitions` | 2 | Minimum crossings to keep an edge |
+| `--min-matches` | 10 | Skip maps with fewer processed matches than this threshold |
 | `--log-interval` | 2 | Only use matches logged at this interval (2 or 5 seconds) |
 | `--strategy` | grid | Graph construction strategy: `grid` or `voronoi` (k-means cluster nodes) |
 | `--compare` | off | Generate a 6-panel strategy comparison plot instead of building the graph |
 | `--force` | off | Rebuild even if `traffic_graph.json` already exists |
 
 The comparison plot is saved to `output/<map_slug>/images/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
+
+### Step 9a: Update wool locations (standalone)
+
+Wool locations are refreshed automatically by `traffic-graph`, but can also be
+updated independently — useful after processing new matches without rebuilding
+the full graph:
+
+```bash
+ctw matches update-wool-locations --map tumbleweed
+ctw matches update-wool-locations --all
+```
+
+This command computes verified wool chest positions from first-touch events
+(the first touch per wool per match always happens in the wool room) and
+monument positions from capture events, then writes them to `map_wool_locations`
+and `map_wool_monuments`. Maps with no touch data yet fall back to `map_context.json`
+coordinates.
+
+`wool_id` values in the event log are Minecraft wool damage values (0–15), which
+map directly to color names (`4` = yellow, `11` = blue, `13` = green, `14` = red,
+etc.), so no fuzzy matching is needed.
 
 ### Step 10: Cluster archetypes
 
@@ -258,11 +286,14 @@ maps                        Map metadata (bbox, island count, teams)
  └─ map_resource_blocks     Iron/gold/diamond block positions with zone classification
  └─ map_chests              Chest positions with zone classification and double-chest detection
  └─ map_chest_contents      Full inventory of each chest (one row per slot)
+ └─ map_wool_locations      Verified wool chest positions (from first-touch events)
+ └─ map_wool_monuments      Verified monument positions (from capture events; one row per team per wool on multi-team maps)
  └─ wool_spawn_baselines    Spawn-to-wool baseline distances per team/wool
  └─ matches                 One row per indexed parquet file
      ├─ life_segments            Player life segments (spawn → death)
      │   ├─ combat_events        Kill and death events with positions
      │   ├─ position_events      Type-5 events with spatial annotation
+     │   ├─ wool_events          Wool touch (6) and capture (7) events with positions
      │   ├─ player_team_segments Team membership over time
      │   ├─ processing_log       Audit trail for processing steps
      │   ├─ life_segment_region_visits    Per-visit breakdown of each life
@@ -283,10 +314,13 @@ maps                        Map metadata (bbox, island count, teams)
 | `map_resource_blocks` | `map_id` (FK), `world_x`, `world_z`, `y`, `resource_type`, `zone`, `team` | `ctw maps resources` |
 | `map_chests` | `map_id` (FK), `world_x`, `world_z`, `y`, `chest_type`, `zone`, `team`, `is_double`, `chest_group_id` | `ctw maps resources` |
 | `map_chest_contents` | `map_id` (FK), `world_x`, `world_z`, `y`, `slot`, `item_id`, `item_damage`, `count` | `ctw maps resources` |
+| `map_wool_locations` | `map_id` (FK), `wool_id`, `wool_color`, `team`, `x`, `z`, `source`, `first_touch_count`, `x_std`, `z_std` | `ctw matches update-wool-locations` (also runs automatically inside `traffic-graph`) |
+| `map_wool_monuments` | `map_id` (FK), `wool_id`, `wool_color`, `monument_x`, `monument_z`, `capture_count`, `source` | `ctw matches update-wool-locations` (also runs automatically inside `traffic-graph`) |
 | `matches` | `match_id`, `match_file`, `map_id` (FK), `processed`, `log_interval` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
 | `combat_events` | `match_id` (FK), `player_id`, `event_type`, position | `ctw matches process` |
 | `position_events` | `match_id` (FK), `player_id`, position, `location_type`, `island_id` | `ctw matches process` |
+| `wool_events` | `match_id` (FK), `player_id`, `event_type` (6=touch, 7=capture), `wool_id`, position | `ctw matches process` |
 | `player_team_segments` | `match_id` (FK), `player_id`, `team`, time range | `ctw matches process` |
 | `processing_log` | `match_id` (FK), `step`, `status`, `duration` | `ctw matches process` |
 

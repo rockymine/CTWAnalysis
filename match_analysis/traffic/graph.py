@@ -37,6 +37,46 @@ DEFAULT_MAX_GAP_S       = 30.0 # max seconds between consecutive samples before 
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    """Return True if *table_name* exists in the connected DuckDB database."""
+    result = conn.execute(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+        [table_name],
+    ).fetchone()
+    return bool(result and result[0] > 0)
+
+
+def _largest_component(node_ids: set[int], edge_pairs: list[tuple[int, int]]) -> set[int]:
+    """Return the set of node IDs in the largest connected component (BFS)."""
+    adj: dict[int, list[int]] = {n: [] for n in node_ids}
+    for a, b in edge_pairs:
+        if a in adj and b in adj:
+            adj[a].append(b)
+            adj[b].append(a)
+    seen: set[int] = set()
+    best: set[int] = set()
+    for start in node_ids:
+        if start in seen:
+            continue
+        comp: set[int] = set()
+        queue = [start]
+        while queue:
+            n = queue.pop()
+            if n in comp:
+                continue
+            comp.add(n)
+            queue.extend(adj[n])
+        seen |= comp
+        if len(comp) > len(best):
+            best = comp
+    return best
+
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
@@ -50,6 +90,7 @@ def build_traffic_graph(
     min_transitions: int  = DEFAULT_MIN_TRANSITIONS,
     max_gap_s: float      = DEFAULT_MAX_GAP_S,
     log_interval: int     = 2,
+    min_matches: int      = 0,
 ) -> dict:
     """Build a traffic graph from all processed position data for *map_slug*.
 
@@ -95,6 +136,12 @@ def build_traffic_graph(
     match_count    = int(pos_df["match_id"].nunique())
     position_count = len(pos_df)
     logger.debug("Loaded %d positions from %d match(es)", position_count, match_count)
+
+    if min_matches > 0 and match_count < min_matches:
+        raise ValueError(
+            f"Map '{map_slug}' has only {match_count} processed match(es) "
+            f"(min_matches={min_matches})."
+        )
 
     # ── 1a. Aggregate match-level stats (player participations, aggregate playtime) ─
     # Note: player_id is re-assigned 0…n per match (anonymisation), so
@@ -247,103 +294,218 @@ def build_traffic_graph(
         "After pruning: %d nodes, %d edges", len(node_stats), len(edge_counts)
     )
 
-    # ── 7. Inject fixed nodes from map_graph.json ──────────────────────────
-    map_graph_path = output_dir / "map_graph.json"
-    fixed_nodes_added: list[dict] = []
+    # ── 6b. Connectivity enforcement — keep largest component ──────────────
+    edge_pairs: list[tuple[int, int]] = []
+    for r in edge_counts.itertuples(index=False):
+        a = cell_to_node.get((int(r.key_cx1), int(r.key_cz1)))
+        b = cell_to_node.get((int(r.key_cx2), int(r.key_cz2)))
+        if a is not None and b is not None:
+            edge_pairs.append((a, b))
 
-    if map_graph_path.exists():
-        with open(map_graph_path) as f:
-            mg = json.load(f)
+    keep = _largest_component(set(node_stats["node_id"].astype(int)), edge_pairs)
+    dropped = len(node_stats) - len(keep)
+    if dropped > 0:
+        logger.warning(
+            "Connectivity: kept largest component (%d nodes); dropped %d isolated node(s).",
+            len(keep), dropped,
+        )
+        node_stats = node_stats[node_stats["node_id"].isin(keep)].copy()
+        edge_counts = edge_counts[
+            edge_counts.apply(
+                lambda r: (
+                    cell_to_node.get((int(r.key_cx1), int(r.key_cz1))) in keep
+                    and cell_to_node.get((int(r.key_cx2), int(r.key_cz2))) in keep
+                ),
+                axis=1,
+            )
+        ].copy()
+        # Rebuild cell_to_node from filtered node_stats
+        cell_to_node = {
+            (int(r.cx), int(r.cz)): int(r.node_id)
+            for r in node_stats.itertuples()
+        }
 
-        fixed_sources = [
-            n for n in mg["map_graph"]["nodes"]
-            if n.get("poi_type") in ("spawn", "wool")
-        ]
+    # ── 7. Inject fixed nodes (POI anchors) ───────────────────────────────
+    # Primary source: map_wool_locations DB table (first-touch confirmed positions).
+    # Fallback: map_context.json (used when table is empty for this map).
+    # Further fallback: map_graph.json skeleton nodes (last resort).
+    fixed_sources: list[dict] = []
 
-        next_id = int(node_stats["node_id"].max()) + 1 if not node_stats.empty else 0
+    wool_loc_rows = conn.execute("""
+        SELECT mwl.wool_id, mwl.x, mwl.z, mwl.wool_color, mwl.team
+        FROM map_wool_locations mwl
+        JOIN maps m ON m.map_id = mwl.map_id
+        WHERE m.map_slug = ?
+    """, [map_slug]).fetchall() if _table_exists(conn, "map_wool_locations") else []
 
-        for fn in fixed_sources:
-            coords = fn.get("coords")
-            if not coords:
+    if wool_loc_rows:
+        # Deduplicate by wool_color (primary key is wool_id, so already one row per wool)
+        seen_wool: set[str] = set()
+        for wool_id, wx, wz, wool_color, team in wool_loc_rows:
+            if wool_color and wool_color in seen_wool:
                 continue
-            fx, fz = float(coords[0]), float(coords[1])
-            fcx = int(fx // grid_size * grid_size)
-            fcz = int(fz // grid_size * grid_size)
-
-            if (fcx, fcz) in cell_to_node:
-                # Annotate the existing node
-                nid = cell_to_node[(fcx, fcz)]
-                mask = (node_stats["node_id"] == nid)
-                node_stats.loc[mask, "poi_type"]  = fn.get("poi_type")
-                node_stats.loc[mask, "poi_color"] = fn.get("poi_color")
-                node_stats.loc[mask, "team"]      = fn.get("team")
-                node_stats.loc[mask, "fixed"]     = True
-            else:
-                # Add a new node for this fixed position
-                new_node = {
-                    "node_id":   next_id,
-                    "cx":        fcx,
-                    "cz":        fcz,
-                    "occupation": 0,
-                    "island_id": fn.get("island_id"),
-                    "poi_type":  fn.get("poi_type"),
-                    "poi_color": fn.get("poi_color"),
-                    "team":      fn.get("team"),
-                    "fixed":     True,
-                }
-                fixed_nodes_added.append(new_node)
-                cell_to_node[(fcx, fcz)] = next_id
-                next_id += 1
-
-                # Connect to nearest K existing nodes by Euclidean distance
-                if cell_to_node:
-                    existing_cells = np.array([
-                        [cx + grid_size / 2, cz + grid_size / 2]
-                        for (cx, cz) in cell_to_node
-                        if (cx, cz) != (fcx, fcz)
-                    ])
-                    center = np.array([fcx + grid_size / 2, fcz + grid_size / 2])
-                    dists  = np.linalg.norm(existing_cells - center, axis=1)
-                    k      = min(3, len(dists))
-                    for nbr_idx in np.argsort(dists)[:k]:
-                        nbr_cx = int(existing_cells[nbr_idx, 0] - grid_size / 2)
-                        nbr_cz = int(existing_cells[nbr_idx, 1] - grid_size / 2)
-                        nbr_id = cell_to_node.get((nbr_cx, nbr_cz))
-                        if nbr_id is not None:
-                            ca = (min(next_id - 1, nbr_id), max(next_id - 1, nbr_id))
-                            synthetic = pd.DataFrame([{
-                                "key_cx1": fcx if (next_id - 1) < nbr_id else nbr_cx,
-                                "key_cz1": fcz if (next_id - 1) < nbr_id else nbr_cz,
-                                "key_cx2": nbr_cx if (next_id - 1) < nbr_id else fcx,
-                                "key_cz2": nbr_cz if (next_id - 1) < nbr_id else fcz,
-                                "transitions": 1,
-                            }])
-                            edge_counts = pd.concat([edge_counts, synthetic], ignore_index=True)
-
-        if fixed_nodes_added:
-            extra_df = pd.DataFrame(fixed_nodes_added)
-            # Ensure same columns as node_stats
-            for col in node_stats.columns:
-                if col not in extra_df.columns:
-                    extra_df[col] = None
-            node_stats = pd.concat([node_stats, extra_df[node_stats.columns]], ignore_index=True)
-            logger.debug("Injected %d new fixed nodes", len(fixed_nodes_added))
+            if wool_color:
+                seen_wool.add(wool_color)
+            fixed_sources.append({
+                "poi_type":  "wool",
+                "coords":    [float(wx), float(wz)],
+                "team":      team,
+                "poi_color": wool_color,
+                "island_id": None,
+            })
     else:
-        logger.warning("map_graph.json not found at %s — no fixed nodes injected", map_graph_path)
+        # Fallback: map_context.json
+        map_context_path = output_dir / "map_context.json"
+        map_graph_path   = output_dir / "map_graph.json"
+        if map_context_path.exists():
+            with open(map_context_path) as f:
+                mc = json.load(f)
+            poi = mc.get("poi_assignments", {})
+            seen_wool2: set[str] = set()
+            for w in poi.get("wools", []):
+                color = w.get("wool_color")
+                if color and color not in seen_wool2:
+                    seen_wool2.add(color)
+                    fixed_sources.append({
+                        "poi_type":  "wool",
+                        "coords":    [w["x"], w["z"]],
+                        "team":      w.get("team"),
+                        "poi_color": color,
+                        "island_id": w.get("island_id"),
+                    })
+        elif map_graph_path.exists():
+            logger.warning(
+                "map_context.json not found; falling back to map_graph.json for wool positions"
+            )
+            with open(map_graph_path) as f:
+                mg = json.load(f)
+            fixed_sources = [
+                n for n in mg["map_graph"]["nodes"]
+                if n.get("poi_type") == "wool"
+            ]
+
+    # Spawns always from map_context (spawn positions are reliable in XML)
+    map_context_path = output_dir / "map_context.json"
+    if map_context_path.exists():
+        with open(map_context_path) as _f:
+            _mc = json.load(_f)
+        for sp in _mc.get("poi_assignments", {}).get("spawns", []):
+            fixed_sources.append({
+                "poi_type":  "spawn",
+                "coords":    [sp["x"], sp["z"]],
+                "team":      sp.get("team"),
+                "poi_color": sp.get("team_color"),
+                "island_id": sp.get("island_id"),
+            })
+    else:
+        # Fallback: map_spawns table
+        spawn_rows = conn.execute(
+            "SELECT team, team_color, x, z FROM map_spawns ms "
+            "JOIN maps m ON m.map_id = ms.map_id WHERE m.map_slug = ?",
+            [map_slug],
+        ).fetchall()
+        for team, team_color, sx, sz in spawn_rows:
+            fixed_sources.append({
+                "poi_type":  "spawn",
+                "coords":    [float(sx), float(sz)],
+                "team":      team,
+                "poi_color": team_color,
+                "island_id": None,
+            })
+
+    fixed_nodes_added: list[dict] = []
+    next_id = int(node_stats["node_id"].max()) + 1 if not node_stats.empty else 0
+
+    for fn in fixed_sources:
+        coords = fn.get("coords")
+        if not coords:
+            continue
+        fx, fz = float(coords[0]), float(coords[1])
+        fcx = int(fx // grid_size * grid_size)
+        fcz = int(fz // grid_size * grid_size)
+
+        if (fcx, fcz) in cell_to_node:
+            # Annotate the existing node
+            nid = cell_to_node[(fcx, fcz)]
+            mask = (node_stats["node_id"] == nid)
+            node_stats.loc[mask, "poi_type"]  = fn.get("poi_type")
+            node_stats.loc[mask, "poi_color"] = fn.get("poi_color")
+            node_stats.loc[mask, "team"]      = fn.get("team")
+            node_stats.loc[mask, "fixed"]     = True
+        else:
+            # Add a new node for this fixed position
+            new_node = {
+                "node_id":   next_id,
+                "cx":        fcx,
+                "cz":        fcz,
+                "exact_x":   fx,
+                "exact_z":   fz,
+                "occupation": 0,
+                "island_id": fn.get("island_id"),
+                "poi_type":  fn.get("poi_type"),
+                "poi_color": fn.get("poi_color"),
+                "team":      fn.get("team"),
+                "fixed":     True,
+            }
+            fixed_nodes_added.append(new_node)
+            cell_to_node[(fcx, fcz)] = next_id
+            next_id += 1
+
+            # Connect to nearest K existing nodes by Euclidean distance
+            if cell_to_node:
+                existing_cells = np.array([
+                    [cx + grid_size / 2, cz + grid_size / 2]
+                    for (cx, cz) in cell_to_node
+                    if (cx, cz) != (fcx, fcz)
+                ])
+                center = np.array([fx, fz])
+                dists  = np.linalg.norm(existing_cells - center, axis=1)
+                k      = min(3, len(dists))
+                for nbr_idx in np.argsort(dists)[:k]:
+                    nbr_cx = int(existing_cells[nbr_idx, 0] - grid_size / 2)
+                    nbr_cz = int(existing_cells[nbr_idx, 1] - grid_size / 2)
+                    nbr_id = cell_to_node.get((nbr_cx, nbr_cz))
+                    if nbr_id is not None:
+                        synthetic = pd.DataFrame([{
+                            "key_cx1": fcx if (next_id - 1) < nbr_id else nbr_cx,
+                            "key_cz1": fcz if (next_id - 1) < nbr_id else nbr_cz,
+                            "key_cx2": nbr_cx if (next_id - 1) < nbr_id else fcx,
+                            "key_cz2": nbr_cz if (next_id - 1) < nbr_id else fcz,
+                            "transitions": 1,
+                        }])
+                        edge_counts = pd.concat([edge_counts, synthetic], ignore_index=True)
+
+    if fixed_nodes_added:
+        extra_df = pd.DataFrame(fixed_nodes_added)
+        # Add exact_x/exact_z to node_stats so they survive the concat
+        for col in ("exact_x", "exact_z"):
+            if col not in node_stats.columns:
+                node_stats[col] = None
+        for col in node_stats.columns:
+            if col not in extra_df.columns:
+                extra_df[col] = None
+        node_stats = pd.concat([node_stats, extra_df[node_stats.columns]], ignore_index=True)
+        logger.debug("Injected %d new fixed nodes", len(fixed_nodes_added))
 
     # Ensure annotation columns exist
-    for col in ("poi_type", "poi_color", "team", "fixed"):
+    for col in ("poi_type", "poi_color", "team", "fixed", "exact_x", "exact_z"):
         if col not in node_stats.columns:
             node_stats[col] = None
 
     # ── 8. Serialise ───────────────────────────────────────────────────────
     nodes: list[dict] = []
     for r in node_stats.itertuples(index=False):
+        has_exact = pd.notna(r.exact_x) and pd.notna(r.exact_z)
+        coords = (
+            [float(r.exact_x), float(r.exact_z)]
+            if has_exact
+            else [r.cx + grid_size / 2, r.cz + grid_size / 2]
+        )
         nodes.append({
             "node_id":   int(r.node_id),
             "cx":        int(r.cx),
             "cz":        int(r.cz),
-            "coords":    [r.cx + grid_size / 2, r.cz + grid_size / 2],
+            "coords":    coords,
             "occupation": int(r.occupation) if pd.notna(r.occupation) else 0,
             "island_id": int(r.island_id) if pd.notna(r.island_id) else None,
             "poi_type":  r.poi_type if pd.notna(r.poi_type) else None,

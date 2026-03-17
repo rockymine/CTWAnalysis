@@ -328,6 +328,39 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table N+7: Map wool chest locations (verified from first-touch events)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_locations (
+            map_id            INTEGER NOT NULL,
+            wool_id           INTEGER NOT NULL,
+            wool_color        TEXT NOT NULL,
+            team              TEXT,
+            x                 FLOAT NOT NULL,
+            z                 FLOAT NOT NULL,
+            source            TEXT NOT NULL,
+            first_touch_count INTEGER,
+            x_std             FLOAT,
+            z_std             FLOAT,
+            PRIMARY KEY (map_id, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
+    # Table N+8: Map wool monument positions (verified from capture events)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_monuments (
+            map_id         INTEGER NOT NULL,
+            wool_id        INTEGER NOT NULL,
+            wool_color     TEXT NOT NULL,
+            monument_x     FLOAT NOT NULL,
+            monument_z     FLOAT NOT NULL,
+            capture_count  INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL,
+            PRIMARY KEY (map_id, wool_id, monument_x, monument_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -741,6 +774,51 @@ def migrate_layout_audit_tables(db_path: str | None = None) -> None:
     """)
     conn.close()
     print(f"Layout audit tables created/verified in {db_path}")
+
+
+def migrate_wool_location_tables(db_path: str | None = None) -> None:
+    """Create map_wool_locations and map_wool_monuments tables if they do not exist yet.
+
+    Safe to run repeatedly — CREATE TABLE IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Defaults to 'match_analysis/metadata.db'.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_locations (
+            map_id            INTEGER NOT NULL,
+            wool_id           INTEGER NOT NULL,
+            wool_color        TEXT NOT NULL,
+            team              TEXT,
+            x                 FLOAT NOT NULL,
+            z                 FLOAT NOT NULL,
+            source            TEXT NOT NULL,
+            first_touch_count INTEGER,
+            x_std             FLOAT,
+            z_std             FLOAT,
+            PRIMARY KEY (map_id, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_monuments (
+            map_id         INTEGER NOT NULL,
+            wool_id        INTEGER NOT NULL,
+            wool_color     TEXT NOT NULL,
+            monument_x     FLOAT NOT NULL,
+            monument_z     FLOAT NOT NULL,
+            capture_count  INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL,
+            PRIMARY KEY (map_id, wool_id, monument_x, monument_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
 
 
 if __name__ == "__main__":

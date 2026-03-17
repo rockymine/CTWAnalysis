@@ -50,7 +50,8 @@ Actions:
   post-process   Run wool carry chain post-processing
   trace          Visualize player traces on map
   kills          Visualize kill-death pairs on map
-  traffic-graph  Build data-driven traffic graph from player position traces (--map or --all)
+  traffic-graph           Build data-driven traffic graph from player position traces (--map or --all)
+  update-wool-locations   Compute and store verified wool chest locations from first-touch events
 
 Examples:
   python ctw.py matches extract --map-name arabia --workers 4
@@ -250,6 +251,8 @@ Examples:
                    help='Min position ticks to keep a node (default: 5)')
     p.add_argument('--min-transitions', type=int, default=2,
                    help='Min crossings to keep an edge (default: 2)')
+    p.add_argument('--min-matches', type=int, default=10,
+                   help='Minimum number of processed matches required to build graph (default: 10)')
     p.add_argument('--log-interval', type=int, default=2, choices=[2, 5],
                    help='Only use matches logged at this interval in seconds (default: 2)')
     p.add_argument('--strategy', default='grid', choices=['grid', 'voronoi'],
@@ -259,6 +262,17 @@ Examples:
     p.add_argument('--force', action='store_true',
                    help='Overwrite existing traffic_graph.json')
     p.set_defaults(func=handle_traffic_graph)
+
+    # matches update-wool-locations
+    p = matches_sub.add_parser(
+        'update-wool-locations',
+        help='Compute and store verified wool chest locations from first-touch events',
+    )
+    map_group2 = p.add_mutually_exclusive_group(required=True)
+    map_group2.add_argument('--map', help='Map slug to update')
+    map_group2.add_argument('--all', action='store_true',
+                            help='Update all maps with touch event data')
+    p.set_defaults(func=handle_update_wool_locations)
 
 
 def handle_parse(args):
@@ -835,6 +849,46 @@ def handle_kills(args):
         print(f"\nPlotted kills for {plotted}/{len(valid_match_ids)} matches.")
 
 
+def handle_update_wool_locations(args):
+    import duckdb
+    from ctw.common import DEFAULT_OUTPUT_ROOT
+    from match_analysis.traffic.wool_locations import compute_and_upsert
+    from match_analysis.database.schema import migrate_wool_location_tables
+
+    ensure_match_db()
+    migrate_wool_location_tables()
+
+    conn_ro = duckdb.connect('match_analysis/metadata.db', read_only=True)
+    if getattr(args, 'all', False):
+        slugs = [r[0] for r in conn_ro.execute(
+            "SELECT DISTINCT m.map_slug FROM wool_events we "
+            "JOIN matches mat ON mat.match_id = we.match_id "
+            "JOIN maps m ON m.map_id = mat.map_id "
+            "WHERE we.event_type = 6 ORDER BY m.map_slug"
+        ).fetchall()]
+        conn_ro.close()
+        print(f"Updating wool locations for {len(slugs)} map(s)...")
+    else:
+        conn_ro.close()
+        slugs = [args.map]
+
+    for slug in slugs:
+        output_dir = DEFAULT_OUTPUT_ROOT / slug
+        conn = duckdb.connect('match_analysis/metadata.db')
+        try:
+            locs = compute_and_upsert(conn, conn, slug, output_dir)
+            colors = [l['wool_color'] for l in locs]
+            sources = [l['source'] for l in locs]
+            db_count = sum(1 for s in sources if s == 'first_touch_db')
+            mc_count = sum(1 for s in sources if s == 'map_context')
+            print(f"  {slug}: {len(locs)} wool(s) [{db_count} from DB, {mc_count} from map_context]"
+                  f"  colors: {', '.join(colors)}")
+        except Exception as e:
+            print(f"  {slug}: ERROR — {e}")
+        finally:
+            conn.close()
+
+
 def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     import duckdb
     from datetime import datetime, timezone
@@ -869,6 +923,14 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
 
     if processed_count == 0:
         print(f"Skipping '{map_slug}': no processed matches with log_interval={log_interval}.")
+        return
+
+    min_matches = getattr(args, 'min_matches', 10)
+    if processed_count < min_matches:
+        print(
+            f"Skipping '{map_slug}': only {processed_count} processed match(es) "
+            f"(min_matches={min_matches})."
+        )
         return
 
     map_folder_candidate = Path(__file__).parent.parent.parent / 'map_folders' / map_slug
@@ -933,6 +995,16 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     out_json = map_output_dir / "traffic_graph.json"
     (map_output_dir / 'images').mkdir(exist_ok=True)
     out_png  = map_output_dir / 'images' / "traffic_graph.png"
+
+    # ── Step 1b: Refresh wool locations table ───────────────────────────────
+    from match_analysis.traffic.wool_locations import compute_and_upsert as _upsert_wool
+    from match_analysis.database.schema import migrate_wool_location_tables
+    migrate_wool_location_tables()
+    conn_wl = duckdb.connect('match_analysis/metadata.db')
+    try:
+        _upsert_wool(conn_wl, conn_wl, map_slug, map_output_dir)
+    finally:
+        conn_wl.close()
 
     # ── Step 2: Get map_id + stored hash, compute current hash ─────────────
     conn_ro = duckdb.connect('match_analysis/metadata.db', read_only=True)
