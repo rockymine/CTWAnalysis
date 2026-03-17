@@ -18,6 +18,13 @@ matches extract          ← fast, CPU-bound, no spatial work
     │          player_team_segments
     │
     ▼
+matches traffic-graph    ← build navigation graph + refresh wool positions
+    │  Reads: position_events, wool_events
+    │  Writes: output/<map>/traffic_graph.json
+    │          map_wool_locations  (first-touch-confirmed chest coords)
+    │          map_wool_monuments  (capture-confirmed monument coords)
+    │
+    ▼
 matches classify         ← spatial annotation + traffic features
        Sets spatial_classified = TRUE
        Updates: position_events.location_type, position_events.island_id
@@ -67,19 +74,51 @@ Prerequisites:
 
 Sets `matches.spatial_classified = TRUE`.
 
+### `matches traffic-graph`
+
+Build a data-driven navigation graph and refresh verified wool positions.
+
+```bash
+python ctw.py matches traffic-graph --map <slug> [--force] [--min-matches N]
+```
+
+- `--force`: rebuild even if the graph is up to date
+- `--min-matches N`: skip maps with fewer than N processed matches (default 10)
+
+Automatically runs `update-wool-locations` before building, so wool node
+positions are always derived from first-touch events rather than XML coords.
+
+Prerequisites: `matches extract` and `output/<map>/map_context.json`.
+
+### `matches update-wool-locations`
+
+Compute and store verified wool chest and monument positions independently of
+the traffic graph build (useful after processing new matches).
+
+```bash
+python ctw.py matches update-wool-locations --map <slug>
+python ctw.py matches update-wool-locations --all
+```
+
+Wool chest positions come from the first touch per wool per match (always in
+the wool room). Monument positions come from capture events (always at the
+exact monument block). `wool_id` is the Minecraft wool damage value (0–15)
+and maps directly to color — no fuzzy matching needed.
+
 ### Typical workflow
 
 ```bash
 # 1. Index parquet files
 python ctw.py matches index --match-dir match_logs/
 
-# 2. Run the full spatial pipeline (map_context.json must exist)
+# 2. Extract events (map_context.json must exist)
 python ctw.py matches extract --map-name arabia --workers 4
-python ctw.py matches classify --map-name arabia
 
-# 3. Build traffic graph, then re-classify to compute traffic features
+# 3. Build traffic graph (also refreshes wool locations)
 python ctw.py matches traffic-graph --map arabia
-python ctw.py matches classify --map-name arabia --force
+
+# 4. Classify positions + compute traffic features
+python ctw.py matches classify --map-name arabia
 ```
 
 ---
@@ -112,6 +151,13 @@ python ctw.py matches classify --map-name arabia --force
 | `snapped_sequence` | TEXT | JSON array of traffic node IDs visited (ordered) |
 | `max_attack_depth` | FLOAT | Min Dijkstra distance to nearest enemy wool node; lower = deeper attack |
 | `death_region` | TEXT | `'home_island'`, `'enemy_island'`, `'bridge'`, or `'void'` |
+
+### Map-level wool tables (populated by `traffic-graph` / `update-wool-locations`)
+
+| Table | Description |
+|-------|-------------|
+| `map_wool_locations` | One row per `(map_id, wool_id)`. `x`/`z` from first-touch median (stddev 0.4–1.7 blocks). Falls back to `map_context.json` for maps with no touch data. |
+| `map_wool_monuments` | One row per `(map_id, wool_id, monument_x, monument_z)`. Multiple rows per wool on multi-team maps (one per capturing team). Coordinates are exact (stddev = 0.0). |
 
 ### Other tables
 
@@ -165,6 +211,8 @@ The following columns were dropped from `position_events`:
 | `match_analysis/processing/processor.py` | `extract_match_data`, `insert_match_data`, `classify_match` |
 | `match_analysis/processing/extractors.py` | Event extraction from raw parquet |
 | `match_analysis/processing/position_classifier.py` | Spatial classification (STRtree-based) |
+| `match_analysis/traffic/graph.py` | `build_traffic_graph` — grid construction, connectivity pruning, POI injection |
+| `match_analysis/traffic/wool_locations.py` | `compute_wool_locations`, `compute_wool_monuments`, `upsert_wool_locations` |
 | `match_analysis/traffic/segment_features.py` | `build_traffic_features_for_match` |
 | `match_analysis/processing/pipeline.py` | `run_post_processing` (wool carry chains only) |
 | `ctw/commands/matches.py` | CLI commands |
