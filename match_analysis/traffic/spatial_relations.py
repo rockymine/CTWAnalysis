@@ -113,9 +113,7 @@ def compute_wool_attack_relations(
         return []
     spawns = {row[0]: (row[1], row[2]) for row in spawn_rows}  # team → (sx, sz)
 
-    # Wool locations — only position and color; do NOT use team column for
-    # objective ownership since it stores only one team per wool and is wrong
-    # for maps where multiple teams share the same wool as an objective.
+    # Wool locations — position and color only
     wool_rows = conn.execute(
         "SELECT wool_id, wool_color, x, z "
         "FROM map_wool_locations WHERE map_id = ?",
@@ -128,14 +126,35 @@ def compute_wool_attack_relations(
         )
         return []
 
-    # Pre-compute defending team per wool: team whose spawn is nearest the wool.
-    # This is the team that physically defends the wool in their own base.
-    # The attacking teams for that wool are all OTHER teams.
+    # Wool objectives: wool_id → set of capturing teams.
+    # Primary source: map_wool_objectives (populated by update-wool-locations).
+    # Fallback: nearest-spawn heuristic if objectives table is empty for this map.
+    obj_rows = conn.execute(
+        "SELECT wool_id, team FROM map_wool_objectives WHERE map_id = ?",
+        [map_id],
+    ).fetchall()
+    wool_objectives: dict[int, set[str]] = {}
+    for wid, team in obj_rows:
+        wool_objectives.setdefault(int(wid), set()).add(team)
+
+    all_teams = set(spawns.keys())
+
     def _nearest_spawn(wx: float, wz: float) -> str:
         return min(
             spawns,
             key=lambda t: (spawns[t][0] - wx) ** 2 + (spawns[t][1] - wz) ** 2,
         )
+
+    def _defending_team(wool_id: int, wx: float, wz: float) -> str | None:
+        """Return the defending team for a wool, using objectives data when
+        available and falling back to nearest spawn otherwise."""
+        capturing = wool_objectives.get(wool_id)
+        if capturing:
+            defenders = all_teams - capturing
+            if len(defenders) == 1:
+                return defenders.pop()
+            # Multiple or zero defenders — fall through to heuristic
+        return _nearest_spawn(wx, wz)
 
     results: list[dict] = []
     for attacking_team, (sx, sz) in spawns.items():
@@ -143,11 +162,18 @@ def compute_wool_attack_relations(
         az = cz - sz
 
         for wool_id, wool_color, wx, wz in wool_rows:
-            # defending_team = team whose spawn is nearest the wool.
-            # If that's the attacking team, the wool is in their own base — skip.
-            defending_team = _nearest_spawn(wx, wz)
-            if defending_team == attacking_team:
-                continue
+            wool_id = int(wool_id)
+            capturing = wool_objectives.get(wool_id)
+            if capturing:
+                # Objectives data available: skip if not this team's objective
+                if attacking_team not in capturing:
+                    continue
+            else:
+                # Fallback: skip if this team's own base (nearest spawn)
+                if _nearest_spawn(wx, wz) == attacking_team:
+                    continue
+
+            defending_team = _defending_team(wool_id, wx, wz)
 
             stats = _vector_stats(ax, az, sx, sz, wx, wz)
             side, depth = _classify(stats["angle_deg"], stats["dot_val"])
@@ -167,7 +193,7 @@ def compute_wool_attack_relations(
             results.append({
                 "map_id":              map_id,
                 "attacking_team":      attacking_team,
-                "wool_id":             int(wool_id),
+                "wool_id":             wool_id,
                 "defending_team":      defending_team,
                 "wool_color":          wool_color,
                 "wool_x":              float(wx),
