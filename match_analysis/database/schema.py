@@ -843,6 +843,37 @@ def migrate_spatial_relations_tables(db_path: str | None = None) -> None:
     conn.close()
 
 
+def migrate_wool_objectives_table(db_path: str | None = None) -> None:
+    """Create map_wool_objectives table if it does not exist yet.
+
+    Stores the many-to-many relationship between wools and the teams that
+    must capture them — information that map_wool_locations cannot represent
+    because its primary key only allows one team per wool.
+
+    Safe to run repeatedly — CREATE TABLE IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Defaults to 'match_analysis/metadata.db'.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_objectives (
+            map_id      INTEGER NOT NULL,
+            wool_id     INTEGER NOT NULL,
+            wool_color  TEXT    NOT NULL,
+            team        TEXT    NOT NULL,
+            source      TEXT    NOT NULL,
+            PRIMARY KEY (map_id, wool_id, team),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+
+
 def migrate_wool_location_tables(db_path: str | None = None) -> None:
     """Create map_wool_locations and map_wool_monuments tables if they do not exist yet.
 

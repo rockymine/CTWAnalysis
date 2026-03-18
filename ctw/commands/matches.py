@@ -853,10 +853,14 @@ def handle_update_wool_locations(args):
     import duckdb
     from ctw.common import DEFAULT_OUTPUT_ROOT
     from match_analysis.traffic.wool_locations import compute_and_upsert
-    from match_analysis.database.schema import migrate_wool_location_tables
+    from match_analysis.database.schema import (
+        migrate_wool_location_tables,
+        migrate_wool_objectives_table,
+    )
 
     ensure_match_db()
     migrate_wool_location_tables()
+    migrate_wool_objectives_table()
 
     conn_ro = duckdb.connect('match_analysis/metadata.db', read_only=True)
     if getattr(args, 'all', False):
