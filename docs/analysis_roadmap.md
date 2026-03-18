@@ -185,6 +185,64 @@ wools fall close together), the phase model needs revision.
 
 _Signals needed:_ `wool_events` capture timestamps vs `matches.match_duration`.
 
+**Findings (2026-03-18, 433 contested + 255 domination matches across 2-wool 2-team maps):**
+
+H1 is **strongly duration-dependent** — true for long matches, false for short and
+medium ones.  The analysis covers 2-1 contested matches only (2-0 domination is
+structurally excluded: see below).
+
+| Duration tier | Matches | Median first-cap fraction | % in first third | % in first half |
+|---|---|---|---|---|
+| < 3 min (short) | 28 | 0.77 | 3.6% | 7.1% |
+| 3–10 min (medium) | 201 | 0.51 | 21.4% | 47.8% |
+| ≥ 10 min (long) | 204 | **0.22** | **67.6%** | **84.3%** |
+
+**Long (≥ 10 min) contested matches — hypothesis confirmed:**
+67.6% have their first capture in the first third of the match; median fraction is
+0.22 (first capture at ~22% of match duration).  This is strong validation of the
+phase model: Phase 1/2 dynamics decide the first wool early; the rest of the match
+is Phase 2/3 attrition.
+
+**Medium (3–10 min) matches — hypothesis fails:**
+First capture timing is essentially uniform (median 0.51, only 21% in first third).
+No systematic early-phase structure is detectable at this timescale.
+
+**Short (< 3 min) matches — opposite pattern:**
+First capture is systematically *late* (median 0.77, only 3.6% in first third).
+This is structural: when a match ends in under 3 minutes, all captures happen in a
+short absolute window, so even a "fast" capture arrives late as a match fraction.
+
+**2-0 domination matches are excluded from the above:** in domination, both wools
+are captured in quick succession by the winner.  The first of the two captures
+arrives late in match-fraction terms (median 0.66–0.99 depending on map), not
+because the match has a long early phase but because match duration is compressed
+around the two consecutive captures.  Including domination would inflate the
+"late" bucket and obscure the contested-match signal.
+
+**Revised conclusion:**
+H1 holds specifically for contested (2-1) matches on long-form maps (≥ 10 min) —
+exactly the regime the Phase 1/2/3 model was designed to explain.  For medium and
+short matches the hypothesis does not hold.  The phase model should be presented
+as conditional on match duration and should not be applied to sub-3-minute maps.
+
+Per-map examples from the ≥ 10 min contested cohort (% first cap in first third):
+
+| Map | n | % in first third | Median frac |
+|---|---|---|---|
+| `garf` | 6 | 83% | 0.19 |
+| `wits_end` | 6 | 83% | 0.23 |
+| `witchs_potions` | 6 | 67% | 0.16 |
+| `brittlebush_ii` | 9 | 67% | 0.22 |
+| `kingdom` | 5 | 60% | 0.25 |
+| `kanto` | 11 | 55% | 0.28 |
+| `split_strata` | 13 | 54% | 0.31 |
+| `clearcut` | 12 | 33% | 0.63 | ← outlier; bimodal map |
+| `arabia` | 9 | 33% | 0.42 |
+
+`clearcut` is the notable outlier at 33% (median 0.63) — consistent with its known
+bimodal character (H5): the fast-ending cohort compresses all captures to the end,
+dragging the contested median later.
+
 ---
 
 ### H2 — On 2-wool maps, one wool is structurally easier
@@ -1251,7 +1309,7 @@ same life, no capture) is a special case of the carry chain analysis.
 
 | ID | Hypothesis | Maps | Primary signal | Status |
 |---|---|---|---|---|
-| H1 | First wool captured in first third of 2-wool matches | 2-wool maps | wool_events timestamps | Untested |
+| H1 | First wool captured in first third of 2-wool matches | 2-wool maps | wool_events timestamps | **Conditionally confirmed** — holds for contested (2-1) matches ≥ 10 min (67.6% in first third, median frac 0.22); fails for medium matches (21%); opposite for short matches (3.6%). 2-0 domination structurally excluded (first cap always late). Phase model validated for long-form play only. |
 | H2 | One wool is structurally easier (consistently captured first) | 2-wool maps | wool_id of first capture, per defending team | Partially confirmed — strong dominance on most maps; spatial left/right classification pending |
 | H3 | Multi-wool loop captures are rare (<5% of matches) | 2-wool and 4-team | wool_events, same segment_idx | Refuted as stated — multi-touch ubiquitous; genuine double-caps = 15% of multi-touch segments; hypothesis needs reformulation |
 | H4 | Long matches correlate with sustained skybridge activity | 2-wool maps, high-stddev | position_events y vs max_build_height | Untested |
@@ -1284,4 +1342,4 @@ understanding team coordination patterns (raindrop farming, coordinated wool han
 
 _This document is intended to be updated as hypotheses are tested and results accumulate._
 
-_Last analysis run: 2026-03-17._
+_Last analysis run: 2026-03-18._
