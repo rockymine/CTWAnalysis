@@ -922,6 +922,41 @@ of each role over normalised match time (0–1) across many matches on the same 
 should reveal the phase transition structure: mostly rushers early, a peak in
 defenders mid-game, skybridgers appearing late.
 
+#### 4e — Match outcome distribution: complete domination vs. contested wins
+
+**Finding (2026-03-18, 32 qualifying maps, 421 matches).**
+Scope: 2-team maps with ≥ 2 wools per team and ≥ 10 matches per map (empire
+excluded pending spawn-data fix, now resolved).
+
+On 2-wool maps the only possible final scores are **2-1** (contested) and **2-0**
+(domination — loser never captures a single wool):
+
+| Score | Matches | % |
+|---|---|---|
+| 2-1 | 259 | 61.5% |
+| 2-0 | 161 | 38.2% |
+| other | 1 | 0.2% |
+
+Domination is common (~38% overall), not rare, and varies strongly by map:
+
+| Tier | Range | Example maps |
+|---|---|---|
+| High snowball (≥ 50%) | 50–80% | fairy_tales_2_mini (70%, n=27), tusho_ctw (69%, n=13) |
+| Middle | 25–50% | tranquility (41%), arabia (40%), clearcut (37%) |
+| Consistently contested (< 25%) | 0–23% | kanto (15%), when_men_cried (14%), split_strata (0%) |
+
+**Interpretation notes:**
+- A 2-0 does not necessarily mean the losing team was absent from offense. CTW
+  ends the moment a team captures their last wool; the opponent may have had
+  a wool in transit when the match ended.
+- The snowball maps tend to be smaller or have layouts where an early lead lets
+  the winning team lock down both wool rooms simultaneously.
+- `split_strata` is the only map with zero dominations across 13 matches —
+  every single game there produced a 2-1 result.
+- The sole 3-wool map in this cohort (`fourchette`, n=15) shows 67% domination —
+  consistent with the pattern that more wools required increases shutout likelihood,
+  since the defender has fewer resources to contest all objectives at once.
+
 ---
 
 ## The Snapped Sequence as Primary Signal
