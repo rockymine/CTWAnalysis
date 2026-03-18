@@ -776,6 +776,73 @@ def migrate_layout_audit_tables(db_path: str | None = None) -> None:
     print(f"Layout audit tables created/verified in {db_path}")
 
 
+def migrate_spatial_relations_tables(db_path: str | None = None) -> None:
+    """Create map_wool_attack_relations and map_team_spatial tables if absent.
+
+    Safe to run repeatedly — CREATE TABLE IF NOT EXISTS guards prevent re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Defaults to 'match_analysis/metadata.db'.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_wool_attack_relations (
+            map_id               INTEGER NOT NULL,
+            attacking_team       TEXT    NOT NULL,
+            wool_id              INTEGER NOT NULL,
+            defending_team       TEXT,
+            wool_color           TEXT    NOT NULL,
+            wool_x               FLOAT   NOT NULL,
+            wool_z               FLOAT   NOT NULL,
+            spawn_x              FLOAT   NOT NULL,
+            spawn_z              FLOAT   NOT NULL,
+            cross_val            FLOAT   NOT NULL,
+            dot_val              FLOAT   NOT NULL,
+            distance             FLOAT   NOT NULL,
+            angle_deg            FLOAT   NOT NULL,
+            relative_side        TEXT    NOT NULL,
+            relative_depth       TEXT    NOT NULL,
+            defending_side       TEXT,
+            defending_angle_deg  FLOAT,
+            PRIMARY KEY (map_id, attacking_team, wool_id),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    # Migrate existing tables that predate defending_side/defending_angle_deg columns
+    conn.execute("""
+        ALTER TABLE map_wool_attack_relations
+        ADD COLUMN IF NOT EXISTS defending_side TEXT
+    """)
+    conn.execute("""
+        ALTER TABLE map_wool_attack_relations
+        ADD COLUMN IF NOT EXISTS defending_angle_deg FLOAT
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_team_spatial (
+            map_id          INTEGER NOT NULL,
+            from_team       TEXT    NOT NULL,
+            to_team         TEXT    NOT NULL,
+            from_spawn_x    FLOAT   NOT NULL,
+            from_spawn_z    FLOAT   NOT NULL,
+            to_spawn_x      FLOAT   NOT NULL,
+            to_spawn_z      FLOAT   NOT NULL,
+            cross_val       FLOAT   NOT NULL,
+            dot_val         FLOAT   NOT NULL,
+            distance        FLOAT   NOT NULL,
+            angle_deg       FLOAT   NOT NULL,
+            relative_side   TEXT    NOT NULL,
+            relative_depth  TEXT    NOT NULL,
+            PRIMARY KEY (map_id, from_team, to_team),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+
+
 def migrate_wool_location_tables(db_path: str | None = None) -> None:
     """Create map_wool_locations and map_wool_monuments tables if they do not exist yet.
 
