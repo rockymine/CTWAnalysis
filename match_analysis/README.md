@@ -19,6 +19,12 @@ All match and map metadata lives in a single DuckDB database at `match_analysis/
                             ctw matches post-process --all
 9. Build traffic graph      ctw matches traffic-graph --map <name>
                             (also populates life_segment_traffic_features)
+9a. Update wool data        ctw matches update-wool-locations --map <name>
+                            (populates map_wool_locations, map_wool_monuments,
+                            map_wool_objectives; runs automatically in step 9)
+9b. Spatial relations       ctw maps spatial-relations --map <name>
+                            (populates map_wool_attack_relations, map_team_spatial;
+                            requires steps 3 and 9a)
 10. Cluster archetypes      notebooks/life_segment_clustering.ipynb
 ```
 
@@ -42,6 +48,8 @@ If you have an existing database that predates a schema addition, use the migrat
 | `migrate_traffic_graph_tables()` | Splits old `life_segment_features` TABLE into `life_segment_summary` + `life_segment_skeleton_features` + `life_segment_traffic_features`; recreates `life_segment_features` as a backward-compat VIEW; adds `traffic_graph_match_hash` / `traffic_graph_built_at` to `maps`. **Drops old data — re-run post-processing afterwards.** |
 | `migrate_log_interval_column()` | `log_interval` to `matches` (2 or 5 — position sampling interval in seconds) |
 | `migrate_wool_location_tables()` | `map_wool_locations` (first-touch-confirmed wool chest positions) and `map_wool_monuments` (capture-event-confirmed monument positions) |
+| `migrate_wool_objectives_table()` | `map_wool_objectives` (many-to-many: which teams must capture each wool, with `source` column) |
+| `migrate_spatial_relations_tables()` | `map_wool_attack_relations` (vector-based wool attack geometry per team) and `map_team_spatial` (spawn-to-spawn geometry per team pair) |
 | `migrate_views()` | Creates or replaces all derived views (e.g. `map_size_buckets`, `life_segment_features`) |
 
 Run any migration directly:
@@ -240,9 +248,9 @@ Parameters:
 
 The comparison plot is saved to `output/<map_slug>/images/traffic_strategy_comparison.png` and shows raw position density, grid-5, grid-3, adaptive-grid, and Voronoi strategies side-by-side.
 
-### Step 9a: Update wool locations (standalone)
+### Step 9a: Update wool data (standalone)
 
-Wool locations are refreshed automatically by `traffic-graph`, but can also be
+Wool data is refreshed automatically by `traffic-graph`, but can also be
 updated independently — useful after processing new matches without rebuilding
 the full graph:
 
@@ -251,15 +259,35 @@ ctw matches update-wool-locations --map tumbleweed
 ctw matches update-wool-locations --all
 ```
 
-This command computes verified wool chest positions from first-touch events
-(the first touch per wool per match always happens in the wool room) and
-monument positions from capture events, then writes them to `map_wool_locations`
-and `map_wool_monuments`. Maps with no touch data yet fall back to `map_context.json`
-coordinates.
+This command writes to three tables:
+
+- **`map_wool_locations`** — verified wool chest positions from first-touch events
+  (the first touch per wool per match always happens in the wool room). Falls back to
+  `map_context.json` coordinates for maps with no touch data.
+- **`map_wool_monuments`** — monument positions from capture events (exact coords).
+- **`map_wool_objectives`** — which teams must capture each wool (many-to-many).
+  Primary source: capture events joined against `map_spawns` for team-name
+  normalisation. Fallback: `map_context.json` wool definitions.
 
 `wool_id` values in the event log are Minecraft wool damage values (0–15), which
 map directly to color names (`4` = yellow, `11` = blue, `13` = green, `14` = red,
 etc.), so no fuzzy matching is needed.
+
+### Step 9b: Compute spatial relations
+
+After wool data is populated, compute vector-based spatial geometry for each map:
+
+```bash
+ctw maps spatial-relations --map tumbleweed
+ctw maps spatial-relations           # all maps
+```
+
+For each (attacking_team, wool) pair, the signed angle of the wool from the team's
+spawn-to-center attack axis is computed using Minecraft's left-handed XZ convention.
+Results are stored in `map_wool_attack_relations` (one row per attacking_team/wool)
+and `map_team_spatial` (one row per from_team/to_team pair).
+
+**Prerequisites:** `maps spawns` (step 3) and `matches update-wool-locations` (step 9a).
 
 ### Step 10: Cluster archetypes
 
@@ -288,6 +316,9 @@ maps                        Map metadata (bbox, island count, teams)
  └─ map_chest_contents      Full inventory of each chest (one row per slot)
  └─ map_wool_locations      Verified wool chest positions (from first-touch events)
  └─ map_wool_monuments      Verified monument positions (from capture events; one row per team per wool on multi-team maps)
+ └─ map_wool_objectives     Which teams must capture each wool (many-to-many; source = db or map_context)
+ └─ map_wool_attack_relations  Vector-based spatial geometry: wool relative to each attacking team's spawn axis
+ └─ map_team_spatial        Vector-based spatial geometry: spawn-to-spawn relations per team pair
  └─ wool_spawn_baselines    Spawn-to-wool baseline distances per team/wool
  └─ matches                 One row per indexed parquet file
      ├─ life_segments            Player life segments (spawn → death)
@@ -316,6 +347,9 @@ maps                        Map metadata (bbox, island count, teams)
 | `map_chest_contents` | `map_id` (FK), `world_x`, `world_z`, `y`, `slot`, `item_id`, `item_damage`, `count` | `ctw maps resources` |
 | `map_wool_locations` | `map_id` (FK), `wool_id`, `wool_color`, `team`, `x`, `z`, `source`, `first_touch_count`, `x_std`, `z_std` | `ctw matches update-wool-locations` (also runs automatically inside `traffic-graph`) |
 | `map_wool_monuments` | `map_id` (FK), `wool_id`, `wool_color`, `monument_x`, `monument_z`, `capture_count`, `source` | `ctw matches update-wool-locations` (also runs automatically inside `traffic-graph`) |
+| `map_wool_objectives` | `map_id` (FK), `wool_id`, `wool_color`, `team`, `source` | `ctw matches update-wool-locations` (primary: capture events; fallback: `map_context.json`) |
+| `map_wool_attack_relations` | `map_id` (FK), `attacking_team`, `wool_id`, `defending_team`, `relative_side`, `relative_depth`, `angle_deg`, `distance`, `defending_side`, `defending_angle_deg` | `ctw maps spatial-relations` |
+| `map_team_spatial` | `map_id` (FK), `from_team`, `to_team`, `relative_side`, `relative_depth`, `angle_deg`, `distance` | `ctw maps spatial-relations` |
 | `matches` | `match_id`, `match_file`, `map_id` (FK), `processed`, `log_interval` | `ctw matches index` |
 | `life_segments` | `match_id` (FK), `player_id`, `segment_idx`, outcome, kills | `ctw matches process` |
 | `combat_events` | `match_id` (FK), `player_id`, `event_type`, position | `ctw matches process` |
