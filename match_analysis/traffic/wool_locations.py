@@ -353,7 +353,7 @@ def compute_wool_objectives(
             mc = json.load(f)
         for w in mc.get("poi_assignments", {}).get("wools", []):
             color = w.get("wool_color")
-            team = w.get("team")
+            team = w.get("team", "").removesuffix('-team') or None
             if not color or not team:
                 continue
             wool_id = next(

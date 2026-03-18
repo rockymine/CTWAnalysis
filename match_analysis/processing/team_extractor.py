@@ -72,9 +72,7 @@ def load_spawns_from_db(conn, map_id: int) -> list[dict]:
     ).fetchall()
 
     centers = []
-    for x, z, min_x, min_z, max_x, max_z, team_raw in rows:
-        # Normalize: "red-team" -> "red" (matching file-based loader)
-        team = team_raw.removesuffix('-team')
+    for x, z, min_x, min_z, max_x, max_z, team in rows:
         centers.append({
             'team': team,
             'x': float(x),

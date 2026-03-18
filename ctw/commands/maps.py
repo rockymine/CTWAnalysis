@@ -267,7 +267,7 @@ def handle_spawns(args):
                 spawn['x'], spawn['z'],
                 bounds_min['x'], bounds_min['z'],
                 bounds_max['x'], bounds_max['z'],
-                spawn['team'], spawn['team_color'],
+                spawn['team'].removesuffix('-team'), spawn['team_color'],
             ])
 
         loaded += 1
