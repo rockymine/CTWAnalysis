@@ -273,6 +273,135 @@ def compute_wool_monuments(
     return results
 
 
+def compute_wool_objectives(
+    conn,
+    map_slug: str,
+    output_dir: Path,
+) -> list[dict]:
+    """Compute wool-team objective assignments for *map_slug*.
+
+    Returns a list of {wool_id, wool_color, team, source} dicts representing
+    the many-to-many relationship: which teams must capture each wool.
+
+    Primary source: capture events (event_type=7) from the DB.  Any team
+    that captured a wool in at least one recorded match is a capturing team
+    for that wool.
+
+    Fallback: map_context.json poi_assignments.wools.  The wool positions in
+    map_context can be off on some maps (lazy authors), but the team field is
+    reliable and safe to use here.  Used for any (wool, team) pairs not
+    already covered by the DB data.
+    """
+    # ── Primary: capture events ───────────────────────────────────────────
+    # EXISTS filter on map_spawns normalises team names: only teams whose
+    # name in player_team_segments matches map_spawns exactly are kept.
+    # Where names differ (e.g. "blue" vs "blue-team") the row is dropped
+    # and map_context provides the canonical assignment as fallback.
+    rows = conn.execute("""
+        SELECT DISTINCT we.wool_id, pts.team
+        FROM wool_events we
+        JOIN matches mat ON mat.match_id = we.match_id
+        JOIN maps m      ON m.map_id     = mat.map_id
+        JOIN (
+            SELECT DISTINCT ON (match_id, player_id)
+                match_id, player_id, team
+            FROM player_team_segments
+            ORDER BY match_id, player_id, start_timestamp
+        ) pts ON pts.match_id = we.match_id AND pts.player_id = we.player_id
+        WHERE m.map_slug = ?
+          AND we.event_type = 7
+          AND EXISTS (
+              SELECT 1 FROM map_spawns ms
+              WHERE ms.map_id = mat.map_id AND ms.team = pts.team
+          )
+    """, [map_slug]).fetchall()
+
+    results: list[dict] = []
+    covered: set[tuple[int, str]] = set()  # (wool_id, team)
+
+    for wool_id, team in rows:
+        wool_id = int(wool_id)
+        wool_color = WOOL_ID_TO_COLOR.get(wool_id)
+        if wool_color is None:
+            continue
+        key = (wool_id, team)
+        if key in covered:
+            continue
+        covered.add(key)
+        results.append({
+            "wool_id":    wool_id,
+            "wool_color": wool_color,
+            "team":       team,
+            "source":     "capture_events_db",
+        })
+
+    if results:
+        logger.debug(
+            "Computed wool objectives for '%s' from DB: %d (wool, team) pair(s)",
+            map_slug, len(results),
+        )
+    else:
+        logger.debug(
+            "No capture events for '%s'; falling back to map_context for objectives",
+            map_slug,
+        )
+
+    # ── Fallback: map_context.json for any pairs not covered by DB ────────
+    mc_path = output_dir / "map_context.json"
+    if mc_path.exists():
+        with open(mc_path) as f:
+            mc = json.load(f)
+        for w in mc.get("poi_assignments", {}).get("wools", []):
+            color = w.get("wool_color")
+            team = w.get("team", "").removesuffix('-team') or None
+            if not color or not team:
+                continue
+            wool_id = next(
+                (k for k, v in WOOL_ID_TO_COLOR.items() if v == color), None
+            )
+            if wool_id is None:
+                continue
+            key = (wool_id, team)
+            if key in covered:
+                continue
+            covered.add(key)
+            results.append({
+                "wool_id":    wool_id,
+                "wool_color": color,
+                "team":       team,
+                "source":     "map_context",
+            })
+
+    return results
+
+
+def upsert_wool_objectives(
+    conn,
+    map_slug: str,
+    objectives: list[dict],
+) -> None:
+    """Insert or replace wool objective rows for *map_slug*."""
+    map_id_row = conn.execute(
+        "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+    ).fetchone()
+    if map_id_row is None:
+        logger.warning("upsert_wool_objectives: map_slug '%s' not found", map_slug)
+        return
+    map_id = int(map_id_row[0])
+
+    conn.execute("DELETE FROM map_wool_objectives WHERE map_id = ?", [map_id])
+    for obj in objectives:
+        conn.execute("""
+            INSERT INTO map_wool_objectives (map_id, wool_id, wool_color, team, source)
+            VALUES (?, ?, ?, ?, ?)
+        """, [map_id, obj["wool_id"], obj["wool_color"], obj["team"], obj["source"]])
+
+    logger.debug(
+        "Upserted %d wool objective(s) for '%s'",
+        len(objectives), map_slug,
+    )
+
+
 def upsert_wool_locations(
     conn,
     map_slug: str,
@@ -342,7 +471,7 @@ def upsert_wool_locations(
 
 
 def compute_and_upsert(conn_ro, conn_rw, map_slug: str, output_dir: Path) -> list[dict]:
-    """Convenience: compute locations + monuments and upsert in one call.
+    """Convenience: compute locations + monuments + objectives and upsert in one call.
 
     Parameters
     ----------
@@ -355,5 +484,7 @@ def compute_and_upsert(conn_ro, conn_rw, map_slug: str, output_dir: Path) -> lis
     """
     locations = compute_wool_locations(conn_ro, map_slug, output_dir)
     monuments = compute_wool_monuments(conn_ro, map_slug, output_dir)
+    objectives = compute_wool_objectives(conn_ro, map_slug, output_dir)
     upsert_wool_locations(conn_rw, map_slug, locations, monuments)
+    upsert_wool_objectives(conn_rw, map_slug, objectives)
     return locations

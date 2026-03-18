@@ -195,6 +195,23 @@ Parses the `<kits>` section and resolves team association via `<spawn kit="...">
 Only kits with at least one item or armor slot are stored; secondary utility kits
 (e.g. `reset-resistance-kit`) are skipped. Omit `--map` to process all maps.
 
+#### `maps spatial-relations`
+
+Compute vector-based spatial relations between each team's spawn and their wool
+objectives, and store results in `map_wool_attack_relations` and `map_team_spatial`.
+
+```
+python ctw.py maps spatial-relations [--map NAME]
+```
+
+For each (attacking_team, wool) pair, calculates the signed angle of the wool from
+the team's spawn-to-center attack axis using Minecraft's left-handed XZ convention.
+Also stores the defending team's perspective (`defending_side`). Omit `--map` to
+process all maps in the database.
+
+**Prerequisites:** `maps spawns` and `matches update-wool-locations` must have run
+first (depends on `map_spawns`, `map_wool_locations`, and `map_wool_objectives`).
+
 ---
 
 ### `ctw matches` — Match Data Analysis
@@ -356,6 +373,28 @@ python ctw.py matches traffic-graph (--map NAME | --all)
 | `--force` | off | Rebuild even if `traffic_graph.json` already exists |
 
 Outputs `output/<map>/traffic_graph.json` and `output/<map>/traffic_graph.png`.
+
+#### `matches update-wool-locations`
+
+Populate or refresh wool-related tables from match event data and map context files.
+
+```
+python ctw.py matches update-wool-locations (--map NAME | --all)
+```
+
+Writes to three tables:
+
+| Table | Contents |
+|---|---|
+| `map_wool_locations` | One row per wool: corrected coordinates derived from capture events (event_type 7), falling back to `map_context.json` coordinates |
+| `map_wool_monuments` | Monument (chest) locations per wool, from `map_context.json` |
+| `map_wool_objectives` | Many-to-many: which teams must capture each wool. Primary source: capture events joined against `map_spawns` for team-name normalisation; fallback: `map_context.json` wool definitions |
+
+Coordinates in `map_wool_locations` are derived from actual capture events where available —
+this corrects maps where wool positions in `map.xml` are inaccurate. The `map_wool_objectives`
+table is required by `maps spatial-relations`.
+
+**Prerequisites:** `maps spawns` and `matches process-all` must have run first.
 
 ---
 

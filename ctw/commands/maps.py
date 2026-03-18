@@ -85,10 +85,11 @@ def register(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Actions:
-  load         Load map metadata into the maps table
-  spawns       Load spawn data into the map_spawns table
-  resources    Classify resource blocks and chests by zone, store in DB
-  kits         Load kit items and armor into the DB
+  load              Load map metadata into the maps table
+  spawns            Load spawn data into the map_spawns table
+  resources         Classify resource blocks and chests by zone, store in DB
+  kits              Load kit items and armor into the DB
+  spatial-relations Compute vector-based POI spatial relations and store in DB
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -99,6 +100,8 @@ Examples:
   python ctw.py maps kits --map arabia
   python ctw.py maps kits                       # all maps
   python ctw.py maps kits --map-dir /path/to/CommunityMaps  # external map dir
+  python ctw.py maps spatial-relations --map kanto
+  python ctw.py maps spatial-relations          # all maps
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -142,6 +145,14 @@ Examples:
                         '(default: map_folders/). Use when maps live outside '
                         'the project, e.g. CommunityMaps.')
     p.set_defaults(func=handle_kits)
+
+    # maps spatial-relations
+    p = maps_sub.add_parser(
+        'spatial-relations',
+        help='Compute vector-based POI spatial relations and store in DB',
+    )
+    p.add_argument('--map', help='Map slug to process (default: all maps in DB)')
+    p.set_defaults(func=handle_spatial_relations)
 
 
 def _resolve_map_dirs(args):
@@ -256,7 +267,7 @@ def handle_spawns(args):
                 spawn['x'], spawn['z'],
                 bounds_min['x'], bounds_min['z'],
                 bounds_max['x'], bounds_max['z'],
-                spawn['team'], spawn['team_color'],
+                spawn['team'].removesuffix('-team'), spawn['team_color'],
             ])
 
         loaded += 1
@@ -626,6 +637,82 @@ def handle_kits(args) -> None:
 
     conn.close()
     print(f"\nDone: {loaded} map(s) loaded, {skipped} skipped.")
+
+
+def handle_spatial_relations(args) -> None:
+    """Compute vector-based POI spatial relations and store them in the DB."""
+    import duckdb
+    from match_analysis.traffic.spatial_relations import compute_and_upsert
+    from match_analysis.database.schema import migrate_spatial_relations_tables
+
+    ensure_match_db()
+    migrate_spatial_relations_tables()
+
+    db_path = Path('match_analysis/metadata.db')
+
+    conn_ro = duckdb.connect(str(db_path), read_only=True)
+    if args.map:
+        slugs = [s.strip() for s in args.map.split(',') if s.strip()]
+    else:
+        slugs = [r[0] for r in conn_ro.execute(
+            "SELECT map_slug FROM maps ORDER BY map_slug"
+        ).fetchall()]
+    conn_ro.close()
+
+    if not slugs:
+        print("No maps found in the maps table.")
+        return
+
+    print(f"Computing spatial relations for {len(slugs)} map(s)...")
+    loaded = 0
+    skipped = 0
+    for slug in slugs:
+        conn = duckdb.connect(str(db_path))
+        try:
+            # Quick pre-check: does this map have spawn data?
+            has_spawns = conn.execute(
+                "SELECT COUNT(*) FROM map_spawns ms "
+                "JOIN maps m ON m.map_id = ms.map_id "
+                "WHERE m.map_slug = ?",
+                [slug],
+            ).fetchone()[0]
+            if has_spawns == 0:
+                print(f"  Skip {slug}: no spawn data (run 'maps spawns' first)")
+                skipped += 1
+                continue
+            has_wools = conn.execute(
+                "SELECT COUNT(*) FROM map_wool_locations mwl "
+                "JOIN maps m ON m.map_id = mwl.map_id "
+                "WHERE m.map_slug = ?",
+                [slug],
+            ).fetchone()[0]
+            if has_wools == 0:
+                print(f"  Skip {slug}: no wool locations (run 'matches update-wool-locations' first)")
+                skipped += 1
+                continue
+
+            compute_and_upsert(conn, conn, slug)
+            # Report summary counts
+            map_id = conn.execute(
+                "SELECT map_id FROM maps WHERE map_slug = ?", [slug]
+            ).fetchone()[0]
+            n_wool = conn.execute(
+                "SELECT COUNT(*) FROM map_wool_attack_relations WHERE map_id = ?",
+                [map_id],
+            ).fetchone()[0]
+            n_team = conn.execute(
+                "SELECT COUNT(*) FROM map_team_spatial WHERE map_id = ?",
+                [map_id],
+            ).fetchone()[0]
+            print(f"  [OK] {slug}: {n_wool} wool relation(s), {n_team} team pair(s)")
+            loaded += 1
+        except Exception as e:
+            print(f"  {slug}: ERROR — {e}")
+            skipped += 1
+        finally:
+            conn.close()
+
+    print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
 
 
 def _print_resources_summary(

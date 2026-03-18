@@ -92,18 +92,41 @@ Prerequisites: `matches extract` and `output/<map>/map_context.json`.
 
 ### `matches update-wool-locations`
 
-Compute and store verified wool chest and monument positions independently of
-the traffic graph build (useful after processing new matches).
+Compute and store verified wool data independently of the traffic graph build
+(useful after processing new matches).
 
 ```bash
 python ctw.py matches update-wool-locations --map <slug>
 python ctw.py matches update-wool-locations --all
 ```
 
-Wool chest positions come from the first touch per wool per match (always in
-the wool room). Monument positions come from capture events (always at the
-exact monument block). `wool_id` is the Minecraft wool damage value (0–15)
-and maps directly to color — no fuzzy matching needed.
+Writes to three tables:
+
+- **`map_wool_locations`** — wool chest positions from the first touch per wool per match
+  (always in the wool room). Falls back to `map_context.json` for maps with no touch data.
+- **`map_wool_monuments`** — monument positions from capture events (exact block coords).
+- **`map_wool_objectives`** — many-to-many: which teams must capture each wool.
+  Primary source: capture events filtered by canonical team names via `map_spawns`.
+  Fallback: `map_context.json` wool definitions.
+
+`wool_id` is the Minecraft wool damage value (0–15) and maps directly to color — no
+fuzzy matching needed.
+
+### `maps spatial-relations`
+
+Compute vector-based spatial geometry for each map's wool objectives and spawn layout.
+
+```bash
+python ctw.py maps spatial-relations --map <slug>
+python ctw.py maps spatial-relations
+```
+
+For each attacking team, the attack vector is `spawn_centroid → map_center`. The signed
+angle of each wool from that axis (Minecraft left-handed XZ: positive = left,
+negative = right) is stored in `map_wool_attack_relations`. The same geometry is
+computed between all spawn pairs and stored in `map_team_spatial`.
+
+Prerequisites: `maps spawns` and `matches update-wool-locations`.
 
 ### Typical workflow
 
@@ -158,6 +181,14 @@ python ctw.py matches classify --map-name arabia
 |-------|-------------|
 | `map_wool_locations` | One row per `(map_id, wool_id)`. `x`/`z` from first-touch median (stddev 0.4–1.7 blocks). Falls back to `map_context.json` for maps with no touch data. |
 | `map_wool_monuments` | One row per `(map_id, wool_id, monument_x, monument_z)`. Multiple rows per wool on multi-team maps (one per capturing team). Coordinates are exact (stddev = 0.0). |
+| `map_wool_objectives` | Many-to-many: one row per `(map_id, wool_id, team)` — records which teams must capture each wool. Required by `maps spatial-relations`. |
+
+### Map-level spatial tables (populated by `maps spatial-relations`)
+
+| Table | Description |
+|-------|-------------|
+| `map_wool_attack_relations` | One row per `(map_id, attacking_team, wool_id)`. Stores cross/dot product, distance, signed angle, `relative_side` (left/right/on_axis), `relative_depth` (forward/behind/on_axis), and the defending team's perspective (`defending_side`, `defending_angle_deg`). |
+| `map_team_spatial` | One row per `(map_id, from_team, to_team)`. Same geometry between spawn centroids: enables "who's straight ahead vs. diagonal" analysis on 4-team maps. |
 
 ### Other tables
 
@@ -212,7 +243,8 @@ The following columns were dropped from `position_events`:
 | `match_analysis/processing/extractors.py` | Event extraction from raw parquet |
 | `match_analysis/processing/position_classifier.py` | Spatial classification (STRtree-based) |
 | `match_analysis/traffic/graph.py` | `build_traffic_graph` — grid construction, connectivity pruning, POI injection |
-| `match_analysis/traffic/wool_locations.py` | `compute_wool_locations`, `compute_wool_monuments`, `upsert_wool_locations` |
+| `match_analysis/traffic/wool_locations.py` | `compute_wool_locations`, `compute_wool_monuments`, `compute_wool_objectives`, `upsert_wool_locations`, `upsert_wool_objectives` |
+| `match_analysis/traffic/spatial_relations.py` | `compute_wool_attack_relations`, `compute_team_spatial`, `upsert_spatial_relations`, `compute_and_upsert` |
 | `match_analysis/traffic/segment_features.py` | `build_traffic_features_for_match` |
 | `match_analysis/processing/pipeline.py` | `run_post_processing` (wool carry chains only) |
 | `ctw/commands/matches.py` | CLI commands |
