@@ -945,6 +945,84 @@ Domination is common (~38% overall), not rare, and varies strongly by map:
 | Middle | 25–50% | tranquility (41%), arabia (40%), clearcut (37%) |
 | Consistently contested (< 25%) | 0–23% | kanto (15%), when_men_cried (14%), split_strata (0%) |
 
+**Query:**
+
+```sql
+WITH
+eligible_maps AS (
+    SELECT map_id, map_slug, wools_per_team
+    FROM maps
+    WHERE team_count = 2 AND wools_per_team >= 2
+      AND map_slug != 'empire'   -- had no spawn data; now fixed, re-run to include
+),
+map_teams AS (
+    SELECT DISTINCT map_id, team FROM map_spawns
+),
+-- Wool captures per team per match (valid map teams only, no "unknown")
+team_captures AS (
+    SELECT
+        we.match_id, mat.map_id,
+        pts.team,
+        COUNT(DISTINCT we.wool_id) AS wools_captured
+    FROM wool_events we
+    JOIN matches mat ON mat.match_id = we.match_id
+    JOIN eligible_maps em ON em.map_id = mat.map_id
+    JOIN (
+        SELECT DISTINCT ON (match_id, player_id)
+            match_id, player_id, team
+        FROM player_team_segments
+        ORDER BY match_id, player_id, start_timestamp
+    ) pts ON pts.match_id = we.match_id AND pts.player_id = we.player_id
+    JOIN map_teams mt ON mt.map_id = mat.map_id AND mt.team = pts.team
+    WHERE we.event_type = 7 AND mat.processed = TRUE
+    GROUP BY we.match_id, mat.map_id, pts.team
+),
+-- Cross join matches × map teams so that teams with 0 captures still appear
+match_team_grid AS (
+    SELECT mat.match_id, mat.map_id, em.wools_per_team, mt.team
+    FROM matches mat
+    JOIN eligible_maps em ON em.map_id = mat.map_id
+    JOIN map_teams mt ON mt.map_id = mat.map_id
+    WHERE mat.processed = TRUE
+),
+team_scores AS (
+    SELECT
+        g.match_id, g.map_id, g.wools_per_team, g.team,
+        COALESCE(tc.wools_captured, 0) AS wools_captured
+    FROM match_team_grid g
+    LEFT JOIN team_captures tc ON tc.match_id = g.match_id AND tc.team = g.team
+),
+-- Collapse to winner/loser scores; drop matches where nobody scored
+match_scores AS (
+    SELECT
+        match_id, map_id, wools_per_team,
+        MAX(wools_captured) AS winner_wools,
+        MIN(wools_captured) AS loser_wools
+    FROM team_scores
+    GROUP BY match_id, map_id, wools_per_team
+    HAVING MAX(wools_captured) > 0
+),
+map_stats AS (
+    SELECT map_id, COUNT(*) AS n_matches
+    FROM match_scores
+    GROUP BY map_id
+    HAVING COUNT(*) >= 10
+)
+-- Per-map domination rate
+SELECT
+    m.map_slug,
+    ms.wools_per_team,
+    mst.n_matches,
+    SUM(CASE WHEN ms.loser_wools = 0 THEN 1 ELSE 0 END)  AS dominations,
+    ROUND(100.0 * SUM(CASE WHEN ms.loser_wools = 0 THEN 1 ELSE 0 END)
+          / mst.n_matches, 1)                             AS pct_domination
+FROM match_scores ms
+JOIN maps m ON m.map_id = ms.map_id
+JOIN map_stats mst ON mst.map_id = ms.map_id
+GROUP BY m.map_slug, ms.wools_per_team, mst.n_matches
+ORDER BY pct_domination DESC
+```
+
 **Interpretation notes:**
 - A 2-0 does not necessarily mean the losing team was absent from offense. CTW
   ends the moment a team captures their last wool; the opponent may have had
@@ -956,6 +1034,9 @@ Domination is common (~38% overall), not rare, and varies strongly by map:
 - The sole 3-wool map in this cohort (`fourchette`, n=15) shows 67% domination —
   consistent with the pattern that more wools required increases shutout likelihood,
   since the defender has fewer resources to contest all objectives at once.
+- **Key methodology note:** the match_team_grid cross-join is required. A naive
+  MIN/MAX over only teams-that-scored collapses a 2-0 into an apparent "2-2" tie
+  because MIN = MAX when only one team appears in the aggregation.
 
 ---
 
