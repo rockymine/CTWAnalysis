@@ -184,6 +184,9 @@ class MapXMLParser:
     def _parse_spawns(self) -> tuple[list[Spawn], Optional[Spawn]]:
         """Parse spawn and default (observer) elements.
 
+        Handles maps with nested <spawns kit="..."> groups (e.g. empire) by
+        using _collect_spawn_elements to recursively walk the tree.
+
         Returns:
             Tuple of (team_spawns, observer_spawn).  observer_spawn is None
             when no <default> element is present.
@@ -194,17 +197,42 @@ class MapXMLParser:
         if spawns_elem is None:
             return spawns, observer_spawn
 
-        for spawn_elem in spawns_elem.findall('spawn'):
-            spawn = self._parse_spawn_element(spawn_elem)
-            spawns.append(spawn)
+        spawn_elements, default_elem = self._collect_spawn_elements(spawns_elem)
+        for spawn_elem, inherited_kit in spawn_elements:
+            spawns.append(self._parse_spawn_element(spawn_elem, inherited_kit))
 
-        default_elem = spawns_elem.find('default')
         if default_elem is not None:
             observer_spawn = self._parse_spawn_element(default_elem)
 
         return spawns, observer_spawn
 
-    def _parse_spawn_element(self, elem) -> 'Spawn':
+    def _collect_spawn_elements(
+        self, parent: ET.Element, inherited_kit: str = ''
+    ) -> tuple[list[tuple[ET.Element, str]], Optional[ET.Element]]:
+        """Collect (spawn_element, kit) pairs from potentially nested <spawns> groups.
+
+        Walks direct children recursively into nested <spawns> elements,
+        passing down the inherited kit attribute so that <spawn> children
+        without their own kit attribute still receive the correct kit.
+        Also returns the first <default> element found (observer spawn).
+        """
+        spawn_results: list[tuple[ET.Element, str]] = []
+        default_elem: Optional[ET.Element] = None
+        for child in parent:
+            if child.tag == 'spawn':
+                spawn_results.append((child, inherited_kit))
+            elif child.tag == 'default':
+                if default_elem is None:
+                    default_elem = child
+            elif child.tag == 'spawns':
+                kit = child.get('kit', '') or inherited_kit
+                nested_spawns, nested_default = self._collect_spawn_elements(child, kit)
+                spawn_results.extend(nested_spawns)
+                if nested_default is not None and default_elem is None:
+                    default_elem = nested_default
+        return spawn_results, default_elem
+
+    def _parse_spawn_element(self, elem: ET.Element, inherited_kit: str = '') -> 'Spawn':
         """Parse a single <spawn> or <default> element into a Spawn."""
         region = None
         region_attr = elem.get('region', '')
@@ -219,7 +247,7 @@ class MapXMLParser:
 
         return Spawn(
             team=elem.get('team', ''),
-            kit=elem.get('kit', ''),
+            kit=elem.get('kit', '') or inherited_kit,
             yaw=_safe_float(elem.get('yaw', '0')),
             region=region,
         )
