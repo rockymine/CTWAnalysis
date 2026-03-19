@@ -172,13 +172,39 @@ class Y0LayerExtractor:
 # forms walkable surfaces (moats, traps) in CTW.
 # ---------------------------------------------------------------------------
 NON_SOLID_BLOCK_IDS: frozenset[int] = frozenset({
+    6,    # sapling
     31,   # tall_grass (dead_bush variant=0, tall_grass variant=1, fern variant=2)
     32,   # dead_bush
     37,   # yellow_flower
     38,   # red_flower
+    39,   # brown mushroom
+    40,   # red mushroom
+    50,   # torch
     55,   # redstone_wire
+    59,   # crops
+    63,   # sign_post
+    65,   # ladder
+    66,   # rails
+    69,   # wall_sign
+    69,   # lever
+    70,   # STONE_PLATE
+    71,   # IRON_DOOR_BLOCK
+    72,   # WOOD_PLATE
+    75,   # REDSTONE_TORCH_OFF
+    76,   # REDSTONE_TORCH_ON
     77,   # stone_button
+    78,   # SNOW
+    83,   # SUGAR_CANE_BLOCK
+    104,  # PUMPKIN_STEM
+    105,  # MELON_STEM
+    106,  # VINE
+    115,  # NETHER_WARTS
+    141,  # CARROT
+    142,  # POTATO
+    147,  # GOLD_PLATE
+    148,  # IRON_PLATE
     143,  # wooden_button
+    166,  # BARRIER
 })
 
 
