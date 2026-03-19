@@ -409,8 +409,11 @@ NON_SOLID_BLOCK_IDS = frozenset({31, 32, 37, 38, 55, 77, 143})
 # Water (8, 9) is NEVER in this set — water is a walkable surface in CTW
 
 class TopSurfaceExtractor:
-    def __init__(self, region_reader, exclude_ids=None, skip_non_solid=False)
+    def __init__(self, region_reader, exclude_ids=None, skip_non_solid=False,
+                 max_build_height=None)
     # skip_non_solid=True unions NON_SOLID_BLOCK_IDS into exclude_ids
+    # max_build_height=N skips blocks at y >= N (read from map.xml via
+    #   _read_max_build_height() in layout.py — applied automatically in analyze_layout)
 
 class Y0LayerExtractor:
     def __init__(self, region_reader)

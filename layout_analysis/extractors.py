@@ -210,7 +210,8 @@ NON_SOLID_BLOCK_IDS: frozenset[int] = frozenset({
 
 class TopSurfaceExtractor:
     """
-    Finds the highest non-excluded non-air block in each column.
+    Finds the highest non-excluded non-air block in each column, optionally
+    capped at a map's build height limit.
 
     Scans each column from y=255 downward and returns the first block whose
     ID is not air (0) and not in exclude_ids. When exclude_ids is non-empty
@@ -221,7 +222,12 @@ class TopSurfaceExtractor:
     NON_SOLID_BLOCK_IDS (buttons, redstone wire, dead bushes, tall grass,
     flowers). Water (IDs 8 and 9) is never skipped — it is walkable in CTW.
 
-    Criterion: column contains at least one qualifying block
+    When max_build_height is set, blocks at y >= max_build_height are ignored
+    entirely. This excludes decorative structures built above the playable
+    ceiling (birds, tall trees, floating markers, observer islands) whose
+    surface_y would otherwise eclipse the genuine navigable terrain below.
+
+    Criterion: column contains at least one qualifying block below the height cap
     """
 
     def __init__(
@@ -229,6 +235,7 @@ class TopSurfaceExtractor:
         region_reader: RegionReader,
         exclude_ids: set[int] | None = None,
         skip_non_solid: bool = False,
+        max_build_height: int | None = None,
     ) -> None:
         """
         Args:
@@ -240,11 +247,14 @@ class TopSurfaceExtractor:
                             (buttons, redstone wire, dead bushes, tall grass,
                             flowers). Produces a cleaner surface_y for
                             height_above_terrain computation.
+            max_build_height: When set, blocks at y >= this value are ignored.
+                              Read from <maxBuildHeight> in map.xml.
         """
         self.reader = region_reader
         self._exclude_ids: set[int] = set(exclude_ids) if exclude_ids else set()
         if skip_non_solid:
             self._exclude_ids |= NON_SOLID_BLOCK_IDS
+        self._max_build_height: int | None = max_build_height
 
     def extract(self) -> pd.DataFrame:
         """
@@ -281,10 +291,24 @@ class TopSurfaceExtractor:
                 if np.all(found_y >= 0):
                     break  # All columns resolved
 
+                # Skip sections entirely above the build height limit
+                if self._max_build_height is not None:
+                    world_y_base = section_y * 16
+                    if world_y_base >= self._max_build_height:
+                        continue
+
                 # Solid mask: non-air and not excluded
                 solid = blocks_3d != 0
                 for exc in self._exclude_ids:
                     solid &= blocks_3d != exc
+
+                # For sections that straddle the build height, zero out rows at
+                # or above the limit (local_y = max_build_height - section_y*16)
+                if self._max_build_height is not None:
+                    world_y_base = section_y * 16
+                    limit_local_y = self._max_build_height - world_y_base
+                    if 0 < limit_local_y < 16:
+                        solid[limit_local_y:] = False
 
                 # Columns still unfound that have any qualifying block in this section
                 not_found = found_y < 0                  # (16, 16)

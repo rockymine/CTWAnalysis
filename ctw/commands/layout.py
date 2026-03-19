@@ -75,6 +75,21 @@ def register(subparsers):
     p.set_defaults(func=handler)
 
 
+def _read_max_build_height(map_folder: Path) -> int | None:
+    """Return <maxBuildHeight> from map.xml, or None if absent / unreadable."""
+    import xml.etree.ElementTree as ET
+    map_xml = map_folder / 'map.xml'
+    if not map_xml.exists():
+        return None
+    try:
+        el = ET.parse(map_xml).getroot().find('maxBuildHeight')
+        if el is not None and el.text:
+            return int(el.text.strip())
+    except Exception:
+        pass
+    return None
+
+
 def _run_layout_worker(map_folder: Path, output_override: str | None, kwargs: dict):
     """Top-level worker function for ProcessPoolExecutor (must be picklable)."""
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
@@ -229,9 +244,14 @@ def analyze_layout(
 
     logger.debug(f"[1/6] Layout Analysis: {map_folder.name}")
 
+    max_build_height = _read_max_build_height(map_folder)
+    if max_build_height is not None:
+        logger.debug(f"  Build height cap: y < {max_build_height} (from map.xml)")
+
     if map_layout_config is not None:
         return _analyze_layout_configured(
-            map_folder, out, force_rerun, map_layout_config, skip_features, skip_non_solid,
+            map_folder, out, force_rerun, map_layout_config, skip_features,
+            skip_non_solid, max_build_height,
         )
 
     # -----------------------------------------------------------------------
@@ -290,7 +310,10 @@ def analyze_layout(
     if 'top_surface' in parquet_files:
         if not parquet_files['top_surface'].exists() or force_rerun:
             logger.debug("  Extracting top surface...")
-            extractor = TopSurfaceExtractor(reader, skip_non_solid=skip_non_solid)
+            extractor = TopSurfaceExtractor(
+                reader, skip_non_solid=skip_non_solid,
+                max_build_height=max_build_height,
+            )
             df = extractor.extract()
             df.to_parquet(parquet_files['top_surface'])
             logger.debug(f"    Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
@@ -356,6 +379,7 @@ def _analyze_layout_configured(
     cfg: MapLayoutConfig,
     skip_features: bool,
     skip_non_solid: bool = False,
+    max_build_height: int | None = None,
 ) -> Optional[dict]:
     """Configured extraction path driven by map_layouts.yaml.
 
@@ -427,6 +451,7 @@ def _analyze_layout_configured(
         elif layer == 'top_surface':
             extractor = TopSurfaceExtractor(
                 reader, exclude_ids=set(exclude), skip_non_solid=skip_non_solid,
+                max_build_height=max_build_height,
             )
             df = extractor.extract()
             df.to_parquet(decided_path)
