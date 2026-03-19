@@ -166,6 +166,22 @@ class Y0LayerExtractor:
         })
 
 
+# ---------------------------------------------------------------------------
+# Non-solid decorative block IDs excluded by TopSurfaceExtractor when
+# skip_non_solid=True.  Water (8, 9) is intentionally omitted because water
+# forms walkable surfaces (moats, traps) in CTW.
+# ---------------------------------------------------------------------------
+NON_SOLID_BLOCK_IDS: frozenset[int] = frozenset({
+    31,   # tall_grass (dead_bush variant=0, tall_grass variant=1, fern variant=2)
+    32,   # dead_bush
+    37,   # yellow_flower
+    38,   # red_flower
+    55,   # redstone_wire
+    77,   # stone_button
+    143,  # wooden_button
+})
+
+
 class TopSurfaceExtractor:
     """
     Finds the highest non-excluded non-air block in each column.
@@ -175,6 +191,10 @@ class TopSurfaceExtractor:
     this produces a "structural" surface that skips decoration blocks
     (e.g. leaves, tall grass, build-region markers).
 
+    When skip_non_solid=True the extractor also skips the blocks listed in
+    NON_SOLID_BLOCK_IDS (buttons, redstone wire, dead bushes, tall grass,
+    flowers). Water (IDs 8 and 9) is never skipped — it is walkable in CTW.
+
     Criterion: column contains at least one qualifying block
     """
 
@@ -182,6 +202,7 @@ class TopSurfaceExtractor:
         self,
         region_reader: RegionReader,
         exclude_ids: set[int] | None = None,
+        skip_non_solid: bool = False,
     ) -> None:
         """
         Args:
@@ -189,9 +210,15 @@ class TopSurfaceExtractor:
             exclude_ids: Block IDs to skip when searching top-down.
                          Air (0) is always excluded regardless of this set.
                          Pass an empty set or None for the raw top surface.
+            skip_non_solid: When True, also exclude NON_SOLID_BLOCK_IDS
+                            (buttons, redstone wire, dead bushes, tall grass,
+                            flowers). Produces a cleaner surface_y for
+                            height_above_terrain computation.
         """
         self.reader = region_reader
         self._exclude_ids: set[int] = set(exclude_ids) if exclude_ids else set()
+        if skip_non_solid:
+            self._exclude_ids |= NON_SOLID_BLOCK_IDS
 
     def extract(self) -> pd.DataFrame:
         """

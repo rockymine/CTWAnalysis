@@ -63,6 +63,11 @@ def register(subparsers):
                    help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
+    p.add_argument('--skip-non-solid', action='store_true', dest='skip_non_solid',
+                   help='Skip non-solid decorative blocks (buttons, redstone wire, '
+                        'dead bushes, tall grass, flowers) when extracting the top '
+                        'surface. Produces a cleaner surface_y for '
+                        'height_above_terrain. Water is never skipped.')
     p.add_argument('--plots', action='store_true',
                    help='Generate plots alongside data files')
     p.add_argument('--workers', type=int, default=1,
@@ -148,6 +153,7 @@ def handler(args):
         skip_bedrock=args.skip_bedrock,
         skip_lowest_solid=args.skip_lowest_solid,
         skip_features=args.skip_features,
+        skip_non_solid=args.skip_non_solid,
         threshold=args.threshold,
         density_mode=args.density_mode,
     )
@@ -178,6 +184,7 @@ def analyze_layout(
     skip_bedrock: bool = False,
     skip_lowest_solid: bool = False,
     skip_features: bool = False,
+    skip_non_solid: bool = False,
     threshold: int = 10,
     density_mode: str = 'run',
     map_layout_config: Optional[MapLayoutConfig] = None,
@@ -206,6 +213,9 @@ def analyze_layout(
         skip_density: Skip vertical density extraction.
         skip_bedrock: Skip bedrock extraction.
         skip_features: Skip feature extraction (resource blocks and chests).
+        skip_non_solid: When True, pass NON_SOLID_BLOCK_IDS to TopSurfaceExtractor
+            so decorative blocks (buttons, redstone wire, dead bushes, tall grass,
+            flowers) are excluded from the surface scan.
         threshold: Density threshold for vertical density extractor.
         density_mode: Mode for vertical density extractor ('run' or 'count').
         map_layout_config: Per-map config from map_layouts.yaml.  When
@@ -221,7 +231,7 @@ def analyze_layout(
 
     if map_layout_config is not None:
         return _analyze_layout_configured(
-            map_folder, out, force_rerun, map_layout_config, skip_features,
+            map_folder, out, force_rerun, map_layout_config, skip_features, skip_non_solid,
         )
 
     # -----------------------------------------------------------------------
@@ -280,7 +290,7 @@ def analyze_layout(
     if 'top_surface' in parquet_files:
         if not parquet_files['top_surface'].exists() or force_rerun:
             logger.debug("  Extracting top surface...")
-            extractor = TopSurfaceExtractor(reader)
+            extractor = TopSurfaceExtractor(reader, skip_non_solid=skip_non_solid)
             df = extractor.extract()
             df.to_parquet(parquet_files['top_surface'])
             logger.debug(f"    Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
@@ -345,6 +355,7 @@ def _analyze_layout_configured(
     force_rerun: bool,
     cfg: MapLayoutConfig,
     skip_features: bool,
+    skip_non_solid: bool = False,
 ) -> Optional[dict]:
     """Configured extraction path driven by map_layouts.yaml.
 
@@ -414,7 +425,9 @@ def _analyze_layout_configured(
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
         elif layer == 'top_surface':
-            extractor = TopSurfaceExtractor(reader, exclude_ids=set(exclude))
+            extractor = TopSurfaceExtractor(
+                reader, exclude_ids=set(exclude), skip_non_solid=skip_non_solid,
+            )
             df = extractor.extract()
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
