@@ -374,6 +374,27 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table: UUID → Minecraft name cache (reusable across features)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS uuid_name_cache (
+            uuid       TEXT PRIMARY KEY,
+            name       TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Table: Map authors and contributors
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_authors (
+            map_id  INTEGER NOT NULL,
+            uuid    TEXT NOT NULL,
+            name    TEXT,
+            role    TEXT NOT NULL CHECK(role IN ('author', 'contributor')),
+            PRIMARY KEY (map_id, uuid),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     _create_views(conn)
 
     conn.close()
@@ -930,6 +951,32 @@ def migrate_wool_location_tables(db_path: str | None = None) -> None:
         )
     """)
     conn.close()
+
+
+def migrate_authors_tables(db_path: str | None = None) -> None:
+    """Create uuid_name_cache and map_authors tables if they do not exist yet."""
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS uuid_name_cache (
+            uuid       TEXT PRIMARY KEY,
+            name       TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_authors (
+            map_id  INTEGER NOT NULL,
+            uuid    TEXT NOT NULL,
+            name    TEXT,
+            role    TEXT NOT NULL CHECK(role IN ('author', 'contributor')),
+            PRIMARY KEY (map_id, uuid),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+    print(f"Author tables created/verified in {db_path}")
 
 
 def migrate_terrain_height_table(db_path: str | None = None) -> None:

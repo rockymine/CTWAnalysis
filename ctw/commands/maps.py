@@ -91,6 +91,7 @@ Actions:
   kits              Load kit items and armor into the DB
   spatial-relations Compute vector-based POI spatial relations and store in DB
   terrain-height    Load terrain height data into the map_terrain_height table
+  authors           Parse map.xml authors/contributors and look up Minecraft names
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -165,6 +166,20 @@ Examples:
     p.add_argument('--map', help='Map name to process (default: all maps with output data)')
     p.add_argument('--output', help='Output root directory (default: output/)')
     p.set_defaults(func=handle_terrain_height)
+
+    # maps authors
+    p = maps_sub.add_parser(
+        'authors',
+        help='Parse map.xml authors/contributors and look up Minecraft names via Mojang API',
+    )
+    p.add_argument('--map', default=None,
+                   help='Map slug(s), comma-separated (default: all maps in DB)')
+    p.add_argument('--map-dir', default=None,
+                   help='Directory containing map folders for XML lookup '
+                        '(default: map_folders/). Use for CommunityMaps / PublicMaps.')
+    p.add_argument('--no-fetch', action='store_true', dest='no_fetch',
+                   help='Skip Mojang API lookups; insert UUIDs with NULL names')
+    p.set_defaults(func=handle_authors)
 
 
 def _resolve_map_dirs(args):
@@ -767,6 +782,159 @@ def handle_terrain_height(args) -> None:
 
     conn.close()
     print(f"\nDone: {loaded} map(s) loaded, {skipped} skipped.")
+
+
+def handle_authors(args) -> None:
+    """Parse map.xml authors/contributors, look up Minecraft names, store in DB."""
+    import json as _json
+    import time
+    import urllib.request
+    import urllib.error
+    import xml.etree.ElementTree as ET
+    import duckdb
+    from match_analysis.database.schema import migrate_authors_tables
+    from ctw.common import PROJECT_ROOT
+
+    ensure_match_db()
+    migrate_authors_tables()
+
+    db_path = Path('match_analysis/metadata.db')
+    xml_root = Path(args.map_dir) if getattr(args, 'map_dir', None) else PROJECT_ROOT / 'map_folders'
+
+    conn = duckdb.connect(str(db_path))
+
+    # Resolve map slugs
+    if args.map:
+        slugs = [s.strip() for s in args.map.split(',') if s.strip()]
+    else:
+        slugs = [r[0] for r in conn.execute(
+            "SELECT map_slug FROM maps ORDER BY map_slug"
+        ).fetchall()]
+
+    if not slugs:
+        print("No maps found.")
+        conn.close()
+        return
+
+    # Pass 1: collect all UUIDs per map
+    map_uuid_roles: dict[str, list[tuple[str, str]]] = {}  # slug -> [(uuid, role)]
+    skipped = 0
+    for slug in slugs:
+        result = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [slug]
+        ).fetchone()
+        if result is None:
+            print(f"  Skip {slug}: not in maps table")
+            skipped += 1
+            continue
+
+        xml_path = xml_root / slug / 'map.xml'
+        if not xml_path.exists():
+            print(f"  Skip {slug}: map.xml not found at {xml_path}")
+            skipped += 1
+            continue
+
+        try:
+            root = ET.parse(str(xml_path)).getroot()
+        except ET.ParseError as e:
+            print(f"  Skip {slug}: XML parse error — {e}")
+            skipped += 1
+            continue
+
+        uuid_roles: list[tuple[str, str]] = []
+        authors_el = root.find('authors')
+        if authors_el is not None:
+            for child in authors_el:
+                uuid = child.get('uuid')
+                if uuid:
+                    uuid_roles.append((uuid.lower(), 'author'))
+        contributors_el = root.find('contributors')
+        if contributors_el is not None:
+            for child in contributors_el:
+                uuid = child.get('uuid')
+                if uuid:
+                    uuid_roles.append((uuid.lower(), 'contributor'))
+
+        map_uuid_roles[slug] = uuid_roles
+
+    # Pass 2: look up names for UUIDs not already cached
+    all_uuids = {uuid for roles in map_uuid_roles.values() for uuid, _ in roles}
+    if all_uuids:
+        cached = {r[0] for r in conn.execute(
+            f"SELECT uuid FROM uuid_name_cache WHERE uuid IN ({','.join('?' * len(all_uuids))})",
+            list(all_uuids),
+        ).fetchall()}
+    else:
+        cached = set()
+
+    to_fetch = all_uuids - cached
+    fetched: dict[str, str | None] = {}  # uuid -> name or None
+
+    if to_fetch and not args.no_fetch:
+        print(f"Fetching {len(to_fetch)} Minecraft name(s) from Mojang API...")
+        for uuid in sorted(to_fetch):
+            uuid_nodashes = uuid.replace('-', '')
+            url = f"https://sessionserver.mojang.com/session/minecraft/profile/{uuid_nodashes}"
+            try:
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    data = _json.loads(resp.read())
+                    name = data.get('name')
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    name = None  # UUID not found (deleted/invalid account)
+                else:
+                    print(f"    Warning: HTTP {e.code} for {uuid}, skipping")
+                    name = None
+            except Exception as e:
+                print(f"    Warning: request failed for {uuid} — {e}")
+                name = None
+            fetched[uuid] = name
+            time.sleep(0.01)
+    elif to_fetch:
+        # --no-fetch: store NULLs without API calls
+        fetched = {uuid: None for uuid in to_fetch}
+
+    # Insert newly fetched UUIDs into cache
+    now = datetime.now()
+    for uuid, name in fetched.items():
+        conn.execute("""
+            INSERT INTO uuid_name_cache (uuid, name, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (uuid) DO UPDATE SET name = excluded.name, fetched_at = excluded.fetched_at
+        """, [uuid, name, now])
+
+    # Build full name lookup once (cached + freshly fetched)
+    all_cached = {r[0]: r[1] for r in conn.execute(
+        "SELECT uuid, name FROM uuid_name_cache"
+    ).fetchall()}
+
+    # Pass 3: insert map_authors rows
+    loaded = 0
+    for slug, uuid_roles in map_uuid_roles.items():
+        map_id = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [slug]
+        ).fetchone()[0]
+
+        conn.execute("DELETE FROM map_authors WHERE map_id = ?", [map_id])
+
+        for uuid, role in uuid_roles:
+            name = all_cached.get(uuid)
+            conn.execute("""
+                INSERT INTO map_authors (map_id, uuid, name, role)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (map_id, uuid) DO UPDATE SET name = excluded.name, role = excluded.role
+            """, [map_id, uuid, name, role])
+
+        authors = [(uuid, role) for uuid, role in uuid_roles if role == 'author']
+        contribs = [(uuid, role) for uuid, role in uuid_roles if role == 'contributor']
+        name_list = ', '.join(
+            all_cached.get(uuid) or uuid[:8] for uuid, _ in uuid_roles
+        )
+        print(f"  [OK] {slug}: {len(authors)} author(s), {len(contribs)} contributor(s) — {name_list}")
+        loaded += 1
+
+    conn.close()
+    print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
 
 
 def _print_resources_summary(
