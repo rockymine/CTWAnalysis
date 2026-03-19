@@ -536,6 +536,30 @@ The work is structured into four layers, loosely ordered by dependency.
 
 ### Layer 0 — Terrain Geometry (Prerequisite for Vertical Analysis)
 
+#### Step 1: Single-surface terrain height — IMPLEMENTED
+
+`map_terrain_height` DB table stores `(map_id, world_x, world_z, surface_y,
+lowest_y)` for every island cell per map.  Populated via:
+
+```
+ctw layout --map NAME [--skip-non-solid]   # regenerates layout_top_surface.parquet
+ctw maps terrain-height --map NAME          # loads parquet into DB
+ctw maps terrain-height                     # backfill all maps
+```
+
+`height_above_terrain = player_y − (surface_y + 1)` is computed at query time
+by joining `position_events` to `map_terrain_height`.  Cells outside island
+terrain (build regions, void) produce NULL — semantically correct.
+
+The `--skip-non-solid` flag on `ctw layout` excludes decorative blocks
+(buttons, redstone wire, dead bushes, tall grass, flowers) from the top-surface
+scan, producing a cleaner `surface_y`.  Water (IDs 8, 9) is never excluded.
+
+Step 2 (multi-floor detection for hollow columns / stacked islands) is deferred
+— see Methods A and B below.
+
+---
+
 **Goal:** For each x/z cell, determine all distinct navigable y-levels — positions
 where a player can stand (solid block at y, two air blocks at y+1 and y+2) —
 including intermediate floors that lie _between_ the surface and bedrock.

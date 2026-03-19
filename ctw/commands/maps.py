@@ -90,6 +90,7 @@ Actions:
   resources         Classify resource blocks and chests by zone, store in DB
   kits              Load kit items and armor into the DB
   spatial-relations Compute vector-based POI spatial relations and store in DB
+  terrain-height    Load terrain height data into the map_terrain_height table
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -102,6 +103,8 @@ Examples:
   python ctw.py maps kits --map-dir /path/to/CommunityMaps  # external map dir
   python ctw.py maps spatial-relations --map kanto
   python ctw.py maps spatial-relations          # all maps
+  python ctw.py maps terrain-height --map arabia
+  python ctw.py maps terrain-height             # all maps
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -153,6 +156,15 @@ Examples:
     )
     p.add_argument('--map', help='Map slug to process (default: all maps in DB)')
     p.set_defaults(func=handle_spatial_relations)
+
+    # maps terrain-height
+    p = maps_sub.add_parser(
+        'terrain-height',
+        help='Load terrain height data (surface_y, lowest_y) into map_terrain_height',
+    )
+    p.add_argument('--map', help='Map name to process (default: all maps with output data)')
+    p.add_argument('--output', help='Output root directory (default: output/)')
+    p.set_defaults(func=handle_terrain_height)
 
 
 def _resolve_map_dirs(args):
@@ -713,6 +725,48 @@ def handle_spatial_relations(args) -> None:
             conn.close()
 
     print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
+
+
+def handle_terrain_height(args) -> None:
+    """Populate map_terrain_height from per-map layout parquets."""
+    import duckdb
+    from match_analysis.database.schema import migrate_terrain_height_table
+    from match_analysis.database.terrain_height import populate_terrain_height
+
+    ensure_match_db()
+    migrate_terrain_height_table()
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
+        return
+
+    db_path = Path('match_analysis/metadata.db')
+    conn = duckdb.connect(str(db_path))
+
+    loaded = 0
+    skipped = 0
+    for map_dir in map_dirs:
+        map_slug = map_dir.name
+
+        result = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+        ).fetchone()
+        if result is None:
+            print(f"  Skip {map_slug}: not in maps table (run 'maps load' first)")
+            skipped += 1
+            continue
+        map_id = result[0]
+
+        n = populate_terrain_height(map_id, map_dir, conn)
+        if n == 0:
+            print(f"  Skip {map_slug}: no rows inserted (check warnings above)")
+            skipped += 1
+        else:
+            print(f"  [OK] {map_slug}: {n} terrain height rows")
+            loaded += 1
+
+    conn.close()
+    print(f"\nDone: {loaded} map(s) loaded, {skipped} skipped.")
 
 
 def _print_resources_summary(

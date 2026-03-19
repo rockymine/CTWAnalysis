@@ -63,11 +63,36 @@ def register(subparsers):
                    help='Skip lowest-solid-layer extraction')
     p.add_argument('--skip-features', action='store_true',
                    help='Skip feature extraction (resource blocks and chests)')
+    p.add_argument('--skip-non-solid', action='store_true', dest='skip_non_solid',
+                   help='Skip non-solid decorative blocks (buttons, redstone wire, '
+                        'dead bushes, tall grass, flowers) when extracting the top '
+                        'surface. Produces a cleaner surface_y for '
+                        'height_above_terrain. Water is never skipped.')
     p.add_argument('--plots', action='store_true',
                    help='Generate plots alongside data files')
     p.add_argument('--workers', type=int, default=1,
                    help='Number of maps to process in parallel (default: 1)')
     p.set_defaults(func=handler)
+
+
+def _read_max_build_height(map_folder: Path) -> int | None:
+    """Return <maxBuildHeight> from map.xml, or None if absent / unreadable.
+
+    PGM maps use lowercase <maxbuildheight>; search is case-insensitive to
+    handle both variants.
+    """
+    import xml.etree.ElementTree as ET
+    map_xml = map_folder / 'map.xml'
+    if not map_xml.exists():
+        return None
+    try:
+        root = ET.parse(map_xml).getroot()
+        for child in root:
+            if child.tag.lower() == 'maxbuildheight' and child.text:
+                return int(child.text.strip())
+    except Exception:
+        pass
+    return None
 
 
 def _run_layout_worker(map_folder: Path, output_override: str | None, kwargs: dict):
@@ -148,6 +173,7 @@ def handler(args):
         skip_bedrock=args.skip_bedrock,
         skip_lowest_solid=args.skip_lowest_solid,
         skip_features=args.skip_features,
+        skip_non_solid=args.skip_non_solid,
         threshold=args.threshold,
         density_mode=args.density_mode,
     )
@@ -178,6 +204,7 @@ def analyze_layout(
     skip_bedrock: bool = False,
     skip_lowest_solid: bool = False,
     skip_features: bool = False,
+    skip_non_solid: bool = False,
     threshold: int = 10,
     density_mode: str = 'run',
     map_layout_config: Optional[MapLayoutConfig] = None,
@@ -206,6 +233,9 @@ def analyze_layout(
         skip_density: Skip vertical density extraction.
         skip_bedrock: Skip bedrock extraction.
         skip_features: Skip feature extraction (resource blocks and chests).
+        skip_non_solid: When True, pass NON_SOLID_BLOCK_IDS to TopSurfaceExtractor
+            so decorative blocks (buttons, redstone wire, dead bushes, tall grass,
+            flowers) are excluded from the surface scan.
         threshold: Density threshold for vertical density extractor.
         density_mode: Mode for vertical density extractor ('run' or 'count').
         map_layout_config: Per-map config from map_layouts.yaml.  When
@@ -219,9 +249,14 @@ def analyze_layout(
 
     logger.debug(f"[1/6] Layout Analysis: {map_folder.name}")
 
+    max_build_height = _read_max_build_height(map_folder)
+    if max_build_height is not None:
+        logger.debug(f"  Build height cap: y < {max_build_height} (from map.xml)")
+
     if map_layout_config is not None:
         return _analyze_layout_configured(
             map_folder, out, force_rerun, map_layout_config, skip_features,
+            skip_non_solid, max_build_height,
         )
 
     # -----------------------------------------------------------------------
@@ -280,7 +315,10 @@ def analyze_layout(
     if 'top_surface' in parquet_files:
         if not parquet_files['top_surface'].exists() or force_rerun:
             logger.debug("  Extracting top surface...")
-            extractor = TopSurfaceExtractor(reader)
+            extractor = TopSurfaceExtractor(
+                reader, skip_non_solid=skip_non_solid,
+                max_build_height=max_build_height,
+            )
             df = extractor.extract()
             df.to_parquet(parquet_files['top_surface'])
             logger.debug(f"    Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
@@ -345,6 +383,8 @@ def _analyze_layout_configured(
     force_rerun: bool,
     cfg: MapLayoutConfig,
     skip_features: bool,
+    skip_non_solid: bool = False,
+    max_build_height: int | None = None,
 ) -> Optional[dict]:
     """Configured extraction path driven by map_layouts.yaml.
 
@@ -363,7 +403,8 @@ def _analyze_layout_configured(
     need_decided = layer != 'y0' or bool(exclude)
     decided_path = out / 'layout_decided.parquet' if need_decided else None
 
-    parquet_files: dict[str, Path] = {'y0_layer': y0_path}
+    top_surface_path = out / 'layout_top_surface.parquet'
+    parquet_files: dict[str, Path] = {'y0_layer': y0_path, 'top_surface': top_surface_path}
     if decided_path is not None:
         parquet_files['decided'] = decided_path
     if not skip_features:
@@ -414,7 +455,10 @@ def _analyze_layout_configured(
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
         elif layer == 'top_surface':
-            extractor = TopSurfaceExtractor(reader, exclude_ids=set(exclude))
+            extractor = TopSurfaceExtractor(
+                reader, exclude_ids=set(exclude), skip_non_solid=skip_non_solid,
+                max_build_height=max_build_height,
+            )
             df = extractor.extract()
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
@@ -424,6 +468,17 @@ def _analyze_layout_configured(
             df = extractor.extract()
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
+
+    # --- Top surface (needed by populate_terrain_height regardless of configured layer) ---
+    if not top_surface_path.exists() or force_rerun:
+        logger.debug("  Extracting top surface (capped at build height)...")
+        extractor = TopSurfaceExtractor(
+            reader, skip_non_solid=skip_non_solid,
+            max_build_height=max_build_height,
+        )
+        df = extractor.extract()
+        df.to_parquet(top_surface_path)
+        logger.debug(f"    Saved {top_surface_path.name} ({len(df)} blocks)")
 
     # --- Feature extractors ---
     if 'resource_blocks' in parquet_files:

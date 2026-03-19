@@ -346,6 +346,19 @@ def initialize_database() -> None:
         )
     """)
 
+    # Table: Map terrain height (surface_y and lowest_y per island cell per map)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_terrain_height (
+            map_id    INTEGER NOT NULL,
+            world_x   INTEGER NOT NULL,
+            world_z   INTEGER NOT NULL,
+            surface_y INTEGER NOT NULL,
+            lowest_y  INTEGER,
+            PRIMARY KEY (map_id, world_x, world_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+
     # Table N+8: Map wool monument positions (verified from capture events)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS map_wool_monuments (
@@ -917,6 +930,34 @@ def migrate_wool_location_tables(db_path: str | None = None) -> None:
         )
     """)
     conn.close()
+
+
+def migrate_terrain_height_table(db_path: str | None = None) -> None:
+    """Create map_terrain_height table if it does not exist yet.
+
+    Safe to run repeatedly — CREATE TABLE IF NOT EXISTS prevents re-creation.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB file. Defaults to 'match_analysis/metadata.db'.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS map_terrain_height (
+            map_id    INTEGER NOT NULL,
+            world_x   INTEGER NOT NULL,
+            world_z   INTEGER NOT NULL,
+            surface_y INTEGER NOT NULL,
+            lowest_y  INTEGER,
+            PRIMARY KEY (map_id, world_x, world_z),
+            FOREIGN KEY (map_id) REFERENCES maps(map_id)
+        )
+    """)
+    conn.close()
+    print(f"map_terrain_height table created/verified in {db_path}")
 
 
 if __name__ == "__main__":

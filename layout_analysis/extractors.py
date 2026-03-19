@@ -166,22 +166,76 @@ class Y0LayerExtractor:
         })
 
 
+# ---------------------------------------------------------------------------
+# Non-solid decorative block IDs excluded by TopSurfaceExtractor when
+# skip_non_solid=True.  Water (8, 9) is intentionally omitted because water
+# forms walkable surfaces (moats, traps) in CTW.
+# ---------------------------------------------------------------------------
+NON_SOLID_BLOCK_IDS: frozenset[int] = frozenset({
+    6,    # sapling
+    31,   # tall_grass (dead_bush variant=0, tall_grass variant=1, fern variant=2)
+    32,   # dead_bush
+    37,   # yellow_flower
+    38,   # red_flower
+    39,   # brown mushroom
+    40,   # red mushroom
+    50,   # torch
+    55,   # redstone_wire
+    59,   # crops
+    63,   # sign_post
+    65,   # ladder
+    66,   # rails
+    69,   # wall_sign
+    69,   # lever
+    70,   # STONE_PLATE
+    71,   # IRON_DOOR_BLOCK
+    72,   # WOOD_PLATE
+    75,   # REDSTONE_TORCH_OFF
+    76,   # REDSTONE_TORCH_ON
+    77,   # stone_button
+    78,   # SNOW
+    83,   # SUGAR_CANE_BLOCK
+    104,  # PUMPKIN_STEM
+    105,  # MELON_STEM
+    106,  # VINE
+    115,  # NETHER_WARTS
+    141,  # CARROT
+    142,  # POTATO
+    147,  # GOLD_PLATE
+    148,  # IRON_PLATE
+    143,  # wooden_button
+    166,  # BARRIER
+})
+
+
 class TopSurfaceExtractor:
     """
-    Finds the highest non-excluded non-air block in each column.
+    Finds the highest non-excluded non-air block in each column, optionally
+    capped at a map's build height limit.
 
     Scans each column from y=255 downward and returns the first block whose
     ID is not air (0) and not in exclude_ids. When exclude_ids is non-empty
     this produces a "structural" surface that skips decoration blocks
     (e.g. leaves, tall grass, build-region markers).
 
-    Criterion: column contains at least one qualifying block
+    When skip_non_solid=True the extractor also skips the blocks listed in
+    NON_SOLID_BLOCK_IDS (buttons, redstone wire, dead bushes, tall grass,
+    flowers). Water (IDs 8 and 9) is never skipped — it is walkable in CTW.
+
+    When max_build_height is set, blocks at y >= max_build_height are ignored
+    entirely. This excludes decorative structures built above the playable
+    ceiling (birds, tall trees, floating markers, observer islands) whose
+    surface_y would otherwise eclipse the genuine navigable terrain below.
+
+    Criterion: column contains at least one qualifying block below the height cap
     """
 
     def __init__(
         self,
         region_reader: RegionReader,
         exclude_ids: set[int] | None = None,
+        skip_non_solid: bool = False,
+        max_build_height: int | None = None,
     ) -> None:
         """
         Args:
@@ -189,9 +243,18 @@ class TopSurfaceExtractor:
             exclude_ids: Block IDs to skip when searching top-down.
                          Air (0) is always excluded regardless of this set.
                          Pass an empty set or None for the raw top surface.
+            skip_non_solid: When True, also exclude NON_SOLID_BLOCK_IDS
+                            (buttons, redstone wire, dead bushes, tall grass,
+                            flowers). Produces a cleaner surface_y for
+                            height_above_terrain computation.
+            max_build_height: When set, blocks at y >= this value are ignored.
+                              Read from <maxBuildHeight> in map.xml.
         """
         self.reader = region_reader
         self._exclude_ids: set[int] = set(exclude_ids) if exclude_ids else set()
+        if skip_non_solid:
+            self._exclude_ids |= NON_SOLID_BLOCK_IDS
+        self._max_build_height: int | None = max_build_height
 
     def extract(self) -> pd.DataFrame:
         """
@@ -228,10 +291,27 @@ class TopSurfaceExtractor:
                 if np.all(found_y >= 0):
                     break  # All columns resolved
 
+                # Skip sections entirely above the build height limit.
+                # Blocks at y == max_build_height are included; only y > max_build_height
+                # are excluded (players can stand on the top surface at max_build_height).
+                if self._max_build_height is not None:
+                    world_y_base = section_y * 16
+                    if world_y_base > self._max_build_height:
+                        continue
+
                 # Solid mask: non-air and not excluded
                 solid = blocks_3d != 0
                 for exc in self._exclude_ids:
                     solid &= blocks_3d != exc
+
+                # For sections that straddle the build height, zero out rows
+                # above the limit. limit_local_y is the first local index to exclude
+                # (local_y = max_build_height - section_y*16 + 1).
+                if self._max_build_height is not None:
+                    world_y_base = section_y * 16
+                    limit_local_y = self._max_build_height - world_y_base + 1
+                    if 0 < limit_local_y < 16:
+                        solid[limit_local_y:] = False
 
                 # Columns still unfound that have any qualifying block in this section
                 not_found = found_y < 0                  # (16, 16)
