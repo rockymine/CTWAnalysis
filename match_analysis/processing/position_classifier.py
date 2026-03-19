@@ -81,9 +81,13 @@ class PositionClassifier:
     def classify_position(self, x: float, z: float) -> dict:
         """Classify a single (x, z) position.
 
+        x and z are expected to be integer block indices (as stored in the DB).
+        The test point is shifted to the block centre (+0.5) to avoid the
+        polygon-boundary false-negative from Shapely's strict `within`.
+
         Returns dict with: location_type (str), island_id (int or None).
         """
-        point = Point(x, z)
+        point = Point(x + 0.5, z + 0.5)
 
         for iid, polygon in self._island_polygons:
             if point.within(polygon):
@@ -113,7 +117,15 @@ class PositionClassifier:
         location_type = np.full(n, 'void', dtype=object)
         island_id = np.full(n, None, dtype=object)
 
-        pts = shp_points(xs, zs)
+        # Shift to block centres before testing containment.
+        #
+        # Position events store integer block indices (plugin casts with (int),
+        # i.e. floor).  Island and build-region polygon edges run along integer
+        # grid lines, so testing Point(x_int, z_int) lands exactly on the
+        # boundary where Shapely's strict `within` predicate returns False.
+        # Adding 0.5 moves the test point to the centre of the block the player
+        # occupies, placing it firmly inside any polygon that contains that block.
+        pts = shp_points(xs + 0.5, zs + 0.5)
 
         # Island containment via STRtree
         if self._island_tree is not None:
@@ -130,7 +142,7 @@ class PositionClassifier:
             void_mask = location_type == 'void'
             if void_mask.any():
                 void_idx = np.where(void_mask)[0]
-                void_pts = shp_points(xs[void_idx], zs[void_idx])
+                void_pts = shp_points(xs[void_idx] + 0.5, zs[void_idx] + 0.5)
                 result2 = self._build_tree.query(void_pts, predicate='within')
                 if result2.shape[1] > 0:
                     # result2[0] = indices into void_idx array
