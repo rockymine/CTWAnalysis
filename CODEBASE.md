@@ -1,0 +1,554 @@
+# CTW Analysis — Codebase Navigation Reference
+
+> This file exists so Claude Code can orient quickly at the start of a new session
+> without extensive grepping. It documents patterns, entry points, and structural
+> conventions. It is NOT a user guide — see `docs/cli.md` for that.
+
+---
+
+## Project Layout at a Glance
+
+```
+CTWAnalysisWithClaudeCode/
+├── ctw.py                            CLI entry point (registers commands, delegates)
+├── ctw/
+│   ├── common.py                     Shared helpers: resolve_map_folder, collect_map_folders,
+│   │                                 resolve_output_dir, ensure_match_db, _slugs_with_matches
+│   └── commands/                     One module per top-level CLI command
+│       ├── run.py                    Full pipeline orchestration (5-step)
+│       ├── layout.py                 Layout extraction (calls extractors.py)
+│       ├── islands.py                Standalone island geometry
+│       ├── xml.py                    PGM XML parsing
+│       ├── maps.py                   Map metadata subcommands (load/spawns/resources/…)
+│       ├── matches.py                Match data subcommands (process/trace/traffic-graph/…)
+│       ├── debug.py                  Diagnostic subcommands (layout/compare/terrain-height/…)
+│       ├── info.py                   Map status summary
+│       └── docs.py                   API index regeneration
+│
+├── layout_analysis/
+│   ├── extractors.py                 Y0, TopSurface, Density, LowestBedrock, LowestSolid extractors
+│   ├── map_layout_config.py          MapLayoutConfig dataclass + get_map_layout()
+│   ├── map_context.py                assemble_map() — builds map_context.json
+│   └── services/                     Orchestration services called by run.py
+│
+├── island_analysis/
+│   ├── detection.py                  detect_islands(), find_island_holes()
+│   ├── datatypes.py                  Island dataclass
+│   └── triangulation.py             triangulate_islands_canonical()
+│
+├── skeleton_analysis/
+│   ├── pipeline.py                   run_island_geometry() — main entry for islands+skeleton
+│   ├── canonicalize.py               CanonicalTransform
+│   ├── datatypes.py                  IslandResult dataclass
+│   ├── poi_annotation.py             POI assignment to skeleton nodes
+│   └── connectivity/                 Graph connectivity and pathfinding
+│
+├── xml_analysis/
+│   ├── regions.py                    Region types: Rectangle, Cuboid, Union, Mirror, Translate…
+│   ├── build_regions.py              Build region extraction (void decomposition)
+│   └── datatypes.py                  MapData, MapXmlContext
+│
+├── match_analysis/
+│   ├── metadata.db                   DuckDB database (READ-ONLY for analysis; write for processing)
+│   ├── database/
+│   │   ├── schema.py                 initialize_database(), all CREATE TABLE statements, migrations
+│   │   └── terrain_height.py         populate_terrain_height(map_id, output_dir, conn)
+│   ├── processing/
+│   │   ├── processor.py              process_match(), extract_match_data(), insert_match_data()
+│   │   ├── extractors.py             extract_life_segments/combat/position/wool_events()
+│   │   ├── position_classifier.py    PositionClassifier (STRtree bulk classification)
+│   │   └── post_processor.py         Life features, carry chains, spatial features
+│   └── visualization.py              Match trace plots
+│
+├── common/
+│   ├── geometry/
+│   │   ├── __init__.py               BoundingBox, Point2D, block_centers(), blocks_to_unit_squares(),
+│   │   │                             raster_imshow_extent(), world_blocks_to_shapely()
+│   │   └── COORDINATE_SYSTEMS.md     THE reference for coordinate space rules
+│   └── visualization/
+│       └── map_primitives.py         draw_build_region(), draw_island_outlines(),
+│                                     draw_poi_markers(), draw_map_base(), draw_block_base()
+│
+├── visualization/
+│   └── map_primitives.py             (re-export from common/visualization — prefer common/)
+│
+├── map_folders/<map>/                RAW INPUT (never modified)
+│   ├── region/                       Minecraft .mca region files
+│   └── map.xml                       PGM map definition
+│
+├── output/<map>/                     PIPELINE OUTPUT (all files flat)
+│   ├── layout_*.parquet              Extracted block layers
+│   ├── map_data.json                 Parsed XML metadata
+│   ├── map_context.json              Complete assembled map model (primary reference)
+│   ├── map_graph.json                Inter-island connectivity graph
+│   ├── symmetry.json                 Detected symmetry
+│   ├── traffic_graph.json            Data-driven navigation graph
+│   └── island_analysis/             Island geometry + debug images
+│
+├── match_logs/                       Raw match parquet files (not in git)
+├── map_layouts.yaml                  Per-map extraction config (layer, exclude, playable_bbox)
+├── ctw_config.yaml                   Global CLI defaults
+└── docs/
+    ├── cli.md                        Full CLI reference
+    ├── analysis_overview.md          Data format and pipeline details
+    ├── contributing.md               Logging/typing/domain type conventions
+    └── analysis_roadmap.md           Research hypotheses and analysis plan (keep updated)
+```
+
+---
+
+## Adding a New `maps` Subcommand — Exact Pattern
+
+```python
+# In ctw/commands/maps.py
+
+# 1. Add to the epilog string in register():
+#    "  new-thing    One-line description\n"
+
+# 2. Register the subcommand in register() after existing add_parser blocks:
+p = maps_sub.add_parser(
+    'new-thing',
+    help='One-line description',
+)
+p.add_argument('--map', default=None,
+               help='Map name (omit to process all maps in DB)')
+p.add_argument('--output', default='output',
+               help='Output root directory (default: output)')
+p.set_defaults(func=handle_new_thing)
+
+# 3. Write the handler — standard shape:
+def handle_new_thing(args: object) -> None:
+    """One-line description."""
+    import duckdb
+    from match_analysis.database.schema import migrate_new_thing  # if migration needed
+
+    ensure_match_db()
+    db_path = Path('match_analysis/metadata.db')
+    output_root = Path(args.output)
+
+    # Resolve which maps to process
+    if args.map:
+        map_slugs = [s.strip() for s in args.map.split(',')]
+    else:
+        map_slugs = _slugs_with_matches()  # all maps in DB
+
+    conn = duckdb.connect(str(db_path))
+    total = 0
+
+    for slug in map_slugs:
+        map_dir = output_root / slug
+        if not map_dir.exists():
+            print(f"  [{slug}] output dir not found, skipping")
+            continue
+
+        row = conn.execute(
+            "SELECT map_id FROM maps WHERE map_slug = ?", [slug]
+        ).fetchone()
+        if row is None:
+            print(f"  [{slug}] not in DB, run 'ctw maps load' first")
+            continue
+        map_id = row[0]
+
+        # --- call business logic ---
+        n = do_the_work(map_id, map_dir, conn)
+        print(f"  [{slug}] {n} rows")
+        total += n
+
+    conn.close()
+    print(f"\nDone: {total} total across {len(map_slugs)} map(s)")
+```
+
+---
+
+## Adding a New `debug` Subcommand — Exact Pattern
+
+```python
+# In ctw/commands/debug.py
+
+# 1. Add to the epilog string.
+# 2. Register:
+p = debug_sub.add_parser(
+    'new-diagnostic',
+    help='What it does',
+)
+p.add_argument('--map', required=True,
+               help='Map name')
+p.add_argument('--output', default='output',
+               help='Output root directory (default: output)')
+p.add_argument('--save', default=None, dest='save_path',
+               help='Output PNG path (default: output/<map>/images/<name>.png)')
+p.set_defaults(func=handle_new_diagnostic)
+
+# 3. Handler shape (read-only DB access):
+def handle_new_diagnostic(args: object) -> None:
+    import duckdb
+
+    map_name = args.map
+    map_dir = Path(args.output) / map_name
+
+    # Load map_context.json for spatial reference
+    context_path = map_dir / 'map_context.json'
+    if not context_path.exists():
+        print(f"map_context.json not found for '{map_name}'. Run 'ctw run' first.")
+        return
+    import json
+    with open(context_path) as f:
+        map_context = json.load(f)
+
+    save_path = (
+        Path(args.save_path) if args.save_path
+        else map_dir / 'images' / 'new_diagnostic.png'
+    )
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    db_path = Path('match_analysis/metadata.db')
+    conn = duckdb.connect(str(db_path), read_only=True)
+
+    map_id = conn.execute(
+        "SELECT map_id FROM maps WHERE map_slug = ?", [map_name]
+    ).fetchone()
+    if map_id is None:
+        conn.close()
+        print(f"Map '{map_name}' not in DB.")
+        return
+    map_id = map_id[0]
+
+    df = conn.execute("SELECT ... FROM ... WHERE map_id = ?", [map_id]).df()
+    conn.close()
+
+    _plot_new_diagnostic(map_name, map_context, df, save_path)
+    print(f"Saved: {save_path}")
+```
+
+---
+
+## Terrain Height Pattern (compute at query time)
+
+```sql
+-- height_above_terrain = player_y − (surface_y + 1)
+-- NULL when player is in void/build_region (no terrain entry)
+SELECT
+    pe.x, pe.y, pe.z,
+    th.surface_y,
+    pe.y - (th.surface_y + 1) AS height_above_terrain
+FROM position_events pe
+JOIN matches mat ON mat.match_id = pe.match_id
+LEFT JOIN map_terrain_height th
+    ON  th.map_id  = mat.map_id
+    AND th.world_x = CAST(pe.x AS INT)
+    AND th.world_z = CAST(pe.z AS INT)
+WHERE mat.map_id = ?
+  AND pe.y >= 0        -- exclude void-fall deaths (y < 0)
+```
+
+Skybridge threshold (map-relative, replaces global SKYBRIDGE_Y_THRESHOLD = 22):
+```sql
+pe.y - (th.surface_y + 1) >= 8   -- 8+ blocks above terrain = skybridge activity
+```
+
+---
+
+## Database Schema
+
+All tables in `match_analysis/metadata.db` (DuckDB).
+
+### Core Tables
+
+| Table | Key Columns |
+|---|---|
+| `maps` | map_id PK, map_slug UNIQUE, map_name, max_build_height, min_x/max_x/min_z/max_z, center_x/center_z, island_count, team_count, wools_per_team, max_players_per_team, size_tier, symmetry_type, symmetry_confidence |
+| `map_spawns` | spawn_id PK, map_id FK, x, z, min_x/min_z/max_x/max_z, team, team_color |
+| `matches` | match_id PK, match_file UNIQUE, map_id FK, match_start, match_duration, player_count, processed, spatial_classified, log_interval |
+| `life_segments` | segment_id PK, match_id FK, player_id, segment_idx, start_timestamp, end_timestamp, duration, outcome, spawn_x/z, kill_count, wool_touches, wool_captures |
+| `position_events` | position_id PK, match_id FK, timestamp, player_id, x, y, z, segment_idx, location_type (island/build_region/void), island_id |
+| `combat_events` | combat_id PK, match_id FK, timestamp, event_type, player_id, victim_id, x, y, z, segment_idx |
+| `wool_events` | wool_event_id PK, match_id FK, timestamp, event_type (6=touch,7=capture), player_id, wool_id, x, y, z, segment_idx |
+| `player_team_segments` | team_segment_id PK, match_id FK, player_id, team, start_timestamp, end_timestamp |
+| `map_terrain_height` | map_id FK, world_x, world_z, surface_y, lowest_y — PRIMARY KEY (map_id, world_x, world_z) |
+
+### Feature / Derived Tables
+
+| Table | Key Columns |
+|---|---|
+| `life_segment_traffic_features` | segment_id FK, snapped_sequence (JSON array of node IDs), max_attack_depth, death_region (home_island/enemy_island/bridge/void) |
+| `life_segment_summary` | Aggregated spatial, movement, and engagement metrics per segment |
+| `wool_carry_chains` | Grouped carry attempts: carrier list, handoff count, outcome |
+| `wool_spawn_baselines` | Distance from spawn to wool, per map/team/wool |
+
+### Spatial / Map Feature Tables
+
+| Table | Key Columns |
+|---|---|
+| `map_wool_locations` | Corrected wool positions from capture events |
+| `map_wool_objectives` | Many-to-many: wool_id → teams |
+| `map_wool_attack_relations` | attacking_team, wool_id, relative_side (left/right/on_axis), attack_angle_deg |
+| `map_team_spatial` | Inter-team spatial relations (center distance, axis angle) |
+| `map_resource_blocks` | block_type, x, y, z, zone (defense/near_spawn/mid_map/enemy_territory) |
+| `map_chests` | Chest positions with zone classification |
+| `map_kit_items` / `map_kit_armor` | Spawn kit contents from map.xml |
+| `layout_layer_stats` | Block counts and y-range per layer per map |
+| `layout_block_inventory` | Per-block-ID counts per layer per map |
+
+### Views
+- `map_size_buckets` — quintile size classification (tiny/small/medium/large/huge)
+- `life_segment_features` — backward-compat union of summary + skeleton_features
+
+### Connection Pattern
+```python
+import duckdb
+conn = duckdb.connect('match_analysis/metadata.db', read_only=True)  # analysis
+conn = duckdb.connect('match_analysis/metadata.db')                   # processing
+df = conn.execute("SELECT ...", [param]).df()       # → DataFrame
+rows = conn.execute("SELECT ...", [param]).fetchall()
+conn.close()
+```
+
+---
+
+## Map Context JSON Structure (`output/<map>/map_context.json`)
+
+```jsonc
+{
+  "map_name": "Display Name",
+  "map_version": "X.Y.Z",
+  "bounding_box": [min_x, max_x, min_z, max_z],   // world extent (max already +1)
+  "map_center": [center_x, center_z],
+  "total_blocks": N,
+  "island_count": N,
+  "islands": [
+    {
+      "id": N,
+      "area": N,                                   // block count
+      "center": [x, z],
+      "bounding_box": [min_x, max_x, min_z, max_z],
+      "team": "team-slug",                         // null for neutral/bridge islands
+      "has_spawn": true,
+      "has_wool": true,
+      "simplified_polygon": {
+        "exterior": [[x, z], ...],                 // world-extent coords
+        "holes": [[[x, z], ...], ...]
+      }
+    }
+  ],
+  "build_region": {
+    "buildable_void": [                            // list of polygons
+      { "exterior": [[x, z], ...], "holes": [...] }
+    ]
+  },
+  "poi_assignments": {
+    "spawns": [{ "x", "z", "team", "team_color", "bounds_2d": {"min": {x,z}, "max": {x,z}} }],
+    "wools": [{ "x", "z", "color", "wool_id" }],
+    "monuments": [{ "x", "z", "team", "wool_ids": [N, ...] }]
+  },
+  "max_build_height": N,
+  "symmetry": {
+    "global_symmetry": [{ "type": "rotation_2|mirror_v|mirror_h|none", "confidence": f }],
+    "intra_team_symmetry": [{ "team", "symmetry_detected", "type", "confidence" }]
+  }
+}
+```
+
+---
+
+## Key Coordinate Rules
+
+Full reference: `common/geometry/COORDINATE_SYSTEMS.md`
+
+- **Block index** `(x, z)` is the lower-left corner of a 1×1 block
+- Block occupies `[x, x+1] × [z, z+1]` in world space
+- Block centre: `(x + 0.5, z + 0.5)` — use `block_centers(arr)` helper
+- `BoundingBox(min_x, max_x, min_z, max_z)` has `+1` already applied on max
+- Polygon edges in `simplified_polygon` run along integer grid lines → test containment with `Point(x+0.5, z+0.5)`, NOT `Point(x, z)`
+- `PositionClassifier.classify_bulk()` already applies `+0.5` internally (fixed 2026-03-19)
+
+### Plotting
+
+**World-space** (`ax.invert_yaxis()` + `ax.set_aspect('equal')`):
+- Polygons: use as-is (already extent coords)
+- Scatter/lines: `block_centers(block_indices)` — adds 0.5
+
+**Raster-space** (`origin='upper'`):
+- `imshow`: always `extent=raster_imshow_extent(mask.shape)`
+- Scatter/lines: `block_centers([col, row])`
+
+Both rules are inseparable — either alone causes a 0.5-block shift.
+
+---
+
+## CLI Command Cross-Reference
+
+| CLI command | Handler | Business logic |
+|---|---|---|
+| `ctw layout` | `ctw/commands/layout.py` | `layout_analysis/extractors.py` (5 extractor classes) |
+| `ctw islands` | `ctw/commands/islands.py` | `skeleton_analysis/pipeline.py:run_island_geometry()` |
+| `ctw xml` | `ctw/commands/xml.py` | `xml_analysis/` |
+| `ctw run` | `ctw/commands/run.py` | Calls layout → islands → symmetry → xml → assemble in sequence |
+| `ctw maps load` | `handle_load()` | Reads `map_context.json` → inserts into `maps` table |
+| `ctw maps spawns` | `handle_spawns()` | Reads `poi_assignments.spawns` → `map_spawns` |
+| `ctw maps resources` | `handle_resources()` | Reads layout parquets → `map_resource_blocks`, `map_chests` |
+| `ctw maps kits` | `handle_kits()` | Reads `map.xml` → `map_kit_items`, `map_kit_armor` |
+| `ctw maps spatial-relations` | `handle_spatial_relations()` | Reads `map_wool_locations`, `map_spawns` → `map_wool_attack_relations`, `map_team_spatial` |
+| `ctw maps terrain-height` | `handle_terrain_height()` | `match_analysis/database/terrain_height.py:populate_terrain_height()` |
+| `ctw matches process-all` | `handle_process_all()` | `match_analysis/processing/processor.py:process_match()` |
+| `ctw matches classify` | `handle_classify()` | Re-runs spatial classification on position_events |
+| `ctw debug terrain-height` | `handle_terrain_height()` in debug.py | SQL queries + `_plot_terrain_height_figure()` → 4×2 grid PNG |
+| `ctw debug audit` | `handle_audit()` | Layout parquet scan → `layout_layer_stats`, `layout_block_inventory` |
+| `ctw debug resources` | `handle_resources()` in debug.py | Same zone logic as maps resources, no DB write, saves PNG |
+
+---
+
+## Layout Extractors
+
+```python
+# layout_analysis/extractors.py
+
+NON_SOLID_BLOCK_IDS = frozenset({31, 32, 37, 38, 55, 77, 143})
+# Decorative blocks excluded from top-surface when --skip-non-solid:
+# 31=tall_grass, 32=dead_bush, 37=dandelion, 38=rose, 55=redstone_wire,
+# 77=stone_button, 143=wooden_button
+# Water (8, 9) is NEVER in this set — water is a walkable surface in CTW
+
+class TopSurfaceExtractor:
+    def __init__(self, region_reader, exclude_ids=None, skip_non_solid=False)
+    # skip_non_solid=True unions NON_SOLID_BLOCK_IDS into exclude_ids
+
+class Y0LayerExtractor:
+    def __init__(self, region_reader)
+
+class VerticalDensityExtractor:
+    def __init__(self, region_reader, threshold=10, mode='run'|'count')
+
+class LowestBedrockExtractor:
+    def __init__(self, region_reader)
+
+class LowestSolidLayerExtractor:
+    def __init__(self, region_reader, exclude_ids=None)
+```
+
+---
+
+## Match Processing Pipeline
+
+```
+[1] Extract (parallel workers):
+    process_match(match_id)
+      → extract_match_data()  reads parquet, produces DataFrames
+          extract_life_segments()      type 2 (spawn) → type 4 (death)
+          extract_combat_events()      type 3 (kill)
+          extract_position_events()    type 5 (position sample)
+          extract_wool_events()        type 6 (touch), type 7 (capture)
+
+[2] Insert (serial):
+    insert_match_data(conn, data)
+      → bulk-insert all tables
+      → matches.processed = TRUE, spatial_classified = FALSE
+
+[3] Classify (serial):
+    classify_match(conn, match_id)
+      → PositionClassifier.classify_bulk() — sets location_type, island_id
+      → Traffic graph snap — sets snapped_sequence, max_attack_depth
+      → matches.spatial_classified = TRUE
+```
+
+Raw event types: 0=MATCH_START, 1=MATCH_END, 2=SPAWN, 3=KILL, 4=DEATH, 5=POSITION, 6=WOOL_TOUCH, 7=WOOL_CAPTURE
+
+---
+
+## Map Layout Config (`map_layouts.yaml`)
+
+```yaml
+maps:
+  arabia:
+    layer: bedrock      # which parquet has island_id written back after island detection
+    exclude: []         # block IDs filtered AFTER extraction
+    exclude_observer_island: false
+    exclude_islands: []
+    playable_bbox: null
+```
+
+`get_map_layout(map_slug)` returns `MapLayoutConfig` or `None` (unconfigured maps fall back to bedrock).
+
+`_find_clustering_parquet()` in `terrain_height.py` priority:
+1. `layout_decided.parquet` (most configured maps)
+2. Layer-specific file from config (e.g. `layout_bedrock.parquet`)
+3. `layout_bedrock.parquet` (unconfigured fallback)
+4. `layout_y0.parquet` (last resort)
+
+---
+
+## Visualization Primitives
+
+```python
+# common/visualization/map_primitives.py — preferred import location
+
+from common.visualization.map_primitives import (
+    draw_build_region,        # fills build-region polygon with semi-transparent color
+    draw_island_outlines,     # draws simplified_polygon exteriors + holes
+    draw_poi_markers,         # spawns, wools, monuments as markers
+    draw_map_base,            # convenience: outlines + pois + build region
+    BuildRegionStyle,         # fill_alpha, linewidth, color
+    IslandOutlineStyle,       # exterior_linewidth/alpha, hole_linewidth/alpha
+    POIStyle,                 # markersize, zorder, alpha
+)
+```
+
+All draw_* functions take `(ax, map_context: dict, style=None)`.
+`draw_map_base` takes `(ax, map_context, island_style, poi_style)` — no build region.
+
+For PolyCollection block rendering:
+```python
+from common.geometry import blocks_to_unit_squares
+from matplotlib.collections import PolyCollection
+squares = blocks_to_unit_squares(xs, zs)   # (N, 4, 2) array
+col = PolyCollection(squares, facecolors=..., edgecolors='none', antialiased=False)
+ax.add_collection(col)
+```
+
+---
+
+## Common Workflow Reminders
+
+- **NEVER** `matches process-all` without `--map-name` — too slow across 700+ matches
+- Always `read_only=True` when opening DB for analysis to avoid lock conflicts
+- `player_id` is re-assigned 0…n **per match** — not stable across matches
+- Use `SUM(player_count)` from `matches` for total participations, not `COUNT(DISTINCT player_id)`
+- `CanonicalTransform.to_original()` only maps block INDEX coords — do NOT use it on polygon boundary coords
+- Run `ctw maps terrain-height --map NAME` after any `ctw layout --skip-non-solid` regen
+- Position events at y < 0 are void-fall deaths — filter with `AND pe.y >= 0` for terrain analysis
+- After the 2026-03-19 classifier fix: existing `position_events` rows still need `ctw matches classify` reclassification (edges previously misclassified as void)
+
+---
+
+## Schema Initialization / Migration
+
+```python
+# match_analysis/database/schema.py
+
+def initialize_database(db_path=None) -> None:
+    # Creates all tables if not exists; calls _create_views(); _migrate_*() for backfill
+
+def migrate_terrain_height_table(db_path=None) -> None:
+    # Safe no-op if map_terrain_height already exists; otherwise creates it
+```
+
+Migrations are idempotent — safe to call multiple times.
+
+---
+
+## Debug Plot Conventions (terrain-height diagnostic)
+
+The `ctw debug terrain-height` command produces a **4×2 grid** at `output/<map>/images/terrain_height_debug.png`:
+
+| Panel | Content | Colormap |
+|---|---|---|
+| [0,0] | Above terrain — max HAT > 0 per cell | YlOrRd |
+| [0,1] | Below terrain — deepest HAT < 0 per cell | Blues |
+| [1,0] | Data coverage — event count (log scale); gray = absent cells | plasma + #d1d5db |
+| [1,1] | Vertical extremes — diverging, furthest from terrain | RdBu_r, TwoSlopeNorm |
+| [2,0] | Location type — dominant classification per cell | #2ecc71/island #f39c12/build_region #e74c3c/void |
+| [2,1] | Reference map — island outlines + POIs | draw_map_base() |
+| [3,0] | Terrain elevation — surface_y per island cell | terrain |
+| [3,1] | (empty) | — |
+
+All panels: `invert_yaxis()`, `set_aspect('equal')`, thin island outlines + build region overlay.
+95th-percentile clipping for above/below panels. `y >= 0` filter applied in SQL.
