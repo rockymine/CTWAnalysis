@@ -76,15 +76,20 @@ def register(subparsers):
 
 
 def _read_max_build_height(map_folder: Path) -> int | None:
-    """Return <maxBuildHeight> from map.xml, or None if absent / unreadable."""
+    """Return <maxBuildHeight> from map.xml, or None if absent / unreadable.
+
+    PGM maps use lowercase <maxbuildheight>; search is case-insensitive to
+    handle both variants.
+    """
     import xml.etree.ElementTree as ET
     map_xml = map_folder / 'map.xml'
     if not map_xml.exists():
         return None
     try:
-        el = ET.parse(map_xml).getroot().find('maxBuildHeight')
-        if el is not None and el.text:
-            return int(el.text.strip())
+        root = ET.parse(map_xml).getroot()
+        for child in root:
+            if child.tag.lower() == 'maxbuildheight' and child.text:
+                return int(child.text.strip())
     except Exception:
         pass
     return None
@@ -398,7 +403,8 @@ def _analyze_layout_configured(
     need_decided = layer != 'y0' or bool(exclude)
     decided_path = out / 'layout_decided.parquet' if need_decided else None
 
-    parquet_files: dict[str, Path] = {'y0_layer': y0_path}
+    top_surface_path = out / 'layout_top_surface.parquet'
+    parquet_files: dict[str, Path] = {'y0_layer': y0_path, 'top_surface': top_surface_path}
     if decided_path is not None:
         parquet_files['decided'] = decided_path
     if not skip_features:
@@ -462,6 +468,17 @@ def _analyze_layout_configured(
             df = extractor.extract()
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
+
+    # --- Top surface (needed by populate_terrain_height regardless of configured layer) ---
+    if not top_surface_path.exists() or force_rerun:
+        logger.debug("  Extracting top surface (capped at build height)...")
+        extractor = TopSurfaceExtractor(
+            reader, skip_non_solid=skip_non_solid,
+            max_build_height=max_build_height,
+        )
+        df = extractor.extract()
+        df.to_parquet(top_surface_path)
+        logger.debug(f"    Saved {top_surface_path.name} ({len(df)} blocks)")
 
     # --- Feature extractors ---
     if 'resource_blocks' in parquet_files:

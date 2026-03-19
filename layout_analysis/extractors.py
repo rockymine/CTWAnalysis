@@ -291,10 +291,12 @@ class TopSurfaceExtractor:
                 if np.all(found_y >= 0):
                     break  # All columns resolved
 
-                # Skip sections entirely above the build height limit
+                # Skip sections entirely above the build height limit.
+                # Blocks at y == max_build_height are included; only y > max_build_height
+                # are excluded (players can stand on the top surface at max_build_height).
                 if self._max_build_height is not None:
                     world_y_base = section_y * 16
-                    if world_y_base >= self._max_build_height:
+                    if world_y_base > self._max_build_height:
                         continue
 
                 # Solid mask: non-air and not excluded
@@ -302,11 +304,12 @@ class TopSurfaceExtractor:
                 for exc in self._exclude_ids:
                     solid &= blocks_3d != exc
 
-                # For sections that straddle the build height, zero out rows at
-                # or above the limit (local_y = max_build_height - section_y*16)
+                # For sections that straddle the build height, zero out rows
+                # above the limit. limit_local_y is the first local index to exclude
+                # (local_y = max_build_height - section_y*16 + 1).
                 if self._max_build_height is not None:
                     world_y_base = section_y * 16
-                    limit_local_y = self._max_build_height - world_y_base
+                    limit_local_y = self._max_build_height - world_y_base + 1
                     if 0 < limit_local_y < 16:
                         solid[limit_local_y:] = False
 
