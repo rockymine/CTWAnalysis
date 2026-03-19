@@ -1351,9 +1351,9 @@ def handle_terrain_height(args: object) -> None:
         "SELECT map_id FROM maps WHERE map_slug = ?", [map_name]
     ).fetchone()[0]
 
-    # Query 1: all island terrain cells for this map (coverage baseline)
+    # Query 1: all island terrain cells for this map (coverage baseline + elevation)
     all_cells_df = conn.execute("""
-        SELECT world_x, world_z
+        SELECT world_x, world_z, surface_y
         FROM map_terrain_height
         WHERE map_id = ?
     """, [map_id]).df()
@@ -1413,15 +1413,17 @@ def _plot_terrain_height_figure(
     loc_df: 'pd.DataFrame',
     save_path: 'Path',
 ) -> None:
-    """Render a 3x2 grid of terrain-height diagnostic panels.
+    """Render a 4x2 grid of terrain-height diagnostic panels.
 
     Panels:
-      [0,0] Above terrain  — per-cell MAX height_above_terrain > 0  (YlOrRd)
-      [0,1] Below terrain  — per-cell MAX depth (abs MIN hat < 0)   (Blues)
-      [1,0] Data coverage  — event count per island cell; absent cells distinct
-      [1,1] Vertical range — diverging: red=highest above, blue=deepest below
-      [2,0] Location type  — dominant location_type per cell
-      [2,1] Reference map  — island outlines + POIs
+      [0,0] Above terrain   — per-cell MAX height_above_terrain > 0  (YlOrRd)
+      [0,1] Below terrain   — per-cell MAX depth (abs MIN hat < 0)   (Blues)
+      [1,0] Data coverage   — event count per island cell; absent cells distinct
+      [1,1] Vertical range  — diverging: red=highest above, blue=deepest below
+      [2,0] Location type   — dominant location_type per cell
+      [2,1] Reference map   — island outlines + POIs
+      [3,0] Terrain height  — surface_y per island cell (map topography)
+      [3,1] (empty)
     """
     import matplotlib
     matplotlib.use('Agg')
@@ -1488,7 +1490,7 @@ def _plot_terrain_height_figure(
     _THIN_BUILD = BuildRegionStyle(fill_alpha=0.07, linewidth=0.5)
 
     # ── Figure setup ────────────────────────────────────────────────────
-    fig, axes = plt.subplots(3, 2, figsize=(20, 30), dpi=150)
+    fig, axes = plt.subplots(4, 2, figsize=(20, 40), dpi=150)
     fig.suptitle(
         f'{map_name} — height_above_terrain diagnostics',
         fontsize=15, fontweight='bold', y=0.995,
@@ -1653,6 +1655,31 @@ def _plot_terrain_height_figure(
     ax.set_xlabel('world x', fontsize=8)
     ax.set_ylabel('world z', fontsize=8)
     ax.tick_params(labelsize=7)
+
+    # ── Panel [3,0]: Terrain elevation ──────────────────────────────────
+    ax = axes[3, 0]
+    _setup_ax(ax, 'Terrain elevation — surface_y per island cell')
+    if not all_cells_df.empty and 'surface_y' in all_cells_df.columns:
+        elev = all_cells_df['surface_y'].values.astype(float)
+        norm = mcolors.Normalize(vmin=elev.min(), vmax=elev.max())
+        cmap = cm.get_cmap('terrain')
+        facecolors = [cmap(norm(v)) for v in elev]
+        ax.add_collection(_poly_collection(
+            all_cells_df['world_x'].values, all_cells_df['world_z'].values, facecolors,
+        ))
+        sm = cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.02, label='surface_y (world height)')
+        _stat_label(ax,
+            f'{len(all_cells_df):,} cells  ·  '
+            f'y {int(elev.min())}–{int(elev.max())}'
+        )
+    else:
+        ax.text(0.5, 0.5, 'No terrain data', transform=ax.transAxes,
+                ha='center', va='center', color='gray', fontsize=12)
+
+    # ── Panel [3,1]: unused ──────────────────────────────────────────────
+    axes[3, 1].set_visible(False)
 
     fig.tight_layout(rect=[0, 0, 1, 0.995])
     fig.savefig(str(save_path), dpi=150, bbox_inches='tight')
