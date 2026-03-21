@@ -1,11 +1,5 @@
 """'debug' subcommand — diagnostic tools for layout parquet and output JSON files."""
 
-import json
-import sys
-from pathlib import Path
-
-from common.geometry import get_grid_extent, block_unit_square
-
 
 def register(subparsers):
     debug_parser = subparsers.add_parser(
