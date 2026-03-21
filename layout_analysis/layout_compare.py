@@ -14,7 +14,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from common.geometry import get_grid_extent, block_unit_square
+import numpy as np
+
+from common.geometry import get_grid_extent, blocks_to_unit_squares
+from common.visualization.block_colors import block_color
 
 
 # ---------------------------------------------------------------------------
@@ -47,20 +50,6 @@ def _load_material_names() -> dict[int, str]:
     return _MATERIAL_NAMES
 
 
-# Colors for well-known block IDs
-_BLOCK_COLORS = {
-    7:  '#888888',   # BEDROCK — gray
-    36: '#FF2222',   # PISTON_MOVING_PIECE — bright red
-    8:  '#3366CC',   # WATER — blue
-    9:  '#3366CC',   # STATIONARY_WATER — blue
-    10: '#FF6600',   # LAVA — orange
-    11: '#FF6600',   # STATIONARY_LAVA — orange
-    1:  '#AAAAAA',   # STONE — light gray
-    4:  '#999977',   # COBBLESTONE — tan
-    35: '#EEEEEE',   # WOOL — white
-    0:  '#000000',   # AIR — black
-}
-
 _CATEGORY_LABELS = {
     'A': 'y0 only has block 36 — bedrock-only is essential',
     'B': 'y0 has block 36 mixed with other blocks — needs block 36 subtraction',
@@ -73,14 +62,6 @@ _CATEGORY_LABELS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _block_color(block_id: int, cmap, n_unique: int, idx: int):
-    """Return RGBA color for a block_id."""
-    if block_id in _BLOCK_COLORS:
-        from matplotlib.colors import to_rgba
-        return to_rgba(_BLOCK_COLORS[block_id])
-    return cmap(idx / max(n_unique - 1, 1))
-
 
 def _read_parquet_safe(path: Path):
     """Read a parquet file, returning None on missing/error."""
@@ -251,20 +232,32 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> Op
         ax.set_aspect('equal')
         ax.invert_yaxis()
 
-    # --- Panel 1: Y0 layer colored by block_id ---
+    # --- Panel 1: Y0 layer colored by block_id via common block_colors ---
     ax = axes[0]
     if y0_df is not None and 'block_id' in y0_df.columns:
-        unique_ids  = sorted(y0_df['block_id'].unique())
-        cmap        = plt.get_cmap('tab20')
-        id_to_color = {bid: _block_color(bid, cmap, len(unique_ids), i)
-                       for i, bid in enumerate(unique_ids)}
+        unique_ids = sorted(y0_df['block_id'].unique())
+        xs = y0_df['world_x'].values.astype(int)
+        zs = y0_df['world_z'].values.astype(int)
+        ids = y0_df['block_id'].values.astype(int)
+        data_vals = (y0_df['block_data'].values.astype(int)
+                     if 'block_data' in y0_df.columns
+                     else np.zeros(len(y0_df), dtype=int))
 
-        verts  = [block_unit_square(row['world_x'], row['world_z']) for _, row in y0_df.iterrows()]
-        colors = [id_to_color[row['block_id']] for _, row in y0_df.iterrows()]
+        facecolors = np.array(
+            [block_color(int(bid), int(dat)) for bid, dat in zip(ids, data_vals)],
+            dtype=np.float32,
+        ) / 255.0
 
-        ax.add_collection(PolyCollection(verts, facecolors=colors, edgecolors='none', linewidths=0))
+        squares = blocks_to_unit_squares(xs, zs)
+        ax.add_collection(PolyCollection(
+            squares, facecolors=facecolors, edgecolors='none', linewidths=0,
+        ))
+
         legend_patches = [
-            Patch(facecolor=id_to_color[bid], label=f"{bid} {mat.get(bid, '?')}")
+            Patch(
+                facecolor=tuple(c / 255 for c in block_color(bid, 0)),
+                label=f"{bid} {mat.get(bid, '?')}",
+            )
             for bid in unique_ids[:12]
         ]
         ax.legend(handles=legend_patches, fontsize=6, loc='upper right', framealpha=0.8)
@@ -277,23 +270,25 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> Op
     # --- Panel 2: Bedrock layer colored by y level ---
     ax = axes[1]
     if bed_df is not None and 'y' in bed_df.columns:
-        y_vals   = bed_df['y'].values
+        xs = bed_df['world_x'].values.astype(int)
+        zs = bed_df['world_z'].values.astype(int)
+        y_vals = bed_df['y'].values.astype(float)
         y_lo, y_hi = y_vals.min(), y_vals.max()
         cmap_bed = plt.get_cmap('YlOrBr')
+        norm_y = (y_vals - y_lo) / max(y_hi - y_lo, 1)
+        colors = cmap_bed(norm_y)
 
-        verts  = []
-        colors = []
-        for _, row in bed_df.iterrows():
-            verts.append(block_unit_square(row['world_x'], row['world_z']))
-            norm_y = (row['y'] - y_lo) / max(y_hi - y_lo, 1)
-            colors.append(cmap_bed(norm_y))
+        squares = blocks_to_unit_squares(xs, zs)
+        ax.add_collection(PolyCollection(
+            squares, facecolors=colors, edgecolors='none', linewidths=0,
+        ))
 
-        ax.add_collection(PolyCollection(verts, facecolors=colors, edgecolors='none', linewidths=0))
         sm = plt.cm.ScalarMappable(cmap=cmap_bed, norm=plt.Normalize(vmin=y_lo, vmax=y_hi))
         sm.set_array([])
         cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.02)
         cb.set_label('Y level', fontsize=8)
-        ax.set_title(f'Bedrock Layer — {len(bed_df)} blocks, y={y_lo}..{y_hi}', fontsize=10)
+        ax.set_title(f'Bedrock Layer — {len(bed_df)} blocks, y={int(y_lo)}..{int(y_hi)}',
+                     fontsize=10)
     else:
         ax.text(0.5, 0.5, 'No bedrock data', transform=ax.transAxes,
                 ha='center', va='center', fontsize=14, color='gray')
@@ -315,9 +310,12 @@ def _plot_layout_comparison(map_name: str, map_dir: Path, save_path: Path) -> Op
     ]:
         if not coords:
             continue
-        verts = [block_unit_square(x, z) for x, z in coords]
-        ax.add_collection(PolyCollection(verts, facecolors=color, edgecolors='none',
-                                         linewidths=0, alpha=0.7, label=label))
+        coord_arr = np.array(list(coords), dtype=int)
+        squares = blocks_to_unit_squares(coord_arr[:, 0], coord_arr[:, 1])
+        ax.add_collection(PolyCollection(
+            squares, facecolors=color, edgecolors='none',
+            linewidths=0, alpha=0.7, label=label,
+        ))
 
     ax.legend(fontsize=8, loc='upper right', framealpha=0.8)
     ax.set_title(f'Difference — shared={len(overlap)}, '
