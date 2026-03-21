@@ -17,6 +17,7 @@ Actions:
   resources      Plot chest and resource block locations on the map layout
   terrain-height Plot height_above_terrain distribution as a 2x2 visual grid
   activity-grid  Heatmap of CTW match activity (24h × day, grouped by week)
+  layout-grid    2×2 grid of all four layout layers for one or all maps
 
 Examples:
   python ctw.py debug layout --parquet layout_y0
@@ -38,6 +39,9 @@ Examples:
   python ctw.py debug activity-grid
   python ctw.py debug activity-grid --start 2026-01-18 --end 2026-03-08
   python ctw.py debug activity-grid --min-duration 60 --output figures/activity.png
+  python ctw.py debug layout-grid --map arabia
+  python ctw.py debug layout-grid --all-matches
+  python ctw.py debug layout-grid --all-matches --workers 8
 """,
     )
     debug_sub = debug_parser.add_subparsers(
@@ -173,6 +177,22 @@ Examples:
                    help='Where to save PNGs (default: output/<map>/diagnostics/)')
     p.set_defaults(func=handle_compare)
 
+    # debug layout-grid
+    p = debug_sub.add_parser(
+        'layout-grid',
+        help='2×2 grid of all four layout layers for one or all maps',
+    )
+    lg_group = p.add_mutually_exclusive_group(required=True)
+    lg_group.add_argument('--map', default=None,
+                          help='Map name (e.g. arabia)')
+    lg_group.add_argument('--all-matches', action='store_true', dest='all_matches',
+                          help='Plot every map that has matches in the database')
+    p.add_argument('--output', default='output',
+                   help='Root output directory (default: output)')
+    p.add_argument('--workers', type=int, default=4,
+                   help='Parallel workers for --all-matches (default: 4)')
+    p.set_defaults(func=handle_layout_grid)
+
 
 def handle_prepare_demo(args: object) -> None:
     from layout_analysis.demo import run
@@ -186,6 +206,11 @@ def handle_audit(args: object) -> None:
 
 def handle_compare(args) -> None:
     from layout_analysis.layout_compare import run
+    run(args)
+
+
+def handle_layout_grid(args: object) -> None:
+    from layout_analysis.layout_grid import run
     run(args)
 
 
