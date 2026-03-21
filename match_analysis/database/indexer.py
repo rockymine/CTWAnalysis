@@ -3,6 +3,7 @@
 import csv
 import duckdb
 import pandas as pd
+import re
 from pathlib import Path, PurePosixPath
 from datetime import datetime
 
@@ -139,11 +140,8 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | Non
             match_start_events = df[df['event_type'] == 0]
             match_end_events = df[df['event_type'] == 1]
 
-            if len(match_start_events) > 0:
-                start_ts = int(match_start_events['timestamp'].iloc[0])
-                match_start = datetime.fromtimestamp(start_ts) if start_ts > 0 else None
-            else:
-                match_start = None
+            filename_match = re.search(r'(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})', match_file.name)
+            match_start = datetime.strptime(filename_match.group(1), '%Y-%m-%d_%H-%M-%S') if filename_match else None
 
             if len(match_end_events) > 0 and len(match_start_events) > 0:
                 match_duration = float(
