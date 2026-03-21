@@ -389,11 +389,27 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw maps kits` | `handle_kits()` | Reads `map.xml` → `map_kit_items`, `map_kit_armor` |
 | `ctw maps spatial-relations` | `handle_spatial_relations()` | Reads `map_wool_locations`, `map_spawns` → `map_wool_attack_relations`, `map_team_spatial` |
 | `ctw maps terrain-height` | `handle_terrain_height()` | `match_analysis/database/terrain_height.py:populate_terrain_height()` |
-| `ctw matches process-all` | `handle_process_all()` | `match_analysis/processing/processor.py:process_match()` |
-| `ctw matches classify` | `handle_classify()` | Re-runs spatial classification on position_events |
+| `ctw matches index` | `handle_index()` | `match_analysis/database/indexer.py:index_match_files()` — recurse logs dir, create stub maps as needed |
+| `ctw matches extract` | `handle_extract()` | `match_analysis/processing/processor.py:extract_match_data()` + `insert_match_data()` |
+| `ctw matches classify` | `handle_classify()` | `match_analysis/processing/processor.py:classify_match()` — spatial annotation + traffic features |
+| `ctw db` | `ctw/commands/db.py:handler()` | Run named queries from `scripts/debug_queries.sql` or ad-hoc SQL against `metadata.db` |
 | `ctw debug terrain-height` | `handle_terrain_height()` in debug.py | SQL queries + `_plot_terrain_height_figure()` → 4×2 grid PNG |
 | `ctw debug audit` | `handle_audit()` | Layout parquet scan → `layout_layer_stats`, `layout_block_inventory` |
 | `ctw debug resources` | `handle_resources()` in debug.py | Same zone logic as maps resources, no DB write, saves PNG |
+
+### `ctw db` — Named Query Runner
+
+Queries live in `scripts/debug_queries.sql`. Each query has a short ID (e.g. `1a`, `7a`) and a one-line description comment that doubles as the `--list` display name. The ID scheme is `<section_number><letter>` where letters increment within a section.
+
+```
+ctw db --list                  # show all query IDs and descriptions
+ctw db --run 7a                # run a single query
+ctw db --run 1a,5c             # run multiple
+ctw db --section inventory     # run all queries in a section
+ctw db "SELECT COUNT(*) FROM matches"   # ad-hoc SQL
+```
+
+**Convention**: whenever a SQL query is written for debugging or validation and may be reused in future sessions, add it to `scripts/debug_queries.sql` with an appropriate section, ID, and description comment. This builds a shared library of verified queries that both the user and Claude can run by ID.
 
 ---
 
