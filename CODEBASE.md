@@ -256,7 +256,7 @@ All tables in `match_analysis/metadata.db` (DuckDB).
 
 | Table | Key Columns |
 |---|---|
-| `maps` | map_id PK, map_slug UNIQUE, map_name, max_build_height, min_x/max_x/min_z/max_z, center_x/center_z, island_count, team_count, wools_per_team, max_players_per_team, size_tier, symmetry_type, symmetry_confidence |
+| `maps` | map_id PK, map_slug UNIQUE, map_name, max_build_height, min_x/max_x/min_z/max_z, center_x/center_z, island_count, team_count, wools_per_team, max_players_per_team, size_tier, symmetry_type, symmetry_confidence, stub (BOOLEAN, TRUE = auto-created placeholder for unregistered slug; cleared to FALSE by `maps load`) |
 | `map_spawns` | spawn_id PK, map_id FK, x, z, min_x/min_z/max_x/max_z, team, team_color |
 | `matches` | match_id PK, match_file UNIQUE, map_id FK, match_start, match_duration, player_count, processed, spatial_classified, log_interval |
 | `life_segments` | segment_id PK, match_id FK, player_id, segment_idx, start_timestamp, end_timestamp, duration, outcome, spawn_x/z, kill_count, wool_touches, wool_captures |
