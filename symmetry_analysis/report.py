@@ -1,6 +1,12 @@
 """
 Console report formatting for symmetry analysis results.
+
+Public entry point:
+- run(args): run symmetry analysis for one map (detailed) or all maps (summary table)
 """
+
+import sys
+from pathlib import Path
 
 
 def format_symmetry_report(result: dict) -> str:
@@ -157,3 +163,114 @@ def format_symmetry_report(result: dict) -> str:
     lines.append("=" * w)
 
     return "\n".join(lines)
+
+
+def run(args: object) -> None:
+    """Run symmetry analysis for one map (detailed) or all maps (summary table)."""
+    root = Path(args.dir)
+
+    if args.map is not None:
+        _run_single(root, args.map)
+    else:
+        _run_all(root)
+
+
+def _run_single(root: Path, map_name: str) -> None:
+    """Full detailed report for a single map."""
+    from symmetry_analysis import detect_symmetry
+
+    ctx_path = root / map_name / 'map_context.json'
+    if not ctx_path.exists():
+        ctx_path = Path(map_name) / 'map_context.json'
+        if not ctx_path.exists():
+            print(f"Error: map_context.json not found for '{map_name}'", file=sys.stderr)
+            print(f"  Tried: {root / map_name / 'map_context.json'}", file=sys.stderr)
+            print(f"  Run island analysis first: python ctw.py run --map {map_name}",
+                  file=sys.stderr)
+            sys.exit(1)
+
+    result = detect_symmetry(str(ctx_path))
+    report = format_symmetry_report(result)
+    print(report)
+
+
+def _run_all(root: Path) -> None:
+    """Compact summary table across all maps."""
+    from symmetry_analysis import detect_symmetry
+
+    if not root.is_dir():
+        print(f"Error: directory not found: {root}", file=sys.stderr)
+        sys.exit(1)
+
+    rows: list[tuple[str, str, str, str]] = []
+    skipped: list[str] = []
+
+    for map_dir in sorted(root.iterdir()):
+        if not map_dir.is_dir():
+            continue
+        ctx_path = map_dir / 'map_context.json'
+        if not ctx_path.exists():
+            skipped.append(map_dir.name)
+            continue
+
+        try:
+            result = detect_symmetry(str(ctx_path))
+        except Exception as e:
+            rows.append((map_dir.name, f"ERROR: {e}", "", ""))
+            continue
+
+        detected_global = [s for s in result["global_symmetry"] if s["detected"]]
+        if detected_global:
+            primary = max(detected_global, key=lambda s: s["confidence"])
+            global_str = f"{primary['type']} ({primary['confidence']:.0%})"
+        else:
+            global_str = "none"
+
+        center_str = result["center"]["type"]
+
+        intra = result.get("intra_team_symmetry", [])
+        sym_teams = [t for t in intra if t.get("symmetry_detected")]
+        if not intra:
+            intra_str = "-"
+        elif len(sym_teams) == len(intra) and intra:
+            check = intra[0].get("check_type", "mirror_split")
+            if check == "canonical_coverage":
+                groups = intra[0].get("canonical_groups", "?")
+                intra_str = f"all teams ({groups} groups)"
+            else:
+                iou = min(t.get("best_iou", 0) for t in sym_teams)
+                intra_str = f"all teams (IoU>={iou:.0%})"
+        elif sym_teams:
+            names = ", ".join(t["team"] for t in sym_teams)
+            intra_str = names
+        else:
+            intra_str = "none"
+
+        rows.append((map_dir.name, global_str, center_str, intra_str))
+
+    if not rows and not skipped:
+        print(f"No map output folders found in {root}/")
+        return
+
+    if rows:
+        col_w = [
+            max(len(r[0]) for r in rows),
+            max(len(r[1]) for r in rows),
+            max(len(r[2]) for r in rows),
+            max(len(r[3]) for r in rows),
+        ]
+        headers = ("map", "global symmetry", "center", "intra-team")
+        col_w = [max(col_w[i], len(headers[i])) for i in range(4)]
+
+        hdr = (f"  {headers[0]:<{col_w[0]}}  {headers[1]:<{col_w[1]}}  "
+               f"{headers[2]:<{col_w[2]}}  {headers[3]}")
+        sep = f"  {'-' * col_w[0]}  {'-' * col_w[1]}  {'-' * col_w[2]}  {'-' * col_w[3]}"
+        print(hdr)
+        print(sep)
+        for name, gs, ct, it in rows:
+            print(f"  {name:<{col_w[0]}}  {gs:<{col_w[1]}}  {ct:<{col_w[2]}}  {it}")
+
+    if skipped:
+        print(f"\n  Skipped (no map_context.json): {', '.join(skipped)}")
+
+    print(f"\n  {len(rows)} maps analyzed")
