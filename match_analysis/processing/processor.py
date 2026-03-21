@@ -195,11 +195,6 @@ def extract_match_data(match_id: int, meta: dict) -> dict:
     print(f"  {len(life_segments_df)} life segments, "
           f"{life_segments_df['position_count'].sum()} positions")
 
-    # Save legacy trajectory parquet (kept for back-compat, not read anywhere)
-    output_file = Path(f'match_analysis/trajectories/{match_id}.parquet')
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    life_segments_df.to_parquet(output_file, index=False)
-
     find_segment_idx = build_segment_lookup(life_segments_df)
 
     combat_df   = extract_combat_events(raw_df, find_segment_idx)
@@ -377,10 +372,9 @@ def classify_match(
     if graph_path.exists() and context_path.exists():
         from match_analysis.traffic.segment_features import build_traffic_features_for_match
         with open(graph_path) as f:
-            import json as _json
-            graph_data = _json.load(f)
+            graph_data = json.load(f)
         with open(context_path) as f:
-            map_context = _json.load(f)
+            map_context = json.load(f)
         n = build_traffic_features_for_match(conn, match_id, graph_data, map_context)
         print(f"  Traffic features: {n} segments")
 

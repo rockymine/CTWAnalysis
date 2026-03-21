@@ -43,10 +43,9 @@ Actions:
   extract        Extract events from unprocessed matches (fast, no spatial work)
   classify       Annotate position_events spatially + compute traffic features
   process        Process a specific match by ID (extract only)
-  process-all    Alias for 'extract' (deprecated)
   list           List matches in the database
   stats          Show database statistics
-  reset          Reset processing state (clears trajectory files)
+  reset          Reset processing state
   post-process   Run wool carry chain post-processing
   trace          Visualize player traces on map
   kills          Visualize kill-death pairs on map
@@ -132,18 +131,6 @@ Examples:
     p.add_argument('--force', action='store_true',
                    help='Reprocess even if already processed')
     p.set_defaults(func=handle_process)
-
-    # matches process-all (kept as alias for extract)
-    p = matches_sub.add_parser(
-        'process-all',
-        help='Deprecated: use "extract" instead',
-    )
-    p.add_argument('--map-name', help='Only process matches for this map')
-    p.add_argument('--force', action='store_true',
-                   help='Reprocess all matches, not just unprocessed ones')
-    p.add_argument('--workers', type=int, default=1,
-                   help='Number of parallel extraction workers (default: 1).')
-    p.set_defaults(func=handle_process_all)
 
     # matches reset
     p = matches_sub.add_parser('reset', help='Reset processing state for all matches')
@@ -359,12 +346,6 @@ def handle_process(args):
     process_match(args.match_id)
 
 
-def handle_process_all(args):
-    """Deprecated alias for handle_extract."""
-    print("Note: 'process-all' is deprecated — use 'extract' instead.")
-    handle_extract(args)
-
-
 def _resolve_map_id(conn, map_name: str) -> int | None:
     """Return map_id for map_name slug, printing an error and returning None if missing."""
     row = conn.execute(
@@ -549,22 +530,13 @@ def handle_reset(args):
             "processed_at = NULL, processing_time = NULL WHERE match_id = ?",
             [args.match_id],
         )
-        traj_file = Path(f'match_analysis/trajectories/{args.match_id}.parquet')
-        if traj_file.exists():
-            traj_file.unlink()
-            print(f"Deleted {traj_file}")
         print(f"Reset match {args.match_id}.")
     else:
         conn.execute(
             "UPDATE matches SET processed = FALSE, spatial_classified = FALSE, "
             "processed_at = NULL, processing_time = NULL"
         )
-        traj_dir = Path('match_analysis/trajectories')
-        count = 0
-        for f in traj_dir.glob('*.parquet'):
-            f.unlink()
-            count += 1
-        print(f"Reset all matches. Deleted {count} trajectory files.")
+        print("Reset all matches.")
 
     conn.close()
 

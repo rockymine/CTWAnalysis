@@ -105,16 +105,23 @@ map_folders/*/map_data.json
 map_folders/*/island_analysis/
 
 # Misc
+documents/
 nul
 *.log
 .DS_Store
 Thumbs.db
+.env
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 
-#DuckDB
+# DuckDB
 match_analysis/metadata.db
+match_analysis/metadata_old.db
+
+# Ingestion
+known_maps.json
+last_sync.json
 
 # Executed notebook outputs (generated artifacts)
 notebooks/*_executed.ipynb

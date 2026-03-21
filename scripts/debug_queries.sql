@@ -309,3 +309,49 @@ WHERE inv.layer = 'y0'
 GROUP BY m.map_slug, m.map_name, ls.block_count
 HAVING block36 > 0
 ORDER BY m.map_slug ASC
+
+-- 7a. flag suspiciously long gaps between subsequent ctw matches
+WITH gap_calc AS (
+    SELECT
+        maps.map_slug,
+        m.match_start,
+        m.match_duration,
+        m.match_start + (m.match_duration || ' seconds')::interval AS expected_end,
+        LEAD(m.match_start) OVER (ORDER BY m.match_start) AS next_match_start,
+        LEAD(maps.map_slug)  OVER (ORDER BY m.match_start) AS next_map_slug
+    FROM matches m
+    JOIN maps ON m.map_id = maps.map_id
+    WHERE m.match_start >= '2026-01-24 10:00:00'
+),
+gap_sized AS (
+    SELECT
+        map_slug,
+        match_start,
+        match_duration,
+        next_map_slug,
+        date_diff('second', expected_end, next_match_start) AS gap_seconds
+    FROM gap_calc
+    WHERE date_diff('minute', expected_end, next_match_start) >= 100
+)
+SELECT
+    map_slug AS map_before_gap,
+    (CASE WHEN match_duration >= 3600 THEN floor(match_duration / 3600)::int || 'h ' ELSE '' END ||
+     CASE WHEN (match_duration % 3600) >= 60 THEN floor((match_duration % 3600) / 60)::int || 'm ' ELSE '' END ||
+     floor(match_duration % 60)::int || 's') AS duration,
+    next_map_slug AS map_after_gap,
+    (CASE WHEN gap_seconds >= 3600 THEN floor(gap_seconds / 3600)::int || 'h ' ELSE '' END ||
+     CASE WHEN (gap_seconds % 3600) >= 60 THEN floor((gap_seconds % 3600) / 60)::int || 'm ' ELSE '' END ||
+     (gap_seconds % 60)::int || 's') AS gap_duration
+FROM gap_sized
+ORDER BY match_start;
+
+-- 8a. validate if a map has matches in the db
+SELECT 
+    m.match_id,
+    m.match_start,
+    m.match_duration, -- This is in seconds
+    maps.map_slug,
+    m.match_file
+FROM matches m
+JOIN maps ON m.map_id = maps.map_id
+WHERE maps.map_slug = 'shroom_galaxy'

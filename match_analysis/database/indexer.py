@@ -3,6 +3,7 @@
 import csv
 import duckdb
 import pandas as pd
+import re
 from pathlib import Path, PurePosixPath
 from datetime import datetime
 
@@ -59,6 +60,33 @@ def _resolve_map_id(conn, map_slug: str) -> int | None:
     return result[0] if result else None
 
 
+def _create_stub_map(conn, map_slug: str) -> int:
+    """Insert a stub row into maps for a slug that has no processed map data.
+
+    Uses map_slug as a placeholder map_name and zeroes for all spatial fields.
+    Sets stub=TRUE so the row can be identified and enriched later via
+    'ctw maps load', which will UPDATE in-place preserving the map_id.
+
+    Returns the newly assigned map_id.
+    """
+    conn.execute(
+        """
+        INSERT INTO maps (
+            map_slug, map_name,
+            min_x, max_x, min_z, max_z,
+            center_x, center_z, island_count,
+            stub, last_updated
+        )
+        VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, TRUE, CURRENT_TIMESTAMP)
+        """,
+        [map_slug, map_slug],
+    )
+    result = conn.execute(
+        "SELECT map_id FROM maps WHERE map_slug = ?", [map_slug]
+    ).fetchone()
+    return result[0]
+
+
 def _load_history(history_csv: str) -> dict[str, str]:
     """Load a history CSV into a ``{parquet_file: map_slug}`` dict."""
     with open(history_csv, 'r', encoding='utf-8') as f:
@@ -99,8 +127,7 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | Non
 
     indexed = 0
     skipped = 0
-    # Track maps missing from the DB so we warn once and summarise at the end
-    missing_maps: dict[str, int] = {}  # map_slug -> count of skipped files
+    stub_created: set[str] = set()  # slugs for which we created a stub this run
 
     for match_file in match_files:
         # Store as POSIX path (forward slashes) for cross-platform compat
@@ -127,9 +154,9 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | Non
 
             map_id = _resolve_map_id(conn, map_slug)
             if map_id is None:
-                missing_maps[map_slug] = missing_maps.get(map_slug, 0) + 1
-                skipped += 1
-                continue
+                map_id = _create_stub_map(conn, map_slug)
+                stub_created.add(map_slug)
+                print(f"  Stub created for map '{map_slug}' (map_id={map_id})")
 
             df = pd.read_parquet(match_file)
 
@@ -139,11 +166,8 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | Non
             match_start_events = df[df['event_type'] == 0]
             match_end_events = df[df['event_type'] == 1]
 
-            if len(match_start_events) > 0:
-                start_ts = int(match_start_events['timestamp'].iloc[0])
-                match_start = datetime.fromtimestamp(start_ts) if start_ts > 0 else None
-            else:
-                match_start = None
+            filename_match = re.search(r'(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})', match_file.name)
+            match_start = datetime.strptime(filename_match.group(1), '%Y-%m-%d_%H-%M-%S') if filename_match else None
 
             if len(match_end_events) > 0 and len(match_start_events) > 0:
                 match_duration = float(
@@ -182,12 +206,11 @@ def index_match_files(match_logs_dir: str = 'match_logs', history_csv: str | Non
     conn.close()
 
     # Summary
-    if missing_maps:
-        total_missing = sum(missing_maps.values())
-        print(f"\nWarning: {total_missing} match file(s) skipped — map not preprocessed:")
-        for slug in sorted(missing_maps):
-            print(f"  {slug}: {missing_maps[slug]} file(s)")
-        print("Run 'ctw run --map <name>' then 'ctw maps load' for these maps first.")
+    if stub_created:
+        print(f"\nNote: {len(stub_created)} stub map(s) created for unregistered slugs:")
+        for slug in sorted(stub_created):
+            print(f"  {slug}")
+        print("Run 'ctw run --map <name>' then 'ctw maps load' to enrich these stubs.")
 
     print(f"\nIndexed {indexed} new matches, skipped {skipped} existing/unresolvable")
     return indexed, skipped

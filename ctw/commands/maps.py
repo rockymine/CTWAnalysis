@@ -402,6 +402,7 @@ def _upsert_map(conn, row: dict):
                 symmetry_type = ?,
                 symmetry_confidence = ?,
                 has_intra_team_symmetry = ?,
+                stub = FALSE,
                 last_updated = ?
             WHERE map_slug = ?
         """, [
@@ -426,8 +427,8 @@ def _upsert_map(conn, row: dict):
                 island_count, team_count,
                 wools_per_team, max_players_per_team, total_blocks,
                 size_tier, symmetry_type, symmetry_confidence,
-                has_intra_team_symmetry, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                has_intra_team_symmetry, stub, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?)
         """, [
             row['map_slug'], row['map_name'], row['max_build_height'],
             row['min_x'], row['max_x'], row['min_z'], row['max_z'],
