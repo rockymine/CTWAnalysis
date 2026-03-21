@@ -189,7 +189,7 @@ def _run_single(root: Path, map_name: str) -> None:
                   file=sys.stderr)
             sys.exit(1)
 
-    result = detect_symmetry(str(ctx_path))
+    result = detect_symmetry(str(ctx_path)).to_dict()
     report = format_symmetry_report(result)
     print(report)
 
@@ -214,7 +214,7 @@ def _run_all(root: Path) -> None:
             continue
 
         try:
-            result = detect_symmetry(str(ctx_path))
+            result = detect_symmetry(str(ctx_path)).to_dict()
         except Exception as e:
             rows.append((map_dir.name, f"ERROR: {e}", "", ""))
             continue
