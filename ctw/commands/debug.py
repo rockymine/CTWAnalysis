@@ -7,21 +7,9 @@ def register(subparsers):
         help='Diagnostic tools for map data inspection',
         formatter_class=__import__('argparse').RawDescriptionHelpFormatter,
         epilog="""
-Actions:
-  layout         Scan a layout parquet across all maps and list unique block IDs
-  data           Scan output JSON files across all maps and report empty/missing fields
-  symmetry       Analyze map symmetry from preprocessed geometry
-  compare        Compare layout layers side-by-side (y0 vs bedrock vs difference)
-  audit          Populate layout audit tables in the database (layer stats + block inventory)
-  prepare-demo   Build traffic graph assets for a map and copy them to docs/demo/assets/
-  resources      Plot chest and resource block locations on the map layout
-  terrain-height Plot height_above_terrain distribution as a 2x2 visual grid
-  activity-grid  Heatmap of CTW match activity (24h × day, grouped by week)
-  layout-grid    2×2 grid of all four layout layers for one or all maps
-
 Examples:
-  python ctw.py debug layout --parquet layout_y0
-  python ctw.py debug layout --parquet layout_y0 --water
+  python ctw.py debug layout-blocks --parquet layout_y0
+  python ctw.py debug layout-blocks --parquet layout_y0 --water
   python ctw.py debug data --json map_data.json
   python ctw.py debug data --json map_context.json
   python ctw.py debug symmetry --map tumbleweed
@@ -30,8 +18,8 @@ Examples:
   python ctw.py debug compare --map acapulco
   python ctw.py debug compare --all --summary
   python ctw.py debug compare --all
-  python ctw.py debug audit --all
-  python ctw.py debug audit --map acapulco
+  python ctw.py debug layout-audit --all
+  python ctw.py debug layout-audit --map acapulco
   python ctw.py debug prepare-demo --map fourchette
   python ctw.py debug prepare-demo --map fourchette --force
   python ctw.py debug resources --map arabia
@@ -49,9 +37,9 @@ Examples:
         dest='debug_action', metavar='<action>',
     )
 
-    # debug layout
+    # debug layout-blocks
     p = debug_sub.add_parser(
-        'layout',
+        'layout-blocks',
         help='Scan a layout parquet across all maps and list unique block IDs',
     )
     p.add_argument('--parquet', required=True,
@@ -120,9 +108,9 @@ Examples:
                    help='Near-spawn zone width in blocks (default: 15)')
     p.set_defaults(func=handle_resources)
 
-    # debug audit
+    # debug layout-audit
     p = debug_sub.add_parser(
-        'audit',
+        'layout-audit',
         help='Populate layout audit tables in the database (layer stats + block inventory)',
     )
     audit_group = p.add_mutually_exclusive_group(required=True)
@@ -137,7 +125,7 @@ Examples:
     # debug terrain-height
     p = debug_sub.add_parser(
         'terrain-height',
-        help='Plot height_above_terrain distribution as a 2x2 visual grid',
+        help='Plot height_above_terrain distribution as a 4x2 visual grid',
     )
     p.add_argument('--map', required=True,
                    help='Map name (e.g. arabia)')
@@ -209,7 +197,7 @@ def handle_audit(args: object) -> None:
     run(args)
 
 
-def handle_compare(args) -> None:
+def handle_compare(args: object) -> None:
     from layout_analysis.layout_compare import run
     run(args)
 
@@ -233,15 +221,11 @@ def handle_data(args: object) -> None:
     from layout_analysis.layout_scan import run_data
     run_data(args)
 
-# ── debug resources ────────────────────────────────────────────────────────
-
 
 def handle_resources(args: object) -> None:
     from layout_analysis.resources_plot import run
     run(args)
 
-
-# ── terrain-height debug ──────────────────────────────────────────────────────
 
 def handle_terrain_height(args: object) -> None:
     from match_analysis.terrain_height_plot import run
@@ -249,6 +233,5 @@ def handle_terrain_height(args: object) -> None:
 
 
 def handle_activity_grid(args: object) -> None:
-    """Generate a CTW match activity heatmap (24h × day, grouped by ISO week)."""
     from match_analysis.activity_grid import generate
     generate(args)
