@@ -1,5 +1,4 @@
-"""
-Match activity heatmap: 24 rows (hours, local time) × one column per day,
+"""Match activity heatmap: 24 rows (hours, local time) × one column per day,
 grouped into ISO weeks (Mon–Sun) with a visible gap between weeks.
 
 Cell colour  → fraction of that hour occupied by CTW matches (coverage).
@@ -7,12 +6,6 @@ Cell number  → count of distinct matches that touched that hour slot.
 
 The maximum display window is 8 weeks (~2 months). Wider ranges are clipped
 to 8 weeks from the start date with a warning.
-
-Usage
------
-    python scripts/match_activity_grid.py
-    python scripts/match_activity_grid.py --start 2026-01-18 --end 2026-03-08
-    python scripts/match_activity_grid.py --output figures/activity.png
 
 All timestamps stored in the DB are UTC; the grid is displayed in Europe/Berlin.
 """
@@ -113,7 +106,8 @@ def _load_date_bounds() -> tuple[date, date]:
     return row[0], row[1]
 
 
-def _load_matches(start_date: date, end_date: date) -> pd.DataFrame:
+def _load_matches(start_date: date, end_date: date,
+                  min_duration: float | None = None) -> pd.DataFrame:
     conn = duckdb.connect(DB_PATH, read_only=True)
     try:
         df = conn.execute("""
@@ -145,7 +139,12 @@ def _load_matches(start_date: date, end_date: date) -> pd.DataFrame:
     range_start = pd.Timestamp(start_date, tz='Europe/Berlin')
     range_end   = pd.Timestamp(end_date,   tz='Europe/Berlin') + pd.Timedelta(days=1)
     mask = (df['end_local'] > range_start) & (df['start_local'] < range_end)
-    return df[mask].copy().reset_index(drop=True)
+    df = df[mask].copy().reset_index(drop=True)
+
+    if min_duration is not None:
+        df = df[df['match_duration'] >= min_duration].reset_index(drop=True)
+
+    return df
 
 
 # ── Aggregation ────────────────────────────────────────────────────────────────
@@ -372,10 +371,11 @@ def _draw_legend(ax, n_weeks: int) -> None:
         fontsize=6.5, color='#57606a',
     )
     for palette_idx, color in enumerate(COVERAGE_PALETTE):
-        bx = sq_start + palette_idx * (sq_w + sq_gap)
+        sq_x = sq_start + palette_idx * (sq_w + sq_gap)
         rect = mpatches.Rectangle(
-            (bx, 0.5 - sq_size_h / 2), sq_w, sq_size_h,
-            facecolor=color, edgecolor='none', clip_on=False,
+            (sq_x, (1 - sq_size_h) / 2),
+            sq_w, sq_size_h,
+            facecolor=color, edgecolor='none',
         )
         ax.add_patch(rect)
 
@@ -512,21 +512,17 @@ def _render(
     plt.close(fig)
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Public entry point ─────────────────────────────────────────────────────────
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument('--start', metavar='YYYY-MM-DD',
-                        help='First date to include (default: earliest match in DB)')
-    parser.add_argument('--end',   metavar='YYYY-MM-DD',
-                        help='Last date to include (default: latest match in DB)')
-    parser.add_argument('--output', default='match_activity_grid.png',
-                        help='Output PNG path (default: match_activity_grid.png)')
-    args = parser.parse_args()
+def generate(args: argparse.Namespace) -> None:
+    """Generate the activity grid PNG from a parsed argparse Namespace.
 
+    Expected attributes on args:
+        start  (str | None)  – ISO date string or None (→ earliest match in DB)
+        end    (str | None)  – ISO date string or None (→ latest match in DB)
+        output (str)         – output PNG path
+        min_duration (int | None) – minimum match duration in seconds to include
+    """
     db_start, db_end = _load_date_bounds()
     start_date = date.fromisoformat(args.start) if args.start else db_start
     end_date   = date.fromisoformat(args.end)   if args.end   else db_end
@@ -536,10 +532,13 @@ def main() -> None:
         print(f"Warning: range exceeds {MAX_WEEKS} weeks — clipping end to {max_end}")
         end_date = max_end
 
+    min_duration = getattr(args, 'min_duration', None)
+
     print(f"Range:  {start_date} – {end_date}")
 
-    df = _load_matches(start_date, end_date)
-    print(f"Loaded: {len(df)} matches")
+    df = _load_matches(start_date, end_date, min_duration=min_duration)
+    print(f"Loaded: {len(df)} matches"
+          + (f" (>= {min_duration}s)" if min_duration else ""))
 
     cells          = _build_cells(df)
     summary        = _build_daily_summary(df)
@@ -549,7 +548,3 @@ def main() -> None:
 
     _render(cells, weeks, start_date, end_date, summary, weekly_longest, args.output)
     print(f"Saved:  {args.output}")
-
-
-if __name__ == '__main__':
-    main()
