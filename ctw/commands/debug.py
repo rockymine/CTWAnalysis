@@ -26,6 +26,7 @@ Examples:
   python ctw.py debug data --json map_context.json
   python ctw.py debug symmetry --map tumbleweed
   python ctw.py debug symmetry
+  python ctw.py debug symmetry --threshold 90
   python ctw.py debug compare --map acapulco
   python ctw.py debug compare --all --summary
   python ctw.py debug compare --all
@@ -80,9 +81,13 @@ Examples:
         help='Analyze map symmetry from preprocessed geometry (map_context.json)',
     )
     p.add_argument('--map', default=None,
-                   help='Map name (e.g. tumbleweed). Omit to scan all maps.')
+                   help='Map name (e.g. tumbleweed). Prints report + saves image to '
+                        'output/<map>/images/symmetry_debug.png. Omit to scan all maps.')
     p.add_argument('--dir', default='output',
                    help='Root output directory (default: output)')
+    p.add_argument('--threshold', type=float, default=None, metavar='PCT',
+                   help='All-maps only: hide maps at or above this symmetry confidence '
+                        '(e.g. 90 shows only maps below 90%%). Cannot be used with --map.')
     p.set_defaults(func=handle_symmetry)
 
     # debug prepare-demo
