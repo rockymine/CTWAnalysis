@@ -21,7 +21,7 @@ CTWAnalysisWithClaudeCode/
 │       ├── xml.py                    PGM XML parsing
 │       ├── maps.py                   Map metadata subcommands (load/spawns/resources/…)
 │       ├── matches.py                Match data subcommands (process/trace/traffic-graph/…)
-│       ├── debug.py                  Diagnostic subcommands (layout/compare/terrain-height/…)
+│       ├── debug.py                  Diagnostic subcommands (layout-blocks/layout-grid/compare/terrain-height/symmetry/…)
 │       ├── info.py                   Map status summary
 │       └── docs.py                   API index regeneration
 │
@@ -162,14 +162,28 @@ def handle_new_thing(args: object) -> None:
 
 ## Adding a New `debug` Subcommand — Exact Pattern
 
+Each subcommand has its own `description=`, `formatter_class=_RAW`, and `epilog=` with examples.
+All logic lives in a dedicated module; `debug.py` holds only the CLI wiring and a thin handler.
+
 ```python
 # In ctw/commands/debug.py
 
-# 1. Add to the epilog string.
-# 2. Register:
+_RAW = argparse.RawDescriptionHelpFormatter
+
+# 1. Register (no epilog on the parent debug parser):
 p = debug_sub.add_parser(
     'new-diagnostic',
-    help='What it does',
+    help='One-line summary shown in ctw debug -h',
+    description=(
+        'Detailed paragraph shown in ctw debug new-diagnostic -h. '
+        'Describe what the command does, what files it reads/writes, and notable flags.'
+    ),
+    formatter_class=_RAW,
+    epilog="""\
+Examples:
+  python ctw.py debug new-diagnostic --map arabia
+  python ctw.py debug new-diagnostic --map arabia --save /tmp/out.png
+""",
 )
 p.add_argument('--map', required=True,
                help='Map name')
@@ -179,8 +193,17 @@ p.add_argument('--save', default=None, dest='save_path',
                help='Output PNG path (default: output/<map>/images/<name>.png)')
 p.set_defaults(func=handle_new_diagnostic)
 
-# 3. Handler shape (read-only DB access):
+# 2. Handler — thin wrapper only:
 def handle_new_diagnostic(args: object) -> None:
+    from some_module.new_diagnostic import run
+    run(args)
+```
+
+All real logic goes in `some_module/new_diagnostic.py` with a `run(args: object) -> None` entry point.
+
+```python
+# In some_module/new_diagnostic.py — full handler shape (read-only DB access):
+def run(args: object) -> None:
     import duckdb
 
     map_name = args.map
@@ -393,9 +416,16 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw matches extract` | `handle_extract()` | `match_analysis/processing/processor.py:extract_match_data()` + `insert_match_data()` |
 | `ctw matches classify` | `handle_classify()` | `match_analysis/processing/processor.py:classify_match()` — spatial annotation + traffic features |
 | `ctw db` | `ctw/commands/db.py:handler()` | Run named queries from `scripts/debug_queries.sql` or ad-hoc SQL against `metadata.db` |
-| `ctw debug terrain-height` | `handle_terrain_height()` in debug.py | SQL queries + `_plot_terrain_height_figure()` → 4×2 grid PNG |
-| `ctw debug audit` | `handle_audit()` | Layout parquet scan → `layout_layer_stats`, `layout_block_inventory` |
-| `ctw debug resources` | `handle_resources()` in debug.py | Same zone logic as maps resources, no DB write, saves PNG |
+| `ctw debug layout-blocks` | `handle_layout()` → `layout_analysis/layout_scan.py:run_layout()` | List unique block IDs across maps; `--water` checks water footprint vs XML build region |
+| `ctw debug data` | `handle_data()` → `layout_analysis/layout_scan.py:run_data()` | Scan output JSON files and report null/empty fields |
+| `ctw debug compare` | `handle_compare()` → `layout_analysis/layout_compare.py:run()` | 3-panel y0 vs bedrock diff figure; `--summary` for text-only table |
+| `ctw debug layout-grid` | `handle_layout_grid()` → `layout_analysis/layout_grid.py:run()` | 2×2 grid of all four layout layers → `output/<map>/images/layout_case_study.png` |
+| `ctw debug symmetry` | `handle_symmetry()` → `symmetry_analysis/report.py:run()` | `--map`: text report + 2-panel image at `output/<map>/images/symmetry_debug.png`; no `--map`: one-line-per-map table with optional `--threshold PCT` |
+| `ctw debug terrain-height` | `handle_terrain_height()` → `match_analysis/terrain_height_plot.py:run()` | SQL queries + 4×2 grid PNG at `output/<map>/images/terrain_height_debug.png` |
+| `ctw debug layout-audit` | `handle_audit()` → `layout_analysis/audit.py:run()` | Layout parquet scan → upserts `layout_layer_stats`, `layout_block_inventory` |
+| `ctw debug resources` | `handle_resources()` → `layout_analysis/resources_plot.py:run()` | Zone-classified chest/resource block plot → `output/<map>/images/resources_overview.png` |
+| `ctw debug prepare-demo` | `handle_prepare_demo()` → `layout_analysis/demo.py:run()` | Build traffic graph assets and copy to `docs/demo/assets/<slug>/` |
+| `ctw debug activity-grid` | `handle_activity_grid()` → `match_analysis/activity_grid.py:generate()` | Match activity heatmap (24h × day grouped by ISO week) |
 
 ### `ctw db` — Named Query Runner
 

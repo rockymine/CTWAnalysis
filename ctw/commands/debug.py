@@ -1,37 +1,14 @@
 """'debug' subcommand — diagnostic tools for layout parquet and output JSON files."""
 
+import argparse
+
+_RAW = argparse.RawDescriptionHelpFormatter
+
 
 def register(subparsers):
     debug_parser = subparsers.add_parser(
         'debug',
         help='Diagnostic tools for map data inspection',
-        formatter_class=__import__('argparse').RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python ctw.py debug layout-blocks --parquet layout_y0
-  python ctw.py debug layout-blocks --parquet layout_y0 --water
-  python ctw.py debug data --json map_data.json
-  python ctw.py debug data --json map_context.json
-  python ctw.py debug symmetry --map tumbleweed
-  python ctw.py debug symmetry
-  python ctw.py debug symmetry --threshold 90
-  python ctw.py debug compare --map acapulco
-  python ctw.py debug compare --all --summary
-  python ctw.py debug compare --all
-  python ctw.py debug layout-audit --all
-  python ctw.py debug layout-audit --map acapulco
-  python ctw.py debug prepare-demo --map fourchette
-  python ctw.py debug prepare-demo --map fourchette --force
-  python ctw.py debug resources --map arabia
-  python ctw.py debug resources --map arabia,tumbleweed
-  python ctw.py debug terrain-height --map arabia
-  python ctw.py debug activity-grid
-  python ctw.py debug activity-grid --start 2026-01-18 --end 2026-03-08
-  python ctw.py debug activity-grid --min-duration 60 --output figures/activity.png
-  python ctw.py debug layout-grid --map arabia
-  python ctw.py debug layout-grid --all-matches
-  python ctw.py debug layout-grid --all-matches --workers 8
-""",
     )
     debug_sub = debug_parser.add_subparsers(
         dest='debug_action', metavar='<action>',
@@ -40,7 +17,20 @@ Examples:
     # debug layout-blocks
     p = debug_sub.add_parser(
         'layout-blocks',
-        help='Scan a layout parquet across all maps and list unique block IDs',
+        help='List unique block IDs found in a layout parquet across all maps',
+        description=(
+            'Reads the specified layout parquet for every map under --dir and prints '
+            'the unique block IDs present. With --water, analyzes water blocks (IDs 8/9) '
+            'and cross-checks their footprint against the XML build region stored in '
+            'map_context.json. Use --csv to export results instead of printing.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug layout-blocks --parquet layout_y0
+  python ctw.py debug layout-blocks --parquet layout_y0 --water
+  python ctw.py debug layout-blocks --parquet layout_y0 --csv blocks.csv
+""",
     )
     p.add_argument('--parquet', required=True,
                    help='Parquet filename without extension (e.g. layout_y0)')
@@ -56,6 +46,17 @@ Examples:
     p = debug_sub.add_parser(
         'data',
         help='Scan output JSON files across all maps and report empty/missing fields',
+        description=(
+            'Walks every map directory under --dir, loads the specified JSON file, '
+            'and reports fields whose value is null, an empty list, an empty dict, '
+            'or an empty string. Useful for spotting incomplete pipeline outputs.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug data --json map_data.json
+  python ctw.py debug data --json map_context.json
+""",
     )
     p.add_argument('--json', required=True, dest='json_file',
                    help='JSON filename relative to each map output dir (e.g. map_data.json)')
@@ -67,10 +68,23 @@ Examples:
     p = debug_sub.add_parser(
         'symmetry',
         help='Analyze map symmetry from preprocessed geometry (map_context.json)',
+        description=(
+            'With --map: runs full symmetry analysis and prints a detailed text report, '
+            'then saves a two-panel debug image (decided layout layer + island polygon '
+            'outlines with block-count annotations) to output/<map>/images/symmetry_debug.png. '
+            'Without --map: prints a compact one-line-per-map summary table. '
+            'Use --threshold to filter the table to only maps below a given confidence level.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug symmetry --map tumbleweed
+  python ctw.py debug symmetry
+  python ctw.py debug symmetry --threshold 90
+""",
     )
     p.add_argument('--map', default=None,
-                   help='Map name (e.g. tumbleweed). Prints report + saves image to '
-                        'output/<map>/images/symmetry_debug.png. Omit to scan all maps.')
+                   help='Map name (e.g. tumbleweed). Omit to scan all maps.')
     p.add_argument('--dir', default='output',
                    help='Root output directory (default: output)')
     p.add_argument('--threshold', type=float, default=None, metavar='PCT',
@@ -82,6 +96,17 @@ Examples:
     p = debug_sub.add_parser(
         'prepare-demo',
         help='Build traffic graph assets for a map and copy them to docs/demo/assets/',
+        description=(
+            'Runs three steps in sequence: builds the traffic graph, generates the strategy '
+            'comparison plot, and runs life-segment diagnostics. Then copies the resulting '
+            'PNGs into docs/demo/assets/<slug>/. Use --force to rebuild even if outputs exist.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug prepare-demo --map fourchette
+  python ctw.py debug prepare-demo --map fourchette --force
+""",
     )
     p.add_argument('--map', required=True,
                    help='Map slug (e.g. fourchette)')
@@ -97,6 +122,19 @@ Examples:
     p = debug_sub.add_parser(
         'resources',
         help='Plot chest and resource block locations on the map layout',
+        description=(
+            'Zone-classifies chest and resource block positions (gold, iron, diamond) '
+            'relative to spawn, near-spawn, wool room, and defense zones, then plots '
+            'them on top of the map base layer. Double chests are shown with a distinct '
+            'marker. Saves to output/<map>/images/resources_overview.png.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug resources --map arabia
+  python ctw.py debug resources --map arabia,tumbleweed
+  python ctw.py debug resources --map arabia --defense-buffer 15
+""",
     )
     p.add_argument('--map', required=True,
                    help='Comma-separated map names (e.g. arabia,tumbleweed)')
@@ -112,6 +150,19 @@ Examples:
     p = debug_sub.add_parser(
         'layout-audit',
         help='Populate layout audit tables in the database (layer stats + block inventory)',
+        description=(
+            'Reads layout parquets for each map and upserts rows into layout_layer_stats '
+            '(block count and y-range per layer) and layout_block_inventory (per-block-ID '
+            'counts). Re-running is safe: existing rows for the map/layer are replaced. '
+            'Run ctw maps terrain-height first to populate the terrain height table.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug layout-audit --all
+  python ctw.py debug layout-audit --map acapulco
+  python ctw.py debug layout-audit --map acapulco,arabia
+""",
     )
     audit_group = p.add_mutually_exclusive_group(required=True)
     audit_group.add_argument('--map', default=None,
@@ -126,6 +177,18 @@ Examples:
     p = debug_sub.add_parser(
         'terrain-height',
         help='Plot height_above_terrain distribution as a 4x2 visual grid',
+        description=(
+            'Queries position_events and map_terrain_height from the database and renders '
+            'an 8-panel diagnostic figure: above-terrain heatmap, below-terrain depth, '
+            'data coverage, vertical extremes, dominant location type, reference map, '
+            'and terrain elevation. Requires ctw maps terrain-height to have been run first.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug terrain-height --map arabia
+  python ctw.py debug terrain-height --map arabia --save /tmp/debug.png
+""",
     )
     p.add_argument('--map', required=True,
                    help='Map name (e.g. arabia)')
@@ -140,6 +203,19 @@ Examples:
     p = debug_sub.add_parser(
         'activity-grid',
         help='Heatmap of CTW match activity (24h × day, grouped by ISO week)',
+        description=(
+            'Queries the matches table and plots a heatmap where each cell represents '
+            'one hour of one day, colored by the number of matches that started in that '
+            'slot. Weeks are shown as columns so seasonal patterns and session clusters '
+            'are easy to spot. Optionally filter by date range or minimum match duration.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug activity-grid
+  python ctw.py debug activity-grid --start 2026-01-18 --end 2026-03-08
+  python ctw.py debug activity-grid --min-duration 60 --output figures/activity.png
+""",
     )
     p.add_argument('--start', metavar='YYYY-MM-DD',
                    help='First date to include (default: earliest match in DB)')
@@ -156,6 +232,20 @@ Examples:
     p = debug_sub.add_parser(
         'compare',
         help='Compare layout layers side-by-side (y0 vs bedrock vs difference)',
+        description=(
+            'For each map, reads layout_y0 and layout_bedrock parquets and produces a '
+            '3-panel figure: y0 blocks colored by block ID, bedrock blocks colored by '
+            'y-level, and an overlap diff panel (shared / y0-only / bedrock-only). '
+            'Use --summary for a text-only table without generating images.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug compare --map acapulco
+  python ctw.py debug compare --all --summary
+  python ctw.py debug compare --all
+  python ctw.py debug compare --all --output-dir /tmp/compare/
+""",
     )
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument('--map', default=None,
@@ -167,13 +257,26 @@ Examples:
     p.add_argument('--summary', action='store_true',
                    help='Text-only summary table (no plots, use with --all)')
     p.add_argument('--output-dir', default=None, dest='output_dir',
-                   help='Where to save PNGs (default: output/<map>/diagnostics/)')
+                   help='Where to save PNGs (default: output/diagnostics/)')
     p.set_defaults(func=handle_compare)
 
     # debug layout-grid
     p = debug_sub.add_parser(
         'layout-grid',
         help='2×2 grid of all four layout layers for one or all maps',
+        description=(
+            'Renders a 2×2 figure showing layout_y0, layout_bedrock, layout_top_surface, '
+            'and layout_lowest_solid for a map, using the canonical Minecraft block color '
+            'palette. Each panel includes a legend of the most common block IDs. '
+            'Saves to output/<map>/images/layout_case_study.png.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug layout-grid --map arabia
+  python ctw.py debug layout-grid --all-matches
+  python ctw.py debug layout-grid --all-matches --workers 8
+""",
     )
     lg_group = p.add_mutually_exclusive_group(required=True)
     lg_group.add_argument('--map', default=None,
