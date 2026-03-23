@@ -39,6 +39,7 @@ def register(subparsers):
 Actions:
   parse          Parse a structured match log file into a history CSV
   scan           Scan a <map>/<files>.parquet folder tree into a history CSV
+  organize       Copy flat parquet files into per-map subfolders using a history CSV
   index          Index all match parquet files into the database
   extract        Extract events from unprocessed matches (fast, no spatial work)
   classify       Annotate position_events spatially + compute traffic features
@@ -58,6 +59,7 @@ Examples:
   python ctw.py matches extract --map-name arabia --force
   python ctw.py matches parse --input match_logs/logs.txt --match-dir match_logs/
   python ctw.py matches scan --folder data/ --output data/match_history.csv
+  python ctw.py matches organize --source logs2/ --dest logs/ --history logs2/match_history.csv
   python ctw.py matches index --match-dir data --history data/match_history.csv
   python ctw.py matches list
   python ctw.py matches process 57
@@ -95,6 +97,19 @@ Examples:
                    help='Root folder containing per-map subdirectories of parquet files')
     p.add_argument('--output', help='Output CSV path (default: <folder>/match_history.csv)')
     p.set_defaults(func=handle_scan)
+
+    # matches organize
+    p = matches_sub.add_parser(
+        'organize',
+        help='Copy flat parquet files into per-map subfolders using a history CSV',
+    )
+    p.add_argument('--source', required=True,
+                   help='Flat directory containing .parquet files to organise')
+    p.add_argument('--dest', required=True,
+                   help='Root of the per-map folder tree to copy files into')
+    p.add_argument('--history', required=True,
+                   help='History CSV (parquet_file,map_name) produced by matches parse')
+    p.set_defaults(func=handle_organize)
 
     # matches index
     p = matches_sub.add_parser('index', help='Index all match files')
@@ -310,6 +325,28 @@ def handle_scan(args):
     output_path = Path(args.output) if args.output else folder / 'match_history.csv'
     write_csv(rows, output_path)
     print(f"\nWrote {len(rows)} rows to {output_path}")
+
+
+def handle_organize(args):
+    from match_analysis.database.organizer import organize_match_files
+
+    source_dir  = Path(args.source)
+    dest_dir    = Path(args.dest)
+    history_csv = Path(args.history)
+
+    for label, path in [('source', source_dir), ('dest', dest_dir), ('history', history_csv)]:
+        if not path.exists():
+            print(f"Error: {label} path not found: {path}")
+            return
+
+    copied, skipped_dup, skipped_unknown = organize_match_files(
+        source_dir, dest_dir, history_csv,
+    )
+    total = copied + skipped_dup + skipped_unknown
+    print(f"\nOrganized {total} files:")
+    print(f"  {copied:>5}  copied")
+    print(f"  {skipped_dup:>5}  skipped (already exist in dest)")
+    print(f"  {skipped_unknown:>5}  skipped (map unknown)")
 
 
 def handle_index(args):
