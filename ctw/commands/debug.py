@@ -228,6 +228,46 @@ Examples:
                    help='Output PNG path (default: match_activity_grid.png)')
     p.set_defaults(func=handle_activity_grid)
 
+    # debug match-coverage
+    p = debug_sub.add_parser(
+        'match-coverage',
+        help='Publication-quality overview of match counts across all maps',
+        description=(
+            'Queries the database for match counts per map and renders a two-panel '
+            'figure: a histogram of the match count distribution (top) and a full '
+            'per-map directory sorted by match count descending (bottom). Maps are '
+            'color-coded by a six-step bucket scheme (1 / 2–5 / 6–15 / 16–30 / '
+            '31–60 / 61+) using a YlOrRd palette.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug match-coverage
+  python ctw.py debug match-coverage --output figures/coverage.png
+""",
+    )
+    p.add_argument(
+        '--output', default=None, dest='coverage_output',
+        help='Output PNG path (default: output/_debug/match_coverage.png)',
+    )
+    p.add_argument(
+        '--db', default='match_analysis/metadata.db', dest='coverage_db',
+        help='Path to the DuckDB database (default: match_analysis/metadata.db)',
+    )
+    p.add_argument(
+        '--min-matches', type=int, default=1, dest='coverage_min_matches',
+        metavar='N',
+        help='Exclude maps with fewer than N qualifying matches (default: 1)',
+    )
+    p.add_argument(
+        '--sampling', type=int, default=None, dest='coverage_sampling',
+        metavar='SECONDS',
+        choices=[2, 5],
+        help='Only count matches logged at this interval in seconds (2 or 5). '
+             'Requires matches extract to have run. NULL log_interval rows excluded.',
+    )
+    p.set_defaults(func=handle_match_coverage)
+
     # debug compare
     p = debug_sub.add_parser(
         'compare',
@@ -338,3 +378,14 @@ def handle_terrain_height(args: object) -> None:
 def handle_activity_grid(args: object) -> None:
     from match_analysis.activity_grid import generate
     generate(args)
+
+
+def handle_match_coverage(args: object) -> None:
+    from match_analysis.match_coverage_viz import render_match_coverage
+    from pathlib import Path
+    output = Path(args.coverage_output) if args.coverage_output else Path("output/_debug/match_coverage.png")
+    render_match_coverage(
+        output, args.coverage_db,
+        min_matches=args.coverage_min_matches,
+        sampling=args.coverage_sampling,
+    )
