@@ -2,7 +2,24 @@
 
 import re
 import csv
+import unicodedata
 from pathlib import Path
+
+
+def normalize_map_name(name: str) -> str:
+    """Normalize a display map name to a slug suitable for DB storage.
+
+    Strips accents, lowercases, replaces spaces with underscores, and removes
+    all non-alphanumeric characters. Matches the normalization used in
+    ingestion/validate_map_name_normalization.py.
+    """
+    name = unicodedata.normalize("NFKD", name)
+    name = name.encode("ascii", "ignore").decode("ascii")
+    name = name.lower()
+    name = name.replace(" ", "_")
+    name = re.sub(r"[^a-z0-9_]", "", name)
+    name = re.sub(r"_+", "_", name)
+    return name.strip("_")
 
 
 HEADER_RE = re.compile(
@@ -38,7 +55,7 @@ def parse_match_log(input_path: Path) -> list[dict]:
 
         header_match = HEADER_RE.match(line)
         if header_match:
-            pending_map = header_match.group("map").strip().lower()
+            pending_map = normalize_map_name(header_match.group("map"))
             continue
 
         parquet_match = PARQUET_RE.search(line)
