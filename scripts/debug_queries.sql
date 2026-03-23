@@ -284,13 +284,21 @@ JOIN maps mp ON mat.map_id = mp.map_id
 WHERE pl.status != 'success'
 ORDER BY pl.match_id, pl.step;
 
--- 5e. Duplicate match files (should return 0 rows)
+-- 5e. Stub maps — maps indexed from file structure but never run through ctw run
+SELECT mp.map_slug, COUNT(mat.match_id) AS match_count
+FROM maps mp
+LEFT JOIN matches mat ON mp.map_id = mat.map_id
+WHERE mp.stub = TRUE
+GROUP BY mp.map_slug
+ORDER BY match_count DESC;
+
+-- 5f. Duplicate match files (should return 0 rows)
 SELECT match_file, COUNT(*) AS dupes
 FROM matches
 GROUP BY match_file
 HAVING COUNT(*) > 1;
 
--- 5f. Maps without spawns loaded
+-- 5g. Maps without spawns loaded
 SELECT mp.map_slug, mp.map_name
 FROM maps mp
 LEFT JOIN map_spawns ms ON mp.map_id = ms.map_id
