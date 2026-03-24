@@ -106,6 +106,8 @@ Examples:
   python ctw.py maps spatial-relations          # all maps
   python ctw.py maps terrain-height --map arabia
   python ctw.py maps terrain-height             # all maps
+  python ctw.py maps chest-classify             # all maps
+  python ctw.py maps chest-classify --map arabia
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -170,6 +172,15 @@ Examples:
     p.add_argument('--map', help='Map name to process (default: all maps with output data)')
     p.add_argument('--output', help='Output root directory (default: output/)')
     p.set_defaults(func=handle_terrain_height)
+
+    # maps chest-classify
+    p = maps_sub.add_parser(
+        'chest-classify',
+        help='Classify each chest by its contents and store in map_chests.content_category',
+    )
+    p.add_argument('--map', default=None,
+                   help='Map slug(s), comma-separated (default: all maps in DB)')
+    p.set_defaults(func=handle_chest_classify)
 
     # maps authors
     p = maps_sub.add_parser(
@@ -590,6 +601,115 @@ def handle_resources(args) -> None:
 
     conn.close()
     print(f"\nDone: {loaded} map(s) processed, {skipped} skipped.")
+
+
+def handle_chest_classify(args) -> None:
+    """Classify each chest by its contents and write to map_chests.content_category."""
+    import duckdb
+    from match_analysis.database.schema import migrate_chest_category_column
+    from ctw.common import PROJECT_ROOT
+
+    db_path = str(PROJECT_ROOT / 'match_analysis' / 'metadata.db')
+    migrate_chest_category_column(db_path)
+
+    conn = duckdb.connect(db_path)
+
+    # Resolve target map_ids
+    if getattr(args, 'map', None):
+        slugs = [s.strip() for s in args.map.split(',') if s.strip()]
+        placeholders = ', '.join('?' * len(slugs))
+        rows = conn.execute(
+            f"SELECT map_id, map_slug FROM maps WHERE map_slug IN ({placeholders})",
+            slugs,
+        ).fetchall()
+        found_slugs = {r[1] for r in rows}
+        for slug in slugs:
+            if slug not in found_slugs:
+                print(f"  Warning: map slug not found in DB: {slug}")
+        map_ids = [r[0] for r in rows]
+    else:
+        map_ids = [
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT map_id FROM map_chests"
+            ).fetchall()
+        ]
+
+    if not map_ids:
+        print("No maps to classify.")
+        conn.close()
+        return
+
+    id_placeholders = ', '.join('?' * len(map_ids))
+
+    # Compute content_category per chest using a priority-based CASE expression.
+    # Priority: wool > combat (armor) > tool > weapon > supply (gapple/potion) > block
+    conn.execute(f"""
+        UPDATE map_chests
+        SET content_category = classified.content_category
+        FROM (
+            WITH chest_flags AS (
+                SELECT
+                    map_id, world_x, world_z, y,
+                    MAX(CASE WHEN item_id IN ('minecraft:wool', '35') THEN 1 ELSE 0 END)
+                        AS has_wool,
+                    MAX(CASE WHEN item_id LIKE '%chestplate%' OR item_id LIKE '%helmet%'
+                                  OR item_id LIKE '%leggings%' OR item_id LIKE '%boots%'
+                             THEN 1 ELSE 0 END) AS has_armor,
+                    MAX(CASE WHEN item_id LIKE '%pickaxe%' OR item_id LIKE '%shovel%'
+                                  OR item_id LIKE '%axe%'
+                             THEN 1 ELSE 0 END) AS has_tool,
+                    MAX(CASE WHEN item_id LIKE '%sword%'
+                                  OR item_id IN ('minecraft:bow', '261', 'minecraft:arrow', '262')
+                             THEN 1 ELSE 0 END) AS has_weapon,
+                    MAX(CASE WHEN item_id IN ('minecraft:golden_apple', '322') THEN 1 ELSE 0 END)
+                        AS has_gapple,
+                    MAX(CASE WHEN item_id IN ('minecraft:potion', '373') THEN 1 ELSE 0 END)
+                        AS has_potion
+                FROM map_chest_contents
+                WHERE map_id IN ({id_placeholders})
+                GROUP BY map_id, world_x, world_z, y
+            )
+            SELECT
+                map_id, world_x, world_z, y,
+                CASE
+                    WHEN has_wool    = 1 THEN 'wool'
+                    WHEN has_armor   = 1 THEN 'combat'
+                    WHEN has_tool    = 1 THEN 'tool'
+                    WHEN has_weapon  = 1 THEN 'weapon'
+                    WHEN has_gapple  = 1 OR has_potion = 1 THEN 'supply'
+                    ELSE 'block'
+                END AS content_category
+            FROM chest_flags
+        ) AS classified
+        WHERE map_chests.map_id     = classified.map_id
+          AND map_chests.world_x    = classified.world_x
+          AND map_chests.world_z    = classified.world_z
+          AND map_chests.y          = classified.y
+          AND map_chests.map_id IN ({id_placeholders})
+    """, map_ids + map_ids)
+
+    # Chests with no contents get 'empty'
+    conn.execute(f"""
+        UPDATE map_chests
+        SET content_category = 'empty'
+        WHERE content_category IS NULL
+          AND map_id IN ({id_placeholders})
+    """, map_ids)
+
+    counts = conn.execute(f"""
+        SELECT content_category, COUNT(*) AS n
+        FROM map_chests
+        WHERE map_id IN ({id_placeholders})
+        GROUP BY content_category
+        ORDER BY n DESC
+    """, map_ids).fetchall()
+
+    conn.close()
+
+    total = sum(r[1] for r in counts)
+    print(f"\nClassified {total} chests across {len(map_ids)} map(s):")
+    for category, n in counts:
+        print(f"  {category:<10} {n:>5}  ({100*n/total:.1f}%)")
 
 
 def handle_kits(args) -> None:
