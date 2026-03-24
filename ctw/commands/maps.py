@@ -642,7 +642,7 @@ def handle_chest_classify(args) -> None:
     id_placeholders = ', '.join('?' * len(map_ids))
 
     # Compute content_category per chest using a priority-based CASE expression.
-    # Priority: wool > combat (armor) > tool > weapon > supply (gapple/potion) > block
+    # Priority: wool > combat (armor) > tool > weapon > supply (gapple/potion) > defense
     conn.execute(f"""
         UPDATE map_chests
         SET content_category = classified.content_category
@@ -677,7 +677,7 @@ def handle_chest_classify(args) -> None:
                     WHEN has_tool    = 1 THEN 'tool'
                     WHEN has_weapon  = 1 THEN 'weapon'
                     WHEN has_gapple  = 1 OR has_potion = 1 THEN 'supply'
-                    ELSE 'block'
+                    ELSE 'defense'
                 END AS content_category
             FROM chest_flags
         ) AS classified
