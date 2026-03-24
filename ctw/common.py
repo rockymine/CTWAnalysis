@@ -48,7 +48,9 @@ def collect_map_folders(args) -> list:
     --all          scans --map-dir (default: map_folders/)
     --all-matches  uses only maps that have match data in the database,
                    looked up under --map-dir (default: map_folders/)
-    --map NAME     single map name or comma-separated list
+    --map NAME     single map name or comma-separated list; if --map-dir is
+                   given, names are resolved under that directory instead of
+                   the default map_folders/
     """
     map_dir = getattr(args, 'map_dir', None)
     mf_dir = Path(map_dir) if map_dir else PROJECT_ROOT / 'map_folders'
@@ -76,6 +78,8 @@ def collect_map_folders(args) -> list:
 
     if getattr(args, 'map', None):
         names = [n.strip() for n in args.map.split(',') if n.strip()]
+        if map_dir:
+            return [mf_dir / n for n in names]
         return [resolve_map_folder(n) for n in names]
 
     print("Error: Must specify --map, --all, or --all-matches", file=sys.stderr)
