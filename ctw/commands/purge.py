@@ -12,13 +12,34 @@ logger = logging.getLogger('ctw')
 _MAP_CHILD_TABLES = [
     'layout_block_inventory',
     'layout_layer_stats',
+    'map_authors',
     'map_chest_contents',
     'map_chests',
     'map_kit_armor',
     'map_kit_items',
     'map_resource_blocks',
+    'map_size_buckets',
     'map_spawns',
+    'map_team_spatial',
+    'map_terrain_height',
+    'map_wool_attack_relations',
+    'map_wool_locations',
+    'map_wool_monuments',
+    'map_wool_objectives',
     'wool_spawn_baselines',
+]
+
+# Tables that reference matches.match_id, in deletion order (deepest children first).
+# life_segment_traffic_features is handled separately before life_segments because
+# it keys on segment_id rather than match_id.
+_MATCH_CHILD_TABLES = [
+    'wool_carry_chains',
+    'wool_events',
+    'position_events',
+    'player_team_segments',
+    'processing_log',
+    'combat_events',
+    'life_segments',
 ]
 
 
@@ -45,6 +66,12 @@ def register(subparsers) -> None:
         dest='no_matches',
         help='Purge every map that has no match data in the database',
     )
+    target.add_argument(
+        '--stubs',
+        action='store_true',
+        dest='stubs',
+        help='Purge all stub maps (maps indexed from match logs but never run through ctw run)',
+    )
     p.add_argument(
         '--output',
         default=None,
@@ -53,7 +80,14 @@ def register(subparsers) -> None:
     p.add_argument(
         '--db',
         action='store_true',
-        help='Also remove map records from the database (maps table and all dependents)',
+        help='Remove map records from the database (maps table and all dependents)',
+    )
+    p.add_argument(
+        '--match-data',
+        action='store_true',
+        dest='match_data',
+        help='Delete all match rows for the target maps (matches + all event tables), '
+             'leaving the maps table entries intact',
     )
     p.add_argument(
         '--yes', '-y',
@@ -117,11 +151,14 @@ def _collect_file_targets(args) -> list[Path]:
     if args.no_matches:
         has_matches = _slugs_with_matches()
         return [p for p in all_dirs if p.name not in has_matches]
+    if getattr(args, 'stubs', False):
+        stub_slugs = {r[1] for r in _collect_db_targets(args)}
+        return [p for p in all_dirs if p.name in stub_slugs]
     return []
 
 
 def _collect_db_targets(args) -> list[tuple[int, str, str]]:
-    """Return (map_id, slug, name) rows for maps to remove from the DB."""
+    """Return (map_id, slug, name) rows for the target maps."""
     import duckdb
     db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
     if not db_path.exists():
@@ -153,6 +190,11 @@ def _collect_db_targets(args) -> list[tuple[int, str, str]]:
             'WHERE mt.map_id IS NULL '
             'ORDER BY m.map_name'
         ).fetchall()
+    elif getattr(args, 'stubs', False):
+        rows = con.execute(
+            'SELECT map_id, map_slug, map_name FROM maps '
+            'WHERE stub = TRUE ORDER BY map_name'
+        ).fetchall()
     else:
         rows = []
 
@@ -161,6 +203,7 @@ def _collect_db_targets(args) -> list[tuple[int, str, str]]:
 
 
 def _purge_from_db(map_ids: list[int]) -> None:
+    """Remove map records entirely (map metadata + maps table entry)."""
     import duckdb
     db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
     con = duckdb.connect(str(db_path))
@@ -171,11 +214,46 @@ def _purge_from_db(map_ids: list[int]) -> None:
     con.close()
 
 
+def _purge_match_data(map_ids: list[int]) -> int:
+    """Delete all match rows for the given maps, leaving maps table entries intact.
+
+    Returns the number of matches deleted.
+    """
+    import duckdb
+    db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
+    con = duckdb.connect(str(db_path))
+    placeholders = ', '.join('?' * len(map_ids))
+
+    # life_segment_traffic_features keys on segment_id, not match_id
+    con.execute(
+        f'DELETE FROM life_segment_traffic_features WHERE segment_id IN ('
+        f'  SELECT ls.segment_id FROM life_segments ls '
+        f'  JOIN matches m ON ls.match_id = m.match_id '
+        f'  WHERE m.map_id IN ({placeholders})'
+        f')',
+        map_ids,
+    )
+    for table in _MATCH_CHILD_TABLES:
+        con.execute(
+            f'DELETE FROM {table} WHERE match_id IN ('
+            f'  SELECT match_id FROM matches WHERE map_id IN ({placeholders})'
+            f')',
+            map_ids,
+        )
+    n_deleted = con.execute(
+        f'SELECT COUNT(*) FROM matches WHERE map_id IN ({placeholders})', map_ids
+    ).fetchone()[0]
+    con.execute(f'DELETE FROM matches WHERE map_id IN ({placeholders})', map_ids)
+    con.close()
+    return n_deleted
+
+
 def handler(args) -> None:
     file_targets = _collect_file_targets(args)
     db_targets = _collect_db_targets(args) if args.db else []
+    match_targets = _collect_db_targets(args) if getattr(args, 'match_data', False) else []
 
-    if not file_targets and not db_targets:
+    if not file_targets and not db_targets and not match_targets:
         logger.info('Nothing to purge.')
         return
 
@@ -186,8 +264,14 @@ def handler(args) -> None:
             logger.info(f'  {p.name}  ({size_mb:.1f} MB)')
 
     if db_targets:
-        logger.info(f'Database records to remove ({len(db_targets)}):')
+        logger.info(f'Database map records to remove ({len(db_targets)}):')
         for _, slug, name in db_targets:
+            logger.info(f'  {slug}  ({name})')
+
+    if match_targets:
+        logger.info(f'Match data to delete for ({len(match_targets)}) maps '
+                    f'(maps table entries kept):')
+        for _, slug, name in match_targets:
             logger.info(f'  {slug}  ({name})')
 
     if not args.yes:
@@ -195,7 +279,9 @@ def handler(args) -> None:
         if file_targets:
             parts.append(f'{len(file_targets)} output folder(s)')
         if db_targets:
-            parts.append(f'{len(db_targets)} database record(s)')
+            parts.append(f'{len(db_targets)} database map record(s)')
+        if match_targets:
+            parts.append(f'match data for {len(match_targets)} map(s)')
         try:
             answer = input(f'\nPurge {" and ".join(parts)}? [y/N] ').strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -221,6 +307,14 @@ def handler(args) -> None:
         map_ids = [row[0] for row in db_targets]
         try:
             _purge_from_db(map_ids)
-            logger.info(f'Database: {len(map_ids)} map(s) removed.')
+            logger.info(f'Database: {len(map_ids)} map record(s) removed.')
         except Exception as e:
             logger.error(f'Database purge failed: {e}')
+
+    if match_targets:
+        map_ids = [row[0] for row in match_targets]
+        try:
+            n_matches = _purge_match_data(map_ids)
+            logger.info(f'Match data: {n_matches} match(es) deleted across {len(map_ids)} map(s).')
+        except Exception as e:
+            logger.error(f'Match data purge failed: {e}')
