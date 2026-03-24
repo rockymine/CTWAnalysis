@@ -122,7 +122,8 @@ Examples:
         'extract',
         help='Extract events from unprocessed matches (no spatial annotation)',
     )
-    p.add_argument('--map-name', help='Only extract matches for this map')
+    p.add_argument('--map-name',
+                   help='Only extract matches for this map (comma-separated slugs allowed)')
     p.add_argument('--force', action='store_true',
                    help='Re-extract already-processed matches')
     p.add_argument('--workers', type=int, default=1,
@@ -135,7 +136,8 @@ Examples:
         'classify',
         help='Spatially annotate position_events and compute traffic features',
     )
-    p.add_argument('--map-name', help='Only classify matches for this map')
+    p.add_argument('--map-name',
+                   help='Only classify matches for this map (comma-separated slugs allowed)')
     p.add_argument('--force', action='store_true',
                    help='Re-classify already-classified matches')
     p.set_defaults(func=handle_classify)
@@ -394,6 +396,21 @@ def _resolve_map_id(conn, map_name: str) -> int | None:
     return row[0]
 
 
+def _resolve_map_ids(conn, map_name: str) -> list[int] | None:
+    """Return map_ids for a comma-separated list of slugs.
+
+    Returns None if any slug is not found (after printing an error for each).
+    """
+    slugs = [s.strip() for s in map_name.split(',') if s.strip()]
+    map_ids: list[int] = []
+    for slug in slugs:
+        mid = _resolve_map_id(conn, slug)
+        if mid is None:
+            return None
+        map_ids.append(mid)
+    return map_ids
+
+
 def handle_extract(args):
     """Extract events from unprocessed matches (no spatial annotation).
 
@@ -417,24 +434,26 @@ def handle_extract(args):
         reset_query = "UPDATE matches SET processed = FALSE, spatial_classified = FALSE"
         reset_params: list = []
         if getattr(args, 'map_name', None):
-            map_id = _resolve_map_id(conn, args.map_name)
-            if map_id is None:
+            map_ids = _resolve_map_ids(conn, args.map_name)
+            if map_ids is None:
                 conn.close()
                 return
-            reset_query += " WHERE map_id = ?"
-            reset_params.append(map_id)
+            placeholders = ', '.join(['?'] * len(map_ids))
+            reset_query += f" WHERE map_id IN ({placeholders})"
+            reset_params.extend(map_ids)
         conn.execute(reset_query, reset_params)
         print("Reset processing flags (--force).")
 
     query = "SELECT match_id FROM matches WHERE processed = FALSE"
     params: list = []
     if getattr(args, 'map_name', None):
-        map_id = _resolve_map_id(conn, args.map_name)
-        if map_id is None:
+        map_ids = _resolve_map_ids(conn, args.map_name)
+        if map_ids is None:
             conn.close()
             return
-        query += " AND map_id = ?"
-        params.append(map_id)
+        placeholders = ', '.join(['?'] * len(map_ids))
+        query += f" AND map_id IN ({placeholders})"
+        params.extend(map_ids)
     # Process same-map matches consecutively so PositionClassifier cache stays warm
     query += " ORDER BY map_id, match_id"
 
@@ -506,12 +525,13 @@ def handle_classify(args):
         reset_query = "UPDATE matches SET spatial_classified = FALSE WHERE processed = TRUE"
         reset_params: list = []
         if getattr(args, 'map_name', None):
-            map_id = _resolve_map_id(conn, args.map_name)
-            if map_id is None:
+            map_ids = _resolve_map_ids(conn, args.map_name)
+            if map_ids is None:
                 conn.close()
                 return
-            reset_query += " AND map_id = ?"
-            reset_params.append(map_id)
+            placeholders = ', '.join(['?'] * len(map_ids))
+            reset_query += f" AND map_id IN ({placeholders})"
+            reset_params.extend(map_ids)
         conn.execute(reset_query, reset_params)
         print("Reset spatial_classified flags (--force).")
 
@@ -521,12 +541,13 @@ def handle_classify(args):
     )
     params: list = []
     if getattr(args, 'map_name', None):
-        map_id = _resolve_map_id(conn, args.map_name)
-        if map_id is None:
+        map_ids = _resolve_map_ids(conn, args.map_name)
+        if map_ids is None:
             conn.close()
             return
-        query += " AND map_id = ?"
-        params.append(map_id)
+        placeholders = ', '.join(['?'] * len(map_ids))
+        query += f" AND map_id IN ({placeholders})"
+        params.extend(map_ids)
     query += " ORDER BY map_id, match_id"
 
     results = conn.execute(query, params).fetchall()
