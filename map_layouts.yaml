@@ -33,6 +33,8 @@ maps:
     layer: y0
   after_hours:
     layer: bedrock
+  agrorythe:
+    layer: bedrock
   agrostid:
     layer: bedrock
     exclude_observer_island: true
@@ -44,6 +46,8 @@ maps:
   apocalypse_ctw:
     layer: y0
   apostle:
+    layer: bedrock
+  appalachia:
     layer: bedrock
   arabia:
     layer: bedrock
@@ -66,8 +70,18 @@ maps:
     exclude: [30]
   blossom_ctw:
     layer: bedrock
+  boulders:
+    layer: bedrock
+  brittlebush:
+    layer: bedrock
   brittlebush_ii:
     layer: y0
+  cake_day:
+    layer: top_surface
+    exclude: [55]
+    exclude_observer_island: true
+  canyon_ii:
+    layer: bedrock
   cargo:
     layer: lowest_solid
     exclude_observer_island: true
@@ -75,6 +89,11 @@ maps:
     layer: lowest_solid
     exclude: [55]
     exclude_observer_island: true
+  celestial_islands:
+    layer: lowest_solid
+    exclude: [18, 30, 102]
+  checkmate:
+    skip: true
   chestnut:
     layer: bedrock
   circus_ctw:
@@ -85,6 +104,8 @@ maps:
     layer: bedrock
   clearcut:
     layer: bedrock
+  cloud_nine:
+    skip: true
   coconut_mald:
     layer: y0
   colorado:
@@ -94,11 +115,17 @@ maps:
   columbia_ctw:
     layer: lowest_solid
     exclude: [30]
+  comb_conquest:
+    layer: y0
   constellation:
     layer: bedrock
   corrupted_paradise_ctw:
     layer: y0
     exclude: [8, 9]
+  curly_pride:
+    layer: y0
+  curly_wools_ix:
+    skip: true
   cyril:
     layer: bedrock
   dead_noon:
@@ -114,6 +141,11 @@ maps:
     layer: bedrock
   desolate_gully_ctw:
     layer: bedrock
+  discovery:
+    layer: top_surface
+    exclude: [30]
+  down_side_up:
+    skip: true
   downforce:
     layer: lowest_solid
   dromedary:
@@ -131,6 +163,8 @@ maps:
     layer: y0
   enchanted:
     layer: bedrock
+  ender_hill:
+    skip: true
   epsilon:
     layer: bedrock
   exitium:
@@ -172,6 +206,8 @@ maps:
     layer: y0
     exclude: [8, 9]
   gethsemane:
+    layer: y0
+  gloomwald:
     layer: y0
   gobi:
     layer: bedrock
@@ -241,9 +277,15 @@ maps:
     layer: lowest_solid
     exclude: [30]
     exclude_observer_island: true
+  java_ii:
+    layer: bedrock
   jungle_beat:
     layer: bedrock
     exclude_observer_island: true
+  jupiter:
+    layer: y0
+  jurassic:
+    layer: bedrock
   kanto:
     layer: y0
   keipha_ctw:
@@ -255,11 +297,18 @@ maps:
   krager:
     layer: y0
     exclude: [41]
+  la_bataille_de_lepee:
+    layer: lowest_solid
+    exclude: [18, 30]
   level_up:
     layer: y0
     exclude: [8, 9, 30]
+  levels:
+    skip: true
   long_distance:
     layer: y0
+  lotus:
+    layer: bedrock
   lupa:
     layer: lowest_solid
     exclude_observer_island: true
@@ -272,6 +321,8 @@ maps:
     layer: y0
   mame_i_shrunk_the_pvpers:
     layer: bedrock
+  mexico:
+    skip: true
   mini_drought:
     layer: lowest_solid
     exclude_observer_island: true
@@ -283,12 +334,17 @@ maps:
     layer: y0
   nextgen:
     layer: y0
+  nextrace:
+    layer: y0
   no_mans_land:
     layer: bedrock
   nobles_district:
     layer: bedrock
   nyxis:
     layer: bedrock
+  oaken_meadow:
+    layer: y0
+    exclude_islands: [3, 4]
   oaken_meadow_mini:
     layer: bedrock
   oasis_ctw:
@@ -304,6 +360,8 @@ maps:
     playable_bbox: [-70, -70, 70, 70]
   ouroboros:
     layer: bedrock
+  outback:
+    layer: y0
   outback_mini:
     layer: y0
   outback_outback_edition:
@@ -314,6 +372,14 @@ maps:
     layer: y0
   peloponnesia:
     layer: bedrock
+  persisto:
+    layer: bedrock
+  philosophers_stone:
+    layer: bedrock
+  pigland:
+    layer: lowest_solid
+    exclude: [30]
+    exclude_observer_island: true
   pineium_ctw:
     layer: bedrock
     exclude_observer_island: true
@@ -322,6 +388,8 @@ maps:
     exclude: [8, 9, 111]
     exclude_observer_island: true
   pixelmix:
+    layer: bedrock
+  placid_spring:
     layer: bedrock
   prisma_ctw:
     layer: y0
@@ -342,7 +410,13 @@ maps:
     layer: y0
   rind_rushers_ii:
     layer: bedrock
+  ring_race:
+    layer: y0
   ringpull:
+    layer: y0
+  rocky_top:
+    layer: bedrock
+  rotten:
     layer: y0
   ruedigers_octawool:
     layer: lowest_solid
@@ -359,6 +433,8 @@ maps:
     skip: true
   shroom_galaxy:
     layer: y0
+  simplicity_ctw:
+    layer: y0
   smashcap:
     layer: bedrock
   snow_level:
@@ -370,8 +446,15 @@ maps:
     exclude_observer_island: true
   standstill:
     layer: y0
+  station_x:
+    layer: y0
+  steel_valley:
+    layer: top_surface
+    exclude: [9]
   summertime_at_browns_farms:
     layer: y0
+  sunbliss:
+    layer: bedrock
   super_happy_fun_world:
     layer: top_surface
     exclude: [11,7]
@@ -380,8 +463,13 @@ maps:
     layer: bedrock
   tangier:
     layer: y0
+  tebulas_ii:
+    skip: true
   thornwood:
     layer: bedrock
+  thunder:
+    layer: lowest_solid
+    exclude: [30]
   thunderbolt:
     layer: y0
   timbered:
@@ -389,6 +477,9 @@ maps:
     exclude: [30]
   tohjo_falls_ii:
     layer: y0
+  townside:
+    layer: y0
+    exclude_observer_island: true
   townside_mini:
     layer: y0
   tranquility:
@@ -398,6 +489,8 @@ maps:
   tulip_mania_ii:
     layer: y0
   tumbleweed:
+    layer: bedrock
+  tuscany:
     layer: bedrock
   tusho_ctw:
     layer: y0
@@ -418,8 +511,12 @@ maps:
     exclude: [8, 9]
   vesuvius:
     layer: y0
+  villa_i:
+    layer: y0
   villa_ii:
     layer: y0
+  war_of_the_acres:
+    layer: bedrock
   welcome_to_wool_square:
     layer: bedrock
   when_men_cried:
@@ -428,6 +525,10 @@ maps:
     layer: y0
   winter_wakening:
     layer: bedrock
+  winterbane:
+    layer: lowest_solid
+    exclude: [18, 55]
+    exclude_observer_island: true
   wintertime:
     layer: y0
   witchs_potions:
@@ -435,6 +536,8 @@ maps:
   wits_end:
     layer: lowest_solid
     exclude_observer_island: true
+  xinx:
+    layer: y0
   xion:
     layer: bedrock
   xunkohtli:
