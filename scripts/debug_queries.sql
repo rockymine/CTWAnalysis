@@ -362,4 +362,4 @@ SELECT
     m.match_file
 FROM matches m
 JOIN maps ON m.map_id = maps.map_id
-WHERE maps.map_slug = 'shroom_galaxy'
+WHERE maps.map_slug = 'tumbleweed'

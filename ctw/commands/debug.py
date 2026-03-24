@@ -329,6 +329,32 @@ Examples:
                    help='Parallel workers for --all-matches (default: 4)')
     p.set_defaults(func=handle_layout_grid)
 
+    # debug fork-layout
+    p = debug_sub.add_parser(
+        'fork-layout',
+        help='Analyse fork topology of defending sides on 2-team, 2-wool maps',
+        description=(
+            'For every processed 2-team, 2-wool map that has a traffic graph, '
+            'computes fork metrics for each team\'s home island: graph path distances '
+            'from spawn to each defending wool, arm asymmetry, fork opening angle, '
+            'and the lateral offset of spawn from the wool midpoint. '
+            'Renders a 4-panel summary figure.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug fork-layout
+  python ctw.py debug fork-layout --save output/_debug/fork.png
+""",
+    )
+    p.add_argument('--output', default='output',
+                   help='Root output directory containing per-map folders (default: output)')
+    p.add_argument('--db', default='match_analysis/metadata.db', dest='fork_db',
+                   help='Path to the DuckDB database (default: match_analysis/metadata.db)')
+    p.add_argument('--save', default=None, dest='save_path',
+                   help='Output PNG path (default: output/_debug/fork_analysis.png)')
+    p.set_defaults(func=handle_fork_layout)
+
 
 def handle_prepare_demo(args: object) -> None:
     from layout_analysis.demo import run
@@ -389,3 +415,8 @@ def handle_match_coverage(args: object) -> None:
         min_matches=args.coverage_min_matches,
         sampling=args.coverage_sampling,
     )
+
+
+def handle_fork_layout(args: object) -> None:
+    from layout_analysis.fork_analysis import run
+    run(args)
