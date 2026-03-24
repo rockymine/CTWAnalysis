@@ -135,6 +135,8 @@ Examples:
                    help='Blocks outside wool room counted as defense (default: 10)')
     p.add_argument('--near-spawn-buffer', type=float, default=15.0,
                    help='Blocks outside spawn counted as near_spawn (default: 15)')
+    p.add_argument('--skip-existing', action='store_true', dest='skip_existing',
+                   help='Skip maps that already have resource or chest rows in the DB')
     p.set_defaults(func=handle_resources)
 
     # maps kits
@@ -148,6 +150,8 @@ Examples:
                    help='Directory containing map folders for XML lookup '
                         '(default: map_folders/). Use when maps live outside '
                         'the project, e.g. CommunityMaps.')
+    p.add_argument('--skip-existing', action='store_true', dest='skip_existing',
+                   help='Skip maps that already have kit rows in the DB')
     p.set_defaults(func=handle_kits)
 
     # maps spatial-relations
@@ -486,6 +490,18 @@ def handle_resources(args) -> None:
             continue
         map_id = result[0]
 
+        if getattr(args, 'skip_existing', False):
+            has_data = conn.execute(
+                "SELECT COUNT(*) FROM map_resource_blocks WHERE map_id = ?", [map_id]
+            ).fetchone()[0]
+            if has_data == 0:
+                has_data = conn.execute(
+                    "SELECT COUNT(*) FROM map_chests WHERE map_id = ?", [map_id]
+                ).fetchone()[0]
+            if has_data > 0:
+                skipped += 1
+                continue
+
         with open(map_data_path, 'r', encoding='utf-8') as f:
             map_data = json.load(f)
 
@@ -616,6 +632,14 @@ def handle_kits(args) -> None:
             skipped += 1
             continue
         map_id = result[0]
+
+        if getattr(args, 'skip_existing', False):
+            has_data = conn.execute(
+                "SELECT COUNT(*) FROM map_kit_items WHERE map_id = ?", [map_id]
+            ).fetchone()[0]
+            if has_data > 0:
+                skipped += 1
+                continue
 
         try:
             parser = MapXMLParser(str(xml_path))
