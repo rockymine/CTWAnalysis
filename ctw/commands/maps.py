@@ -642,7 +642,8 @@ def handle_chest_classify(args) -> None:
     id_placeholders = ', '.join('?' * len(map_ids))
 
     # Compute content_category per chest using a priority-based CASE expression.
-    # Priority: wool > combat (armor) > tool > weapon > supply (gapple/potion) > defense
+    # Priority: wool > combat (armor) > weapon > supply (gapple/potion) > defense
+    # Tools (pickaxe/shovel/axe) are part of defense chests, not a separate category.
     conn.execute(f"""
         UPDATE map_chests
         SET content_category = classified.content_category
@@ -655,9 +656,6 @@ def handle_chest_classify(args) -> None:
                     MAX(CASE WHEN item_id LIKE '%chestplate%' OR item_id LIKE '%helmet%'
                                   OR item_id LIKE '%leggings%' OR item_id LIKE '%boots%'
                              THEN 1 ELSE 0 END) AS has_armor,
-                    MAX(CASE WHEN item_id LIKE '%pickaxe%' OR item_id LIKE '%shovel%'
-                                  OR item_id LIKE '%axe%'
-                             THEN 1 ELSE 0 END) AS has_tool,
                     MAX(CASE WHEN item_id LIKE '%sword%'
                                   OR item_id IN ('minecraft:bow', '261', 'minecraft:arrow', '262')
                              THEN 1 ELSE 0 END) AS has_weapon,
@@ -674,7 +672,6 @@ def handle_chest_classify(args) -> None:
                 CASE
                     WHEN has_wool    = 1 THEN 'wool'
                     WHEN has_armor   = 1 THEN 'combat'
-                    WHEN has_tool    = 1 THEN 'tool'
                     WHEN has_weapon  = 1 THEN 'weapon'
                     WHEN has_gapple  = 1 OR has_potion = 1 THEN 'supply'
                     ELSE 'defense'
