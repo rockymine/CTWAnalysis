@@ -1,6 +1,6 @@
 # Chest Spatial Analysis
 
-*Generated 2026-03-25 | Dataset: ~202 non-stub maps with defense chests; 12 maps with no defense chests*
+*Generated 2026-03-25 | Dataset: ~202 non-stub maps with defense-category chests; 12 maps with no defense-category chests*
 
 ---
 
@@ -15,7 +15,7 @@ Every chest in the database is assigned a `content_category` based on the most s
 | `wool`   | 1 | Contains the wool objective item | Holds the win condition |
 | `combat` | 2 | Contains any diamond armor piece | Gear-up chest at the objective; serves both defenders holding the wool room and attackers who have broken through |
 | `weapon` | 3 | Contains a bow or sword (no armor) | Ranged or melee kit chest; appears at spawn and in field positions |
-| `supply` | 4 | Contains golden apples or potions (no armor/weapon) | Re-supply chest for consumables; predominantly stocked with Splash Speed potions and golden apples for the wool-room fight |
+| `supply` | 4 | Contains golden apples or potions (no armor/weapon) | Attacker re-supply chest; stocked with Splash Speed potions for escaping with the wool, golden apples for the final fight, and building blocks for re-bridging inside the objective |
 | `defense`| 5 | Everything else | Building and barrier materials for defenders; the largest single category |
 
 A chest that does not match any of the first four rules falls through to `defense` as the default. This means items like planks, fences, pistons, and crafting tables that are used to seal passages and slow attackers are captured here even when the chest contains no dedicated combat gear.
@@ -36,7 +36,7 @@ Each chest is also tagged with the `zone` it belongs to, derived from the map's 
 
 ## Executive Summary
 
-Chest content categories align remarkably well with spatial zones: defense-zone chests are 96.6% defense items, spawn chests are 78% defense + 19% weapon (functioning as resupply stations), and wool-room chests show the richest mix — combat, wool, supply, and weapon all represented. A small number of maps completely dominate the item-count extremes: nextgen and blocks_ctw each have 288 defense chests stocked with ~500K items each, compared to a typical map with 8–32 chests holding a few thousand items. Twelve maps have no defense chests at all, most of which are small pico/nano maps with simple layouts that likely rely on a single shared chest pool or none at all.
+Chest content categories align remarkably well with spatial zones: defense-zone chests are 96.6% defense items, spawn chests are 78% defense + 19% weapon (functioning as resupply stations), and wool-room chests show the richest mix — combat, wool, supply, and weapon all represented. A small number of maps completely dominate the item-count extremes: nextgen and blocks_ctw each have 288 defense chests stocked with ~500K items each, compared to a typical map with 8–32 chests holding a few thousand items. Twelve maps have no defense-category chests, most of which are small pico/nano maps; this does not preclude those maps from having defense materials in spawn or field chests.
 
 ---
 
@@ -58,11 +58,11 @@ The chart above shows the top 10 items in each category ranked by *chest-slot oc
 
 ### Supply chests
 
-**Potions lead supply chests (8,164 slots)** — these are primarily Splash Potion of Swiftness, used by attackers to move faster while crossing the wool room. **Golden apples (6,015 + 2,094 legacy = ~8,100 slots combined)** are nearly equal in prevalence. The large **planks (3,221)** count reflects supply chests stocked with bridging/climbing blocks for attackers who have broken in and need to re-supply quickly. The remaining items (stained glass, logs, wheat, stone) are attacker re-supply building blocks placed near the objective; they are for reaching the wool or escaping, not for general construction.
+**Potions lead supply chests (8,164 slots)** — these are primarily Splash Potion of Swiftness, used by attackers to escape the wool room quickly after grabbing the wool. **Golden apples (~8,100 slots)** are nearly equal in prevalence. The large **planks (3,221)** count reflects supply chests stocked with bridging/climbing blocks for attackers who have broken in and need to re-supply quickly. The remaining items (stained glass, logs, wheat, stone) are attacker re-supply building blocks placed near the objective; they are for reaching the wool or escaping, not for general construction.
 
 ### Weapon chests
 
-**Bow (9,044)** and **arrow (8,604)** are nearly always paired — a weapon chest almost always provides both. The legacy arrow ID `262` adds another 1,317 slots, bringing the real total closer to ~9,900. **Golden apples (2,910)** appear alongside bows on a significant share of maps, bundling a small combat consumable with the ranged weapon. The presence of **wood log (1,994)**, **glass (1,710)**, and **planks (1,071)** shows that weapon chests often include a few building blocks — useful for a player who picks up the bow to set up a sniper position or bridging lane. **Food items (cooked fish 864, cooked beef 842, snowball 840)** are a secondary weapon-chest motif: food restores hunger for a sustained push, and snowballs can knock back opponents.
+**Bow (9,044)** and **arrow (~9,900 slots total)** are nearly always paired — a weapon chest almost always provides both. **Golden apples (2,910)** appear alongside bows on a significant share of maps, bundling a small combat consumable with the ranged weapon. The presence of **wood log (1,994)**, **glass (1,710)**, and **planks (1,071)** shows that weapon chests often include a few building blocks — useful for a player who picks up the bow to set up a sniper position or bridging lane. **Food items (cooked fish 864, cooked beef 842, snowball 840)** are a secondary weapon-chest motif: food restores hunger for a sustained push, and snowballs can knock back opponents.
 
 ---
 
@@ -160,9 +160,9 @@ The "Other" category dominates many maps and likely includes common building mat
 
 ---
 
-## Maps with No Defense Chests
+## Maps with No Defense-Category Chests
 
-The following 12 non-stub maps have no chests classified as `content_category = 'defense'`:
+The following 12 non-stub maps have no chests classified as `content_category = 'defense'`. This does not mean they have no defense materials — spawn and field chests on these maps may still contain building blocks; the classifier simply found no chest whose dominant item fell into the defense category.
 
 | Map | Size tier | Total blocks | Max players/team | Wools/team |
 |-----|-----------|-------------|-----------------|-----------|
@@ -181,8 +181,8 @@ The following 12 non-stub maps have no chests classified as `content_category = 
 
 A few observations:
 
-- **Most are small maps**: 10 of 12 are pico/nano/micro. The exceptions are no_mans_land and cake_day (both centi). These larger maps without defense chests deliberately present an open, unfortified wool room where the contest is about team combat rather than siege mechanics.
-- **cake_day** and **no_mans_land** are legitimate full-size maps. Their lack of defense chests is a real design choice: players defend using the terrain and their starting gear rather than pre-placed chest supplies.
+- **Most are small maps**: 10 of 12 are pico/nano/micro. The exceptions are no_mans_land and cake_day (both centi).
+- **cake_day** and **no_mans_land** are legitimate full-size maps. Their absence of defense-category chests reflects a design choice rather than an absence of materials — cake_day has chests in the field and spawn zones that provide building blocks, but none are classified as `defense` content. Players defend using available terrain and spawn supplies rather than a dedicated defense chest pool.
 - **ouroboros** is unusual in this list: its wool-room chests are stocked with combat and supply gear, but nothing in the defense category. The map has players spawn directly below the wool room, so the layout relies on natural terrain chokepoints rather than pre-placed barrier materials.
 - These maps may rely on **spawn chests only** (classified under the spawn zone) for any resupply, or may have a design philosophy where raiding is straightforward and defense emerges from player skill rather than material fortification.
 
