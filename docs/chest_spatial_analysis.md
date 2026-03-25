@@ -54,7 +54,35 @@ The chart above shows the top 10 items in each category ranked by *chest-slot oc
 
 ### Combat chests
 
-**Golden apples (19,440 slots)** dominate combat chests — over 10,000 more slots than the second-ranked item. In the wool-room fight, a golden apple (temporary absorption hearts) can be the difference between surviving a hit and dying, so stocking them liberally is standard practice. **Diamond chestplate (14,398)**, **bow (10,292)**, **diamond helmet (5,796)**, **diamond leggings (4,043)**, and **diamond boots (2,136)** together form the full armor set. These counts reflect that not every combat chest includes a complete kit: chestplates and helmets appear far more often than leggings and boots, suggesting many maps offer partial armor and expect players to supplement from other sources. **Potions (3,056)** appear in a meaningful share of combat chests, confirming that Splash Speed potions are distributed across both combat and supply chests rather than being exclusively a supply-chest item.
+**Golden apples (19,440 slots)** dominate combat chests — over 10,000 more slots than the second-ranked item. In the wool-room fight, a golden apple (temporary absorption hearts) can be the difference between surviving a hit and dying, so stocking them liberally is standard practice. The full diamond armor set (chestplate, helmet, leggings, boots) is represented across the dataset but with very unequal slot counts — chestplates appear far more than leggings and boots — because most maps stock only a single armor piece per chest rather than a complete set. **Potions (3,056)** appear in a meaningful share of combat chests, confirming that Splash Speed potions are distributed across both combat and supply chests rather than being exclusively a supply-chest item.
+
+#### Armor piece combinations
+
+Combat chests almost universally contain a single armor piece rather than a full set. Across 2,742 combat chests on 183 maps:
+
+| Combination | Chests | % | Maps |
+|-------------|-------:|--:|-----:|
+| Chestplate only | 1,521 | 55.5% | 104 |
+| Helmet only | 317 | 11.6% | 30 |
+| Leggings only | 307 | 11.2% | 19 |
+| Helmet + Leggings | 104 | 3.8% | 6 |
+| Leggings + Boots | 98 | 3.6% | 6 |
+| Boots only | 95 | 3.5% | 11 |
+| Helmet + Chestplate | 89 | 3.2% | 3 |
+| Helmet + Boots | 76 | 2.8% | 4 |
+| **Full set** | **72** | **2.6%** | **45** |
+| Other | 63 | 2.3% | — |
+
+**Single-piece chests account for 81.7% of all combat chests.** The chestplate is the clear favourite — 55.5% of combat chests stock it alone, across 104 of 183 maps. This reflects the chestplate's disproportionate protection value (it covers 8 of 20 armor points on its own).
+
+**The full set is a minority design (2.6% of chests, 45 maps).** Most maps that include all four pieces spread them across separate single-piece chests; a player must loot multiple combat chests to assemble a complete set. Only 45 maps include a chest with all four pieces together, though 48 maps provide all four pieces somewhere across their combat chest pool.
+
+**Notable single-piece profiles at the map level:**
+
+- **Chestplate-only maps (72 maps):** All combat chests on these maps stock only a chestplate. Average 15.6 combat chests per map.
+- **Helmet-only maps (21 maps):** All combat chests provide only a helmet — no chestplate appears anywhere. Likely maps where the chestplate is provided through a kit module or simply not included.
+- **Leggings-dominant maps:** A cluster of maps — levels (72 chests), madness_on_rails (48), blocks_ctw (24), gridlock_2 (24) — stock leggings exclusively or primarily. Leggings provide the second-most protection of any single piece (6 of 20 armor points) and may be chosen as the "second priority" piece on maps that split the kit between chest types.
+- **Helmet + chestplate, no lower body (3 maps — ruedigers_octawool, race_for_victory_3, harbor_ctw):** These large maps (32–56 combat chests each) provide upper-body coverage only. The design may assume players will already have leg/boot coverage from elsewhere, or that upper-body armor is the decisive factor in wool-room combat.
 
 ### Supply chests
 
