@@ -440,9 +440,11 @@ class VerticalDensityExtractor:
 
 class LowestBedrockExtractor:
     """
-    Finds the lowest bedrock block (block_id=7) in each column.
+    Finds the lowest bedrock block (block_id=7) in each column and the height
+    of the consecutive stacked bedrock run from that lowest block upward.
 
-    Criterion: column contains at least one bedrock block
+    Criterion: column contains at least one bedrock block.
+    Output columns: world_x, world_z, y (lowest bedrock), block_data, height (stacked count).
     """
 
     def __init__(self, region_reader: RegionReader) -> None:
@@ -450,18 +452,25 @@ class LowestBedrockExtractor:
 
     def extract(self) -> pd.DataFrame:
         """
-        Extract the lowest bedrock block in each column.
+        Extract the lowest bedrock block in each column and the height of the
+        consecutive stacked bedrock run starting from that lowest block.
 
         Returns:
-            DataFrame with columns: world_x, world_z, y, block_data
+            DataFrame with columns: world_x, world_z, y, block_data, height
+            - y: world-y of the lowest bedrock block in the column
+            - height: number of consecutive bedrock blocks stacked from y upward
+              (e.g. height=5 means bedrock at y, y+1, y+2, y+3, y+4)
         """
         all_wx: list[np.ndarray] = []
         all_wz: list[np.ndarray] = []
         all_y:  list[np.ndarray] = []
         all_dt: list[np.ndarray] = []
+        all_ht: list[np.ndarray] = []
         chunk_count = 0
 
         logger.debug("Extracting lowest bedrock blocks...")
+
+        y_indices = np.arange(16, dtype=np.int16)  # (16,) reused each section
 
         for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
             chunk_count += 1
@@ -471,26 +480,73 @@ class LowestBedrockExtractor:
 
             found_y = np.full((16, 16), -1, dtype=np.int16)
             found_dt = np.zeros((16, 16), dtype=np.uint8)
+            found_height = np.zeros((16, 16), dtype=np.int16)
+            height_complete = np.zeros((16, 16), dtype=bool)
 
             for section_y, blocks_3d, data_3d in _iter_chunk_sections(chunk):
-                if np.all(found_y >= 0):
-                    break
-
                 bedrock_mask = blocks_3d == 7          # (16, 16, 16)
                 not_found = found_y < 0                # (16, 16)
                 has_any = bedrock_mask.any(axis=0)     # (16, 16)
+
+                # --- Newly found columns: record lowest y and start height ---
                 to_process = not_found & has_any
+                if np.any(to_process):
+                    first_y_local = np.argmax(bedrock_mask, axis=0)  # (16, 16)
+                    zz, xx = np.where(to_process)
+                    local_ys = first_y_local[zz, xx]
 
-                if not np.any(to_process):
-                    continue
+                    found_y[zz, xx] = (section_y * 16 + local_ys).astype(np.int16)
+                    found_dt[zz, xx] = data_3d[local_ys, zz, xx]
 
-                # Lowest bedrock: first True along y axis
-                first_y = np.argmax(bedrock_mask, axis=0)  # (16, 16)
-                zz, xx = np.where(to_process)
-                local_ys = first_y[zz, xx]
+                    # Vectorized height within this section: find first non-bedrock
+                    # block at or above first_y_local for each newly-found column.
+                    # y_above[y, z, x] = True if y >= first_y_local[z, x]
+                    y_above = (y_indices[:, np.newaxis, np.newaxis]
+                               >= first_y_local[np.newaxis, :, :])  # (16, 16, 16)
+                    non_bedrock_above = ~bedrock_mask & y_above       # (16, 16, 16)
+                    has_non_bedrock = non_bedrock_above.any(axis=0)   # (16, 16)
+                    first_non_bedrock = np.argmax(non_bedrock_above, axis=0)  # (16, 16)
 
-                found_y[zz, xx] = (section_y * 16 + local_ys).astype(np.int16)
-                found_dt[zz, xx] = data_3d[local_ys, zz, xx]
+                    # height = gap to first non-bedrock; if none, run hits section top
+                    section_height = np.where(
+                        has_non_bedrock,
+                        first_non_bedrock - first_y_local,
+                        np.int16(16) - first_y_local,
+                    )
+                    found_height = np.where(to_process, section_height, found_height)
+                    height_complete = height_complete | (to_process & has_non_bedrock)
+
+                # --- Ongoing columns: bedrock run may continue from previous section ---
+                ongoing = (found_y >= 0) & ~height_complete
+                if np.any(ongoing):
+                    starts_with_bedrock = bedrock_mask[0, :, :]      # (16, 16)
+                    still_running = ongoing & starts_with_bedrock
+
+                    if np.any(still_running):
+                        # Find first non-bedrock from y=0 in this section
+                        non_bedrock_from_zero = ~bedrock_mask         # (16, 16, 16)
+                        has_non_bedrock_zero = non_bedrock_from_zero.any(axis=0)
+                        first_non_bedrock_zero = np.argmax(non_bedrock_from_zero, axis=0)
+
+                        height_ext = np.where(
+                            has_non_bedrock_zero,
+                            first_non_bedrock_zero,
+                            np.int16(16),
+                        )
+                        found_height = np.where(
+                            still_running,
+                            found_height + height_ext,
+                            found_height,
+                        )
+                        height_complete = (height_complete
+                                           | (still_running & has_non_bedrock_zero))
+
+                    # Columns whose run ended (bedrock stopped before this section)
+                    height_complete = height_complete | (ongoing & ~starts_with_bedrock)
+
+                # Break once all found columns have complete height info
+                if np.all(found_y >= 0) and np.all(height_complete | (found_y < 0)):
+                    break
 
             zz, xx = np.where(found_y >= 0)
             if len(zz):
@@ -498,17 +554,19 @@ class LowestBedrockExtractor:
                 all_wz.append((chunk_z * 16 + zz).astype(np.int32))
                 all_y.append(found_y[zz, xx])
                 all_dt.append(found_dt[zz, xx])
+                all_ht.append(found_height[zz, xx])
 
         total = sum(len(a) for a in all_wx)
         logger.debug(f"Completed lowest bedrock extraction: {chunk_count} chunks, {total} matching points")
 
         if not all_wx:
-            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_data'])
+            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_data', 'height'])
         return pd.DataFrame({
-            'world_x': np.concatenate(all_wx),
-            'world_z': np.concatenate(all_wz),
-            'y': np.concatenate(all_y),
+            'world_x':   np.concatenate(all_wx),
+            'world_z':   np.concatenate(all_wz),
+            'y':         np.concatenate(all_y),
             'block_data': np.concatenate(all_dt),
+            'height':    np.concatenate(all_ht),
         })
 
 
