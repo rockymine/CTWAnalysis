@@ -354,7 +354,7 @@ FROM gap_sized
 ORDER BY match_start;
 
 -- 8a. validate if a map has matches in the db
-SELECT 
+SELECT
     m.match_id,
     m.match_start,
     m.match_duration, -- This is in seconds
@@ -362,4 +362,180 @@ SELECT
     m.match_file
 FROM matches m
 JOIN maps ON m.map_id = maps.map_id
+
+-- =====================
+-- 9. CHEST ANALYSIS
+-- =====================
+
+-- 9a. Zone × content_category cross-tab (pct of chests in each zone by category)
+-- Shows how well spatial zones align with chest content semantics
+WITH zone_cat AS (
+    SELECT
+        mc.zone,
+        mc.content_category,
+        COUNT(*) AS chest_count
+    FROM map_chests mc
+    WHERE mc.zone IS NOT NULL
+      AND mc.content_category IS NOT NULL
+    GROUP BY mc.zone, mc.content_category
+),
+zone_totals AS (
+    SELECT zone, SUM(chest_count) AS zone_total
+    FROM zone_cat
+    GROUP BY zone
+)
+SELECT
+    zc.zone,
+    zc.content_category,
+    zc.chest_count,
+    zt.zone_total,
+    ROUND(100.0 * zc.chest_count / zt.zone_total, 1) AS pct_of_zone
+FROM zone_cat zc
+JOIN zone_totals zt ON zc.zone = zt.zone
+ORDER BY zc.zone, pct_of_zone DESC;
+
+-- 9b. Defense chest material composition per map (top items by total count)
+-- Useful for spotting outlier maps with unusual defense supply loadouts
+SELECT
+    mp.map_slug,
+    mcc.item_id,
+    SUM(mcc.count) AS total_items
+FROM map_chests mc
+JOIN maps mp ON mc.map_id = mp.map_id
+JOIN map_chest_contents mcc ON mc.chest_id = mcc.chest_id
+WHERE mc.content_category = 'defense'
+GROUP BY mp.map_slug, mcc.item_id
+ORDER BY mp.map_slug, total_items DESC;
+
+-- 9c. Defense chest count and total items per map, sorted by intensity
+-- density = defense items per wool chest (proxy for how heavily defended each wool is)
+WITH defense_stats AS (
+    SELECT
+        mc.map_id,
+        COUNT(DISTINCT mc.chest_id) AS defense_chests,
+        SUM(mcc.count) AS defense_items
+    FROM map_chests mc
+    JOIN map_chest_contents mcc ON mc.chest_id = mcc.chest_id
+    WHERE mc.content_category = 'defense'
+    GROUP BY mc.map_id
+),
+wool_counts AS (
+    SELECT map_id, COUNT(*) AS wool_count
+    FROM map_chests
+    WHERE content_category = 'wool'
+    GROUP BY map_id
+)
+SELECT
+    mp.map_slug,
+    COALESCE(ds.defense_chests, 0) AS defense_chests,
+    COALESCE(ds.defense_items, 0) AS defense_items,
+    COALESCE(wc.wool_count, 0) AS wool_chests,
+    CASE WHEN COALESCE(wc.wool_count, 0) > 0
+         THEN ROUND(ds.defense_items::DOUBLE / wc.wool_count, 0)
+         ELSE NULL END AS defense_items_per_wool
+FROM maps mp
+LEFT JOIN defense_stats ds ON mp.map_id = ds.map_id
+LEFT JOIN wool_counts wc ON mp.map_id = wc.map_id
+ORDER BY defense_items DESC NULLS LAST;
+
+-- 9d. Content category summary across all maps
+-- Quick count of how many chests fall into each category
+SELECT
+    content_category,
+    COUNT(*) AS chest_count,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
+FROM map_chests
+WHERE content_category IS NOT NULL
+GROUP BY content_category
+ORDER BY chest_count DESC;
+
+-- 9e. Maps with no defense chests (may rely on kit-based defense instead)
+SELECT mp.map_slug, mp.map_name, COUNT(mc.chest_id) AS total_chests
+FROM maps mp
+LEFT JOIN map_chests mc ON mp.map_id = mc.map_id
+WHERE mp.map_id NOT IN (
+    SELECT DISTINCT map_id FROM map_chests WHERE content_category = 'defense'
+)
+GROUP BY mp.map_slug, mp.map_name
+ORDER BY total_chests DESC;
 WHERE maps.map_slug = 'tumbleweed'
+
+-- 9f. Armor combination breakdown — per combat chest (what pieces are in the same chest?)
+-- Shows 13 distinct combinations with chest count and map count.
+SELECT
+    MAX(CASE WHEN item_id LIKE '%helmet%'     THEN 1 ELSE 0 END) AS has_helmet,
+    MAX(CASE WHEN item_id LIKE '%chestplate%' THEN 1 ELSE 0 END) AS has_chestplate,
+    MAX(CASE WHEN item_id LIKE '%leggings%'   THEN 1 ELSE 0 END) AS has_leggings,
+    MAX(CASE WHEN item_id LIKE '%boots%'      THEN 1 ELSE 0 END) AS has_boots,
+    COUNT(DISTINCT (mcc.map_id, mcc.world_x, mcc.world_z, mcc.y)) AS chest_count,
+    COUNT(DISTINCT mcc.map_id)                                      AS map_count,
+    ROUND(100.0 * COUNT(DISTINCT (mcc.map_id, mcc.world_x, mcc.world_z, mcc.y))
+          / SUM(COUNT(DISTINCT (mcc.map_id, mcc.world_x, mcc.world_z, mcc.y))) OVER (), 1) AS pct_chests
+FROM map_chest_contents mcc
+JOIN map_chests mc
+    ON mc.map_id = mcc.map_id AND mc.world_x = mcc.world_x
+    AND mc.world_z = mcc.world_z AND mc.y = mcc.y
+WHERE mc.content_category = 'combat'
+GROUP BY mcc.map_id, mcc.world_x, mcc.world_z, mcc.y
+-- Outer aggregation: collapse to unique combinations
+;
+-- NOTE: the above groups per chest then needs a second aggregation. Use the CTE version:
+
+WITH chest_armor AS (
+    SELECT
+        mcc.map_id, mcc.world_x, mcc.world_z, mcc.y,
+        MAX(CASE WHEN item_id LIKE '%helmet%'     THEN 1 ELSE 0 END) AS has_helmet,
+        MAX(CASE WHEN item_id LIKE '%chestplate%' THEN 1 ELSE 0 END) AS has_chestplate,
+        MAX(CASE WHEN item_id LIKE '%leggings%'   THEN 1 ELSE 0 END) AS has_leggings,
+        MAX(CASE WHEN item_id LIKE '%boots%'      THEN 1 ELSE 0 END) AS has_boots
+    FROM map_chest_contents mcc
+    JOIN map_chests mc
+        ON mc.map_id = mcc.map_id AND mc.world_x = mcc.world_x
+        AND mc.world_z = mcc.world_z AND mc.y = mcc.y
+    WHERE mc.content_category = 'combat'
+    GROUP BY mcc.map_id, mcc.world_x, mcc.world_z, mcc.y
+)
+SELECT
+    has_helmet, has_chestplate, has_leggings, has_boots,
+    COUNT(*)                                           AS chest_count,
+    COUNT(DISTINCT map_id)                             AS map_count,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_chests
+FROM chest_armor
+GROUP BY has_helmet, has_chestplate, has_leggings, has_boots
+ORDER BY chest_count DESC;
+
+-- 9g. Armor coverage per map — which pieces appear across all of a map's combat chests?
+-- Each row = one map; flags show whether that piece appears in ANY combat chest.
+WITH chest_armor AS (
+    SELECT
+        mcc.map_id, mcc.world_x, mcc.world_z, mcc.y,
+        MAX(CASE WHEN item_id LIKE '%helmet%'     THEN 1 ELSE 0 END) AS has_helmet,
+        MAX(CASE WHEN item_id LIKE '%chestplate%' THEN 1 ELSE 0 END) AS has_chestplate,
+        MAX(CASE WHEN item_id LIKE '%leggings%'   THEN 1 ELSE 0 END) AS has_leggings,
+        MAX(CASE WHEN item_id LIKE '%boots%'      THEN 1 ELSE 0 END) AS has_boots
+    FROM map_chest_contents mcc
+    JOIN map_chests mc
+        ON mc.map_id = mcc.map_id AND mc.world_x = mcc.world_x
+        AND mc.world_z = mcc.world_z AND mc.y = mcc.y
+    WHERE mc.content_category = 'combat'
+    GROUP BY mcc.map_id, mcc.world_x, mcc.world_z, mcc.y
+),
+map_armor AS (
+    SELECT map_id,
+           MAX(has_helmet)     AS uses_helmet,
+           MAX(has_chestplate) AS uses_chestplate,
+           MAX(has_leggings)   AS uses_leggings,
+           MAX(has_boots)      AS uses_boots,
+           COUNT(*)            AS combat_chests
+    FROM chest_armor
+    GROUP BY map_id
+)
+SELECT
+    uses_helmet, uses_chestplate, uses_leggings, uses_boots,
+    COUNT(*)                     AS map_count,
+    ROUND(AVG(combat_chests), 1) AS avg_combat_chests,
+    MIN(combat_chests)           AS min_chests,
+    MAX(combat_chests)           AS max_chests
+FROM map_armor
+GROUP BY uses_helmet, uses_chestplate, uses_leggings, uses_boots
+ORDER BY map_count DESC;

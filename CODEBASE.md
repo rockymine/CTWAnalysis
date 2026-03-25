@@ -307,7 +307,7 @@ All tables in `match_analysis/metadata.db` (DuckDB).
 | `map_wool_attack_relations` | attacking_team, wool_id, relative_side (left/right/on_axis), attack_angle_deg |
 | `map_team_spatial` | Inter-team spatial relations (center distance, axis angle) |
 | `map_resource_blocks` | block_type, x, y, z, zone (defense/near_spawn/mid_map/enemy_territory) |
-| `map_chests` | Chest positions with zone classification |
+| `map_chests` | Chest positions with zone classification and `content_category` (wool/combat/weapon/supply/defense/empty) |
 | `map_kit_items` / `map_kit_armor` | Spawn kit contents from map.xml |
 | `layout_layer_stats` | Block counts and y-range per layer per map |
 | `layout_block_inventory` | Per-block-ID counts per layer per map |
@@ -409,6 +409,7 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw maps load` | `handle_load()` | Reads `map_context.json` → inserts into `maps` table |
 | `ctw maps spawns` | `handle_spawns()` | Reads `poi_assignments.spawns` → `map_spawns` |
 | `ctw maps resources` | `handle_resources()` | Reads layout parquets → `map_resource_blocks`, `map_chests` |
+| `ctw maps chest-classify` | `handle_chest_classify()` | Reads `map_chest_contents` → updates `map_chests.content_category` |
 | `ctw maps kits` | `handle_kits()` | Reads `map.xml` → `map_kit_items`, `map_kit_armor` |
 | `ctw maps spatial-relations` | `handle_spatial_relations()` | Reads `map_wool_locations`, `map_spawns` → `map_wool_attack_relations`, `map_team_spatial` |
 | `ctw maps terrain-height` | `handle_terrain_height()` | `match_analysis/database/terrain_height.py:populate_terrain_height()` |

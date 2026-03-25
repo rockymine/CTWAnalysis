@@ -8,6 +8,11 @@ Classifies a (world_x, world_z) position into one of four zones:
     defense     — outside a wool room but within ``defense_buffer`` blocks of it
     field       — everywhere else
 
+A fifth zone, ``near_spawn``, is built by default (for resource-block plots) but
+is intentionally excluded from **chest** classification — pass
+``include_near_spawn=False`` to ``classify`` or ``classify_dataframe`` so those
+positions fall through to ``field`` instead.
+
 Also assigns the owning team where possible, using ``apply_rules`` deny entries
 and keyword matching on region IDs as a fallback.
 
@@ -30,8 +35,7 @@ ZONE_WOOL_ROOM = 'wool_room'
 ZONE_DEFENSE = 'defense'
 ZONE_FIELD = 'field'
 
-# Candidate keys to look up in regions dict (ordered by preference)
-_WOOL_ROOM_COMBINED_KEYS = ('wool-rooms', 'woolrooms', 'wool_rooms')
+# Candidate combined keys for the spawn geometry fast path
 _SPAWN_COMBINED_KEYS = ('spawns',)
 
 # Patterns that identify individual team wool-room regions
@@ -39,6 +43,10 @@ _WOOL_ROOM_PATTERN = re.compile(r'wool.?room|wr$', re.IGNORECASE)
 # Patterns that identify individual team spawn regions (exclude sub-region noise)
 _SPAWN_PATTERN = re.compile(r'spawn$|-spawn$', re.IGNORECASE)
 _SPAWN_EXCLUDE = re.compile(r'wool.spawn|spawn.point|spawn.kit', re.IGNORECASE)
+
+# Radius (blocks) used when building a zone from objective location points rather
+# than named regions (last-resort fallback for maps with no usable regions).
+_LOCATION_FALLBACK_RADIUS = 20.0
 
 
 def _nbt_or_val(v: Any) -> Any:
@@ -110,6 +118,61 @@ def _first_matching_geometry(regions: dict, candidate_keys: tuple[str, ...]) -> 
     return None
 
 
+def _geom_from_positions(
+    regions: dict,
+    positions: list[tuple[float, float]],
+) -> Optional[Any]:
+    """
+    Build a zone geometry from known objective positions rather than region names.
+
+    For each position, find the **smallest** named region that contains it.
+    Taking the minimum-area region per point avoids accidentally selecting
+    large union/meta-regions (e.g. an ``all-wool-rooms`` bounding the whole
+    base, or a ``playable`` rectangle covering the entire map) when tighter
+    per-objective regions exist.  The per-point winners are unioned to form
+    the final geometry; duplicate regions (two objectives in the same room)
+    are included only once.
+
+    Point regions (area == 0) and empty geometries are skipped.
+
+    Falls back to a buffered circle of radius ``_LOCATION_FALLBACK_RADIUS``
+    around each position when no qualifying named region is found — this covers
+    maps like *twisted* where wool rooms are defined only as inline regions
+    inside ``apply_rules`` and never appear in the top-level regions dict.
+    """
+    if not positions:
+        return None
+
+    pts = [Point(x, z) for x, z in positions]
+    winner_geoms: list[Any] = []
+    fallback_pts: list[Any] = []
+
+    for pt in pts:
+        best_geom: Optional[Any] = None
+        best_area = float('inf')
+
+        for region in regions.values():
+            geom = _region_to_geometry(region)
+            if geom is None or geom.is_empty or geom.area == 0:
+                continue
+            if geom.contains(pt) and geom.area < best_area:
+                best_geom = geom
+                best_area = geom.area
+
+        if best_geom is not None:
+            winner_geoms.append(best_geom)
+        else:
+            fallback_pts.append(pt)
+
+    result_geoms: list[Any] = winner_geoms
+    if fallback_pts:
+        result_geoms = result_geoms + [
+            pt.buffer(_LOCATION_FALLBACK_RADIUS) for pt in fallback_pts
+        ]
+
+    return unary_union(result_geoms) if result_geoms else None
+
+
 def _extract_deny_team(use_str: str) -> Optional[str]:
     """Parse 'deny(team-id)' → 'team-id', or None if not that pattern."""
     m = re.match(r'^deny\((.+)\)$', use_str or '')
@@ -132,14 +195,44 @@ class ZoneClassifier:
         map_data: dict,
         defense_buffer: float = 10.0,
         near_spawn_buffer: float = 15.0,
+        wool_positions: Optional[list[tuple[float, float]]] = None,
     ):
         regions: dict = map_data.get('regions', {})
         apply_rules: list = map_data.get('apply_rules', [])
 
         self._defense_buffer = defense_buffer
         self._near_spawn_buffer = near_spawn_buffer
-        self._wool_room_geom = _first_matching_geometry(regions, _WOOL_ROOM_COMBINED_KEYS)
+
+        # Build wool-room geometry: always use position-based detection.
+        # Using a well-known combined key (e.g. 'wool-rooms') as a fast path is
+        # unreliable: the combined region may cover only a subset of wool rooms
+        # (as seen on factorio_mainbus where 'wool-rooms' contained one of four
+        # rooms).  Position-based detection finds the smallest named region
+        # containing each wool objective location, so it always returns individual
+        # per-room geometries regardless of how the map author named them.
+        #
+        # ``wool_positions`` can be passed explicitly (e.g. from map_wool_locations
+        # DB table) to override the XML-declared positions, which are sometimes
+        # wrong (pointing to monument blocks rather than the wool room itself).
+        # Falls back to map_data['wools'][*]['location'] when not provided.
+        if wool_positions is None:
+            wool_positions = [
+                (float(w['location']['x']), float(w['location']['z']))
+                for w in map_data.get('wools', [])
+                if 'location' in w
+            ]
+        self._wool_room_geom = _geom_from_positions(regions, wool_positions)
+
+        # Build spawn geometry: try the well-known combined key first (fast path),
+        # then fall back to position-based detection using per-team spawn locations.
         self._spawn_geom = _first_matching_geometry(regions, _SPAWN_COMBINED_KEYS)
+        if self._spawn_geom is None:
+            spawn_positions = [
+                (float(s['region']['position']['x']), float(s['region']['position']['z']))
+                for s in map_data.get('spawns', [])
+                if 'region' in s and 'position' in s.get('region', {})
+            ]
+            self._spawn_geom = _geom_from_positions(regions, spawn_positions)
 
         # Defense zone: buffer outside wool rooms, minus spawn areas
         if self._wool_room_geom is not None:
@@ -257,18 +350,27 @@ class ZoneClassifier:
                     return team
         return None
 
-    def classify(self, world_x: float, world_z: float) -> tuple[str, Optional[str]]:
+    def classify(
+        self,
+        world_x: float,
+        world_z: float,
+        include_near_spawn: bool = True,
+    ) -> tuple[str, Optional[str]]:
         """
         Classify a 2D position into a zone and owning team.
 
         Args:
-            world_x: Block X coordinate.
-            world_z: Block Z coordinate.
+            world_x:             Block X coordinate.
+            world_z:             Block Z coordinate.
+            include_near_spawn:  When False, the near_spawn zone is skipped and
+                                 those positions are classified as ``field``.
+                                 Use False for chest classification; True (default)
+                                 for resource-block classification.
 
         Returns:
             Tuple of (zone, team) where zone is one of
-            'spawn' / 'wool_room' / 'defense' / 'field'
-            and team is the owning team ID or None.
+            'spawn' / 'wool_room' / 'defense' / 'field' (and 'near_spawn' when
+            ``include_near_spawn`` is True) and team is the owning team ID or None.
         """
         pt = Point(world_x, world_z)
 
@@ -281,7 +383,11 @@ class ZoneClassifier:
         if self._defense_geom is not None and self._defense_geom.contains(pt):
             return ZONE_DEFENSE, self._team_at_point(pt, ZONE_DEFENSE)
 
-        if self._near_spawn_geom is not None and self._near_spawn_geom.contains(pt):
+        if (
+            include_near_spawn
+            and self._near_spawn_geom is not None
+            and self._near_spawn_geom.contains(pt)
+        ):
             return ZONE_NEAR_SPAWN, self._team_at_point(pt, ZONE_NEAR_SPAWN)
 
         return ZONE_FIELD, None
@@ -291,14 +397,18 @@ class ZoneClassifier:
         df: 'pd.DataFrame',
         x_col: str = 'world_x',
         z_col: str = 'world_z',
+        include_near_spawn: bool = True,
     ) -> 'pd.DataFrame':
         """
         Add 'zone' and 'team' columns to a DataFrame with position columns.
 
         Args:
-            df:    DataFrame with at least ``x_col`` and ``z_col`` columns.
-            x_col: Name of the X coordinate column.
-            z_col: Name of the Z coordinate column.
+            df:                  DataFrame with at least ``x_col`` and ``z_col`` columns.
+            x_col:               Name of the X coordinate column.
+            z_col:               Name of the Z coordinate column.
+            include_near_spawn:  When False, near_spawn is excluded from zone
+                                 categories and those positions become ``field``.
+                                 Pass False for chest DataFrames.
 
         Returns:
             Copy of ``df`` with 'zone' and 'team' columns appended.
@@ -310,13 +420,18 @@ class ZoneClassifier:
         teams: list[Optional[str]] = []
 
         for _, row in df.iterrows():
-            zone, team = self.classify(float(row[x_col]), float(row[z_col]))
+            zone, team = self.classify(
+                float(row[x_col]), float(row[z_col]),
+                include_near_spawn=include_near_spawn,
+            )
             zones.append(zone)
             teams.append(team)
 
-        result['zone'] = pd.Categorical(
-            zones,
-            categories=[ZONE_SPAWN, ZONE_NEAR_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD],
+        zone_categories = (
+            [ZONE_SPAWN, ZONE_NEAR_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD]
+            if include_near_spawn
+            else [ZONE_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD]
         )
+        result['zone'] = pd.Categorical(zones, categories=zone_categories)
         result['team'] = teams
         return result

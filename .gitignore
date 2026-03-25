@@ -67,6 +67,7 @@ env/
 !map_folders/tumbleweed/map.png
 !map_folders/annealing_iv/map.png
 !map_folders/outback_outback_edition/map.png
+!docs/figures/*.png
 
 # Map data files
 map_folders/*

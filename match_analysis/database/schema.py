@@ -1007,5 +1007,21 @@ def migrate_terrain_height_table(db_path: str | None = None) -> None:
     print(f"map_terrain_height table created/verified in {db_path}")
 
 
+def migrate_chest_category_column(db_path: str | None = None) -> None:
+    """Add content_category column to map_chests if it does not exist yet.
+
+    Safe to run on an already-migrated database — DuckDB silently skips
+    ADD COLUMN for columns that already exist when using IF NOT EXISTS.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        "ALTER TABLE map_chests ADD COLUMN IF NOT EXISTS content_category TEXT"
+    )
+    conn.close()
+    print(f"content_category column added/verified in {db_path}")
+
+
 if __name__ == "__main__":
     initialize_database()
