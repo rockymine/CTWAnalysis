@@ -29,7 +29,6 @@ Each chest is also tagged with the `zone` it belongs to, derived from the map's 
 | `wool_room` | Inside or immediately adjacent to the wool objective room | combat, wool, supply, weapon | The most contested area; stocked for the final fight |
 | `defense` | A fortified chokepoint between the field and the wool room | defense | Near-exclusive defense items (98.8%); the most semantically pure zone |
 | `spawn` | In or directly at the team's spawn area | defense, weapon | Respawn resupply hub; players restock immediately after dying |
-| `near_spawn` | Between spawn and the open field | defense, wool | Transition zone; less consistently stocked across maps |
 | `field` | The open contested area between the two teams | defense, weapon, combat | Mixed; defense materials dominate but weapon and combat chests appear for mid-field skirmishing |
 
 ---
@@ -80,7 +79,6 @@ The heatmap shows how tightly content categories track spatial zones across the 
 
 **Surprises and nuances:**
 
-- **Near-spawn → wool (9.5%)** — Almost entirely attributable to two maps: Ouroboros (16 chests) and Yermo (8 chests). On Ouroboros, players spawn underground directly below the wool room, so the near-spawn buffer overlaps the wool-room approach area. Yermo has a similar tight spawn-to-wool geometry. These are genuine map-layout quirks, not a systematic classification issue.
 - **Spawn → weapon (18.6%)** — Higher than expected. This reflects maps that place a weapon chest at spawn rather than in the field, giving every respawner immediate ranged gear.
 - **Field → defense (66.4%)** — Two-thirds of field chests are still classified as defense. This is not surprising on maps where defense materials are distributed across the whole layout rather than concentrated in a single room, but it means field chests are often not neutral resupply; they bias toward building blocks.
 

@@ -565,7 +565,7 @@ def handle_resources(args) -> None:
                 chests_df = cc_dbl[chest_loc_cols].drop_duplicates(
                     subset=['world_x', 'world_z', 'y']
                 )
-                chests_classified = clf.classify_dataframe(chests_df)
+                chests_classified = clf.classify_dataframe(chests_df, include_near_spawn=False)
 
                 conn.execute("DELETE FROM map_chests WHERE map_id = ?", [map_id])
                 conn.execute("DELETE FROM map_chest_contents WHERE map_id = ?", [map_id])

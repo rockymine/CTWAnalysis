@@ -8,6 +8,11 @@ Classifies a (world_x, world_z) position into one of four zones:
     defense     — outside a wool room but within ``defense_buffer`` blocks of it
     field       — everywhere else
 
+A fifth zone, ``near_spawn``, is built by default (for resource-block plots) but
+is intentionally excluded from **chest** classification — pass
+``include_near_spawn=False`` to ``classify`` or ``classify_dataframe`` so those
+positions fall through to ``field`` instead.
+
 Also assigns the owning team where possible, using ``apply_rules`` deny entries
 and keyword matching on region IDs as a fallback.
 
@@ -345,18 +350,27 @@ class ZoneClassifier:
                     return team
         return None
 
-    def classify(self, world_x: float, world_z: float) -> tuple[str, Optional[str]]:
+    def classify(
+        self,
+        world_x: float,
+        world_z: float,
+        include_near_spawn: bool = True,
+    ) -> tuple[str, Optional[str]]:
         """
         Classify a 2D position into a zone and owning team.
 
         Args:
-            world_x: Block X coordinate.
-            world_z: Block Z coordinate.
+            world_x:             Block X coordinate.
+            world_z:             Block Z coordinate.
+            include_near_spawn:  When False, the near_spawn zone is skipped and
+                                 those positions are classified as ``field``.
+                                 Use False for chest classification; True (default)
+                                 for resource-block classification.
 
         Returns:
             Tuple of (zone, team) where zone is one of
-            'spawn' / 'wool_room' / 'defense' / 'field'
-            and team is the owning team ID or None.
+            'spawn' / 'wool_room' / 'defense' / 'field' (and 'near_spawn' when
+            ``include_near_spawn`` is True) and team is the owning team ID or None.
         """
         pt = Point(world_x, world_z)
 
@@ -369,7 +383,11 @@ class ZoneClassifier:
         if self._defense_geom is not None and self._defense_geom.contains(pt):
             return ZONE_DEFENSE, self._team_at_point(pt, ZONE_DEFENSE)
 
-        if self._near_spawn_geom is not None and self._near_spawn_geom.contains(pt):
+        if (
+            include_near_spawn
+            and self._near_spawn_geom is not None
+            and self._near_spawn_geom.contains(pt)
+        ):
             return ZONE_NEAR_SPAWN, self._team_at_point(pt, ZONE_NEAR_SPAWN)
 
         return ZONE_FIELD, None
@@ -379,14 +397,18 @@ class ZoneClassifier:
         df: 'pd.DataFrame',
         x_col: str = 'world_x',
         z_col: str = 'world_z',
+        include_near_spawn: bool = True,
     ) -> 'pd.DataFrame':
         """
         Add 'zone' and 'team' columns to a DataFrame with position columns.
 
         Args:
-            df:    DataFrame with at least ``x_col`` and ``z_col`` columns.
-            x_col: Name of the X coordinate column.
-            z_col: Name of the Z coordinate column.
+            df:                  DataFrame with at least ``x_col`` and ``z_col`` columns.
+            x_col:               Name of the X coordinate column.
+            z_col:               Name of the Z coordinate column.
+            include_near_spawn:  When False, near_spawn is excluded from zone
+                                 categories and those positions become ``field``.
+                                 Pass False for chest DataFrames.
 
         Returns:
             Copy of ``df`` with 'zone' and 'team' columns appended.
@@ -398,13 +420,18 @@ class ZoneClassifier:
         teams: list[Optional[str]] = []
 
         for _, row in df.iterrows():
-            zone, team = self.classify(float(row[x_col]), float(row[z_col]))
+            zone, team = self.classify(
+                float(row[x_col]), float(row[z_col]),
+                include_near_spawn=include_near_spawn,
+            )
             zones.append(zone)
             teams.append(team)
 
-        result['zone'] = pd.Categorical(
-            zones,
-            categories=[ZONE_SPAWN, ZONE_NEAR_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD],
+        zone_categories = (
+            [ZONE_SPAWN, ZONE_NEAR_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD]
+            if include_near_spawn
+            else [ZONE_SPAWN, ZONE_WOOL_ROOM, ZONE_DEFENSE, ZONE_FIELD]
         )
+        result['zone'] = pd.Categorical(zones, categories=zone_categories)
         result['team'] = teams
         return result
