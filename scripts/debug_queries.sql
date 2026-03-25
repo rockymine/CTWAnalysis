@@ -362,6 +362,7 @@ SELECT
     m.match_file
 FROM matches m
 JOIN maps ON m.map_id = maps.map_id
+WHERE maps.map_slug = 'mame_i_shrunk_the_pvpers'
 
 -- =====================
 -- 9. CHEST ANALYSIS
@@ -539,3 +540,126 @@ SELECT
 FROM map_armor
 GROUP BY uses_helmet, uses_chestplate, uses_leggings, uses_boots
 ORDER BY map_count DESC;
+
+-- =====================
+-- 10. DEFENSE LANE GEOMETRY (match data)
+-- =====================
+-- Characterises actual defended space using below-terrain player positions.
+-- HAT (height above terrain) = y - (surface_y + 1); negative = below surface.
+-- surface_y = MAX(y) per (x,z) cell across all Arabia matches (y>=1 to exclude void falls).
+
+-- 10a. Arabia wool 4 (yellow, 189,-106) — z-band summary of excavated cells
+-- Rows: one per z value; key metrics: cell count, band volume, avg/max depth, x span, events.
+-- map_id=25 is Arabia.
+WITH arabia_matches AS (SELECT match_id FROM matches WHERE map_id = 25),
+surface AS (
+    SELECT x, z, MAX(y) AS surface_y
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    WHERE z BETWEEN -115 AND -65 AND x BETWEEN 150 AND 205 AND y >= 1
+    GROUP BY x, z
+),
+below_terrain AS (
+    SELECT pe.x, pe.z, pe.y, s.surface_y,
+           pe.y - (s.surface_y + 1) AS hat
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    JOIN surface s ON pe.x = s.x AND pe.z = s.z
+    WHERE pe.y - (s.surface_y + 1) < 0 AND pe.y >= 1
+      AND pe.z BETWEEN -111 AND -70 AND pe.x BETWEEN 155 AND 200
+),
+cell_stats AS (
+    SELECT x, z, surface_y,
+           MIN(y) AS floor_y,
+           surface_y - MIN(y) AS excavation_depth,
+           COUNT(*) AS events
+    FROM below_terrain
+    GROUP BY x, z, surface_y
+)
+SELECT
+    z AS z_value,
+    COUNT(*) AS cells,
+    SUM(excavation_depth) AS band_volume,
+    ROUND(AVG(excavation_depth), 1) AS avg_depth,
+    MAX(excavation_depth) AS max_depth,
+    MIN(x) AS x_min, MAX(x) AS x_max, MAX(x)-MIN(x)+1 AS x_width,
+    ROUND(AVG(surface_y), 1) AS avg_terrain_y,
+    MIN(floor_y) AS floor_y,
+    SUM(events) AS events
+FROM cell_stats
+GROUP BY z
+ORDER BY z DESC;
+
+-- 10b. Arabia wool 4 — x-distribution at peak excavation depth (z=-74 to -78)
+-- Shows actual lane profile: x position, avg depth, surface height, event concentration.
+WITH arabia_matches AS (SELECT match_id FROM matches WHERE map_id = 25),
+surface AS (
+    SELECT x, z, MAX(y) AS surface_y
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    WHERE z BETWEEN -80 AND -70 AND x BETWEEN 150 AND 205 AND y >= 1
+    GROUP BY x, z
+),
+below_terrain AS (
+    SELECT pe.x, pe.z, pe.y, s.surface_y,
+           pe.y - (s.surface_y + 1) AS hat
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    JOIN surface s ON pe.x = s.x AND pe.z = s.z
+    WHERE pe.y - (s.surface_y + 1) < 0 AND pe.y >= 1
+      AND pe.z BETWEEN -78 AND -74 AND pe.x BETWEEN 155 AND 200
+),
+cell_stats AS (
+    SELECT x, z, surface_y,
+           MIN(y) AS floor_y,
+           surface_y - MIN(y) AS excavation_depth,
+           COUNT(*) AS events
+    FROM below_terrain
+    GROUP BY x, z, surface_y
+)
+SELECT x,
+    COUNT(*) AS z_slices_present,
+    ROUND(AVG(excavation_depth), 1) AS avg_depth,
+    ROUND(AVG(surface_y), 1) AS avg_surface_y,
+    SUM(events) AS total_events
+FROM cell_stats
+GROUP BY x
+ORDER BY x;
+
+-- 10c. Arabia wool 4 — total lane volume summary (z=-70 to -98 core lane)
+WITH arabia_matches AS (SELECT match_id FROM matches WHERE map_id = 25),
+surface AS (
+    SELECT x, z, MAX(y) AS surface_y
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    WHERE z BETWEEN -115 AND -65 AND x BETWEEN 150 AND 205 AND y >= 1
+    GROUP BY x, z
+),
+below_terrain AS (
+    SELECT pe.x, pe.z, pe.y, s.surface_y,
+           pe.y - (s.surface_y + 1) AS hat
+    FROM position_events pe
+    JOIN arabia_matches am ON pe.match_id = am.match_id
+    JOIN surface s ON pe.x = s.x AND pe.z = s.z
+    WHERE pe.y - (s.surface_y + 1) < 0 AND pe.y >= 1
+      AND pe.z BETWEEN -98 AND -70 AND pe.x BETWEEN 155 AND 195
+),
+cell_stats AS (
+    SELECT x, z, surface_y,
+           MIN(y) AS floor_y,
+           surface_y - MIN(y) AS excavation_depth,
+           COUNT(*) AS events
+    FROM below_terrain
+    GROUP BY x, z, surface_y
+)
+SELECT
+    COUNT(*) AS excavated_cells,
+    SUM(excavation_depth) AS total_block_volume,
+    ROUND(AVG(excavation_depth), 1) AS avg_depth,
+    MAX(excavation_depth) AS max_depth,
+    MIN(x) AS x_min, MAX(x) AS x_max, MAX(x)-MIN(x)+1 AS x_span,
+    MIN(z) AS z_min, MAX(z) AS z_max, MAX(z)-MIN(z)+1 AS z_span,
+    ROUND(AVG(surface_y), 1) AS avg_surface_y,
+    MIN(floor_y) AS absolute_floor_y,
+    SUM(events) AS total_events
+FROM cell_stats;

@@ -355,6 +355,40 @@ Examples:
                    help='Output PNG path (default: output/_debug/fork_analysis.png)')
     p.set_defaults(func=handle_fork_layout)
 
+    # debug wool-excavation
+    p = debug_sub.add_parser(
+        'wool-excavation',
+        help='Plot below-terrain player positions around each wool (excavation diagnostic)',
+        description=(
+            'For each wool on the map, renders a panel showing below-terrain player '
+            'positions from match data, coloured by excavation depth. Each panel '
+            'overlays the query search window (dashed), actual cell bounding box (solid), '
+            'wool position (star), and defending spawn (triangle). Useful for understanding '
+            'how defenders excavate and fortify the space in front of each wool.'
+        ),
+        formatter_class=_RAW,
+        epilog="""\
+Examples:
+  python ctw.py debug wool-excavation --map arabia
+  python ctw.py debug wool-excavation --map arabia --save /tmp/excav.png
+""",
+    )
+    p.add_argument('--map', required=True,
+                   help='Map name (e.g. arabia)')
+    p.add_argument('--min-floor-range', type=int, default=1,
+                   dest='min_floor_range', metavar='BLOCKS',
+                   help='Minimum cross-match floor variation to count a cell as '
+                        'active excavation (default: 1). Cells below this threshold '
+                        'are shown grey — they are below-terrain but static '
+                        '(building interiors, edges). Raise to 2–3 for stricter '
+                        'active-excavation definition.')
+    p.add_argument('--output', default='output',
+                   help='Root output directory (default: output)')
+    p.add_argument('--save', default=None, dest='save_path',
+                   help='Output PNG path '
+                        '(default: output/<map>/images/wool_excavation.png)')
+    p.set_defaults(func=handle_wool_excavation)
+
 
 def handle_prepare_demo(args: object) -> None:
     from layout_analysis.demo import run
@@ -419,4 +453,9 @@ def handle_match_coverage(args: object) -> None:
 
 def handle_fork_layout(args: object) -> None:
     from layout_analysis.fork_analysis import run
+    run(args)
+
+
+def handle_wool_excavation(args: object) -> None:
+    from match_analysis.wool_excavation_plot import run
     run(args)
