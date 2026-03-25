@@ -14,9 +14,10 @@ Every chest in the database is assigned a `content_category` based on the most s
 |----------|----------|---------------------|---------------|
 | `wool`   | 1 | Contains the wool objective item | Holds the win condition |
 | `combat` | 2 | Contains any diamond armor piece | Gear-up chest at the objective; serves both defenders holding the wool room and attackers who have broken through |
-| `weapon` | 3 | Contains a bow or sword (no armor) | Ranged or melee kit chest; appears at spawn and in field positions |
-| `supply` | 4 | Contains golden apples or potions (no armor/weapon) | Attacker re-supply chest; stocked with Splash Speed potions for escaping with the wool, golden apples for the final fight, and building blocks for re-bridging inside the objective |
-| `defense`| 5 | Everything else | Building and barrier materials for defenders; the largest single category |
+| `kit`    | 3 | Contains a weapon AND food AND a tool (pickaxe/axe/shovel) | Legacy full-kit spawn chest from maps that predate the XML `<kit>` module; provides a complete player loadout (weapon, mining tool, food, and blocks) in a single chest |
+| `weapon` | 4 | Contains a bow or sword (no armor, no food+tool combo) | True weapon chest; typically a buffed bow with arrows, sometimes a sword |
+| `supply` | 5 | Contains golden apples or potions (no armor/weapon) | Attacker re-supply chest; stocked with Splash Speed potions for escaping with the wool, golden apples for the final fight, and building blocks for re-bridging inside the objective |
+| `defense`| 6 | Everything else | Building and barrier materials for defenders; the largest single category |
 
 A chest that does not match any of the first four rules falls through to `defense` as the default. This means items like planks, fences, pistons, and crafting tables that are used to seal passages and slow attackers are captured here even when the chest contains no dedicated combat gear.
 
@@ -61,7 +62,9 @@ The chart above shows the top 10 items in each category ranked by *chest-slot oc
 
 ### Weapon chests
 
-**Bow (9,044)** and **arrow (~9,900 slots total)** are nearly always paired — a weapon chest almost always provides both. **Golden apples (2,910)** appear alongside bows on a significant share of maps, bundling a small combat consumable with the ranged weapon. The presence of **wood log (1,994)**, **glass (1,710)**, and **planks (1,071)** shows that weapon chests often include a few building blocks — useful for a player who picks up the bow to set up a sniper position or bridging lane. **Food items (cooked fish 864, cooked beef 842, snowball 840)** are a secondary weapon-chest motif: food restores hunger for a sustained push, and snowballs can knock back opponents.
+**Bow** and **arrow** are nearly always paired — a true weapon chest almost always provides both, often with enchantments. **Golden apples** appear alongside bows on a significant share of maps, bundling a small combat consumable with the ranged weapon. Some weapon chests include a few building blocks (logs, glass, planks) for setting up a sniper position or bridging lane.
+
+*Note: figures in this section will shift once the `kit` category is applied. Legacy full-kit spawn chests on maps like blocks_ctw and the race_for_victory series were previously captured here because they contain bows and swords. With kit classification in place, those chests are separated out and the remaining weapon chests should skew toward true ranged-weapon setups.*
 
 ---
 

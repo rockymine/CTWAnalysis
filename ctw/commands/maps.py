@@ -651,8 +651,13 @@ def handle_chest_classify(args) -> None:
     id_placeholders = ', '.join('?' * len(map_ids))
 
     # Compute content_category per chest using a priority-based CASE expression.
-    # Priority: wool > combat (armor) > weapon > supply (gapple/potion) > defense
-    # Tools (pickaxe/shovel/axe) are part of defense chests, not a separate category.
+    # Priority: wool > combat (armor) > kit > weapon > supply (gapple/potion) > defense
+    #
+    # kit catches legacy full-kit spawn chests (pre-XML kit module) found on maps
+    # like blocks_ctw and the race_for_victory series.  These chests contain a
+    # weapon, a mining tool (pickaxe/axe/shovel), and food all together — a
+    # combination that never appears in true weapon chests.  Classifying them as
+    # 'kit' prevents their food and tool items from polluting weapon-chest stats.
     #
     # has_wool uses map_wool_locations to validate the wool damage value (color).
     # If a map has entries there, only wool whose item_damage matches a known
@@ -683,6 +688,16 @@ def handle_chest_classify(args) -> None:
                     MAX(CASE WHEN mcc.item_id LIKE '%sword%'
                                   OR mcc.item_id IN ('minecraft:bow', '261', 'minecraft:arrow', '262')
                              THEN 1 ELSE 0 END) AS has_weapon,
+                    MAX(CASE WHEN mcc.item_id IN (
+                                  'minecraft:cooked_fish',     '350',
+                                  'minecraft:cooked_beef',     '364',
+                                  'minecraft:bread',           '297',
+                                  'minecraft:cooked_chicken',  '366',
+                                  'minecraft:cooked_porkchop', '320'
+                             ) THEN 1 ELSE 0 END) AS has_food,
+                    MAX(CASE WHEN mcc.item_id LIKE '%axe%'
+                                  OR mcc.item_id LIKE '%shovel%'
+                             THEN 1 ELSE 0 END) AS has_tool,
                     MAX(CASE WHEN mcc.item_id IN ('minecraft:golden_apple', '322') THEN 1 ELSE 0 END)
                         AS has_gapple,
                     MAX(CASE WHEN mcc.item_id IN ('minecraft:potion', '373') THEN 1 ELSE 0 END)
@@ -695,10 +710,12 @@ def handle_chest_classify(args) -> None:
             SELECT
                 map_id, world_x, world_z, y,
                 CASE
-                    WHEN has_wool    = 1 THEN 'wool'
-                    WHEN has_armor   = 1 THEN 'combat'
-                    WHEN has_weapon  = 1 THEN 'weapon'
-                    WHEN has_gapple  = 1 OR has_potion = 1 THEN 'supply'
+                    WHEN has_wool   = 1                              THEN 'wool'
+                    WHEN has_armor  = 1                              THEN 'combat'
+                    WHEN has_weapon = 1 AND has_food = 1
+                                        AND has_tool = 1            THEN 'kit'
+                    WHEN has_weapon = 1                              THEN 'weapon'
+                    WHEN has_gapple = 1 OR has_potion = 1           THEN 'supply'
                     ELSE 'defense'
                 END AS content_category
             FROM chest_flags
