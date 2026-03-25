@@ -354,7 +354,7 @@ FROM gap_sized
 ORDER BY match_start;
 
 -- 8a. validate if a map has matches in the db
-SELECT 
+SELECT
     m.match_id,
     m.match_start,
     m.match_duration, -- This is in seconds
@@ -362,4 +362,100 @@ SELECT
     m.match_file
 FROM matches m
 JOIN maps ON m.map_id = maps.map_id
+
+-- =====================
+-- 9. CHEST ANALYSIS
+-- =====================
+
+-- 9a. Zone × content_category cross-tab (pct of chests in each zone by category)
+-- Shows how well spatial zones align with chest content semantics
+WITH zone_cat AS (
+    SELECT
+        mc.spatial_zone,
+        mc.content_category,
+        COUNT(*) AS chest_count
+    FROM map_chests mc
+    WHERE mc.spatial_zone IS NOT NULL
+      AND mc.content_category IS NOT NULL
+    GROUP BY mc.spatial_zone, mc.content_category
+),
+zone_totals AS (
+    SELECT spatial_zone, SUM(chest_count) AS zone_total
+    FROM zone_cat
+    GROUP BY spatial_zone
+)
+SELECT
+    zc.spatial_zone,
+    zc.content_category,
+    zc.chest_count,
+    zt.zone_total,
+    ROUND(100.0 * zc.chest_count / zt.zone_total, 1) AS pct_of_zone
+FROM zone_cat zc
+JOIN zone_totals zt ON zc.spatial_zone = zt.spatial_zone
+ORDER BY zc.spatial_zone, pct_of_zone DESC;
+
+-- 9b. Defense chest material composition per map (top items by total count)
+-- Useful for spotting outlier maps with unusual defense supply loadouts
+SELECT
+    mp.map_slug,
+    mcc.item_id,
+    SUM(mcc.count) AS total_items
+FROM map_chests mc
+JOIN maps mp ON mc.map_id = mp.map_id
+JOIN map_chest_contents mcc ON mc.chest_id = mcc.chest_id
+WHERE mc.content_category = 'defense'
+GROUP BY mp.map_slug, mcc.item_id
+ORDER BY mp.map_slug, total_items DESC;
+
+-- 9c. Defense chest count and total items per map, sorted by intensity
+-- density = defense items per wool chest (proxy for how heavily defended each wool is)
+WITH defense_stats AS (
+    SELECT
+        mc.map_id,
+        COUNT(DISTINCT mc.chest_id) AS defense_chests,
+        SUM(mcc.count) AS defense_items
+    FROM map_chests mc
+    JOIN map_chest_contents mcc ON mc.chest_id = mcc.chest_id
+    WHERE mc.content_category = 'defense'
+    GROUP BY mc.map_id
+),
+wool_counts AS (
+    SELECT map_id, COUNT(*) AS wool_count
+    FROM map_chests
+    WHERE content_category = 'wool'
+    GROUP BY map_id
+)
+SELECT
+    mp.map_slug,
+    COALESCE(ds.defense_chests, 0) AS defense_chests,
+    COALESCE(ds.defense_items, 0) AS defense_items,
+    COALESCE(wc.wool_count, 0) AS wool_chests,
+    CASE WHEN COALESCE(wc.wool_count, 0) > 0
+         THEN ROUND(ds.defense_items::DOUBLE / wc.wool_count, 0)
+         ELSE NULL END AS defense_items_per_wool
+FROM maps mp
+LEFT JOIN defense_stats ds ON mp.map_id = ds.map_id
+LEFT JOIN wool_counts wc ON mp.map_id = wc.map_id
+ORDER BY defense_items DESC NULLS LAST;
+
+-- 9d. Content category summary across all maps
+-- Quick count of how many chests fall into each category
+SELECT
+    content_category,
+    COUNT(*) AS chest_count,
+    ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
+FROM map_chests
+WHERE content_category IS NOT NULL
+GROUP BY content_category
+ORDER BY chest_count DESC;
+
+-- 9e. Maps with no defense chests (may rely on kit-based defense instead)
+SELECT mp.map_slug, mp.map_name, COUNT(mc.chest_id) AS total_chests
+FROM maps mp
+LEFT JOIN map_chests mc ON mp.map_id = mc.map_id
+WHERE mp.map_id NOT IN (
+    SELECT DISTINCT map_id FROM map_chests WHERE content_category = 'defense'
+)
+GROUP BY mp.map_slug, mp.map_name
+ORDER BY total_chests DESC;
 WHERE maps.map_slug = 'tumbleweed'
