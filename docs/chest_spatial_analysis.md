@@ -1,6 +1,6 @@
 # Chest Spatial Analysis
 
-*Generated 2026-03-25 | Dataset: ~202 non-stub maps with defense chests; 15 maps with no defense chests*
+*Generated 2026-03-25 | Dataset: ~202 non-stub maps with defense chests; 12 maps with no defense chests*
 
 ---
 
@@ -36,7 +36,7 @@ Each chest is also tagged with the `zone` it belongs to, derived from the map's 
 
 ## Executive Summary
 
-Chest content categories align remarkably well with spatial zones: defense-zone chests are 98.8% defense items, spawn chests are 78% defense + 19% weapon (functioning as resupply stations), and wool-room chests show the richest mix — combat, wool, supply, and weapon all represented. A small number of maps completely dominate the item-count extremes: nextgen and blocks_ctw each have 288 defense chests stocked with ~500K items each, compared to a typical map with 8–32 chests holding a few thousand items. Fifteen maps have no defense chests at all, most of which are small pico/nano maps with simple layouts that likely rely on a single shared chest pool or none at all.
+Chest content categories align remarkably well with spatial zones: defense-zone chests are 96.6% defense items, spawn chests are 78% defense + 19% weapon (functioning as resupply stations), and wool-room chests show the richest mix — combat, wool, supply, and weapon all represented. A small number of maps completely dominate the item-count extremes: nextgen and blocks_ctw each have 288 defense chests stocked with ~500K items each, compared to a typical map with 8–32 chests holding a few thousand items. Twelve maps have no defense chests at all, most of which are small pico/nano maps with simple layouts that likely rely on a single shared chest pool or none at all.
 
 ---
 
@@ -74,16 +74,15 @@ The heatmap shows how tightly content categories track spatial zones across the 
 
 **Strong alignments:**
 
-- **Defense zone → defense (98.8%)** — The classification pipeline is highly consistent here. The 1.2% weapon contribution (4 chests) is plausibly bows or swords stocked alongside building blocks, which the category model rounds into "weapon".
-- **Wool room → combat (42.9%)** — Wool rooms are not just about wool retrieval; they are heavily contested and designers stock them accordingly. Combat items (armor, gapples, potions) make up nearly half the chest content. Wool (21.7%), supply (15.8%), and weapon (13.2%) round out what is functionally an arena preparation zone.
-- **Spawn → defense (77.9%) + weapon (18.7%)** — Spawn chests are resupply hubs. Players respawn and immediately restock on blocks and gear. The high weapon proportion (mostly bows) makes sense as spawn is also where players tool up before pushing out.
+- **Defense zone → defense (96.6%)** — The classification pipeline is highly consistent here. The remaining 3.4% is a small number of weapon and combat chests in what the spatial classifier identifies as the defense buffer zone — plausibly bows or swords stocked just outside the wool room entrance.
+- **Wool room → combat (41.5%)** — Wool rooms are not just about wool retrieval; they are heavily contested and designers stock them accordingly. Combat items (armor, gapples, potions) make up over 40% of chest content. Wool (23.6%), supply (15.2%), and weapon (13.7%) round out what is functionally an arena preparation zone. A 6.0% defense fraction reflects maps that also cache building materials inside the wool room itself.
+- **Spawn → defense (77.7%) + weapon (18.6%)** — Spawn chests are resupply hubs. Players respawn and immediately restock on blocks and gear. The high weapon proportion (mostly bows) makes sense as spawn is also where players tool up before pushing out.
 
 **Surprises and nuances:**
 
-- **Near-spawn → wool (15.4%)** — Fifteen percent of near-spawn chests contain wool items. This suggests some maps place mid-field wool collection near spawn rather than exclusively inside dedicated wool rooms, or that near-spawn and wool-room zones partially overlap on certain map geometries.
-- **Spawn → weapon (18.7%)** — Higher than expected. This reflects maps that place a weapon chest at spawn rather than in the field, giving every respawner immediate ranged gear.
-- **Field → defense (57.1%)** — Over half of field chests are still classified as defense. This is not surprising on maps where defense materials are distributed across the whole layout rather than concentrated in a single room, but it means field chests are often not neutral resupply; they bias toward building blocks.
-- **Field → wool (4.8%)** — A small but nonzero wool fraction in field chests implies some maps scatter wool pickups across the map rather than consolidating them.
+- **Near-spawn → wool (9.5%)** — Almost entirely attributable to two maps: Ouroboros (16 chests) and Yermo (8 chests). On Ouroboros, players spawn underground directly below the wool room, so the near-spawn buffer overlaps the wool-room approach area. Yermo has a similar tight spawn-to-wool geometry. These are genuine map-layout quirks, not a systematic classification issue.
+- **Spawn → weapon (18.6%)** — Higher than expected. This reflects maps that place a weapon chest at spawn rather than in the field, giving every respawner immediate ranged gear.
+- **Field → defense (66.4%)** — Two-thirds of field chests are still classified as defense. This is not surprising on maps where defense materials are distributed across the whole layout rather than concentrated in a single room, but it means field chests are often not neutral resupply; they bias toward building blocks.
 
 ---
 
@@ -163,11 +162,10 @@ The "Other" category dominates many maps and likely includes common building mat
 
 ## Maps with No Defense Chests
 
-The following 15 non-stub maps have no chests classified as `content_category = 'defense'`:
+The following 12 non-stub maps have no chests classified as `content_category = 'defense'`:
 
 | Map | Size tier | Total blocks | Max players/team | Wools/team |
 |-----|-----------|-------------|-----------------|-----------|
-| 2d | nano | 1,428 | 8 | 1 |
 | blossom_ctw | micro | 6,370 | 16 | 1 |
 | cargo | micro | 6,088 | 16 | 2 |
 | catscratch | nano | 4,016 | 12 | 1 |
@@ -177,17 +175,15 @@ The following 15 non-stub maps have no chests classified as `content_category = 
 | ingwaz | pico | 2,039 | 5 | 1 |
 | no_mans_land | centi | 11,105 | 32 | 2 |
 | ouroboros | nano | 10,335 | 10 | 1 |
-| outlyne | nano | 4,362 | 8 | 1 |
 | prisma_ctw | nano | 4,529 | 6 | 1 |
 | stalactites_a_land_down_under | micro | 9,518 | 18 | 2 |
-| curly_wools_ix | centi | 348 | 32 | 1 |
 | cake_day | centi | 15,063 | 35 | 2 |
 
 A few observations:
 
-- **Most are small maps**: 12 of 15 are pico/nano/micro. The exceptions are no_mans_land, cake_day, and curly_wools_ix (all centi). These large maps without defense chests are interesting — they may deliberately present an open, unfortified wool room where the contest is about team combat rather than siege mechanics.
-- **curly_wools_ix** has only 348 total blocks — almost certainly a stub or test map that slipped through the `stub = FALSE` filter. The centi tier assignment is probably a data entry error given the block count.
+- **Most are small maps**: 10 of 12 are pico/nano/micro. The exceptions are no_mans_land and cake_day (both centi). These larger maps without defense chests deliberately present an open, unfortified wool room where the contest is about team combat rather than siege mechanics.
 - **cake_day** and **no_mans_land** are legitimate full-size maps. Their lack of defense chests is a real design choice: players defend using the terrain and their starting gear rather than pre-placed chest supplies.
+- **ouroboros** is unusual in this list: its wool-room chests are stocked with combat and supply gear, but nothing in the defense category. The map has players spawn directly below the wool room, so the layout relies on natural terrain chokepoints rather than pre-placed barrier materials.
 - These maps may rely on **spawn chests only** (classified under the spawn zone) for any resupply, or may have a design philosophy where raiding is straightforward and defense emerges from player skill rather than material fortification.
 
 ---
