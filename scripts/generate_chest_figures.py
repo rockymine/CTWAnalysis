@@ -462,4 +462,99 @@ fig4.savefig(os.path.join(OUT_DIR, "defense_material_composition.png"), dpi=150)
 plt.close(fig4)
 print("Saved defense_material_composition.png")
 
+# ---------------------------------------------------------------------------
+# Figure 5 – Top items per content category (chest-slot occurrences)
+# ---------------------------------------------------------------------------
+# Data: top 10 items per category sorted by chest_slots (number of slots
+# across all maps, i.e. how universally the item appears in that category).
+# Item names translated from Minecraft 1.8.9 IDs.  "legacy" entries are the
+# old numeric IDs (e.g. 322 = golden_apple) that appear on older maps.
+
+CATEGORY_ITEMS = {
+    'combat': [
+        ('Golden Apple',        19440),
+        ('Diamond Chestplate',  14398),
+        ('Bow',                 10292),
+        ('Diamond Helmet',       5796),
+        ('Diamond Leggings',     4043),
+        ('Potion',               3056),
+        ('Diamond Boots',        2136),
+        ('Planks',                 944),
+        ('Arrow',                  816),
+        ('Stained Clay',           159),
+    ],
+    'defense': [
+        ('Planks',              25496),
+        ('Wood Log',            12194),
+        ('Glass',               10050),
+        ('Crafting Table',       9056),
+        ('Redstone Block',       3570),
+        ('Stained Clay',         2909),
+        ('Fence',                2678),
+        ('Piston',               2506),
+        ('Wooden Button',        2418),
+        ('Pressure Plate',       2212),
+    ],
+    'supply': [
+        ('Potion',               8164),
+        ('Golden Apple',         6015),
+        ('Planks',               3221),
+        ('Golden Apple (legacy)',  2094),
+        ('Stained Glass',          464),
+        ('Stained Clay',           300),
+        ('Wheat',                  288),
+        ('Stone',                  288),
+        ('Leaves',                 198),
+        ('Wood Log',               196),
+    ],
+    'weapon': [
+        ('Bow',                  9044),
+        ('Arrow',                8604),
+        ('Golden Apple',         2910),
+        ('Wood Log',             1994),
+        ('Glass',                1710),
+        ('Arrow (legacy)',       1317),
+        ('Planks',               1071),
+        ('Cooked Fish',            864),
+        ('Cooked Beef',            842),
+        ('Snowball',               840),
+    ],
+}
+
+CATEGORY_COLORS = {
+    'combat':  '#e74c3c',
+    'defense': '#2980b9',
+    'supply':  '#27ae60',
+    'weapon':  '#e67e22',
+}
+
+fig5, axes = plt.subplots(2, 2, figsize=(14, 10))
+axes_flat = axes.flatten()
+
+for ax, (cat, items) in zip(axes_flat, CATEGORY_ITEMS.items()):
+    labels = [name for name, _ in reversed(items)]
+    values = [val for _, val in reversed(items)]
+    color = CATEGORY_COLORS[cat]
+    max_val = max(values)
+    bars = ax.barh(labels, values, color=color, alpha=0.82, edgecolor='white', linewidth=0.5)
+    ax.set_title(f'{cat.capitalize()} chests — top 10 items',
+                 fontsize=11, fontweight='bold', color=color)
+    ax.set_xlabel('Chest-slot occurrences (all maps)', fontsize=9)
+    ax.tick_params(axis='y', labelsize=9)
+    ax.tick_params(axis='x', labelsize=9)
+    for bar, val in zip(bars, values):
+        ax.text(val + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f'{val:,}', va='center', fontsize=8)
+    ax.set_xlim(right=max_val * 1.18)
+
+fig5.suptitle(
+    'Most Common Items by Chest Category\n'
+    '(chest-slot occurrences across all maps; sorted by prevalence)',
+    fontsize=13, fontweight='bold',
+)
+fig5.tight_layout()
+fig5.savefig(os.path.join(OUT_DIR, 'chest_category_contents.png'), dpi=150)
+plt.close(fig5)
+print('Saved chest_category_contents.png')
+
 print("All figures saved to", OUT_DIR)
