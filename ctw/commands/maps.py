@@ -516,10 +516,19 @@ def handle_resources(args) -> None:
         with open(map_data_path, 'r', encoding='utf-8') as f:
             map_data = json.load(f)
 
+        # Prefer DB wool positions (from map_wool_locations) over XML-declared
+        # positions, which may point to monument blocks rather than wool rooms.
+        # Fall back to XML positions when no DB data exists for this map.
+        db_wool_rows = conn.execute(
+            "SELECT x, z FROM map_wool_locations WHERE map_id = ?", [map_id]
+        ).fetchall()
+        wool_positions = [(float(r[0]), float(r[1])) for r in db_wool_rows] or None
+
         clf = ZoneClassifier(
             map_data,
             defense_buffer=args.defense_buffer,
             near_spawn_buffer=args.near_spawn_buffer,
+            wool_positions=wool_positions,
         )
 
         # --- Resource blocks ---
@@ -644,28 +653,44 @@ def handle_chest_classify(args) -> None:
     # Compute content_category per chest using a priority-based CASE expression.
     # Priority: wool > combat (armor) > weapon > supply (gapple/potion) > defense
     # Tools (pickaxe/shovel/axe) are part of defense chests, not a separate category.
+    #
+    # has_wool uses map_wool_locations to validate the wool damage value (color).
+    # If a map has entries there, only wool whose item_damage matches a known
+    # objective wool_id is counted — this prevents building-material wool of a
+    # non-objective color (e.g. pink on Fairy Tales 2) from being misclassified.
+    # Maps without entries fall back to accepting any wool item.
     conn.execute(f"""
         UPDATE map_chests
         SET content_category = classified.content_category
         FROM (
-            WITH chest_flags AS (
+            WITH objective_damage AS (
+                SELECT map_id, LIST(DISTINCT wool_id) AS valid_damages
+                FROM map_wool_locations
+                GROUP BY map_id
+            ),
+            chest_flags AS (
                 SELECT
-                    map_id, world_x, world_z, y,
-                    MAX(CASE WHEN item_id IN ('minecraft:wool', '35') THEN 1 ELSE 0 END)
+                    mcc.map_id, mcc.world_x, mcc.world_z, mcc.y,
+                    MAX(CASE
+                        WHEN mcc.item_id IN ('minecraft:wool', '35')
+                             AND (od.valid_damages IS NULL
+                                  OR mcc.item_damage = ANY(od.valid_damages))
+                        THEN 1 ELSE 0 END)
                         AS has_wool,
-                    MAX(CASE WHEN item_id LIKE '%chestplate%' OR item_id LIKE '%helmet%'
-                                  OR item_id LIKE '%leggings%' OR item_id LIKE '%boots%'
+                    MAX(CASE WHEN mcc.item_id LIKE '%chestplate%' OR mcc.item_id LIKE '%helmet%'
+                                  OR mcc.item_id LIKE '%leggings%' OR mcc.item_id LIKE '%boots%'
                              THEN 1 ELSE 0 END) AS has_armor,
-                    MAX(CASE WHEN item_id LIKE '%sword%'
-                                  OR item_id IN ('minecraft:bow', '261', 'minecraft:arrow', '262')
+                    MAX(CASE WHEN mcc.item_id LIKE '%sword%'
+                                  OR mcc.item_id IN ('minecraft:bow', '261', 'minecraft:arrow', '262')
                              THEN 1 ELSE 0 END) AS has_weapon,
-                    MAX(CASE WHEN item_id IN ('minecraft:golden_apple', '322') THEN 1 ELSE 0 END)
+                    MAX(CASE WHEN mcc.item_id IN ('minecraft:golden_apple', '322') THEN 1 ELSE 0 END)
                         AS has_gapple,
-                    MAX(CASE WHEN item_id IN ('minecraft:potion', '373') THEN 1 ELSE 0 END)
+                    MAX(CASE WHEN mcc.item_id IN ('minecraft:potion', '373') THEN 1 ELSE 0 END)
                         AS has_potion
-                FROM map_chest_contents
-                WHERE map_id IN ({id_placeholders})
-                GROUP BY map_id, world_x, world_z, y
+                FROM map_chest_contents mcc
+                LEFT JOIN objective_damage od ON od.map_id = mcc.map_id
+                WHERE mcc.map_id IN ({id_placeholders})
+                GROUP BY mcc.map_id, mcc.world_x, mcc.world_z, mcc.y
             )
             SELECT
                 map_id, world_x, world_z, y,

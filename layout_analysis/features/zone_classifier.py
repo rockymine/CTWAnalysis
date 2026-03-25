@@ -190,6 +190,7 @@ class ZoneClassifier:
         map_data: dict,
         defense_buffer: float = 10.0,
         near_spawn_buffer: float = 15.0,
+        wool_positions: Optional[list[tuple[float, float]]] = None,
     ):
         regions: dict = map_data.get('regions', {})
         apply_rules: list = map_data.get('apply_rules', [])
@@ -204,11 +205,17 @@ class ZoneClassifier:
         # rooms).  Position-based detection finds the smallest named region
         # containing each wool objective location, so it always returns individual
         # per-room geometries regardless of how the map author named them.
-        wool_positions = [
-            (float(w['location']['x']), float(w['location']['z']))
-            for w in map_data.get('wools', [])
-            if 'location' in w
-        ]
+        #
+        # ``wool_positions`` can be passed explicitly (e.g. from map_wool_locations
+        # DB table) to override the XML-declared positions, which are sometimes
+        # wrong (pointing to monument blocks rather than the wool room itself).
+        # Falls back to map_data['wools'][*]['location'] when not provided.
+        if wool_positions is None:
+            wool_positions = [
+                (float(w['location']['x']), float(w['location']['z']))
+                for w in map_data.get('wools', [])
+                if 'location' in w
+            ]
         self._wool_room_geom = _geom_from_positions(regions, wool_positions)
 
         # Build spawn geometry: try the well-known combined key first (fast path),
