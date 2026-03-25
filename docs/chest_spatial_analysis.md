@@ -4,9 +4,65 @@
 
 ---
 
+## Classification Schemes
+
+### Content Categories
+
+Every chest in the database is assigned a `content_category` based on the most significant item it contains. Classification uses a fixed priority order so that a chest which holds both armor and a bow is unambiguously labelled as `combat` rather than `weapon`.
+
+| Category | Priority | Classification rule | Gameplay role |
+|----------|----------|---------------------|---------------|
+| `wool`   | 1 | Contains the wool objective item | Holds the win condition |
+| `combat` | 2 | Contains any diamond armor piece | Gear-up chest at the objective; serves both defenders holding the wool room and attackers who have broken through |
+| `weapon` | 3 | Contains a bow or sword (no armor) | Ranged or melee kit chest; appears at spawn and in field positions |
+| `supply` | 4 | Contains golden apples or potions (no armor/weapon) | Re-supply chest for consumables; predominantly stocked with Splash Speed potions and golden apples for the wool-room fight |
+| `defense`| 5 | Everything else | Building and barrier materials for defenders; the largest single category |
+
+A chest that does not match any of the first four rules falls through to `defense` as the default. This means items like planks, fences, pistons, and crafting tables that are used to seal passages and slow attackers are captured here even when the chest contains no dedicated combat gear.
+
+### Spatial Zones
+
+Each chest is also tagged with the `zone` it belongs to, derived from the map's XML region definitions and island geometry.
+
+| Zone | Location | Typical content | Notes |
+|------|----------|-----------------|-------|
+| `wool_room` | Inside or immediately adjacent to the wool objective room | combat, wool, supply, weapon | The most contested area; stocked for the final fight |
+| `defense` | A fortified chokepoint between the field and the wool room | defense | Near-exclusive defense items (98.8%); the most semantically pure zone |
+| `spawn` | In or directly at the team's spawn area | defense, weapon | Respawn resupply hub; players restock immediately after dying |
+| `near_spawn` | Between spawn and the open field | defense, wool | Transition zone; less consistently stocked across maps |
+| `field` | The open contested area between the two teams | defense, weapon, combat | Mixed; defense materials dominate but weapon and combat chests appear for mid-field skirmishing |
+
+---
+
 ## Executive Summary
 
 Chest content categories align remarkably well with spatial zones: defense-zone chests are 98.8% defense items, spawn chests are 78% defense + 19% weapon (functioning as resupply stations), and wool-room chests show the richest mix — combat, wool, supply, and weapon all represented. A small number of maps completely dominate the item-count extremes: nextgen and blocks_ctw each have 288 defense chests stocked with ~500K items each, compared to a typical map with 8–32 chests holding a few thousand items. Fifteen maps have no defense chests at all, most of which are small pico/nano maps with simple layouts that likely rely on a single shared chest pool or none at all.
+
+---
+
+## Common Items by Category
+
+![Top 10 items per chest category](figures/chest_category_contents.png)
+
+The chart above shows the top 10 items in each category ranked by *chest-slot occurrences* — the number of individual chest inventory slots containing that item across all maps. This metric avoids distortion from stack sizes (planks stack to 64; diamond armor is always a stack of 1) and gives a cleaner picture of how universally each item appears.
+
+### Defense chests
+
+**Planks (25,496 slots)** are the single most common defense material by a wide margin, followed by **wood logs (12,194)** and **glass (10,050)**. These are all dense, easy-to-place barrier materials. **Crafting tables (9,056 slots)** are fourth — not for crafting, but as an inventory trap: an attacker rushing through the wool room may right-click a crafting table and waste precious seconds closing the unexpected inventory screen. **Redstone blocks (3,570)** are hard and slow to mine, making them an effective high-durability wall layer. **Fences (2,678)** and **pistons (2,506)** complete the classic CTW defense toolkit: fences slow attackers' movement, while pistons (and sticky pistons further down the list) allow defenders to mechanically seal or open gaps.
+
+**Wooden buttons and pressure plates** appear in nearly identical quantities (~2,400 slots each). Placed on top of blocks, they prevent an attacker from placing a block on that surface without first holding shift — a subtle but meaningful defensive nuance that slows bridging and climbing.
+
+### Combat chests
+
+**Golden apples (19,440 slots)** dominate combat chests — over 10,000 more slots than the second-ranked item. In the wool-room fight, a golden apple (temporary absorption hearts) can be the difference between surviving a hit and dying, so stocking them liberally is standard practice. **Diamond chestplate (14,398)**, **bow (10,292)**, **diamond helmet (5,796)**, **diamond leggings (4,043)**, and **diamond boots (2,136)** together form the full armor set. These counts reflect that not every combat chest includes a complete kit: chestplates and helmets appear far more often than leggings and boots, suggesting many maps offer partial armor and expect players to supplement from other sources. **Potions (3,056)** appear in a meaningful share of combat chests, confirming that Splash Speed potions are distributed across both combat and supply chests rather than being exclusively a supply-chest item.
+
+### Supply chests
+
+**Potions lead supply chests (8,164 slots)** — these are primarily Splash Potion of Swiftness, used by attackers to move faster while crossing the wool room. **Golden apples (6,015 + 2,094 legacy = ~8,100 slots combined)** are nearly equal in prevalence. The large **planks (3,221)** count reflects supply chests stocked with bridging/climbing blocks for attackers who have broken in and need to re-supply quickly. The remaining items (stained glass, logs, wheat, stone) are attacker re-supply building blocks placed near the objective; they are for reaching the wool or escaping, not for general construction.
+
+### Weapon chests
+
+**Bow (9,044)** and **arrow (8,604)** are nearly always paired — a weapon chest almost always provides both. The legacy arrow ID `262` adds another 1,317 slots, bringing the real total closer to ~9,900. **Golden apples (2,910)** appear alongside bows on a significant share of maps, bundling a small combat consumable with the ranged weapon. The presence of **wood log (1,994)**, **glass (1,710)**, and **planks (1,071)** shows that weapon chests often include a few building blocks — useful for a player who picks up the bow to set up a sniper position or bridging lane. **Food items (cooked fish 864, cooked beef 842, snowball 840)** are a secondary weapon-chest motif: food restores hunger for a sustained push, and snowballs can knock back opponents.
 
 ---
 
@@ -19,13 +75,13 @@ The heatmap shows how tightly content categories track spatial zones across the 
 **Strong alignments:**
 
 - **Defense zone → defense (98.8%)** — The classification pipeline is highly consistent here. The 1.2% weapon contribution (4 chests) is plausibly bows or swords stocked alongside building blocks, which the category model rounds into "weapon".
-- **Wool room → combat (42.9%)** — Wool rooms are not just about wool retrieval; they are heavily contested and designers stock them accordingly. Combat items (swords, bows, potions) make up nearly half the chest content. Wool (21.7%), supply (15.8%), and weapon (13.2%) round out what is functionally an arena preparation zone.
-- **Spawn → defense (77.9%) + weapon (18.7%)** — Spawn chests are resupply hubs. Players respawn and immediately restock on blocks and gear. The high weapon proportion (mostly swords/bows) makes sense as spawn is also where players tool up before pushing out.
+- **Wool room → combat (42.9%)** — Wool rooms are not just about wool retrieval; they are heavily contested and designers stock them accordingly. Combat items (armor, gapples, potions) make up nearly half the chest content. Wool (21.7%), supply (15.8%), and weapon (13.2%) round out what is functionally an arena preparation zone.
+- **Spawn → defense (77.9%) + weapon (18.7%)** — Spawn chests are resupply hubs. Players respawn and immediately restock on blocks and gear. The high weapon proportion (mostly bows) makes sense as spawn is also where players tool up before pushing out.
 
 **Surprises and nuances:**
 
 - **Near-spawn → wool (15.4%)** — Fifteen percent of near-spawn chests contain wool items. This suggests some maps place mid-field wool collection near spawn rather than exclusively inside dedicated wool rooms, or that near-spawn and wool-room zones partially overlap on certain map geometries.
-- **Spawn → weapon (18.7%)** — Higher than expected. This reflects maps that place a weapon chest at spawn rather than in the field, giving every respawner immediate combat gear.
+- **Spawn → weapon (18.7%)** — Higher than expected. This reflects maps that place a weapon chest at spawn rather than in the field, giving every respawner immediate ranged gear.
 - **Field → defense (57.1%)** — Over half of field chests are still classified as defense. This is not surprising on maps where defense materials are distributed across the whole layout rather than concentrated in a single room, but it means field chests are often not neutral resupply; they bias toward building blocks.
 - **Field → wool (4.8%)** — A small but nonzero wool fraction in field chests implies some maps scatter wool pickups across the map rather than consolidating them.
 
@@ -101,7 +157,7 @@ The stacked bar chart for the top 15 maps by total defense items reveals distinc
 - **summertime_at_browns_farms** (156K items, zero tracked) — Same pattern. A nano map with 8 players and 7 wools, suggesting many small chests stocked with basic blocks rather than specialised mechanics.
 - **split_strata** (173K items, only 768 redstone blocks and 1280 fences tracked) — The vast majority of items are "other."
 
-The "Other" category dominates many maps and likely includes common building materials (cobblestone, stone, wood planks, logs) that are not individually tracked in the current schema. Future analysis would benefit from expanding the tracked material list.
+The "Other" category dominates many maps and likely includes common building materials (planks, logs, cobblestone) that are tracked as defense items in the classification but were not individually broken out as named materials in this figure.
 
 ---
 
