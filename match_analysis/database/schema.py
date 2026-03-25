@@ -346,14 +346,15 @@ def initialize_database() -> None:
         )
     """)
 
-    # Table: Map terrain height (surface_y and lowest_y per island cell per map)
+    # Table: Map terrain height (surface_y, lowest_y, bedrock_ceiling_y per island cell per map)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS map_terrain_height (
-            map_id    INTEGER NOT NULL,
-            world_x   INTEGER NOT NULL,
-            world_z   INTEGER NOT NULL,
-            surface_y INTEGER NOT NULL,
-            lowest_y  INTEGER,
+            map_id             INTEGER NOT NULL,
+            world_x            INTEGER NOT NULL,
+            world_z            INTEGER NOT NULL,
+            surface_y          INTEGER NOT NULL,
+            lowest_y           INTEGER,
+            bedrock_ceiling_y  INTEGER,
             PRIMARY KEY (map_id, world_x, world_z),
             FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
@@ -994,11 +995,12 @@ def migrate_terrain_height_table(db_path: str | None = None) -> None:
     conn = duckdb.connect(db_path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS map_terrain_height (
-            map_id    INTEGER NOT NULL,
-            world_x   INTEGER NOT NULL,
-            world_z   INTEGER NOT NULL,
-            surface_y INTEGER NOT NULL,
-            lowest_y  INTEGER,
+            map_id             INTEGER NOT NULL,
+            world_x            INTEGER NOT NULL,
+            world_z            INTEGER NOT NULL,
+            surface_y          INTEGER NOT NULL,
+            lowest_y           INTEGER,
+            bedrock_ceiling_y  INTEGER,
             PRIMARY KEY (map_id, world_x, world_z),
             FOREIGN KEY (map_id) REFERENCES maps(map_id)
         )
@@ -1021,6 +1023,27 @@ def migrate_chest_category_column(db_path: str | None = None) -> None:
     )
     conn.close()
     print(f"content_category column added/verified in {db_path}")
+
+
+def migrate_bedrock_ceiling_y(db_path: str | None = None) -> None:
+    """Add bedrock_ceiling_y column to map_terrain_height if it does not exist.
+
+    bedrock_ceiling_y = lowest_bedrock_y + stacked_bedrock_height - 1, i.e.
+    the world-y of the topmost bedrock block in the column.  NULL when the
+    map was processed without bedrock height data (re-run 'ctw run' +
+    'ctw maps terrain-height' to populate).
+
+    Safe to run repeatedly — DuckDB silently skips ADD COLUMN IF NOT EXISTS.
+    """
+    if db_path is None:
+        db_path = str(Path('match_analysis/metadata.db'))
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        "ALTER TABLE map_terrain_height "
+        "ADD COLUMN IF NOT EXISTS bedrock_ceiling_y INTEGER"
+    )
+    conn.close()
+    print(f"bedrock_ceiling_y column added/verified in {db_path}")
 
 
 if __name__ == "__main__":
