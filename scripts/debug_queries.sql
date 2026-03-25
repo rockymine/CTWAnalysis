@@ -371,28 +371,28 @@ JOIN maps ON m.map_id = maps.map_id
 -- Shows how well spatial zones align with chest content semantics
 WITH zone_cat AS (
     SELECT
-        mc.spatial_zone,
+        mc.zone,
         mc.content_category,
         COUNT(*) AS chest_count
     FROM map_chests mc
-    WHERE mc.spatial_zone IS NOT NULL
+    WHERE mc.zone IS NOT NULL
       AND mc.content_category IS NOT NULL
-    GROUP BY mc.spatial_zone, mc.content_category
+    GROUP BY mc.zone, mc.content_category
 ),
 zone_totals AS (
-    SELECT spatial_zone, SUM(chest_count) AS zone_total
+    SELECT zone, SUM(chest_count) AS zone_total
     FROM zone_cat
-    GROUP BY spatial_zone
+    GROUP BY zone
 )
 SELECT
-    zc.spatial_zone,
+    zc.zone,
     zc.content_category,
     zc.chest_count,
     zt.zone_total,
     ROUND(100.0 * zc.chest_count / zt.zone_total, 1) AS pct_of_zone
 FROM zone_cat zc
-JOIN zone_totals zt ON zc.spatial_zone = zt.spatial_zone
-ORDER BY zc.spatial_zone, pct_of_zone DESC;
+JOIN zone_totals zt ON zc.zone = zt.zone
+ORDER BY zc.zone, pct_of_zone DESC;
 
 -- 9b. Defense chest material composition per map (top items by total count)
 -- Useful for spotting outlier maps with unusual defense supply loadouts
