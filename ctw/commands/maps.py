@@ -92,6 +92,7 @@ Actions:
   spatial-relations Compute vector-based POI spatial relations and store in DB
   terrain-height    Load terrain height data into the map_terrain_height table
   authors           Parse map.xml authors/contributors and look up Minecraft names
+  geometry-graph    Build geometry-derived adjacency graph from map polygons
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -108,6 +109,8 @@ Examples:
   python ctw.py maps terrain-height             # all maps
   python ctw.py maps chest-classify             # all maps
   python ctw.py maps chest-classify --map arabia
+  python ctw.py maps geometry-graph --map tumbleweed
+  python ctw.py maps geometry-graph             # all maps with output data
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -195,6 +198,25 @@ Examples:
     p.add_argument('--no-fetch', action='store_true', dest='no_fetch',
                    help='Skip Mojang API lookups; insert UUIDs with NULL names')
     p.set_defaults(func=handle_authors)
+
+    # maps geometry-graph
+    p = maps_sub.add_parser(
+        'geometry-graph',
+        help='Build geometry-derived adjacency graph from map polygons',
+    )
+    p.add_argument('--map', default=None,
+                   help='Map slug(s), comma-separated (default: all maps with output data)')
+    p.add_argument('--output', default=None,
+                   help='Output root directory (default: output/)')
+    p.add_argument('--grid-size', type=int, default=None, dest='grid_size',
+                   help='Grid cell size in blocks (default: adaptive from map size)')
+    p.add_argument('--use-db-wools', action='store_true', dest='use_db_wools',
+                   help='Use DB-confirmed wool locations instead of map_context positions')
+    p.add_argument('--no-plot', action='store_true', dest='no_plot',
+                   help='Skip generating the geometry_graph.png visualization')
+    p.add_argument('--force', action='store_true',
+                   help='Overwrite existing geometry_graph.json and geometry_graph.png')
+    p.set_defaults(func=handle_geometry_graph)
 
 
 def _resolve_map_dirs(args):
@@ -1153,3 +1175,111 @@ def _print_resources_summary(
                   f"n={len(grp)}  (double={dbl//2} pairs, single={singles})")
     else:
         print("    (no chests)")
+
+
+# ---------------------------------------------------------------------------
+# maps geometry-graph
+# ---------------------------------------------------------------------------
+
+
+def _load_wool_pois_from_db(conn, map_slug: str) -> list[dict]:
+    """Load DB-confirmed wool locations for map_slug from map_wool_locations.
+
+    Mirrors the wool lookup in build_traffic_graph() step 7.  Returns an
+    empty list if the table is absent or has no rows for this map.
+    Each returned dict has keys: poi_type, coords, team, poi_color, island_id.
+    """
+    try:
+        rows = conn.execute("""
+            SELECT mwl.wool_id, mwl.x, mwl.z, mwl.wool_color, mwl.team
+            FROM map_wool_locations mwl
+            JOIN maps m ON m.map_id = mwl.map_id
+            WHERE m.map_slug = ?
+        """, [map_slug]).fetchall()
+    except Exception:
+        return []
+
+    pois: list[dict] = []
+    seen_colors: set[str] = set()
+    for _wool_id, wx, wz, wool_color, team in rows:
+        if wool_color and wool_color in seen_colors:
+            continue
+        if wool_color:
+            seen_colors.add(wool_color)
+        pois.append({
+            "poi_type":  "wool",
+            "coords":    [float(wx), float(wz)],
+            "team":      team,
+            "poi_color": wool_color,
+            "island_id": None,
+        })
+    return pois
+
+
+def handle_geometry_graph(args: object) -> None:
+    """Build geometry-derived adjacency graph from map_context.json polygons."""
+    import json as _json
+    from map_analysis.grid_base import rasterize_map_polygons, _adaptive_grid_size
+    from map_analysis.geometry_graph import build_geometry_graph, save_geometry_graph
+    from match_analysis.traffic.graph import plot_traffic_graph
+
+    map_dirs = _resolve_map_dirs(args)
+    if map_dirs is None:
+        return
+
+    grid_size_arg: Optional[int] = getattr(args, 'grid_size', None)
+    use_db_wools: bool = getattr(args, 'use_db_wools', False)
+    no_plot: bool = getattr(args, 'no_plot', False)
+    force: bool = getattr(args, 'force', False)
+
+    conn = None
+    if use_db_wools:
+        import duckdb
+        ensure_match_db()
+        conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
+
+    try:
+        for map_dir in map_dirs:
+            map_slug = map_dir.name
+            out_path = map_dir / 'geometry_graph.json'
+            plot_path = map_dir / 'images' / 'geometry_graph.png'
+
+            if out_path.exists() and not force:
+                print(f"  [{map_slug}] already exists, skip (--force to overwrite)")
+                continue
+            context_path = map_dir / 'map_context.json'
+            if not context_path.exists():
+                print(f"  [{map_slug}] map_context.json not found, skipping")
+                continue
+            try:
+                with open(context_path, encoding='utf-8') as fh:
+                    map_context = _json.load(fh)
+
+                grid_size = grid_size_arg
+                if grid_size is None:
+                    total_blocks = map_context.get('total_blocks', 5000)
+                    grid_size = _adaptive_grid_size(total_blocks)
+
+                grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
+
+                wool_pois_override = None
+                if use_db_wools and conn is not None:
+                    wool_pois_override = _load_wool_pois_from_db(conn, map_slug)
+
+                graph = build_geometry_graph(grid_base, wool_pois=wool_pois_override)
+                save_geometry_graph(graph, out_path)
+                print(
+                    f"  [{map_slug}] {len(graph['nodes'])} nodes, "
+                    f"{len(graph['edges'])} edges  (grid={grid_size})"
+                )
+
+                if not no_plot:
+                    plot_path.parent.mkdir(parents=True, exist_ok=True)
+                    plot_traffic_graph(graph, map_context, plot_path)
+                    print(f"  [{map_slug}] plot saved: {plot_path}")
+
+            except Exception as exc:
+                print(f"  [{map_slug}] ERROR — {exc}")
+    finally:
+        if conn is not None:
+            conn.close()
