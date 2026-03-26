@@ -226,10 +226,41 @@ def rasterize_map_polygons(
 
     min_x, max_x, min_z, max_z = bbox
 
-    # Round map center to the nearest integer so all cell origins are integers.
+    # ── Odd-grid-size heuristic ────────────────────────────────────────────
+    # When the bounding box has odd width or height the map's symmetry axis
+    # falls at a half-integer world coordinate.  For a symmetric cell layout
+    # that axis must be at a cell boundary, which requires:
+    #   center_x = axis - k * (grid_size / 2)  for some integer k.
+    # With even grid_size this expression is never an integer, so no exact
+    # solution exists.  Bumping to the next odd grid_size makes grid_size/2 a
+    # half-integer, so the expression becomes integer for k=1.
     raw_center = map_context.get("map_center", [0, 0])
-    center_x = round(raw_center[0])
-    center_z = round(raw_center[1])
+    raw_cx = float(raw_center[0])
+    raw_cz = float(raw_center[1])
+
+    axis_half_x = (raw_cx % 1.0) == 0.5
+    axis_half_z = (raw_cz % 1.0) == 0.5
+
+    if (axis_half_x or axis_half_z) and grid_size % 2 == 0:
+        grid_size += 1
+        logger.debug(
+            "rasterize_map_polygons('%s'): half-integer map axis → bumped grid_size "
+            "to %d for symmetric cell placement",
+            map_slug, grid_size,
+        )
+
+    # For a half-integer axis with odd grid_size, shift center_x left by
+    # grid_size/2 so the cell [center_x, center_x+grid_size) straddles the
+    # axis and the grid is exactly symmetric.
+    if axis_half_x and grid_size % 2 == 1:
+        center_x = int(raw_cx - grid_size / 2)
+    else:
+        center_x = round(raw_cx)
+
+    if axis_half_z and grid_size % 2 == 1:
+        center_z = int(raw_cz - grid_size / 2)
+    else:
+        center_z = round(raw_cz)
 
     # Align start to the first cell boundary at or below min_x/min_z.
     cx_start = _cell_origin(min_x, center_x, grid_size)
