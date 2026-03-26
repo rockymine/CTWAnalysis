@@ -6,25 +6,36 @@ is required.  This graph captures the theoretical maximum connectivity of
 the map geometry and can be used as a geometry-only navigation graph or
 as a seed for build_traffic_graph().
 
+An alternative adaptive builder is also provided:
+    build_adaptive_geometry_graph() — symmetric hex-grid sampling with
+    Delaunay triangulation edges, giving approximately equidistant nodes
+    that respect the full polygon geometry rather than a fixed cell size.
+
 Node and edge schema is identical to the traffic graph so that all
 downstream consumers (build_traffic_topology, plot_traffic_graph, etc.)
 work without modification.
 
 Typical usage (CLI):
     python ctw.py maps geometry-graph --map tumbleweed
+    python ctw.py maps geometry-graph --map tumbleweed --adaptive-nodes
 
 Output:
     output/<map_slug>/geometry_graph.json
+    output/<map_slug>/adaptive_graph.json   (--adaptive-nodes)
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from shapely import STRtree
+from shapely import points as shp_points
+from shapely.geometry import Polygon
 
 from map_analysis.grid_base import GridBase
 
@@ -208,3 +219,314 @@ def save_geometry_graph(graph: dict, path: Path) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(graph, fh, indent=2)
     logger.debug("Saved geometry graph → %s", path)
+
+
+# ---------------------------------------------------------------------------
+# Adaptive (experimental): symmetric hex-grid sampling + Delaunay edges
+# ---------------------------------------------------------------------------
+
+
+def build_adaptive_geometry_graph(
+    grid_base: GridBase,
+    map_context: dict,
+    n_target: int = 300,
+    wool_pois: Optional[list[dict]] = None,
+) -> dict:
+    """Build a geometry-aware node graph using symmetric hex-grid sampling.
+
+    Experimental alternative to build_geometry_graph().  Instead of a fixed
+    N×N grid, places nodes on a hexagonal lattice anchored at the map's
+    X-symmetry axis (map_center[0]) and clipped to the union of all playable
+    polygons (islands + build regions).  Connectivity is derived from
+    Delaunay triangulation; edges that significantly cross void territory are
+    pruned.
+
+    The hex grid is exactly bilateral-symmetric around axis_x by construction:
+    even rows have columns at axis_x, axis_x ± spacing, …; odd rows at
+    axis_x ± spacing/2, axis_x ± 3*spacing/2, …  Polygon clipping may
+    introduce minor asymmetries at irregular map boundaries.
+
+    Parameters
+    ----------
+    grid_base:
+        Provides map_slug, wool_pois, spawn_pois.  Grid geometry is not used.
+    map_context:
+        Parsed map_context.json — source of raw polygon geometry and map_center.
+    n_target:
+        Approximate target node count.  Hex-grid spacing is derived from
+        ``sqrt(2 * playable_area / (sqrt(3) * n_target))``.  Actual count
+        depends on polygon coverage.
+    wool_pois:
+        Override wool anchor list (same semantics as build_geometry_graph).
+
+    Returns
+    -------
+    Plain dict with the same schema as traffic_graph.json plus
+    ``"source": "adaptive"``.  ``grid_size`` is None (no fixed cell size).
+    """
+    try:
+        from scipy.spatial import Delaunay as _Delaunay  # type: ignore[import]
+    except ImportError as exc:
+        raise ImportError(
+            "build_adaptive_geometry_graph requires scipy. "
+            "Install with: pip install scipy"
+        ) from exc
+
+    from shapely.ops import unary_union as _unary_union
+    from shapely.geometry import Point as _Point
+
+    map_slug = grid_base.map_slug
+
+    # ── 1. Build playable polygon (islands ∪ build regions) ───────────────
+    polys: list[Polygon] = []
+    for isl in map_context.get("islands", []):
+        poly_data = isl.get("simplified_polygon") or {}
+        exterior = poly_data.get("exterior", [])
+        if len(exterior) < 3:
+            continue
+        holes = [h for h in poly_data.get("holes", []) if len(h) >= 3]
+        try:
+            poly = Polygon(exterior, holes)
+            if poly.is_valid:
+                polys.append(poly)
+        except Exception:
+            pass
+
+    build_region = map_context.get("build_region")
+    if build_region:
+        for poly_data in build_region.get("buildable_void", []):
+            exterior = poly_data.get("exterior", [])
+            if len(exterior) < 3:
+                continue
+            holes = [h for h in poly_data.get("holes", []) if len(h) >= 3]
+            try:
+                poly = Polygon(exterior, holes)
+                if poly.is_valid:
+                    polys.append(poly)
+            except Exception:
+                pass
+
+    if not polys:
+        logger.warning(
+            "build_adaptive_geometry_graph('%s'): no polygons found; "
+            "returning empty graph",
+            map_slug,
+        )
+        return {
+            "source": "adaptive", "map_slug": map_slug, "grid_size": None,
+            "cell_count": 0, "match_count": 0, "position_count": 0,
+            "player_count": 0, "total_playtime_min": None,
+            "nodes": [], "edges": [],
+        }
+
+    playable = _unary_union(polys)
+    if not playable.is_valid:
+        playable = playable.buffer(0)
+
+    # ── 2. Hex grid anchored at X-symmetry axis ────────────────────────────
+    # Spacing formula: hex cell area = (sqrt(3)/2) * spacing²
+    # → spacing = sqrt(2 * polygon_area / (sqrt(3) * n_target))
+    axis_x = float(map_context.get("map_center", [0, 0])[0])
+    area = float(playable.area)
+    spacing = math.sqrt(2.0 * area / (math.sqrt(3) * max(n_target, 1)))
+    row_height = spacing * math.sqrt(3) / 2.0
+
+    minx, miny, maxx, maxy = playable.bounds
+
+    # Generate candidates row by row.  Every row starts from axis_x so the
+    # grid is structurally symmetric regardless of polygon shape.
+    candidates: list[tuple[float, float]] = []
+    row = 0
+    y = miny - row_height
+    while y <= maxy + row_height:
+        # Even rows: first column at axis_x; odd rows: offset by spacing/2
+        x_start = axis_x if row % 2 == 0 else axis_x + spacing / 2.0
+        # Expand right from x_start
+        x = x_start
+        while x <= maxx + spacing:
+            candidates.append((x, y))
+            x += spacing
+        # Expand left (skip x_start itself to avoid duplicates on axis)
+        x = x_start - spacing
+        while x >= minx - spacing:
+            candidates.append((x, y))
+            x -= spacing
+        y += row_height
+        row += 1
+
+    if not candidates:
+        logger.warning(
+            "build_adaptive_geometry_graph('%s'): no candidate grid points generated",
+            map_slug,
+        )
+        return build_geometry_graph(grid_base, wool_pois=wool_pois)
+
+    # ── 3. Bulk containment via STRtree ───────────────────────────────────
+    cand_arr = np.array(candidates)
+    pts_geom = shp_points(cand_arr[:, 0], cand_arr[:, 1])
+
+    if hasattr(playable, "geoms"):
+        tree_polys: list = list(playable.geoms)
+    else:
+        tree_polys = [playable]
+    play_tree = STRtree(tree_polys)
+    result = play_tree.query(pts_geom, predicate="within")
+    inside_mask = np.zeros(len(candidates), dtype=bool)
+    if result.shape[1] > 0:
+        inside_mask[result[0]] = True
+    inside_arr = cand_arr[inside_mask]
+
+    if len(inside_arr) == 0:
+        logger.warning(
+            "build_adaptive_geometry_graph('%s'): zero points survived containment check",
+            map_slug,
+        )
+        return build_geometry_graph(grid_base, wool_pois=wool_pois)
+
+    # ── 4. Assign island_id to each point ─────────────────────────────────
+    island_polys: list[tuple[int, Polygon]] = []
+    for isl in map_context.get("islands", []):
+        poly_data = isl.get("simplified_polygon") or {}
+        exterior = poly_data.get("exterior", [])
+        if len(exterior) < 3:
+            continue
+        holes = [h for h in poly_data.get("holes", []) if len(h) >= 3]
+        try:
+            poly = Polygon(exterior, holes)
+            if poly.is_valid:
+                island_polys.append((isl["id"], poly))
+        except Exception:
+            pass
+
+    island_id_arr: list[Optional[int]] = [None] * len(inside_arr)
+    if island_polys:
+        isl_tree = STRtree([p for _, p in island_polys])
+        isl_ids = [iid for iid, _ in island_polys]
+        pts_in = shp_points(inside_arr[:, 0], inside_arr[:, 1])
+        res2 = isl_tree.query(pts_in, predicate="within")
+        if res2.shape[1] > 0:
+            for pi, gi in zip(res2[0], res2[1]):
+                if island_id_arr[int(pi)] is None:
+                    island_id_arr[int(pi)] = isl_ids[int(gi)]
+
+    # ── 5. Build node list ─────────────────────────────────────────────────
+    nodes: list[dict] = []
+    for idx in range(len(inside_arr)):
+        px, pz = float(inside_arr[idx, 0]), float(inside_arr[idx, 1])
+        nodes.append({
+            "node_id":    idx,
+            "cx":         round(px),
+            "cz":         round(pz),
+            "coords":     [px, pz],
+            "occupation": 0,
+            "island_id":  island_id_arr[idx],
+            "poi_type":   None,
+            "poi_color":  None,
+            "team":       None,
+            "fixed":      False,
+        })
+
+    # ── 6. Delaunay triangulation + void-crossing edge pruning ────────────
+    edges: list[dict] = []
+    if len(inside_arr) >= 3:
+        tri = _Delaunay(inside_arr)
+        seen_edges: set[tuple[int, int]] = set()
+        # Max edge length guard: reject edges longer than 2.5× spacing
+        # (these connect nodes across wide void gaps in the triangulation hull)
+        max_edge_len_sq = (spacing * 2.5) ** 2
+        for simplex in tri.simplices:
+            for i, j in ((0, 1), (1, 2), (0, 2)):
+                a, b = int(simplex[i]), int(simplex[j])
+                if a > b:
+                    a, b = b, a
+                if (a, b) in seen_edges:
+                    continue
+                seen_edges.add((a, b))
+                pa, pb = inside_arr[a], inside_arr[b]
+                # Fast length guard (avoids shapely for obviously bad edges)
+                dx, dz = float(pa[0] - pb[0]), float(pa[1] - pb[1])
+                if dx * dx + dz * dz > max_edge_len_sq:
+                    continue
+                # Sample 4 interior points along the edge; prune if any is
+                # outside the playable polygon (edge crosses void)
+                inside_edge = True
+                for k in (1, 2, 3, 4):
+                    t = k / 5.0
+                    mx = pa[0] * (1 - t) + pb[0] * t
+                    mz = pa[1] * (1 - t) + pb[1] * t
+                    if not playable.contains(_Point(mx, mz)):
+                        inside_edge = False
+                        break
+                if inside_edge:
+                    edges.append({"src": a, "dst": b, "transitions": 1})
+
+    # ── 7. Inject wool and spawn anchor nodes ──────────────────────────────
+    poi_sources: list[dict] = list(
+        wool_pois if wool_pois is not None else grid_base.wool_pois
+    ) + list(grid_base.spawn_pois)
+
+    node_by_id: dict[int, dict] = {n["node_id"]: n for n in nodes}
+    next_id = len(nodes)
+    extra_edges: list[dict] = []
+
+    pts_arr = np.array([[n["coords"][0], n["coords"][1]] for n in nodes]) if nodes else np.empty((0, 2))
+
+    for poi in poi_sources:
+        coords = poi.get("coords")
+        if not coords or len(pts_arr) == 0:
+            continue
+        fx, fz = float(coords[0]), float(coords[1])
+        dists = np.linalg.norm(pts_arr - np.array([fx, fz]), axis=1)
+        nearest_idx = int(np.argmin(dists))
+
+        if dists[nearest_idx] < spacing * 0.6:
+            # Annotate the closest existing node
+            node = node_by_id[nearest_idx]
+            node["poi_type"]  = poi.get("poi_type")
+            node["poi_color"] = poi.get("poi_color")
+            node["team"]      = poi.get("team")
+            node["fixed"]     = True
+        else:
+            # New fixed node connected to 3 nearest
+            new_node: dict = {
+                "node_id":    next_id,
+                "cx":         round(fx),
+                "cz":         round(fz),
+                "coords":     [fx, fz],
+                "occupation": 0,
+                "island_id":  poi.get("island_id"),
+                "poi_type":   poi.get("poi_type"),
+                "poi_color":  poi.get("poi_color"),
+                "team":       poi.get("team"),
+                "fixed":      True,
+            }
+            nodes.append(new_node)
+            node_by_id[next_id] = new_node
+            for nbr_idx in np.argsort(dists)[:min(3, len(dists))]:
+                nbr_id = int(nbr_idx)
+                src_id = min(next_id, nbr_id)
+                dst_id = max(next_id, nbr_id)
+                extra_edges.append({"src": src_id, "dst": dst_id, "transitions": 1})
+            next_id += 1
+
+    all_edges = edges + extra_edges
+
+    graph = {
+        "source":             "adaptive",
+        "map_slug":           map_slug,
+        "grid_size":          None,
+        "cell_count":         len(inside_arr),
+        "match_count":        0,
+        "position_count":     0,
+        "player_count":       0,
+        "total_playtime_min": None,
+        "nodes":              nodes,
+        "edges":              all_edges,
+    }
+
+    logger.info(
+        "Adaptive geometry graph '%s': %d nodes, %d edges  "
+        "(target=%d, spacing=%.1f)",
+        map_slug, len(nodes), len(all_edges), n_target, spacing,
+    )
+    return graph

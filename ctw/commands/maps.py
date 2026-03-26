@@ -213,9 +213,14 @@ Examples:
     p.add_argument('--use-db-wools', action='store_true', dest='use_db_wools',
                    help='Use DB-confirmed wool locations instead of map_context positions')
     p.add_argument('--no-plot', action='store_true', dest='no_plot',
-                   help='Skip generating the geometry_graph.png visualization')
+                   help='Skip generating the visualization PNG')
     p.add_argument('--force', action='store_true',
-                   help='Overwrite existing geometry_graph.json and geometry_graph.png')
+                   help='Overwrite existing output files')
+    p.add_argument('--adaptive-nodes', action='store_true', dest='adaptive_nodes',
+                   help='[experimental] Use symmetric hex-grid sampling + Delaunay '
+                        'instead of the fixed cell grid. Output: adaptive_graph.json')
+    p.add_argument('--target-nodes', type=int, default=300, dest='target_nodes',
+                   help='Target node count for --adaptive-nodes (default: 300)')
     p.set_defaults(func=handle_geometry_graph)
 
 
@@ -1220,7 +1225,11 @@ def handle_geometry_graph(args: object) -> None:
     """Build geometry-derived adjacency graph from map_context.json polygons."""
     import json as _json
     from map_analysis.grid_base import rasterize_map_polygons, _adaptive_grid_size
-    from map_analysis.geometry_graph import build_geometry_graph, save_geometry_graph
+    from map_analysis.geometry_graph import (
+        build_geometry_graph,
+        build_adaptive_geometry_graph,
+        save_geometry_graph,
+    )
     from match_analysis.traffic.graph import plot_traffic_graph
 
     map_dirs = _resolve_map_dirs(args)
@@ -1231,6 +1240,8 @@ def handle_geometry_graph(args: object) -> None:
     use_db_wools: bool = getattr(args, 'use_db_wools', False)
     no_plot: bool = getattr(args, 'no_plot', False)
     force: bool = getattr(args, 'force', False)
+    adaptive: bool = getattr(args, 'adaptive_nodes', False)
+    target_nodes: int = getattr(args, 'target_nodes', 300)
 
     conn = None
     if use_db_wools:
@@ -1241,8 +1252,12 @@ def handle_geometry_graph(args: object) -> None:
     try:
         for map_dir in map_dirs:
             map_slug = map_dir.name
-            out_path = map_dir / 'geometry_graph.json'
-            plot_path = map_dir / 'images' / 'geometry_graph.png'
+            if adaptive:
+                out_path = map_dir / 'adaptive_graph.json'
+                plot_path = map_dir / 'images' / 'adaptive_graph.png'
+            else:
+                out_path = map_dir / 'geometry_graph.json'
+                plot_path = map_dir / 'images' / 'geometry_graph.png'
 
             if out_path.exists() and not force:
                 print(f"  [{map_slug}] already exists, skip (--force to overwrite)")
@@ -1255,22 +1270,36 @@ def handle_geometry_graph(args: object) -> None:
                 with open(context_path, encoding='utf-8') as fh:
                     map_context = _json.load(fh)
 
-                grid_size = grid_size_arg
-                if grid_size is None:
-                    total_blocks = map_context.get('total_blocks', 5000)
-                    grid_size = _adaptive_grid_size(total_blocks)
-
-                grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
-
                 wool_pois_override = None
                 if use_db_wools and conn is not None:
                     wool_pois_override = _load_wool_pois_from_db(conn, map_slug)
 
-                graph = build_geometry_graph(grid_base, wool_pois=wool_pois_override)
+                if adaptive:
+                    # Build a minimal GridBase (only wool/spawn POIs needed)
+                    grid_size = grid_size_arg or _adaptive_grid_size(
+                        map_context.get('total_blocks', 5000)
+                    )
+                    grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
+                    graph = build_adaptive_geometry_graph(
+                        grid_base,
+                        map_context,
+                        n_target=target_nodes,
+                        wool_pois=wool_pois_override,
+                    )
+                    grid_label = f"target={target_nodes}"
+                else:
+                    grid_size = grid_size_arg
+                    if grid_size is None:
+                        total_blocks = map_context.get('total_blocks', 5000)
+                        grid_size = _adaptive_grid_size(total_blocks)
+                    grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
+                    graph = build_geometry_graph(grid_base, wool_pois=wool_pois_override)
+                    grid_label = f"grid={graph['grid_size']}"
+
                 save_geometry_graph(graph, out_path)
                 print(
                     f"  [{map_slug}] {len(graph['nodes'])} nodes, "
-                    f"{len(graph['edges'])} edges  (grid={graph['grid_size']})"
+                    f"{len(graph['edges'])} edges  ({grid_label})"
                 )
 
                 if not no_plot:

@@ -866,7 +866,8 @@ def plot_traffic_graph(
         f"Traffic graph — {graph['map_slug']}  "
         f"({n_matches} match{'es' if n_matches != 1 else ''}  |  "
         + "  ·  ".join(subtitle_parts) + ")\n"
-        f"{n_nodes} nodes · {n_edges} edges  |  grid={grid_size}×{grid_size} blocks",
+        f"{n_nodes} nodes · {n_edges} edges  |  "
+        + (f"grid={grid_size}×{grid_size} blocks" if grid_size else "adaptive sampling"),
         color="#222222", fontsize=10,
     )
 
