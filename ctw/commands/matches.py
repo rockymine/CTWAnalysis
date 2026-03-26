@@ -930,9 +930,8 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
     from match_analysis.traffic.graph import (
         build_traffic_graph, save_traffic_graph, plot_traffic_graph,
     )
-    from match_analysis.traffic.strategy_plot import (
-        plot_traffic_strategy_comparison, _adaptive_grid_size,
-    )
+    from match_analysis.traffic.strategy_plot import plot_traffic_strategy_comparison
+    from map_analysis.grid_base import _adaptive_grid_size
     from match_analysis.traffic.segment_features import compute_match_set_hash
 
     log_interval  = getattr(args, 'log_interval', 2)
@@ -1072,6 +1071,15 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
         grid_size = _adaptive_grid_size(total_blocks)
         print(f"  grid_size auto-set to {grid_size} (total_blocks={total_blocks})")
 
+    # ── Step 4b: Build GridBase geometry substrate ───────────────────────────
+    from map_analysis.grid_base import load_grid_base as _load_grid_base
+    try:
+        grid_base = _load_grid_base(map_output_dir, map_slug, grid_size)
+    except Exception as exc:
+        print(f"  Warning: could not build GridBase for '{map_slug}': {exc} "
+              "— falling back to data-only valid_cell_set")
+        grid_base = None
+
     # ── Step 5: Build graph ──────────────────────────────────────────────────
     conn = duckdb.connect('match_analysis/metadata.db', read_only=True)
     try:
@@ -1083,6 +1091,7 @@ def _build_traffic_graph_for_slug(args, map_slug: str) -> None:
             min_occupation  = args.min_occupation,
             min_transitions = args.min_transitions,
             log_interval    = log_interval,
+            grid_base       = grid_base,
         )
     finally:
         conn.close()
