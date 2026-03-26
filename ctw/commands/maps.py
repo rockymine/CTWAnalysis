@@ -1280,11 +1280,18 @@ def handle_geometry_graph(args: object) -> None:
                         map_context.get('total_blocks', 5000)
                     )
                     grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
+                    # Load symmetry.json to drive symmetry enforcement
+                    symmetry_info: Optional[dict] = None
+                    sym_path = map_dir / 'symmetry.json'
+                    if sym_path.exists():
+                        with open(sym_path, encoding='utf-8') as fh:
+                            symmetry_info = _json.load(fh)
                     graph = build_adaptive_geometry_graph(
                         grid_base,
                         map_context,
                         n_target=target_nodes,
                         wool_pois=wool_pois_override,
+                        symmetry_info=symmetry_info,
                     )
                     grid_label = f"target={target_nodes}"
                 else:

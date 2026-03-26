@@ -231,20 +231,21 @@ def build_adaptive_geometry_graph(
     map_context: dict,
     n_target: int = 300,
     wool_pois: Optional[list[dict]] = None,
+    symmetry_info: Optional[dict] = None,
 ) -> dict:
     """Build a geometry-aware node graph using symmetric hex-grid sampling.
 
     Experimental alternative to build_geometry_graph().  Instead of a fixed
-    N×N grid, places nodes on a hexagonal lattice anchored at the map's
-    X-symmetry axis (map_center[0]) and clipped to the union of all playable
-    polygons (islands + build regions).  Connectivity is derived from
-    Delaunay triangulation; edges that significantly cross void territory are
-    pruned.
+    N×N grid, places nodes on a hexagonal lattice anchored at the map centre
+    and clipped to the union of all playable polygons (islands + build regions).
+    Connectivity is derived from Delaunay triangulation; edges that
+    significantly cross void territory are pruned.
 
-    The hex grid is exactly bilateral-symmetric around axis_x by construction:
-    even rows have columns at axis_x, axis_x ± spacing, …; odd rows at
-    axis_x ± spacing/2, axis_x ± 3*spacing/2, …  Polygon clipping may
-    introduce minor asymmetries at irregular map boundaries.
+    Symmetry enforcement removes candidate points whose mirror counterparts
+    did not survive the polygon containment check (polygon simplification can
+    introduce floating-point asymmetries at boundaries).  The enforcement
+    strategy is derived from ``symmetry_info`` if supplied; if absent, all
+    of mirror_x, mirror_z, and rot_180 are enforced as a conservative default.
 
     Parameters
     ----------
@@ -258,6 +259,10 @@ def build_adaptive_geometry_graph(
         depends on polygon coverage.
     wool_pois:
         Override wool anchor list (same semantics as build_geometry_graph).
+    symmetry_info:
+        Parsed symmetry.json dict (from ``output/<map>/symmetry.json``).
+        When provided, only detected symmetry types are enforced on the node
+        set.  When None, mirror_x, mirror_z, and rot_180 are all enforced.
 
     Returns
     -------
@@ -323,36 +328,58 @@ def build_adaptive_geometry_graph(
     if not playable.is_valid:
         playable = playable.buffer(0)
 
-    # ── 2. Hex grid anchored at X-symmetry axis ────────────────────────────
+    # ── 2. Hex grid anchored at both symmetry axes ────────────────────────
     # Spacing formula: hex cell area = (sqrt(3)/2) * spacing²
     # → spacing = sqrt(2 * polygon_area / (sqrt(3) * n_target))
-    axis_x = float(map_context.get("map_center", [0, 0])[0])
+    raw_center = map_context.get("map_center", [0, 0])
+    axis_x = float(raw_center[0])
+    axis_z = float(raw_center[1])
     area = float(playable.area)
     spacing = math.sqrt(2.0 * area / (math.sqrt(3) * max(n_target, 1)))
     row_height = spacing * math.sqrt(3) / 2.0
 
     minx, miny, maxx, maxy = playable.bounds
 
-    # Generate candidates row by row.  Every row starts from axis_x so the
-    # grid is structurally symmetric regardless of polygon shape.
+    _R = 6   # rounding precision (decimal places) used throughout
+
+    def _row_candidates(z: float, row_parity: int) -> list[tuple[float, float]]:
+        """Return x-symmetric candidate points for one row at height z.
+
+        All coordinates are rounded to _R decimal places so that mirror-point
+        lookups in inside_set produce exact matches despite floating-point
+        accumulation in the loop counters.
+        """
+        pts: list[tuple[float, float]] = []
+        x_off = 0.0 if row_parity == 0 else spacing / 2.0
+        # Right side (including axis point for even rows)
+        x = axis_x + x_off
+        while x <= maxx + spacing:
+            pts.append((round(x, _R), round(z, _R)))
+            x += spacing
+        # Left side (mirror; for odd rows x_off > 0 so the right side
+        # already skips axis_x, meaning axis_x - x_off is the first left pt)
+        x = axis_x - x_off - (0.0 if x_off > 0 else spacing)
+        while x >= minx - spacing:
+            pts.append((round(x, _R), round(z, _R)))
+            x -= spacing
+        return pts
+
+    # Generate rows upward from axis_z, then mirror downward.  Row k going
+    # up has parity k%2; row k going down mirrors row k up, so same parity
+    # → same x-structure → z-symmetry is structurally guaranteed.
     candidates: list[tuple[float, float]] = []
     row = 0
-    y = miny - row_height
+    y = axis_z
     while y <= maxy + row_height:
-        # Even rows: first column at axis_x; odd rows: offset by spacing/2
-        x_start = axis_x if row % 2 == 0 else axis_x + spacing / 2.0
-        # Expand right from x_start
-        x = x_start
-        while x <= maxx + spacing:
-            candidates.append((x, y))
-            x += spacing
-        # Expand left (skip x_start itself to avoid duplicates on axis)
-        x = x_start - spacing
-        while x >= minx - spacing:
-            candidates.append((x, y))
-            x -= spacing
-        y += row_height
+        candidates.extend(_row_candidates(y, row % 2))
         row += 1
+        y += row_height
+    row = 1
+    y = axis_z - row_height
+    while y >= miny - row_height:
+        candidates.extend(_row_candidates(y, row % 2))
+        row += 1
+        y -= row_height
 
     if not candidates:
         logger.warning(
@@ -374,7 +401,62 @@ def build_adaptive_geometry_graph(
     inside_mask = np.zeros(len(candidates), dtype=bool)
     if result.shape[1] > 0:
         inside_mask[result[0]] = True
-    inside_arr = cand_arr[inside_mask]
+
+    # ── 3b. Enforce detected symmetry ────────────────────────────────────
+    # The hex grid is structurally symmetric around (axis_x, axis_z), but
+    # the polygon `within` check is strict — a boundary point and its mirror
+    # may disagree due to floating-point imprecision in the simplified polygon
+    # vertices.  Fix: keep a point only if all mirrors for each detected
+    # symmetry type are also inside.
+    #
+    # Symmetry types considered:
+    #   mirror_x  — reflect across vertical axis (x = axis_x)
+    #   mirror_z  — reflect across horizontal axis (z = axis_z)
+    #   rot_180   — 180° rotation around map centre
+    #
+    # If symmetry_info is not supplied, all three are enforced (conservative).
+    if symmetry_info is not None:
+        detected = {
+            entry["type"]
+            for entry in symmetry_info.get("global_symmetry", [])
+            if entry.get("detected", False)
+        }
+    else:
+        detected = {"mirror_x", "mirror_z", "rot_180"}
+
+    do_mirror_x = "mirror_x" in detected
+    do_mirror_z = "mirror_z" in detected
+    do_rot_180  = "rot_180"  in detected
+
+    # All coordinates are pre-rounded to _R dp; mirror coords are rounded the
+    # same way so dict lookups match regardless of floating-point path.
+    inside_set: frozenset[tuple[float, float]] = frozenset(
+        (float(cand_arr[i, 0]), float(cand_arr[i, 1]))
+        for i in range(len(candidates))
+        if inside_mask[i]
+    )
+    sym_mask = np.zeros(len(candidates), dtype=bool)
+    for i in range(len(candidates)):
+        if not inside_mask[i]:
+            continue
+        px = float(cand_arr[i, 0])
+        pz = float(cand_arr[i, 1])
+        mx = round(2.0 * axis_x - px, _R)
+        mz = round(2.0 * axis_z - pz, _R)
+        on_x_axis = abs(mx - px) < 1e-9
+        on_z_axis = abs(mz - pz) < 1e-9
+
+        keep = True
+        if do_mirror_x:
+            keep = keep and (on_x_axis or (mx, pz) in inside_set)
+        if do_mirror_z:
+            keep = keep and (on_z_axis or (px, mz) in inside_set)
+        if do_rot_180:
+            keep = keep and ((on_x_axis and on_z_axis) or (mx, mz) in inside_set)
+        if keep:
+            sym_mask[i] = True
+
+    inside_arr = cand_arr[sym_mask]
 
     if len(inside_arr) == 0:
         logger.warning(
