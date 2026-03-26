@@ -66,9 +66,9 @@ def extract_build_region(
 
     source = "xml"
     if build_allowed is None or build_allowed.is_empty:
-        # Fallback to block 36
-        build_allowed = _extract_block36_region(y0_df)
-        source = "block_36"
+        # Fallback to y=0 build-platform blocks (block 36, water)
+        build_allowed = _extract_y0_platform_region(y0_df)
+        source = "y0_blocks"
 
     if build_allowed is None or build_allowed.is_empty:
         return None
@@ -252,38 +252,43 @@ def _should_exclude_void_child(child: Region) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Block 36 fallback
+# y=0 build-platform block fallback
 # ---------------------------------------------------------------------------
 
-def _extract_block36_region(y0_df: Optional[pd.DataFrame]) -> Optional[Any]:
-    """
-    Build a region from block 36 (invisible piston head) at y=0.
+# Block IDs that indicate a build platform at y=0.
+# The PGM plugin treats any non-air block at y=0 under a player as
+# non-void, so these blocks silently define build-allowed areas:
+#   36 — invisible piston head (used when islands are raised above y=0)
+#    8 — flowing water  }  used on flat maps where the void between
+#    9 — stationary water}  islands is filled with water at y=0
+_Y0_PLATFORM_BLOCK_IDS: frozenset[int] = frozenset([36, 8, 9])
 
-    Block 36 acts as an implicit build platform.
+
+def _extract_y0_platform_region(y0_df: Optional[pd.DataFrame]) -> Optional[Any]:
+    """Build a region from build-platform blocks at y=0.
+
+    Recognises block 36 (invisible piston head), flowing water (8), and
+    stationary water (9).  All three indicate areas where the PGM plugin
+    implicitly allows building because a non-air block exists at y=0.
 
     Args:
         y0_df: Pre-loaded Y=0 layout DataFrame, or None if unavailable.
     """
-    if y0_df is None:
+    if y0_df is None or 'block_id' not in y0_df.columns:
         return None
 
-    if 'block_id' not in y0_df.columns:
+    platform = y0_df[y0_df['block_id'].isin(_Y0_PLATFORM_BLOCK_IDS)]
+    if platform.empty:
         return None
 
-    block36 = y0_df[y0_df['block_id'] == 36]
-    if block36.empty:
-        return None
+    x_col = 'world_x' if 'world_x' in platform.columns else 'x'
+    z_col = 'world_z' if 'world_z' in platform.columns else 'z'
 
-    x_col = 'world_x' if 'world_x' in block36.columns else 'x'
-    z_col = 'world_z' if 'world_z' in block36.columns else 'z'
-
-    coords = list(zip(block36[x_col].astype(float), block36[z_col].astype(float)))
-
+    coords = list(zip(platform[x_col].astype(float), platform[z_col].astype(float)))
     if not coords:
         return None
 
-    region = world_blocks_to_shapely(coords)
-    return _ensure_valid(region)
+    return _ensure_valid(world_blocks_to_shapely(coords))
 
 
 # ---------------------------------------------------------------------------
