@@ -116,6 +116,11 @@ def build_traffic_graph(
     Returns the graph as a plain dict (same structure written to JSON).
     The dict includes a ``log_interval`` key recording the filter applied.
     """
+    # If grid_base was rasterized with a bumped grid_size (e.g. odd-heuristic),
+    # use that size throughout so discretization and valid_cell_set agree.
+    if grid_base is not None and grid_base.grid_size != grid_size:
+        grid_size = grid_base.grid_size
+
     logger.info(
         "Building traffic graph for '%s'  grid=%d  min_occ=%d  min_trans=%d",
         map_slug, grid_size, min_occupation, min_transitions,
@@ -704,13 +709,9 @@ def plot_traffic_graph(
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path as MplPath
     from matplotlib.lines import Line2D
-    from matplotlib.colors import Normalize
-    from matplotlib.cm import ScalarMappable
-    import matplotlib.cm as cm
 
     nodes = graph["nodes"]
     edges = graph["edges"]
@@ -737,16 +738,18 @@ def plot_traffic_graph(
     xmin, xmax = min(xs) - pad, max(xs) + pad
     zmin, zmax = min(zs) - pad, max(zs) + pad
 
-    fig, ax = plt.subplots(figsize=(10, 12), facecolor="#0d0d18")
-    ax.set_facecolor("#0d0d18")
+    _BG = "#f5f4ee"  # warm off-white
+
+    fig, ax = plt.subplots(figsize=(10, 12), facecolor=_BG)
+    ax.set_facecolor(_BG)
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(zmax, zmin)  # invert z (north-up)
     ax.set_aspect("equal")
-    ax.set_xlabel("World X", color="#aaaaaa")
-    ax.set_ylabel("World Z", color="#aaaaaa")
-    ax.tick_params(colors="#555555")
+    ax.set_xlabel("World X", color="#444444")
+    ax.set_ylabel("World Z", color="#444444")
+    ax.tick_params(colors="#666666")
     for spine in ax.spines.values():
-        spine.set_edgecolor("#333333")
+        spine.set_edgecolor("#cccccc")
 
     # Background: island polygons (with holes) + build regions
     if map_context:
@@ -755,7 +758,7 @@ def plot_traffic_graph(
         for team in map_context.get("teams", []):
             tid = team.get("id", "")
             raw = team.get("color", "")
-            team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
+            team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#8899aa")
 
         def _poly_path(exterior: list, holes: list) -> Optional[MplPath]:
             """Build a matplotlib Path for a polygon with optional holes."""
@@ -785,8 +788,8 @@ def plot_traffic_graph(
             if path is None:
                 continue
             isl_t = isl.get("team")
-            fc    = team_hex.get(isl_t, "#3a3a5a")
-            alpha = 0.20 if isl_t else 0.10
+            fc    = team_hex.get(isl_t, "#8899aa")
+            alpha = 0.30 if isl_t else 0.15
             ax.add_patch(PathPatch(path, facecolor=fc, edgecolor=fc,
                                    linewidth=0.3, alpha=alpha, zorder=0))
 
@@ -799,12 +802,10 @@ def plot_traffic_graph(
                 path     = _poly_path(exterior, holes)
                 if path is None:
                     continue
-                ax.add_patch(PathPatch(path, facecolor="#ffbb44", edgecolor="#ffbb44",
-                                       linewidth=0.5, alpha=0.10, zorder=0))
+                ax.add_patch(PathPatch(path, facecolor="#ddaa33", edgecolor="#ddaa33",
+                                       linewidth=0.5, alpha=0.18, zorder=0))
 
-    # Edges — colour by transition count
-    cmap_e = cm.get_cmap("YlOrRd")
-    norm_e = Normalize(vmin=0, vmax=max_trans)
+    # Edges — white, width encodes transition count
     for e in edges:
         sn = node_by_id.get(e["src"])
         dn = node_by_id.get(e["dst"])
@@ -812,54 +813,46 @@ def plot_traffic_graph(
             continue
         sc = sn["coords"]; dc = dn["coords"]
         t  = e["transitions"]
-        lw = 0.4 + 2.5 * t / max_trans
+        lw = 0.3 + 1.2 * t / max_trans
         ax.plot([sc[0], dc[0]], [sc[1], dc[1]],
-                color=cmap_e(norm_e(t)), lw=lw, alpha=0.55, zorder=1)
+                color="white", lw=lw, alpha=0.75, zorder=1)
 
     # Nodes — size by occupation, colour by location (island vs build vs fixed)
-    _LOC_COLORS = {"island": "#5599ff", "build_region": "#ffbb44", "void": "#888888"}
-
     for n in nodes:
         coords = n["coords"]
         occ    = n["occupation"]
         s      = 8 + 100 * occ / max_occ
         if n.get("poi_type") == "wool":
-            wc = _WOOL_COLORS.get(n.get("poi_color", ""), "#ffffff")
+            wc = _WOOL_COLORS.get(n.get("poi_color", ""), "#555555")
             ax.scatter(coords[0], coords[1], s=s * 1.5, color=wc,
-                       marker="D", edgecolors="white", linewidths=1.2, zorder=5)
+                       marker="D", edgecolors="#333333", linewidths=0.8, zorder=5)
             ax.annotate(n.get("poi_color", "?"), (coords[0], coords[1]),
                         xytext=(5, 3), textcoords="offset points",
-                        color="white", fontsize=7, fontweight="bold", zorder=6)
+                        color="#222222", fontsize=7, fontweight="bold", zorder=6)
         elif n.get("poi_type") == "spawn":
-            ax.scatter(coords[0], coords[1], s=s * 1.2, color="#aaaaaa",
-                       marker="s", edgecolors="white", linewidths=1.0, zorder=5)
+            ax.scatter(coords[0], coords[1], s=s * 1.2, color="#888888",
+                       marker="s", edgecolors="#333333", linewidths=0.8, zorder=5)
         else:
             iid = n.get("island_id")
-            fc  = "#5599ff" if iid is not None else "#ffbb44"
-            ax.scatter(coords[0], coords[1], s=s, color=fc, alpha=0.70,
+            fc  = "#3a6fd8" if iid is not None else "#cc8800"
+            ax.scatter(coords[0], coords[1], s=s, color=fc, alpha=0.80,
                        linewidths=0, zorder=3)
-
-    # Colorbar for edge transition count
-    sm = ScalarMappable(cmap=cmap_e, norm=norm_e)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Edge transitions", color="#aaaaaa")
-    cbar.ax.yaxis.set_tick_params(color="#aaaaaa")
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="#aaaaaa")
 
     # Legend
     legend_els = [
-        Line2D([0], [0], color="#5599ff", lw=0, marker="o", ms=7,
-               markerfacecolor="#5599ff", label="island node"),
-        Line2D([0], [0], color="#ffbb44", lw=0, marker="o", ms=7,
-               markerfacecolor="#ffbb44", label="build region node"),
-        Line2D([0], [0], color="white", lw=0, marker="D", ms=7,
+        Line2D([0], [0], color="#3a6fd8", lw=0, marker="o", ms=7,
+               markerfacecolor="#3a6fd8", label="island node"),
+        Line2D([0], [0], color="#cc8800", lw=0, marker="o", ms=7,
+               markerfacecolor="#cc8800", label="build region node"),
+        Line2D([0], [0], color="#555555", lw=0, marker="D", ms=7,
                label="wool node"),
-        Line2D([0], [0], color="#aaaaaa", lw=0, marker="s", ms=6,
+        Line2D([0], [0], color="#888888", lw=0, marker="s", ms=6,
                label="spawn node"),
+        Line2D([0], [0], color="white", lw=1.5, label="edge (width = transitions)"),
     ]
     ax.legend(handles=legend_els, loc="lower left", fontsize=7,
-              facecolor="#0e0e1a", labelcolor="white", framealpha=0.8)
+              facecolor="#ffffff", labelcolor="#222222", framealpha=0.85,
+              edgecolor="#cccccc")
 
     n_nodes = len(nodes); n_edges = len(edges)
     playtime_str = (
@@ -874,11 +867,11 @@ def plot_traffic_graph(
         f"({n_matches} match{'es' if n_matches != 1 else ''}  |  "
         + "  ·  ".join(subtitle_parts) + ")\n"
         f"{n_nodes} nodes · {n_edges} edges  |  grid={grid_size}×{grid_size} blocks",
-        color="white", fontsize=10,
+        color="#222222", fontsize=10,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=130, bbox_inches="tight", facecolor="#0d0d1a")
+    fig.savefig(output_path, dpi=130, bbox_inches="tight", facecolor=_BG)
     plt.close(fig)
     logger.info("Saved traffic graph plot → %s", output_path)
 
