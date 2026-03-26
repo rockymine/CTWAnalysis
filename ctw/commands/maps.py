@@ -1270,7 +1270,7 @@ def handle_geometry_graph(args: object) -> None:
                 save_geometry_graph(graph, out_path)
                 print(
                     f"  [{map_slug}] {len(graph['nodes'])} nodes, "
-                    f"{len(graph['edges'])} edges  (grid={grid_size})"
+                    f"{len(graph['edges'])} edges  (grid={graph['grid_size']})"
                 )
 
                 if not no_plot:
