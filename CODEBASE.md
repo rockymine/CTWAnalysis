@@ -48,6 +48,17 @@ CTWAnalysisWithClaudeCode/
 │   ├── build_regions.py              Build region extraction (void decomposition)
 │   └── datatypes.py                  MapData, MapXmlContext
 │
+├── map_analysis/
+│   ├── pipeline.py                   run_island_geometry() + assemble_map() — produces map_context.json
+│   ├── datatypes.py                  IslandAnalysis, MapContext dataclasses
+│   ├── builder.py                    Island construction from geometry + XML
+│   ├── exporter.py                   JSON serialisation helpers
+│   ├── poi_annotation.py             POI (spawn/wool/monument) assignment to islands
+│   ├── team_assignment.py            Team color/slug resolution
+│   ├── grid_base.py                  GridBase + rasterize_map_polygons() + _adaptive_grid_size()
+│   │                                 Converts map_context polygons to grid cells (no DB required)
+│   └── geometry_graph.py             build_geometry_graph() — 4-connected adjacency graph from GridBase
+│
 ├── match_analysis/
 │   ├── metadata.db                   DuckDB database (READ-ONLY for analysis; write for processing)
 │   ├── database/
@@ -82,7 +93,8 @@ CTWAnalysisWithClaudeCode/
 │   ├── map_context.json              Complete assembled map model (primary reference)
 │   ├── map_graph.json                Inter-island connectivity graph
 │   ├── symmetry.json                 Detected symmetry
-│   ├── traffic_graph.json            Data-driven navigation graph
+│   ├── traffic_graph.json            Data-driven navigation graph (player movement)
+│   ├── geometry_graph.json          Geometry-derived adjacency graph (no match data needed)
 │   └── island_analysis/             Island geometry + debug images
 │
 ├── match_logs/                       Raw match parquet files (not in git)
@@ -413,6 +425,7 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw maps kits` | `handle_kits()` | Reads `map.xml` → `map_kit_items`, `map_kit_armor` |
 | `ctw maps spatial-relations` | `handle_spatial_relations()` | Reads `map_wool_locations`, `map_spawns` → `map_wool_attack_relations`, `map_team_spatial` |
 | `ctw maps terrain-height` | `handle_terrain_height()` | `match_analysis/database/terrain_height.py:populate_terrain_height()` |
+| `ctw maps geometry-graph` | `handle_geometry_graph()` | `map_analysis/grid_base.py:rasterize_map_polygons()` + `map_analysis/geometry_graph.py:build_geometry_graph()` |
 | `ctw matches index` | `handle_index()` | `match_analysis/database/indexer.py:index_match_files()` — recurse logs dir, create stub maps as needed |
 | `ctw matches extract` | `handle_extract()` | `match_analysis/processing/processor.py:extract_match_data()` + `insert_match_data()` |
 | `ctw matches classify` | `handle_classify()` | `match_analysis/processing/processor.py:classify_match()` — spatial annotation + traffic features |
