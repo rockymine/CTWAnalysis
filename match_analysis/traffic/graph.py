@@ -23,6 +23,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from map_analysis.grid_base import GridBase, _cell_origin
 from match_analysis.traffic.snapping import bresenham_cells
 
 logger = logging.getLogger("ctw")
@@ -85,12 +86,13 @@ def build_traffic_graph(
     map_slug: str,
     conn,
     output_dir: Path,
-    grid_size: int        = DEFAULT_GRID_SIZE,
-    min_occupation: int   = DEFAULT_MIN_OCCUPATION,
-    min_transitions: int  = DEFAULT_MIN_TRANSITIONS,
-    max_gap_s: float      = DEFAULT_MAX_GAP_S,
-    log_interval: int     = 2,
-    min_matches: int      = 0,
+    grid_size: int               = DEFAULT_GRID_SIZE,
+    min_occupation: int          = DEFAULT_MIN_OCCUPATION,
+    min_transitions: int         = DEFAULT_MIN_TRANSITIONS,
+    max_gap_s: float             = DEFAULT_MAX_GAP_S,
+    log_interval: int            = 2,
+    min_matches: int             = 0,
+    grid_base: Optional[GridBase] = None,
 ) -> dict:
     """Build a traffic graph from all processed position data for *map_slug*.
 
@@ -103,6 +105,13 @@ def build_traffic_graph(
         NULL for un-migrated rows).  Default ``2`` restricts to 2-second
         logged matches, filtering out 5-second logged matches that would
         produce sparser traces.
+    grid_base:
+        Optional geometry substrate produced by rasterize_map_polygons().
+        When provided its ``valid_cell_set`` replaces the player-data-derived
+        set used to gate Bresenham interpolation steps, allowing transitions
+        through cells that players visited too rarely to cross the occupation
+        threshold.  When None (default) the original data-only behaviour is
+        used and the output is identical to pre-GridBase builds.
 
     Returns the graph as a plain dict (same structure written to JSON).
     The dict includes a ``log_interval`` key recording the filter applied.
@@ -178,18 +187,38 @@ def build_traffic_graph(
         )
 
     # ── 2. Discretise to grid cells ────────────────────────────────────────
-    pos_df["cx"] = (pos_df["x"] // grid_size * grid_size).astype(int)
-    pos_df["cz"] = (pos_df["z"] // grid_size * grid_size).astype(int)
+    # When a GridBase is available, align the grid to the map centre so that
+    # both teams share identical cell boundaries on symmetric maps.
+    # When grid_base is None, fall back to origin-aligned discretization to
+    # preserve identical output for callers that do not supply a GridBase.
+    if grid_base is not None:
+        cx_c = grid_base.center_x
+        cz_c = grid_base.center_z
+        pos_df["cx"] = (
+            cx_c + np.floor((pos_df["x"].values - cx_c) / grid_size) * grid_size
+        ).astype(int)
+        pos_df["cz"] = (
+            cz_c + np.floor((pos_df["z"].values - cz_c) / grid_size) * grid_size
+        ).astype(int)
+    else:
+        pos_df["cx"] = (pos_df["x"] // grid_size * grid_size).astype(int)
+        pos_df["cz"] = (pos_df["z"] // grid_size * grid_size).astype(int)
 
-    # ── 2a. Valid cell set (non-void cells that have y>0 positions) ───────────
+    # ── 2a. Valid cell set ─────────────────────────────────────────────────
     # Used later to reject interpolated edge steps through void territory.
-    valid_cells_df = pos_df[pos_df["location_type"] != "void"]
-    valid_cell_set: set[tuple[int, int]] = set(
-        zip(
-            (valid_cells_df["x"] // grid_size * grid_size).astype(int),
-            (valid_cells_df["z"] // grid_size * grid_size).astype(int),
+    # When a GridBase is provided its geometry-derived cell set is used,
+    # which includes cells players visited too rarely to meet min_occupation.
+    # When grid_base is None the original data-only path is used.
+    if grid_base is not None:
+        valid_cell_set: set[tuple[int, int]] = grid_base.valid_cell_set
+    else:
+        valid_cells_df = pos_df[pos_df["location_type"] != "void"]
+        valid_cell_set = set(
+            zip(
+                (valid_cells_df["x"] // grid_size * grid_size).astype(int),
+                (valid_cells_df["z"] // grid_size * grid_size).astype(int),
+            )
         )
-    )
 
     # ── 3. Node occupation & dominant island_id ────────────────────────────
     def _mode_or_none(s: pd.Series) -> Optional[int]:
@@ -676,7 +705,8 @@ def plot_traffic_graph(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
-    from matplotlib.patches import Polygon as MplPolygon
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path as MplPath
     from matplotlib.lines import Line2D
     from matplotlib.colors import Normalize
     from matplotlib.cm import ScalarMappable
@@ -693,7 +723,7 @@ def plot_traffic_graph(
     playtime_min      = graph.get("total_playtime_min")
 
     occupations = [n["occupation"] for n in nodes]
-    max_occ     = max(occupations) if occupations else 1
+    max_occ     = max(max(occupations), 1) if occupations else 1
     transitions = [e["transitions"] for e in edges]
     max_trans   = max(transitions) if transitions else 1
 
@@ -718,7 +748,7 @@ def plot_traffic_graph(
     for spine in ax.spines.values():
         spine.set_edgecolor("#333333")
 
-    # Island polygons (faint background)
+    # Background: island polygons (with holes) + build regions
     if map_context:
         # Build team id → hex colour from map_context teams list
         team_hex: dict[str, str] = {}
@@ -727,17 +757,50 @@ def plot_traffic_graph(
             raw = team.get("color", "")
             team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
 
+        def _poly_path(exterior: list, holes: list) -> Optional[MplPath]:
+            """Build a matplotlib Path for a polygon with optional holes."""
+            if len(exterior) < 3:
+                return None
+            verts: list = []
+            codes: list = []
+            ext = np.array(exterior)
+            verts.extend(ext.tolist())
+            verts.append(ext[0].tolist())
+            codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(ext) - 1) + [MplPath.CLOSEPOLY]
+            for hole in holes:
+                if len(hole) < 3:
+                    continue
+                h = np.array(hole)
+                verts.extend(h.tolist())
+                verts.append(h[0].tolist())
+                codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(h) - 1) + [MplPath.CLOSEPOLY]
+            return MplPath(verts, codes)
+
+        # Island polygons (holes punched out)
         for isl in map_context.get("islands", []):
-            pts = (isl.get("simplified_polygon") or {}).get("exterior", [])
-            if not pts:
+            poly_data = isl.get("simplified_polygon") or {}
+            exterior  = poly_data.get("exterior", [])
+            holes     = poly_data.get("holes", [])
+            path      = _poly_path(exterior, holes)
+            if path is None:
                 continue
             isl_t = isl.get("team")
             fc    = team_hex.get(isl_t, "#3a3a5a")
             alpha = 0.20 if isl_t else 0.10
-            patch = MplPolygon(np.array(pts), closed=True,
-                               facecolor=fc, edgecolor=fc,
-                               linewidth=0.3, alpha=alpha, zorder=0)
-            ax.add_patch(patch)
+            ax.add_patch(PathPatch(path, facecolor=fc, edgecolor=fc,
+                                   linewidth=0.3, alpha=alpha, zorder=0))
+
+        # Build-region polygons (faint gold overlay)
+        build_region = map_context.get("build_region")
+        if build_region:
+            for poly_data in build_region.get("buildable_void", []):
+                exterior = poly_data.get("exterior", [])
+                holes    = poly_data.get("holes", [])
+                path     = _poly_path(exterior, holes)
+                if path is None:
+                    continue
+                ax.add_patch(PathPatch(path, facecolor="#ffbb44", edgecolor="#ffbb44",
+                                       linewidth=0.5, alpha=0.10, zorder=0))
 
     # Edges — colour by transition count
     cmap_e = cm.get_cmap("YlOrRd")
