@@ -374,9 +374,9 @@ def _build_voronoi_graph(
     return nodes_list, edges_list
 
 
-def _adaptive_grid_size(total_blocks: int) -> int:
-    """Compute map-adaptive grid size from total playable blocks."""
-    return max(2, round(math.sqrt(max(total_blocks, 1) / 300)))
+# Re-exported from map_analysis.grid_base for backward compatibility.
+# Import directly from map_analysis.grid_base in new code.
+from map_analysis.grid_base import _adaptive_grid_size  # noqa: F401, E402
 
 
 # ---------------------------------------------------------------------------
