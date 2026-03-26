@@ -134,6 +134,13 @@ def run(args: object) -> None:
             ).fetchone()[0]
             has_bedrock_ceiling = bedrock_ceiling_count > 0
 
+        # Load all island terrain cells for this map — used to measure lane
+        # length against actual terrain extent rather than excavation coverage.
+        terrain_cells_df = conn.execute(
+            "SELECT world_x, world_z FROM map_terrain_height WHERE map_id = ?",
+            [map_id],
+        ).df() if has_terrain else None
+
         if has_terrain:
             excavation_df = conn.execute("""
                 WITH per_match_cell AS (
@@ -214,11 +221,68 @@ def run(args: object) -> None:
     defending_spawns = _load_defending_spawns(map_data)
 
     _plot_figure(
-        map_name, map_context, wools_df, excavation_df,
+        map_name, map_context, wools_df, excavation_df, terrain_cells_df,
         wool_room_polygons, defending_spawns,
         min_floor_range, save_path, has_terrain, has_bedrock_ceiling,
     )
     print(f"Saved: {save_path}")
+
+
+def _contiguous_lane_length(
+    positions: 'np.ndarray',
+    room_min: int,
+    room_max: int,
+    gap_threshold: int = 5,
+) -> int:
+    """Return the contiguous terrain span along the lane axis from the wool room.
+
+    Walks outward from the wool room edge in whichever direction has more
+    excavation mass, stopping at the first gap larger than ``gap_threshold``
+    blocks (indicating a void segment between islands).  The returned length
+    is the terrain extent **outside** the wool room only — the room width is
+    not included.
+
+    Args:
+        positions: 1-D array of cell positions along the lane axis (unique or not).
+        room_min: Wool room minimum along that axis.
+        room_max: Wool room maximum along that axis.
+        gap_threshold: Maximum consecutive missing positions that are still
+            treated as part of the same island (default 5).
+
+    Returns:
+        Length in blocks (≥ room_max − room_min).
+    """
+    import numpy as np
+
+    unique_pos = np.unique(positions)
+    if len(unique_pos) == 0:
+        return 0
+
+    room_center = (room_min + room_max) / 2.0
+    exc_center = float(np.median(unique_pos))
+
+    if exc_center < room_center:
+        # Lane exits in the negative direction — measure from room_min outward
+        beyond = unique_pos[unique_pos < room_min][::-1]  # descending from room edge
+        if len(beyond) == 0:
+            return 0
+        farthest = beyond[0]
+        for i in range(1, len(beyond)):
+            if beyond[i - 1] - beyond[i] > gap_threshold:
+                break
+            farthest = beyond[i]
+        return room_min - farthest  # lane outside the room only
+    else:
+        # Lane exits in the positive direction — measure from room_max outward
+        beyond = unique_pos[unique_pos >= room_max]  # ascending from room edge
+        if len(beyond) == 0:
+            return 0
+        farthest = beyond[0]
+        for i in range(1, len(beyond)):
+            if beyond[i] - beyond[i - 1] > gap_threshold:
+                break
+            farthest = beyond[i]
+        return farthest - room_max + 1  # lane outside the room only
 
 
 def _load_wool_room_polygons(map_data: Optional[dict]) -> list:
@@ -254,6 +318,7 @@ def _plot_figure(
     map_context: dict,
     wools_df: 'pd.DataFrame',
     excavation_df: 'pd.DataFrame',
+    terrain_cells_df: 'Optional[pd.DataFrame]',
     wool_room_polygons: list,
     defending_spawns: dict,
     min_floor_range: int,
@@ -449,6 +514,9 @@ def _plot_figure(
         draw_build_region(ax, map_context, style=_THIN_BUILD)
         draw_island_outlines(ax, map_context, style=_THIN_ISLAND)
 
+        lane_width: Optional[int] = None   # wool room dimension ⊥ to lane
+        lane_length: Optional[int] = None  # active excavation span along lane
+
         # ── Wool room outline + corridor guide lines ──
         if wool_room_poly is not None:
             xr_min, zr_min, xr_max, zr_max = (
@@ -486,11 +554,40 @@ def _plot_figure(
                 for zg in (zr_min, zr_max):
                     ax.axhline(zg, color='#e08000', linewidth=0.7,
                                linestyle='--', alpha=0.6, zorder=6)
+                lane_width = zr_max - zr_min
+                # Use terrain cells for length: terrain is dense within an
+                # island and completely absent in void, making gap detection
+                # unambiguous regardless of excavation coverage.
+                length_src = terrain_cells_df if terrain_cells_df is not None else active_cells
+                if length_src is not None and not length_src.empty:
+                    corridor_pos = length_src.loc[
+                        (length_src['world_z'] >= zr_min) &
+                        (length_src['world_z'] <= zr_max),
+                        'world_x',
+                    ].values
+                    if len(corridor_pos) > 0:
+                        lane_length = _contiguous_lane_length(
+                            corridor_pos, xr_min, xr_max,
+                            gap_threshold=1 if terrain_cells_df is not None else 5,
+                        )
             else:
                 # Lane runs in z — guide lines bound the corridor in x
                 for xg in (xr_min, xr_max):
                     ax.axvline(xg, color='#e08000', linewidth=0.7,
                                linestyle='--', alpha=0.6, zorder=6)
+                lane_width = xr_max - xr_min
+                length_src = terrain_cells_df if terrain_cells_df is not None else active_cells
+                if length_src is not None and not length_src.empty:
+                    corridor_pos = length_src.loc[
+                        (length_src['world_x'] >= xr_min) &
+                        (length_src['world_x'] <= xr_max),
+                        'world_z',
+                    ].values
+                    if len(corridor_pos) > 0:
+                        lane_length = _contiguous_lane_length(
+                            corridor_pos, zr_min, zr_max,
+                            gap_threshold=1 if terrain_cells_df is not None else 5,
+                        )
 
         # ── Excavation cells ──
         if not panel_df.empty:
@@ -570,9 +667,15 @@ def _plot_figure(
                     if colour_mode == 'completeness'
                     else f'floor_y: {int(panel_df["floor_y"].min())}–{int(panel_df["floor_y"].max())}'
                 )
+                lane_dims = ''
+                if lane_width is not None:
+                    lane_dims = f'\nlane width: {lane_width} blk'
+                    if lane_length is not None:
+                        lane_dims += f'  length: {lane_length} blk'
                 stats_text = (
                     f'{len(panel_df):,} cells  ({n_active:,} active, {n_static:,} static)\n'
-                    f'{floor_line}\n'
+                    f'{floor_line}'
+                    f'{lane_dims}\n'
                     f'active bbox: '
                     f'x {bbox_x_min}–{bbox_x_max - 1} '
                     f'({bbox_x_max - bbox_x_min} blk), '
