@@ -219,8 +219,13 @@ Examples:
     p.add_argument('--adaptive-nodes', action='store_true', dest='adaptive_nodes',
                    help='[experimental] Use symmetric hex-grid sampling + Delaunay '
                         'instead of the fixed cell grid. Output: adaptive_graph.json')
+    p.add_argument('--contour-nodes', action='store_true', dest='contour_nodes',
+                   help='[experimental] Boundary-first contour shell sampling: '
+                        'nodes follow island perimeters inward, build region gets '
+                        'hex fill. Output: contour_graph.json')
     p.add_argument('--target-nodes', type=int, default=300, dest='target_nodes',
-                   help='Target node count for --adaptive-nodes (default: 300)')
+                   help='Target node count for --adaptive-nodes / --contour-nodes '
+                        '(default: 300)')
     p.set_defaults(func=handle_geometry_graph)
 
 
@@ -1228,6 +1233,7 @@ def handle_geometry_graph(args: object) -> None:
     from map_analysis.geometry_graph import (
         build_geometry_graph,
         build_adaptive_geometry_graph,
+        build_contour_geometry_graph,
         save_geometry_graph,
     )
     from match_analysis.traffic.graph import plot_traffic_graph
@@ -1241,6 +1247,7 @@ def handle_geometry_graph(args: object) -> None:
     no_plot: bool = getattr(args, 'no_plot', False)
     force: bool = getattr(args, 'force', False)
     adaptive: bool = getattr(args, 'adaptive_nodes', False)
+    contour: bool = getattr(args, 'contour_nodes', False)
     target_nodes: int = getattr(args, 'target_nodes', 300)
 
     conn = None
@@ -1252,7 +1259,10 @@ def handle_geometry_graph(args: object) -> None:
     try:
         for map_dir in map_dirs:
             map_slug = map_dir.name
-            if adaptive:
+            if contour:
+                out_path = map_dir / 'contour_graph.json'
+                plot_path = map_dir / 'images' / 'contour_graph.png'
+            elif adaptive:
                 out_path = map_dir / 'adaptive_graph.json'
                 plot_path = map_dir / 'images' / 'adaptive_graph.png'
             else:
@@ -1274,18 +1284,28 @@ def handle_geometry_graph(args: object) -> None:
                 if use_db_wools and conn is not None:
                     wool_pois_override = _load_wool_pois_from_db(conn, map_slug)
 
-                if adaptive:
-                    # Build a minimal GridBase (only wool/spawn POIs needed)
-                    grid_size = grid_size_arg or _adaptive_grid_size(
-                        map_context.get('total_blocks', 5000)
+                # Load symmetry.json for symmetry-aware builders
+                symmetry_info: Optional[dict] = None
+                sym_path = map_dir / 'symmetry.json'
+                if sym_path.exists():
+                    with open(sym_path, encoding='utf-8') as fh:
+                        symmetry_info = _json.load(fh)
+
+                # Build a GridBase for POI/wool resolution in all modes
+                grid_size = grid_size_arg or _adaptive_grid_size(
+                    map_context.get('total_blocks', 5000)
+                )
+                grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
+
+                if contour:
+                    graph = build_contour_geometry_graph(
+                        grid_base,
+                        map_context,
+                        wool_pois=wool_pois_override,
+                        symmetry_info=symmetry_info,
                     )
-                    grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
-                    # Load symmetry.json to drive symmetry enforcement
-                    symmetry_info: Optional[dict] = None
-                    sym_path = map_dir / 'symmetry.json'
-                    if sym_path.exists():
-                        with open(sym_path, encoding='utf-8') as fh:
-                            symmetry_info = _json.load(fh)
+                    grid_label = f"spacing={grid_base.grid_size}"
+                elif adaptive:
                     graph = build_adaptive_geometry_graph(
                         grid_base,
                         map_context,
@@ -1295,11 +1315,6 @@ def handle_geometry_graph(args: object) -> None:
                     )
                     grid_label = f"target={target_nodes}"
                 else:
-                    grid_size = grid_size_arg
-                    if grid_size is None:
-                        total_blocks = map_context.get('total_blocks', 5000)
-                        grid_size = _adaptive_grid_size(total_blocks)
-                    grid_base = rasterize_map_polygons(map_context, map_slug, grid_size)
                     graph = build_geometry_graph(grid_base, wool_pois=wool_pois_override)
                     grid_label = f"grid={graph['grid_size']}"
 
