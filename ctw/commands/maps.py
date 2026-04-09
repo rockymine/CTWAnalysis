@@ -1471,7 +1471,7 @@ def handle_profile_landscape(args) -> None:
         return
 
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    images_dir = output_root / 'images'
+    images_dir = output_root / '_debug'
     images_dir.mkdir(parents=True, exist_ok=True)
 
     feature_x = getattr(args, 'feature_x', 'aspect_ratio')
@@ -1516,7 +1516,7 @@ def handle_profile_mosaic(args) -> None:
         print('No island profiles found.')
         return
 
-    images_dir = output_root / 'images'
+    images_dir = output_root / '_debug'
     images_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(images_dir / 'island_mosaic_{type}.png')
     island_type_filter = getattr(args, 'island_type', None)
@@ -1535,7 +1535,7 @@ def handle_profile_distributions(args) -> None:
         return
 
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    images_dir = output_root / 'images'
+    images_dir = output_root / '_debug'
     images_dir.mkdir(parents=True, exist_ok=True)
     out_path = str(images_dir / 'island_feature_distributions.png')
     plot_feature_distributions(all_pairs, out_path)
