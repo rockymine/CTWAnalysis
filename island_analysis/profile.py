@@ -42,12 +42,14 @@ logger = logging.getLogger('ctw')
 # ---------------------------------------------------------------------------
 
 _TYPE_COLORS: dict[str, str] = {
-    'decoration':     '#aaaaaa',
-    'spawn_platform': '#e74c3c',
-    'linear':         '#3498db',
-    'complex':        '#9b59b6',
-    'compact':        '#2ecc71',
-    'blob':           '#f39c12',
+    'square':    '#27ae60',   # green
+    'rectangle': '#2980b9',   # blue
+    'circle':    '#e74c3c',   # red
+    'L_shape':   '#8e44ad',   # purple
+    'fork':      '#d35400',   # orange
+    'rugged':    '#c0392b',   # dark red / coral
+    'linear':    '#16a085',   # teal
+    'blob':      '#95a5a6',   # gray
 }
 
 _ALL_TYPES: list[str] = list(_TYPE_COLORS)
@@ -82,6 +84,10 @@ class IslandFeatures:
     hole_ratio: float         # hole_count / area
     bbox_width: float         # canonical bounding box width  (x extent)
     bbox_height: float        # canonical bounding box height (z extent)
+    area: int                 # island block count
+    perimeter: float          # polygon exterior perimeter in world units
+    bbox_fill_ratio: float    # area / (bbox_width × bbox_height) — 1.0 = perfect rectangle
+    rugosity: float           # perimeter / bbox_perimeter — 1.0 = rectangle, >1.0 = jagged
     # Tier B — skeleton-derived (Optional — see docstring)
     skeleton_endpoint_count: Optional[int]
     skeleton_junction_count: Optional[int]
@@ -255,6 +261,12 @@ def extract_island_features(
 
     hole_ratio = hole_count / max(area, 1)
 
+    bbox_area = max(bbox_width * bbox_height, 1.0)
+    bbox_fill_ratio = area / bbox_area
+
+    bbox_perimeter = 2.0 * (bbox_width + bbox_height)
+    rugosity = perimeter / max(bbox_perimeter, 1.0)
+
     # Tier B features (skeleton — Optional)
     skel_endpoint_count: Optional[int] = None
     skel_junction_count: Optional[int] = None
@@ -306,6 +318,10 @@ def extract_island_features(
         hole_ratio=round(hole_ratio, 6),
         bbox_width=round(bbox_width, 2),
         bbox_height=round(bbox_height, 2),
+        area=int(area),
+        perimeter=round(perimeter, 2),
+        bbox_fill_ratio=round(bbox_fill_ratio, 4),
+        rugosity=round(rugosity, 4),
         skeleton_endpoint_count=skel_endpoint_count,
         skeleton_junction_count=skel_junction_count,
         skeleton_total_length=skel_total_length,
@@ -318,56 +334,73 @@ def extract_island_features(
 # ---------------------------------------------------------------------------
 
 
-def classify_island(
-    features: IslandFeatures,
-    any_has_spawn: bool,
-    any_has_wool: bool,
-    area: int,
-    hole_count: int,
-) -> str:
-    """Apply rule cascade and return the island_type string.
+def classify_island(features: IslandFeatures) -> str:
+    """Apply geometry-first rule cascade and return the island_type string.
 
     Rules are applied in priority order; the first match wins.
-    Skeleton features are used only as *enrichment* when available — all
-    rules degrade gracefully when skeleton data is absent.
+    Skeleton features (Tier B) are used only where available — all rules
+    degrade gracefully when skeleton data is absent.
 
     Rule cascade
     ------------
-    1. decoration     area < 50, no spawn, no wool
-    2. spawn_platform has_spawn AND area < 800
-    3. linear         aspect_ratio ≥ 2.5
-    4. complex        hole_count ≥ 2  OR  (skeleton available AND junctions ≥ 4)
-                      OR  (area ≥ 5000 AND compactness < 0.25)
-    5. compact        aspect_ratio < 1.4 AND compactness ≥ 0.45
-    6. blob           (default)
+    1. square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
+    2. rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
+    3. circle      aspect_ratio ≤ 1.35 AND convexity ≥ 0.88
+                   (fill < 0.85 guaranteed here since square/rect already fired for fill ≥ 0.85)
+    4. L_shape     skeleton available AND junctions == 1 AND convexity < 0.82
+    5. fork        skeleton available AND junctions ≥ 2 AND convexity < 0.70
+    6. rugged      rugosity ≥ 1.2 (perimeter noticeably larger than bbox perimeter)
+    7. linear      aspect_ratio ≥ 2.5
+    8. blob        (default)
+
+    Design notes
+    ------------
+    - square/rectangle: fill ≥ 0.85 selects only truly rectangular platforms
+    - circle: fill < 0.85 is implicit since rules 1/2 already fired; catches round blobs
+      whose convexity is ≥ 0.88 (very smooth outline) and aspect_ratio ≤ 1.35
+    - fork vs rugged: fork has deep concave gaps (convexity < 0.70); rugged has many
+      surface irregularities without deep concavity (convexity ≥ 0.70 but rugosity ≥ 1.2)
     """
-    # Rule 1: decoration
-    if area < 50 and not any_has_spawn and not any_has_wool:
-        return 'decoration'
+    # Rule 1: square — tight rectangular fill, near-square
+    if (features.bbox_fill_ratio >= 0.85
+            and features.aspect_ratio <= 1.3
+            and features.convexity >= 0.85):
+        return 'square'
 
-    # Rule 2: spawn_platform
-    if any_has_spawn and area < 800:
-        return 'spawn_platform'
+    # Rule 2: rectangle — tight rectangular fill, elongated
+    if (features.bbox_fill_ratio >= 0.85
+            and features.aspect_ratio > 1.3
+            and features.convexity >= 0.85):
+        return 'rectangle'
 
-    # Rule 3: linear
+    # Rule 3: circle — round/oval shape (fill < 0.85 guaranteed here).
+    # High convexity (≥ 0.88) and low aspect ratio together select smooth, round islands.
+    if features.aspect_ratio <= 1.35 and features.convexity >= 0.88:
+        return 'circle'
+
+    # Rules 4 & 5: branching shapes — require skeleton data
+    junction_count = features.skeleton_junction_count
+    if junction_count is not None:
+        # Rule 4: L_shape — single junction, concave (one corner/bend)
+        if junction_count == 1 and features.convexity < 0.82:
+            return 'L_shape'
+
+        # Rule 5: fork — multiple junctions, strongly concave (T/Y/H/complex arm).
+        # Threshold 0.70 separates deep-branching forks (convexity 0.48-0.67 in practice)
+        # from moderately-irregular shapes better captured by the rugged rule.
+        if junction_count >= 2 and features.convexity < 0.70:
+            return 'fork'
+
+    # Rule 6: rugged — polygon perimeter noticeably larger than bbox perimeter.
+    # Captures irregular/jagged shapes not caught by the fork rule (convexity ≥ 0.70).
+    if features.rugosity >= 1.2:
+        return 'rugged'
+
+    # Rule 7: linear — elongated corridor
     if features.aspect_ratio >= 2.5:
         return 'linear'
 
-    # Rule 4: complex
-    skeleton_junction_count = features.skeleton_junction_count
-    is_complex = (
-        hole_count >= 2
-        or (skeleton_junction_count is not None and skeleton_junction_count >= 4)
-        or (area >= 5000 and features.compactness < 0.25)
-    )
-    if is_complex:
-        return 'complex'
-
-    # Rule 5: compact
-    if features.aspect_ratio < 1.4 and features.compactness >= 0.45:
-        return 'compact'
-
-    # Rule 6: blob (default)
+    # Rule 8: blob (default)
     return 'blob'
 
 
@@ -387,14 +420,14 @@ def build_raster_strategy(
     anchor_x: Optional[float] = None
     anchor_z: Optional[float] = None
 
-    if island_type == 'decoration':
-        grid_size_override = 8
-    elif island_type == 'spawn_platform':
-        grid_size_override = max(2, min(3, base_grid_size))
+    if island_type == 'rectangle':
+        # Store principal axis angle for future rotated-grid support
+        alignment_angle_deg = features.pca_angle_deg
     elif island_type == 'linear':
         # Store principal axis angle for future rotated-grid support
         alignment_angle_deg = features.pca_angle_deg
-    elif island_type == 'complex':
+    elif island_type in ('fork', 'rugged'):
+        # Complex internal structure — finer grid improves path coverage
         grid_size_override = max(2, base_grid_size // 2)
 
     return IslandRasterStrategy(
@@ -460,15 +493,9 @@ def profile_islands(
         island_id = representative['id']
         raw_island_ids = sorted(isl['id'] for isl in group_islands)
 
-        # Aggregate semantic flags across all instances in the group
-        any_has_spawn = any(isl.get('has_spawn', False) for isl in group_islands)
-        any_has_wool = any(isl.get('has_wool', False) for isl in group_islands)
-        area = representative.get('area', 0)
-        hole_count = representative.get('hole_count', 0)
-
         graph_dict = graph_by_id.get(island_id)
         features = extract_island_features(canonical_key, representative, graph_dict)
-        island_type = classify_island(features, any_has_spawn, any_has_wool, area, hole_count)
+        island_type = classify_island(features)
         raster_strategy = build_raster_strategy(island_type, features, base_grid_size)
 
         profiles.append(IslandProfile(
@@ -517,6 +544,10 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'hole_ratio': feat.hole_ratio,
                 'bbox_width': feat.bbox_width,
                 'bbox_height': feat.bbox_height,
+                'area': feat.area,
+                'perimeter': feat.perimeter,
+                'bbox_fill_ratio': feat.bbox_fill_ratio,
+                'rugosity': feat.rugosity,
                 'skeleton_endpoint_count': feat.skeleton_endpoint_count,
                 'skeleton_junction_count': feat.skeleton_junction_count,
                 'skeleton_total_length': feat.skeleton_total_length,
@@ -554,6 +585,10 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 hole_ratio=feat_d['hole_ratio'],
                 bbox_width=feat_d['bbox_width'],
                 bbox_height=feat_d['bbox_height'],
+                area=feat_d.get('area', 0),
+                perimeter=feat_d.get('perimeter', 0.0),
+                bbox_fill_ratio=feat_d.get('bbox_fill_ratio', 0.0),
+                rugosity=feat_d.get('rugosity', 0.0),
                 skeleton_endpoint_count=feat_d.get('skeleton_endpoint_count'),
                 skeleton_junction_count=feat_d.get('skeleton_junction_count'),
                 skeleton_total_length=feat_d.get('skeleton_total_length'),
@@ -651,37 +686,32 @@ def plot_island_profiles(
     ax_map.set_ylabel('World Z')
 
     # ── Right panel: feature scatter ───────────────────────────────────────
-    ax_scatter.set_title('aspect_ratio vs compactness', fontsize=11)
-    ax_scatter.set_xlabel('Aspect ratio')
+    ax_scatter.set_title('rugosity vs compactness', fontsize=11)
+    ax_scatter.set_xlabel('Rugosity (perimeter / bbox perimeter)')
     ax_scatter.set_ylabel('Compactness')
 
     plotted_types: set[str] = set()
     for profile in profiles:
         feat = profile.features
         color = _TYPE_COLORS.get(profile.island_type, '#cccccc')
-        area = sum(
-            isl.get('area', 1)
-            for isl in map_context.get('islands', [])
-            if isl['id'] in profile.raw_island_ids
-        )
-        bubble_size = max(20, min(800, area / 5))
+        bubble_size = max(20, min(800, feat.area / 5))
         ax_scatter.scatter(
-            feat.aspect_ratio, feat.compactness,
+            feat.rugosity, feat.compactness,
             s=bubble_size, c=color, alpha=0.75, edgecolors='#333333', linewidths=0.5,
             zorder=3,
         )
         ax_scatter.annotate(
             profile.canonical_key[:8],
-            (feat.aspect_ratio, feat.compactness),
+            (feat.rugosity, feat.compactness),
             fontsize=5, ha='left', va='bottom', color='#333333',
         )
         plotted_types.add(profile.island_type)
 
     # Threshold reference lines
-    ax_scatter.axvline(2.5, color='#3498db', linestyle='--', linewidth=0.7,
-                       alpha=0.5, label='linear threshold (AR=2.5)')
-    ax_scatter.axhline(0.45, color='#2ecc71', linestyle='--', linewidth=0.7,
-                       alpha=0.5, label='compact threshold (comp=0.45)')
+    ax_scatter.axvline(1.2, color='#c0392b', linestyle='--', linewidth=0.7,
+                       alpha=0.5, label='rugged threshold (rugosity=1.2)')
+    ax_scatter.axhline(0.88, color='#e74c3c', linestyle='--', linewidth=0.7,
+                       alpha=0.5, label='circle threshold (convexity=0.88)')
 
     # Legend
     legend_patches = [
@@ -742,13 +772,16 @@ def plot_profile_landscape(
         )
         plotted_types.add(profile.island_type)
 
-    # Threshold reference lines for default axes
+    # Threshold reference lines for known axes
     if feature_x == 'aspect_ratio':
-        ax.axvline(2.5, color='#3498db', linestyle='--', linewidth=0.7,
+        ax.axvline(2.5, color='#16a085', linestyle='--', linewidth=0.7,
                    alpha=0.5, label='linear threshold (AR=2.5)')
+    if feature_x == 'rugosity':
+        ax.axvline(1.5, color='#c0392b', linestyle='--', linewidth=0.7,
+                   alpha=0.5, label='rugged threshold (rugosity=1.5)')
     if feature_y == 'compactness':
-        ax.axhline(0.45, color='#2ecc71', linestyle='--', linewidth=0.7,
-                   alpha=0.5, label='compact threshold (comp=0.45)')
+        ax.axhline(0.65, color='#e74c3c', linestyle='--', linewidth=0.7,
+                   alpha=0.5, label='circle threshold (comp=0.65)')
 
     legend_patches = [
         mpatches.Patch(facecolor=_TYPE_COLORS[t], edgecolor='#555555',
@@ -878,11 +911,12 @@ def plot_feature_distributions(
     Helps choose and validate classification thresholds empirically.
     """
     numeric_features: list[tuple[str, str]] = [
-        ('aspect_ratio',   'Aspect Ratio'),
-        ('compactness',    'Compactness'),
-        ('convexity',      'Convexity'),
-        ('pca_elongation', 'PCA Elongation'),
-        ('hole_ratio',     'Hole Ratio'),
+        ('bbox_fill_ratio', 'BBox Fill Ratio'),
+        ('rugosity',        'Rugosity'),
+        ('aspect_ratio',    'Aspect Ratio'),
+        ('compactness',     'Compactness'),
+        ('convexity',       'Convexity'),
+        ('pca_elongation',  'PCA Elongation'),
     ]
 
     fig, axes = plt.subplots(1, len(numeric_features), figsize=(5 * len(numeric_features), 5))
@@ -931,11 +965,15 @@ def plot_feature_distributions(
             )
             bottom += counts
 
-    # Add threshold lines
-    axes[0].axvline(2.5, color='#3498db', linestyle='--', linewidth=1.0,
+    # Add threshold lines corresponding to classification rules
+    axes[0].axvline(0.85, color='#2980b9', linestyle='--', linewidth=1.0,
+                    alpha=0.7, label='square/rect (fill≥0.85)')
+    axes[1].axvline(1.2, color='#c0392b', linestyle='--', linewidth=1.0,
+                    alpha=0.7, label='rugged (rugosity≥1.2)')
+    axes[2].axvline(2.5, color='#16a085', linestyle='--', linewidth=1.0,
                     alpha=0.7, label='linear (AR≥2.5)')
-    axes[1].axvline(0.45, color='#2ecc71', linestyle='--', linewidth=1.0,
-                    alpha=0.7, label='compact (comp≥0.45)')
+    axes[4].axvline(0.88, color='#e74c3c', linestyle='--', linewidth=1.0,
+                    alpha=0.7, label='circle (convexity≥0.88)')
 
     legend_patches = [
         mpatches.Patch(facecolor=_TYPE_COLORS[t], edgecolor='#555555',

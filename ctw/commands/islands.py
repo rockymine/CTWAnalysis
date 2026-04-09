@@ -246,14 +246,17 @@ def handle_profile_inspect(args) -> None:
         print(f'  grid_override : {strat.grid_size_override}')
         print(f'  align_angle   : {strat.alignment_angle_deg}')
         print()
+        print(f'    area           = {feat.area}')
+        print(f'    bbox_width     = {feat.bbox_width:.1f}')
+        print(f'    bbox_height    = {feat.bbox_height:.1f}')
+        print(f'    bbox_fill_ratio= {feat.bbox_fill_ratio:.4f}')
+        print(f'    rugosity       = {feat.rugosity:.4f}')
         print(f'    aspect_ratio   = {feat.aspect_ratio:.4f}')
         print(f'    compactness    = {feat.compactness:.4f}')
         print(f'    convexity      = {feat.convexity:.4f}')
         print(f'    pca_elongation = {feat.pca_elongation:.4f}')
-        print(f'    pca_angle_deg  = {feat.pca_angle_deg:.2f}°')
+        print(f'    pca_angle_deg  = {feat.pca_angle_deg:.2f} deg')
         print(f'    hole_ratio     = {feat.hole_ratio:.6f}')
-        print(f'    bbox_width     = {feat.bbox_width:.1f}')
-        print(f'    bbox_height    = {feat.bbox_height:.1f}')
 
         if feat.skeleton_topology is not None:
             print(f'    skeleton_topology    = {feat.skeleton_topology}')
@@ -265,7 +268,7 @@ def handle_profile_inspect(args) -> None:
 
         # Skeleton reliability warning: high hole_ratio + low compactness suggests ring
         if feat.hole_ratio > 0.3 and feat.compactness < 0.3:
-            print(f'    ⚠ skeleton may be unreliable (ring/donut topology suspected)')
+            print(f'    [!] skeleton may be unreliable (ring/donut topology suspected)')
 
     print(f'\n{"-" * 80}')
     print(f'Total: {len(profiles)} canonical shapes\n')

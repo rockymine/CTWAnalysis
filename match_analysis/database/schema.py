@@ -375,6 +375,8 @@ def initialize_database() -> None:
     """)
 
     # Table: Island spatial profiles (one row per canonical shape per map)
+    # island_type values: square | rectangle | circle | L_shape | fork |
+    #                     rugged | linear | blob
     conn.execute("""
         CREATE TABLE IF NOT EXISTS island_profiles (
             profile_id          INTEGER PRIMARY KEY,
@@ -382,6 +384,9 @@ def initialize_database() -> None:
             canonical_key       TEXT NOT NULL,
             island_type         TEXT NOT NULL,
             area                INTEGER,
+            perimeter           REAL,
+            bbox_fill_ratio     REAL,
+            rugosity            REAL,
             aspect_ratio        REAL,
             compactness         REAL,
             convexity           REAL,

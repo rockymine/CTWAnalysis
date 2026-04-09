@@ -303,7 +303,7 @@ All tables in `match_analysis/metadata.db` (DuckDB).
 | `wool_events` | wool_event_id PK, match_id FK, timestamp, event_type (6=touch,7=capture), player_id, wool_id, x, y, z, segment_idx |
 | `player_team_segments` | team_segment_id PK, match_id FK, player_id, team, start_timestamp, end_timestamp |
 | `map_terrain_height` | map_id FK, world_x, world_z, surface_y, lowest_y — PRIMARY KEY (map_id, world_x, world_z) |
-| `island_profiles` | profile_id PK, map_id FK, canonical_key, island_type, area, aspect_ratio, compactness, convexity, pca_elongation, pca_angle_deg, hole_ratio, skeleton_topology, skeleton_available — UNIQUE (map_id, canonical_key) |
+| `island_profiles` | profile_id PK, map_id FK, canonical_key, island_type (square\|rectangle\|circle\|L_shape\|fork\|rugged\|linear\|blob), area, perimeter, bbox_fill_ratio, rugosity, aspect_ratio, compactness, convexity, pca_elongation, pca_angle_deg, hole_ratio, skeleton_topology, skeleton_available — UNIQUE (map_id, canonical_key) |
 
 ### Feature / Derived Tables
 
