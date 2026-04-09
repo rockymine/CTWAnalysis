@@ -54,6 +54,19 @@ _TYPE_COLORS: dict[str, str] = {
 
 _ALL_TYPES: list[str] = list(_TYPE_COLORS)
 
+# Per-type primary sort metric for mosaic ordering.
+# Tuple: (feature_attr, descending).  Higher-descending = "most characteristic" first.
+_TYPE_SORT_METRIC: dict[str, tuple[str, bool]] = {
+    'square':    ('bbox_fill_ratio', True),   # most box-filling first
+    'rectangle': ('bbox_fill_ratio', True),   # most box-filling first
+    'circle':    ('convexity',       True),   # smoothest / most convex first
+    'L_shape':   ('convexity',       False),  # most concave (most L-like) first
+    'fork':      ('convexity',       False),  # most concave (most branched) first
+    'rugged':    ('rugosity',        True),   # highest perimeter ratio first
+    'linear':    ('aspect_ratio',    True),   # most elongated first
+    'blob':      ('compactness',     True),   # most compact blobs first
+}
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -833,6 +846,14 @@ def plot_profile_mosaic(
         n = len(entries)
         if n == 0:
             continue
+
+        # Sort by primary metric (most characteristic first), then map_slug alphabetically.
+        sort_attr, sort_desc = _TYPE_SORT_METRIC.get(island_type, ('compactness', True))
+        entries.sort(key=lambda entry: (
+            -getattr(entry[1].features, sort_attr) if sort_desc
+            else getattr(entry[1].features, sort_attr),
+            entry[0],   # map_slug as alphabetical tie-breaker
+        ))
 
         cols = min(6, n)
         rows = math.ceil(n / cols)
