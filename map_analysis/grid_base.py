@@ -125,6 +125,10 @@ class GridBase:
     cell_island_id: dict[tuple[int, int], Optional[int]] = field(default_factory=dict)
     wool_pois: list[dict] = field(default_factory=list)
     spawn_pois: list[dict] = field(default_factory=list)
+    per_island_grid_size: dict[int, int] = field(default_factory=dict)
+    # island_id -> effective grid_size override from island spatial profile.
+    # Empty dict (default) means all islands use the map-level grid_size.
+    # Populated by apply_profile_grid_sizes() when island_profiles.json is present.
 
 
 # ---------------------------------------------------------------------------
@@ -409,3 +413,60 @@ def load_grid_base(output_dir: Path, map_slug: str, grid_size: int) -> GridBase:
     with open(context_path, encoding="utf-8") as fh:
         map_context = json.load(fh)
     return rasterize_map_polygons(map_context, map_slug, grid_size)
+
+
+# ---------------------------------------------------------------------------
+# Island profile integration
+# ---------------------------------------------------------------------------
+
+
+def apply_profile_grid_sizes(
+    grid_base: GridBase,
+    profiles: list,
+) -> None:
+    """Populate grid_base.per_island_grid_size from island spatial profiles.
+
+    Expands each IslandProfile's raster_strategy.grid_size_override to all
+    raw_island_ids in the profile.  Islands with no override (None) are left
+    out of the dict, so consumers fall back to the map-level grid_size.
+
+    Mutates grid_base in-place.
+
+    Parameters
+    ----------
+    grid_base:
+        GridBase to update.
+    profiles:
+        List of IslandProfile objects (from island_analysis.profile).
+    """
+    for profile in profiles:
+        override = profile.raster_strategy.grid_size_override
+        if override is not None:
+            for island_id in profile.raw_island_ids:
+                grid_base.per_island_grid_size[island_id] = override
+
+
+def load_grid_base_profiled(
+    output_dir: Path,
+    map_slug: str,
+    grid_size: int,
+) -> GridBase:
+    """Like load_grid_base() but applies island profile grid sizes when available.
+
+    If island_profiles.json is present in output_dir, loads it and calls
+    apply_profile_grid_sizes() before returning.  If absent, returns the
+    standard GridBase unchanged.
+    """
+    from island_analysis.profile import load_profiles
+
+    grid_base = load_grid_base(output_dir, map_slug, grid_size)
+
+    profiles_path = output_dir / 'island_profiles.json'
+    profiles = load_profiles(profiles_path)
+    if profiles:
+        apply_profile_grid_sizes(grid_base, profiles)
+        logger.debug(
+            '  grid_base: applied per-island grid sizes for %d profiles',
+            len(profiles),
+        )
+    return grid_base
