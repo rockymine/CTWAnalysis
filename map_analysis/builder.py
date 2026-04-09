@@ -60,6 +60,12 @@ def build_map_context(
 
     # Islands (geometry only; skeleton/pathfinding live in map_graph.json)
     ctx.island_count = len(islands)
+    # Invert canonical_groups (canonical_key -> [island_ids]) to island_id -> canonical_key
+    island_canonical_key: dict[int, str] = {
+        island_id: key
+        for key, island_ids in canonical_groups.items()
+        for island_id in island_ids
+    }
     for island in islands:
         ctx.islands.append({
             'id': island.id,
@@ -74,6 +80,7 @@ def build_map_context(
             'is_observer_island': island.is_observer_island,
             'hole_count': len(island.holes),
             'simplified_polygon': island.simplified_polygon,
+            'canonical_key': island_canonical_key.get(island.id),
         })
 
     # Skeleton
