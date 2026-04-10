@@ -34,7 +34,8 @@ CTWAnalysisWithClaudeCode/
 ├── island_analysis/
 │   ├── detection.py                  detect_islands(), find_island_holes()
 │   ├── datatypes.py                  Island dataclass
-│   ├── profile.py                    IslandFeatures/IslandProfile/IslandRasterStrategy; profile_islands(), save/load_profiles(); cross-map plots
+│   ├── profile.py                    IslandFeatures/IslandProfile/IslandRasterStrategy; profile_islands(), classify_island(), save/load_profiles(); override helpers; cross-map plots
+│   ├── profile_review.py             Interactive web review server; run via `ctw islands profile-review`
 │   └── triangulation.py             triangulate_islands_canonical()
 │
 ├── skeleton_analysis/
@@ -99,6 +100,9 @@ CTWAnalysisWithClaudeCode/
 │   ├── geometry_graph.json          Geometry-derived adjacency graph (no match data needed)
 │   ├── island_profiles.json         Island spatial profiles (one per canonical shape; written by Stage 8 of assemble_map)
 │   └── island_analysis/             Island geometry + debug images
+│
+├── output/_debug/
+│   └── island_profile_overrides.json  Manual classification overrides: canonical_key → {profile, note}
 │
 ├── match_logs/                       Raw match parquet files (not in git)
 ├── map_layouts.yaml                  Per-map extraction config (layer, exclude, playable_bbox)
@@ -434,9 +438,10 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw maps profile-landscape` | `handle_profile_landscape()` | `island_analysis/profile.py:plot_profile_landscape()` → `output/images/island_landscape.png` |
 | `ctw maps profile-mosaic` | `handle_profile_mosaic()` | `island_analysis/profile.py:plot_profile_mosaic()` → `output/images/island_mosaic_<type>.png`; `--type` filters |
 | `ctw maps profile-distributions` | `handle_profile_distributions()` | `island_analysis/profile.py:plot_feature_distributions()` → `output/images/island_feature_distributions.png` |
-| `ctw islands profile` | `handle_profile()` in `ctw/commands/islands.py` | Re-run profiling from cached JSON; `--map` optional (all maps); `--plot` emits `island_profiles.png` |
-| `ctw islands profile-inspect` | `handle_profile_inspect()` | Console feature table + rule triggers per canonical island; `--map` required |
+| `ctw islands profile` | `handle_profile()` in `ctw/commands/islands.py` | Re-run profiling from cached JSON; loads overrides from `output/_debug/island_profile_overrides.json`; `--map` optional (all maps); `--plot` emits `island_profiles.png` |
+| `ctw islands profile-inspect` | `handle_profile_inspect()` | Console feature table per canonical island; shows both `island_type` (effective) and `auto_profile` (algorithm); `--map` required |
 | `ctw islands profile-canonical` | `handle_profile_canonical()` | Show canonical groupings (unique shapes + instance counts) from `map_context.json` |
+| `ctw islands profile-review` | `handle_profile_review()` → `island_analysis/profile_review.py:run_review_server()` | Local HTTP review page; SVG thumbnails + reclassify dropdown + notes; saves to `island_profile_overrides.json`; `--map`, `--type`, `--port` |
 | `ctw matches index` | `handle_index()` | `match_analysis/database/indexer.py:index_match_files()` — recurse logs dir, create stub maps as needed |
 | `ctw matches extract` | `handle_extract()` | `match_analysis/processing/processor.py:extract_match_data()` + `insert_match_data()` |
 | `ctw matches classify` | `handle_classify()` | `match_analysis/processing/processor.py:classify_match()` — spatial annotation + traffic features |
