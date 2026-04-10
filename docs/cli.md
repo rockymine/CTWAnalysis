@@ -124,6 +124,43 @@ python ctw.py islands --map NAME [--force]
 `island_{id}_debug.png`, `skeleton_report.txt`, `island_{id}_poi.png`,
 `island_{id}_paths.png`
 
+#### `islands profile`
+
+Re-run island spatial profiling from cached `map_context.json` + `map_graph.json`.
+Produces `island_profiles.json` (one entry per canonical shape).
+
+```
+python ctw.py islands profile [--map NAME] [--output DIR] [--plot] [--force]
+```
+
+| Flag | Description |
+|---|---|
+| `--map NAME` | Map slug to profile (omit to process all maps) |
+| `--output DIR` | Output root directory (default: `output/`) |
+| `--plot` | Also write `output/<map>/images/island_profiles.png` (per-map type+scatter) |
+| `--force` | Overwrite existing `island_profiles.json` |
+
+#### `islands profile-inspect`
+
+Print a detailed feature table and classification breakdown for every canonical island in one map.
+
+```
+python ctw.py islands profile-inspect --map NAME [--output DIR]
+```
+
+Output includes: `island_type`, `raw_island_ids`, `area`, `bbox_fill_ratio`, `rugosity`,
+`aspect_ratio`, `compactness`, `convexity`, `pca_elongation`, `pca_angle_deg`,
+`hole_ratio`, and full skeleton topology/counts when available.
+
+#### `islands profile-canonical`
+
+Print canonical groupings (unique shapes + instance counts) read directly from
+`map_context.json`.
+
+```
+python ctw.py islands profile-canonical --map NAME [--output DIR]
+```
+
 ---
 
 ### `ctw xml` — XML Configuration Parsing
@@ -211,6 +248,63 @@ process all maps in the database.
 
 **Prerequisites:** `maps spawns` and `matches update-wool-locations` must have run
 first (depends on `map_spawns`, `map_wool_locations`, and `map_wool_objectives`).
+
+#### `maps profile-summary`
+
+Print a console table of island type counts across all (or one) map.
+No file output.
+
+```
+python ctw.py maps profile-summary [--map NAME] [--output DIR]
+```
+
+Columns: `map | total_canonical | square | rectangle | circle | L_shape | fork | rugged | linear | blob`.
+
+#### `maps profile-landscape`
+
+Cross-map scatter plot of all canonical islands on two feature axes.
+
+```
+python ctw.py maps profile-landscape [--map NAME]
+    [--feature-x ATTR] [--feature-y ATTR] [--output DIR]
+```
+
+| Flag | Description |
+|---|---|
+| `--feature-x` | Feature attribute name for x-axis (default: `aspect_ratio`) |
+| `--feature-y` | Feature attribute name for y-axis (default: `compactness`) |
+
+Output: `output/_debug/island_landscape.png`
+
+#### `maps profile-mosaic`
+
+Grid of canonical island polygon outlines grouped by type, sorted by confidence metric.
+
+```
+python ctw.py maps profile-mosaic [--type TYPE] [--output DIR]
+```
+
+| Flag | Description |
+|---|---|
+| `--type TYPE` | Render only this type: `square`, `rectangle`, `circle`, `L_shape`, `fork`, `rugged`, `linear`, `blob` |
+
+Output: `output/_debug/island_mosaic_<type>.png` (one file per type).
+
+Islands are sorted most-characteristic-first within each mosaic:
+`square`/`rectangle` → `bbox_fill_ratio` ↓; `circle` → `convexity` ↓;
+`L_shape`/`fork` → `convexity` ↑ (most concave first); `rugged` → `rugosity` ↓;
+`linear` → `aspect_ratio` ↓; `blob` → `compactness` ↓.
+
+#### `maps profile-distributions`
+
+Feature distribution histograms (one per numeric feature) stacked by island type,
+across all canonical islands from all maps.
+
+```
+python ctw.py maps profile-distributions [--output DIR]
+```
+
+Output: `output/_debug/island_feature_distributions.png`
 
 ---
 
