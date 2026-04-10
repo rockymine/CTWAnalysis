@@ -544,11 +544,11 @@ def classify_island(features: IslandFeatures) -> str:
     3.  donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                     (exactly one enclosed air pocket with a smooth outer ring)
     4.  circle      convexity ≥ 0.88 AND hole_count == 0 AND
-                    (aspect ≤ 1.2 AND circle_fit_residual < 0.08
-                     OR aspect > 1.2 AND ellipse_residual < 0.09)
+                    (aspect ≤ 1.2 AND circle_fit_residual < 0.12
+                     OR aspect > 1.2 AND ellipse_residual < 0.10 AND bbox_fill_ratio ≥ 0.72)
                     (circle or ellipse: smooth solid shape fitting an elliptic curve)
-    5.  shard       topo == 'line' AND convexity ≥ 0.93 AND NOT round
-                    (smooth two-pointed diamond/lens — poor elliptic fit)
+    5.  shard       topo == 'line' AND convexity ≥ 0.87 AND NOT round
+                    (smooth two-pointed diamond/lens/tear — poor elliptic fit or low fill)
     6.  plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
                     (T / Y / + / star: one central branch point, ≥ 3 arms)
     7.  fork        junctions ≥ 2 AND convexity < 0.70
@@ -571,16 +571,21 @@ def classify_island(features: IslandFeatures) -> str:
       or forked island can enclose a small gap without being ring-shaped.
       Reference examples: kingdom (0.988, 0.993), ouroboros (0.944, 1.058),
       pineium_ctw (0.952, 1.000).
-    - shard: threshold raised from 0.88 to 0.93 — all verified shard examples have
-      convexity ≥ 0.938 (fd4f5230, b8c73a35, c3bb195c, 59523759).  Values 0.88–0.93
-      correspond to irregular small islands with a line skeleton, not true shards.
-    - circle vs shard: a circle/ellipse fits an elliptic curve (low residual); a shard
-      (diamond, rhombus, lens) has flat sides and sharp tips that deviate strongly from
-      an ellipse.  circle_fit_residual distinguishes them for near-square shapes
-      (aspect ≤ 1.2); ellipse_residual handles elongated shapes (aspect > 1.2).
-      Minecraft staircase polygons produce very low residuals for genuinely round shapes
-      because the staircase error scales as 1/radius — at typical island sizes the
-      normalised residual is < 0.06 for circles and > 0.10 for diamonds.
+    - shard: convexity ≥ 0.87 — captures diamond/tear shapes with convexity as low as
+      0.882 (ad1f82ab) without false-positives, because the residual/fill gate now acts
+      as the primary circle-vs-shard discriminator.  Earlier value of 0.93 was set when
+      the residual check was absent; shapes with conv 0.87–0.93 and poor fit are
+      genuine shards (cb5874e2=0.923, 3855d0e3=0.919, de43e1a0=0.890, 296006fc=0.895).
+    - circle vs shard: a circle/ellipse fits an elliptic curve (low residual, high fill);
+      a shard has flat sides/sharp tips that deviate from an ellipse.
+      For near-square shapes (aspect ≤ 1.2), circle_fit_residual is the discriminator:
+        circles < 0.12 (6eb91fd7=0.110, e15af4ee=0.101 — small WorldEdit cylinders)
+        shards ≥ 0.12 (cb5874e2=0.146, 238aa276=0.246, fd4f5230=0.161)
+      For elongated shapes (aspect > 1.2), ellipse_residual alone is insufficient
+      because tear/shard shapes can have low ell_res; bbox_fill_ratio provides the
+      second gate:  a true ellipse fills π/4 ≈ 0.785 of its bounding box;
+      shards/tears fill ≤ 0.70 (296006fc=0.697, de43e1a0=0.619, ad1f82ab=0.600).
+      Threshold 0.72 sits in the observed gap between ellipses (≥ 0.77) and shards.
     - plus vs fork: plus has exactly one junction (the centre) with ≥ 3 endpoints;
       fork has two or more junctions indicating a more complex branching network
     - L_shape / Z_shape require path_bends, which is only computed for topo='line';
@@ -612,41 +617,42 @@ def classify_island(features: IslandFeatures) -> str:
             and features.rugosity <= 1.1):
         return 'donut'
 
-    # Rule 4: circle / ellipse — smooth curved shape with a good elliptic fit.
+    # Rule 4: circle / ellipse — smooth solid curved shape with a good elliptic fit.
     #
     # Two residuals measure fit quality depending on aspect ratio:
     #   aspect ≤ 1.2  →  circle_fit_residual  (algebraic circle; best for near-square)
-    #   aspect > 1.2  →  ellipse_residual      (PCA-normalised; handles elongation)
+    #   aspect > 1.2  →  ellipse_residual + bbox_fill_ratio  (handles elongation)
     #
     # Thresholds derive from verified examples:
-    #   circle (a6d59506=0.032, e23c5e30=0.046, 3ebd22ae=0.059) — all < 0.08
-    #   shard  (fd4f5230=0.161, b8c73a35=0.147, c3bb195c=0.179) — all > 0.10
-    #   ellipse (696bce97=0.072, 5e5e0548=0.072, 422ead87=0.086) — all < 0.09
-    #   elongated shard (ae3a807d=0.122, 4de71324=0.126) — all > 0.12
+    #   circles: a6d59506=0.032, e23c5e30=0.046, 6eb91fd7=0.110, e15af4ee=0.101
+    #   shards:  fd4f5230=0.161, cb5874e2=0.146, 238aa276=0.246  (all ≥ 0.12)
+    #   ellipses (ell_res): 696bce97=0.072, 5e5e0548=0.072, 5e666a93=0.094  (all < 0.10)
+    #   elongated fill: ellipses ≥ 0.77 (5e666a93=0.771); shards < 0.70 (296006fc=0.697)
     #
-    # There is no topology constraint here: Minecraft pixelated circles often
-    # receive a 'line' skeleton topology because the staircase approximation
-    # slightly elongates the shape.  The residual is the correct discriminator.
+    # No topology constraint: Minecraft pixelated circles often get 'line' skeleton
+    # topology because the staircase approximation slightly elongates the shape.
     if features.convexity >= 0.88 and features.hole_count == 0:
         if features.aspect_ratio <= 1.2:
-            is_round = features.circle_fit_residual < 0.08
+            is_round = features.circle_fit_residual < 0.12
         else:
-            is_round = features.ellipse_residual < 0.09
+            is_round = (features.ellipse_residual < 0.10
+                        and features.bbox_fill_ratio >= 0.72)
         if is_round:
             return 'circle'
 
-    # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens).
-    # Requires line topology (two skeleton endpoints, no junctions), high convexity,
-    # and a POOR elliptic fit — distinguishing it from line-topology circles.
-    # convexity ≥ 0.93: all verified shards have convexity ≥ 0.938
-    # (fd4f5230=0.962, b8c73a35=0.950, c3bb195c=0.943, 59523759=0.938).
-    # is_round gate: lines 4 sets is_round=False for low-convexity shapes so
-    # we recompute it here for the shard convexity range (0.93+).
-    if features.skeleton_topology == 'line' and features.convexity >= 0.93:
+    # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens, tear).
+    # Requires line topology (two skeleton endpoints, no junctions), convexity ≥ 0.87,
+    # and a POOR elliptic fit (exact logical complement of the circle rule above).
+    # convexity ≥ 0.87: captures tear/diamond shapes down to ad1f82ab=0.882.
+    #   The residual/fill gate is the primary circle-vs-shard discriminator; convexity
+    #   only excludes clearly irregular shapes from the shard category.
+    # shard_not_round is the logical complement of is_round in Rule 4.
+    if features.skeleton_topology == 'line' and features.convexity >= 0.87:
         if features.aspect_ratio <= 1.2:
-            shard_not_round = features.circle_fit_residual >= 0.08
+            shard_not_round = features.circle_fit_residual >= 0.12
         else:
-            shard_not_round = features.ellipse_residual >= 0.09
+            shard_not_round = (features.ellipse_residual >= 0.10
+                               or features.bbox_fill_ratio < 0.72)
         if shard_not_round:
             return 'shard'
 

@@ -263,15 +263,50 @@ class TestCircleEllipse(unittest.TestCase):
         self.assertEqual(classify_island(feat), 'circle')
 
     def test_circle_boundary_residual_at_threshold(self):
-        """Residual just below 0.08 passes; just above fails."""
+        """circ_res just below 0.12 passes; just above fails (near-square shapes)."""
         below = _make_features(convexity=0.90, aspect_ratio=1.0,
-                               circle_fit_residual=0.079, ellipse_residual=0.079,
+                               circle_fit_residual=0.119, ellipse_residual=0.119,
                                skeleton_topology='none', bbox_fill_ratio=0.75)
         above = _make_features(convexity=0.90, aspect_ratio=1.0,
-                               circle_fit_residual=0.081, ellipse_residual=0.081,
+                               circle_fit_residual=0.121, ellipse_residual=0.121,
                                skeleton_topology='none', bbox_fill_ratio=0.75)
         self.assertEqual(classify_island(below), 'circle')
         self.assertNotEqual(classify_island(above), 'circle')
+
+    def test_small_circle_radius2_worldedit(self):
+        """WorldEdit radius-2 cylinder (area=21) has circ_res ~0.11 — must be circle.
+
+        6eb91fd7: conv=0.913, circ_res=0.110 — previously landed in blob because
+        the old threshold (0.08) was too tight for small Minecraft circles.
+        """
+        feat = _make_features(
+            convexity=0.913, aspect_ratio=1.0,
+            circle_fit_residual=0.1097, ellipse_residual=0.1172,
+            bbox_fill_ratio=0.84, area=21,
+            skeleton_topology='none',
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
+    def test_ellipse_fill_gate_separates_from_shard(self):
+        """Elongated ellipse (fill≥0.72) is circle; elongated shard (fill<0.72) is not.
+
+        5e666a93 (ellipse): ell_res=0.094, fill=0.771 → circle
+        296006fc (shard):   ell_res=0.092, fill=0.697 → NOT circle (low fill)
+        """
+        ellipse = _make_features(
+            convexity=0.900, aspect_ratio=1.43,
+            ellipse_residual=0.0942, circle_fit_residual=0.15,
+            bbox_fill_ratio=0.7714,
+            skeleton_topology='line',
+        )
+        shard_shape = _make_features(
+            convexity=0.895, aspect_ratio=1.36,
+            ellipse_residual=0.0916, circle_fit_residual=0.17,
+            bbox_fill_ratio=0.6970,
+            skeleton_topology='line',
+        )
+        self.assertEqual(classify_island(ellipse), 'circle')
+        self.assertNotEqual(classify_island(shard_shape), 'circle')
 
     def test_circle_with_holes_not_circle(self):
         """A round shape with interior holes must not classify as circle.
@@ -292,13 +327,20 @@ class TestCircleEllipse(unittest.TestCase):
 
 
 class TestShard(unittest.TestCase):
-    """Rule 5 — smooth two-pointed shape (diamond, rhombus, lens).
+    """Rule 5 — smooth two-pointed shape (diamond, rhombus, lens, tear).
 
-    Verified reference examples:
+    Original verified examples (high convexity):
       fd4f5230 → station_x           convexity=0.962, circle_fit_residual=0.161
       b8c73a35 → ruedigers_octawool  convexity=0.950, circle_fit_residual=0.147
       c3bb195c → keipha_ctw          convexity=0.943, circle_fit_residual=0.179
       59523759 → nether_war_ctw      convexity=0.938, circle_fit_residual=0.297
+
+    Additional verified examples (lower convexity, previously mis-classified as blob):
+      cb5874e2 → station_x           convexity=0.923, circle_fit_residual=0.146
+      3855d0e3 → istana_ctw          convexity=0.919, circle_fit_residual=0.253
+      de43e1a0 → istana_ctw          convexity=0.890, aspect=1.45, fill=0.619
+      296006fc → thunderbolt         convexity=0.895, aspect=1.36, fill=0.697
+      ad1f82ab → bloom               convexity=0.882, aspect=2.0,  fill=0.600
     """
 
     def test_shard_station_x_like(self):
@@ -328,10 +370,66 @@ class TestShard(unittest.TestCase):
         )
         self.assertEqual(classify_island(feat), 'shard')
 
-    def test_line_topology_below_convexity_threshold_not_shard(self):
-        """Line topology with convexity 0.88–0.93 is irregular — should not be shard."""
+    def test_shard_lower_convexity_near_square(self):
+        """Diamond/shard with convexity 0.88–0.93 and high circ_res → shard.
+
+        cb5874e2: conv=0.923, circ_res=0.146 — previously blob due to old threshold 0.93.
+        3855d0e3: conv=0.919, circ_res=0.253 — same issue.
+        """
+        for conv, circ in [(0.923, 0.146), (0.919, 0.253)]:
+            feat = _make_features(
+                convexity=conv,
+                circle_fit_residual=circ,
+                ellipse_residual=0.14,
+                aspect_ratio=1.0,
+                skeleton_topology='line',
+                skeleton_junction_count=0,
+                skeleton_endpoint_count=2,
+                skeleton_path_bends=0,
+                bbox_fill_ratio=0.68,
+            )
+            self.assertEqual(classify_island(feat), 'shard', msg=f'conv={conv}')
+
+    def test_shard_elongated_low_fill(self):
+        """Elongated tear/shard with low fill → shard even when ell_res is low.
+
+        de43e1a0: conv=0.890, asp=1.45, ell_res=0.100, fill=0.619 → shard
+        296006fc: conv=0.895, asp=1.36, ell_res=0.092, fill=0.697 → shard
+        Both have ell_res near the 0.10 threshold, but fill < 0.72 forces shard.
+        """
+        for conv, asp, ell, fill in [(0.890, 1.45, 0.0998, 0.619),
+                                     (0.895, 1.36, 0.0916, 0.697)]:
+            feat = _make_features(
+                convexity=conv, aspect_ratio=asp,
+                ellipse_residual=ell, circle_fit_residual=0.26,
+                bbox_fill_ratio=fill,
+                skeleton_topology='line',
+                skeleton_junction_count=0,
+                skeleton_endpoint_count=2,
+                skeleton_path_bends=0,
+            )
+            self.assertEqual(classify_island(feat), 'shard', msg=f'conv={conv} fill={fill}')
+
+    def test_shard_diamond_low_convexity(self):
+        """Diamond (ad1f82ab): conv=0.882 just below circle gate (0.88) → shard via Rule 5.
+
+        Conv 0.882 < 0.88 so Rule 4 (circle) never fires.  Rule 5 catches it.
+        """
         feat = _make_features(
-            convexity=0.89,
+            convexity=0.882, aspect_ratio=2.0,
+            ellipse_residual=0.1121, circle_fit_residual=0.2528,
+            bbox_fill_ratio=0.600,
+            skeleton_topology='line',
+            skeleton_junction_count=0,
+            skeleton_endpoint_count=2,
+            skeleton_path_bends=0,
+        )
+        self.assertEqual(classify_island(feat), 'shard')
+
+    def test_shard_requires_convexity_above_floor(self):
+        """Convexity below 0.87 is too irregular for shard."""
+        feat = _make_features(
+            convexity=0.86,
             circle_fit_residual=0.20,
             ellipse_residual=0.18,
             skeleton_topology='line',
