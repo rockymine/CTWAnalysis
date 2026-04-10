@@ -273,6 +273,23 @@ class TestCircleEllipse(unittest.TestCase):
         self.assertEqual(classify_island(below), 'circle')
         self.assertNotEqual(classify_island(above), 'circle')
 
+    def test_circle_with_holes_not_circle(self):
+        """A round shape with interior holes must not classify as circle.
+
+        e22d8e28 (emergency_meeting): ring shape with unclosed top → hole_count=2,
+        circle_fit_residual=0.077.  Smooth and round but has holes — not a solid circle.
+        """
+        feat = _make_features(
+            convexity=0.92,
+            aspect_ratio=1.0,
+            circle_fit_residual=0.077,
+            ellipse_residual=0.077,
+            hole_count=2,
+            skeleton_topology='none',
+            bbox_fill_ratio=0.70,
+        )
+        self.assertNotEqual(classify_island(feat), 'circle')
+
 
 class TestShard(unittest.TestCase):
     """Rule 5 — smooth two-pointed shape (diamond, rhombus, lens).

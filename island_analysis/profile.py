@@ -543,10 +543,10 @@ def classify_island(features: IslandFeatures) -> str:
     2.  rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
     3.  donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                     (exactly one enclosed air pocket with a smooth outer ring)
-    4.  circle      convexity ≥ 0.88 AND
+    4.  circle      convexity ≥ 0.88 AND hole_count == 0 AND
                     (aspect ≤ 1.2 AND circle_fit_residual < 0.08
                      OR aspect > 1.2 AND ellipse_residual < 0.09)
-                    (circle or ellipse: shape closely fits an elliptic curve)
+                    (circle or ellipse: smooth solid shape fitting an elliptic curve)
     5.  shard       topo == 'line' AND convexity ≥ 0.93 AND NOT round
                     (smooth two-pointed diamond/lens — poor elliptic fit)
     6.  plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
@@ -627,7 +627,7 @@ def classify_island(features: IslandFeatures) -> str:
     # There is no topology constraint here: Minecraft pixelated circles often
     # receive a 'line' skeleton topology because the staircase approximation
     # slightly elongates the shape.  The residual is the correct discriminator.
-    if features.convexity >= 0.88:
+    if features.convexity >= 0.88 and features.hole_count == 0:
         if features.aspect_ratio <= 1.2:
             is_round = features.circle_fit_residual < 0.08
         else:
