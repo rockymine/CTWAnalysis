@@ -1400,8 +1400,18 @@ def handle_geometry_graph(args: object) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_map_skipped(map_slug: str) -> bool:
+    """Return True if the map is flagged skip:true in map_layouts.yaml."""
+    from layout_analysis.map_layout_config import get_map_layout
+    cfg = get_map_layout(map_slug)
+    return cfg is not None and cfg.skip
+
+
 def _load_all_profiles(args) -> list[tuple[str, object]]:
-    """Load (map_slug, IslandProfile) pairs from all relevant map directories."""
+    """Load (map_slug, IslandProfile) pairs from all relevant map directories.
+
+    Maps flagged skip:true in map_layouts.yaml are excluded.
+    """
     from island_analysis.profile import load_profiles
 
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
@@ -1413,6 +1423,8 @@ def _load_all_profiles(args) -> list[tuple[str, object]]:
 
     all_pairs: list[tuple[str, object]] = []
     for map_dir in map_dirs:
+        if _is_map_skipped(map_dir.name):
+            continue
         profiles = load_profiles(map_dir / 'island_profiles.json')
         if profiles:
             for profile in profiles:
@@ -1433,6 +1445,8 @@ def handle_profile_summary(args) -> None:
 
     rows = []
     for map_dir in map_dirs:
+        if _is_map_skipped(map_dir.name):
+            continue
         profiles = load_profiles(map_dir / 'island_profiles.json')
         if profiles is None:
             continue
@@ -1496,6 +1510,8 @@ def handle_profile_mosaic(args) -> None:
     # Collect (map_slug, IslandProfile, representative island_dict) triples
     entries: list[tuple[str, object, dict]] = []
     for map_dir in map_dirs:
+        if _is_map_skipped(map_dir.name):
+            continue
         profiles = load_profiles(map_dir / 'island_profiles.json')
         if profiles is None:
             continue
