@@ -256,6 +256,7 @@ def handle_profile_inspect(args) -> None:
         print(f'    convexity      = {feat.convexity:.4f}')
         print(f'    pca_elongation = {feat.pca_elongation:.4f}')
         print(f'    pca_angle_deg  = {feat.pca_angle_deg:.2f} deg')
+        print(f'    hole_count     = {feat.hole_count}')
         print(f'    hole_ratio     = {feat.hole_ratio:.6f}')
 
         if feat.skeleton_topology is not None:
@@ -263,6 +264,8 @@ def handle_profile_inspect(args) -> None:
             print(f'    skeleton_endpoints   = {feat.skeleton_endpoint_count}')
             print(f'    skeleton_junctions   = {feat.skeleton_junction_count}')
             print(f'    skeleton_total_len   = {feat.skeleton_total_length:.1f}')
+            if feat.skeleton_path_bends is not None:
+                print(f'    skeleton_path_bends  = {feat.skeleton_path_bends}')
         else:
             print(f'    skeleton             = [unavailable]')
 
