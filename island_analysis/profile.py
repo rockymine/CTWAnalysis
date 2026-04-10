@@ -118,6 +118,10 @@ class IslandFeatures:
     skeleton_total_length: Optional[float]
     skeleton_topology: Optional[str]   # 'line' | 'tree' | 'mesh' | 'none' | None
     skeleton_path_bends: Optional[int] # direction changes in line-topology path (L=1, Z=2+, straight=0)
+    # Tier A extended — bounding-box negative space
+    bbox_cutout_count: Optional[int]      # qualifying rectangular corner cutouts (L=1, Z=2)
+    bbox_cutout_min_fill: Optional[float] # min fill ratio among those cutouts
+    bbox_cutout_coverage: Optional[float] # corner area / total negative space (1.0 = clean L/Z)
 
 
 @dataclass
@@ -144,10 +148,15 @@ class IslandProfile:
 
     raw_island_ids lists all raw island ids in the map that share this
     canonical shape (i.e. are rotations/reflections of each other).
+
+    island_type is the *effective* profile — either the algorithm output or an
+    override from island_profile_overrides.json.  auto_profile always holds
+    the algorithm-computed type; when no override is active both fields are equal.
     """
 
     canonical_key: str
-    island_type: str             # one of _ALL_TYPES
+    island_type: str             # effective profile (override-applied); one of _ALL_TYPES
+    auto_profile: str            # algorithm-computed profile before any overrides
     raw_island_ids: list[int]    # all island ids with this canonical_key
     features: IslandFeatures
     raster_strategy: IslandRasterStrategy
@@ -392,6 +401,116 @@ def _ellipse_residual(exterior: list[list[float]]) -> float:
     return float(rms / r_mean)
 
 
+def _bbox_corner_cutout_count(
+    exterior: list[list[float]],
+    holes: list[list[list[float]]],
+    island_area: float,
+) -> tuple[int, float]:
+    """Count approximately-rectangular corner cutouts in the bounding box.
+
+    Computes (bounding_box − island_polygon) using Shapely and analyses each
+    connected negative-space region.  A region qualifies as a "corner cutout"
+    when it:
+      (a) touches exactly two *adjacent* (non-opposite) edges of the global
+          bounding box, and
+      (b) has a bbox_fill_ratio ≥ 0.65 — i.e. is itself approximately
+          rectangular.
+
+    Corner piece fill values for reference shapes:
+      perfect rectangle cut  ≈ 1.00
+      noisy rectangle cut    ≈ 0.80 – 0.95
+      L with rounded corner  ≈ 0.70
+      circle-corner sliver   ≈ 0.21   (excluded by threshold)
+
+    coverage_ratio is the key discriminator between genuine L/Z shapes and
+    other shapes (sickles, boomerangs) that happen to leave one empty corner:
+      clean L/Z: all negative space sits in the corner(s) → coverage ≈ 0.9–1.0
+      sickle:    corner is only part of the negative space  → coverage ≈ 0.3–0.6
+
+    Returns
+    -------
+    (count, min_fill, coverage_ratio) where:
+      count          : number of qualifying corner cutout regions
+      min_fill       : minimum fill ratio among those regions (1.0 if count == 0)
+      coverage_ratio : sum(qualifying corner areas) / total negative space area
+    """
+    try:
+        from shapely.geometry import Polygon as ShapelyPolygon
+        from shapely.geometry import box as shapely_box
+    except ImportError:
+        return 0, 1.0, 0.0
+
+    if len(exterior) < 3:
+        return 0, 1.0, 0.0
+
+    pts = np.asarray(exterior, dtype=float)
+    min_x, min_z = pts.min(axis=0)
+    max_x, max_z = pts.max(axis=0)
+
+    if (max_x - min_x) < 1 or (max_z - min_z) < 1:
+        return 0, 1.0, 0.0
+
+    bbox_geom = shapely_box(min_x, min_z, max_x, max_z)
+    hole_rings = [ring for ring in holes if len(ring) >= 3]
+    try:
+        island_poly = ShapelyPolygon(exterior, hole_rings)
+        if not island_poly.is_valid:
+            island_poly = island_poly.buffer(0)
+        negative = bbox_geom.difference(island_poly)
+    except Exception:
+        return 0, 1.0, 0.0
+
+    if negative.is_empty:
+        return 0, 1.0, 0.0
+
+    components = list(negative.geoms) if hasattr(negative, 'geoms') else [negative]
+
+    # Ignore slivers smaller than 2 % of the island area
+    min_component_area = max(1.0, island_area * 0.02)
+    # Edge-touch tolerance: 2 % of the shorter bbox dimension
+    eps = max(0.5, min(max_x - min_x, max_z - min_z) * 0.02)
+
+    corner_count = 0
+    min_fill = 1.0
+    total_corner_area = 0.0
+    total_negative_area = float(negative.area)
+
+    for comp in components:
+        if comp.area < min_component_area:
+            continue
+
+        bounds = comp.bounds  # (minx, minz, maxx, maxz)
+        comp_bbox_area = (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
+        if comp_bbox_area < 1e-6:
+            continue
+
+        comp_fill = float(comp.area / comp_bbox_area)
+
+        # Which global bbox edges does this component reach?
+        touches_left   = bounds[0] <= min_x + eps
+        touches_right  = bounds[2] >= max_x - eps
+        touches_bottom = bounds[1] <= min_z + eps
+        touches_top    = bounds[3] >= max_z - eps
+
+        edge_count = sum([touches_left, touches_right, touches_bottom, touches_top])
+        is_opposite = (touches_left and touches_right) or (touches_bottom and touches_top)
+
+        # Corner: exactly 2 adjacent (non-opposite) edges
+        is_corner = (edge_count == 2) and not is_opposite
+
+        if is_corner and comp_fill >= 0.68:
+            corner_count += 1
+            min_fill = min(min_fill, comp_fill)
+            total_corner_area += float(comp.area)
+
+    if total_negative_area > 1e-6:
+        coverage_ratio = total_corner_area / total_negative_area
+    else:
+        coverage_ratio = 0.0
+
+    return corner_count, min_fill, coverage_ratio
+
+
 # ---------------------------------------------------------------------------
 # Public API — feature extraction
 # ---------------------------------------------------------------------------
@@ -500,6 +619,12 @@ def extract_island_features(
             if skel_topology == 'line' and edge_pixels:
                 skel_path_bends = _skeleton_path_bends(edge_pixels)
 
+    # Bounding-box corner cutout analysis (for L_shape / Z_shape detection)
+    holes = poly.get('holes') or []
+    cutout_count, cutout_min_fill, cutout_coverage = _bbox_corner_cutout_count(
+        exterior, holes, float(area)
+    )
+
     return IslandFeatures(
         canonical_key=canonical_key,
         aspect_ratio=round(aspect_ratio, 4),
@@ -522,6 +647,9 @@ def extract_island_features(
         skeleton_total_length=skel_total_length,
         skeleton_topology=skel_topology,
         skeleton_path_bends=skel_path_bends,
+        bbox_cutout_count=cutout_count if cutout_count > 0 else None,
+        bbox_cutout_min_fill=round(cutout_min_fill, 4) if cutout_count > 0 else None,
+        bbox_cutout_coverage=round(cutout_coverage, 4) if cutout_count > 0 else None,
     )
 
 
@@ -539,27 +667,31 @@ def classify_island(features: IslandFeatures) -> str:
 
     Rule cascade
     ------------
-    1.  square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
-    2.  rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
-    3.  donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
-                    (exactly one enclosed air pocket with a smooth outer ring)
-    4.  circle      convexity ≥ 0.88 AND hole_count == 0 AND
-                    (aspect ≤ 1.2 AND circle_fit_residual < 0.12
-                     OR aspect > 1.2 AND ellipse_residual < 0.10 AND bbox_fill_ratio ≥ 0.72)
-                    (circle or ellipse: smooth solid shape fitting an elliptic curve)
-    5.  shard       topo == 'line' AND convexity ≥ 0.87 AND NOT round
-                    (smooth two-pointed diamond/lens/tear — poor elliptic fit or low fill)
-    6.  plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
-                    (T / Y / + / star: one central branch point, ≥ 3 arms)
-    7.  fork        junctions ≥ 2 AND convexity < 0.70
-                    (complex multi-branching, deep concavity)
-    8.  L_shape     topo == 'line' AND path_bends == 1
-                    (0 junctions, single path with one ~90° direction change)
-    9.  Z_shape     topo == 'line' AND path_bends ≥ 2
-                    (0 junctions, single path with two+ direction changes)
-    10. rugged      rugosity ≥ 1.2
-    11. linear      aspect_ratio ≥ 2.5
-    12. blob        (default)
+    1.   square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
+    2.   rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
+    3.   donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
+                     (exactly one enclosed air pocket with a smooth outer ring)
+    4.   circle      convexity ≥ 0.88 AND hole_count == 0 AND
+                     (aspect ≤ 1.2 AND circle_fit_residual < 0.12
+                      OR aspect > 1.2 AND ellipse_residual < 0.10 AND bbox_fill_ratio ≥ 0.72)
+                     (circle or ellipse: smooth solid shape fitting an elliptic curve)
+    4.5  L_shape     bbox_cutout_count == 1 AND bbox_cutout_coverage >= 0.70
+                     (one rectangular corner cutout accounting for ≥ 70 % of negative space)
+    4.6  Z_shape     bbox_cutout_count == 2 AND bbox_cutout_coverage >= 0.70
+                     (two rectangular corner cutouts, together ≥ 70 % of negative space)
+    5.   shard       topo == 'line' AND convexity ≥ 0.87 AND NOT round
+                     (smooth two-pointed diamond/lens/tear — poor elliptic fit or low fill)
+    6.   plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
+                     (T / Y / + / star: one central branch point, ≥ 3 arms)
+    7.   fork        junctions ≥ 2 AND convexity < 0.70
+                     (complex multi-branching, deep concavity)
+    8.   L_shape     topo == 'line' AND path_bends == 1
+                     (fallback: line skeleton with one ~90° direction change)
+    9.   Z_shape     topo == 'line' AND path_bends ≥ 2
+                     (fallback: line skeleton with two+ direction changes)
+    10.  rugged      rugosity ≥ 1.2
+    11.  linear      aspect_ratio ≥ 2.5
+    12.  blob        (default)
 
     Design notes
     ------------
@@ -639,6 +771,22 @@ def classify_island(features: IslandFeatures) -> str:
                         and features.bbox_fill_ratio >= 0.72)
         if is_round:
             return 'circle'
+
+    # Rule 4.5: L_shape via bbox-cutout — a rectangle with exactly one rectangular
+    # corner removed.  Fires before the shard rule so that angular L shapes are not
+    # intercepted by the line-topology shard gate.
+    # coverage_ratio >= 0.70: the qualifying corner(s) must account for ≥ 70 % of
+    # the total negative space; this rejects sickles/boomerangs whose empty corner
+    # represents only a fraction of their bounding-box gap.
+    if (features.bbox_cutout_count == 1
+            and (features.bbox_cutout_coverage or 0.0) >= 0.70):
+        return 'L_shape'
+
+    # Rule 4.6: Z_shape via bbox-cutout — a rectangle with two rectangular corner
+    # cuts on opposite sides (Z / S staircase form).
+    if (features.bbox_cutout_count == 2
+            and (features.bbox_cutout_coverage or 0.0) >= 0.70):
+        return 'Z_shape'
 
     # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens, tear).
     # Requires line topology (two skeleton endpoints, no junctions), convexity ≥ 0.87,
@@ -726,6 +874,85 @@ def build_raster_strategy(
 
 
 # ---------------------------------------------------------------------------
+# Override file helpers
+# ---------------------------------------------------------------------------
+
+
+def load_override_data(path: Path) -> dict[str, dict[str, str]]:
+    """Load full override data: canonical_key → {profile, note}.
+
+    Handles both the old flat format (key → profile_str) and the current
+    rich format (key → {profile, note}).  Old-format files are migrated
+    on read (the note field is initialised to "").  Returns an empty dict
+    if the file is absent or unreadable.
+    """
+    if not path.exists():
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            raw = json.load(fh)
+        if not isinstance(raw, dict):
+            return {}
+        result: dict[str, dict[str, str]] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, str):
+                # Old flat format — migrate: profile present, no note yet
+                result[key] = {'profile': value, 'note': ''}
+            elif isinstance(value, dict):
+                result[key] = {
+                    'profile': str(value.get('profile', '')),
+                    'note':    str(value.get('note', '')),
+                }
+        return result
+    except Exception as exc:
+        logger.warning('island profiling: failed to load overrides %s: %s', path, exc)
+        return {}
+
+
+def save_override_data(path: Path, data: dict[str, dict[str, str]]) -> None:
+    """Persist full override data (profiles + notes) to a JSON file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(dict(sorted(data.items())), fh, indent=2)
+
+
+def load_overrides(path: Path) -> dict[str, str]:
+    """Return canonical_key → profile string for use by the classification pipeline.
+
+    Ignores entries that have a note but no profile override.
+    """
+    return {
+        key: entry['profile']
+        for key, entry in load_override_data(path).items()
+        if entry.get('profile')
+    }
+
+
+def save_overrides(path: Path, overrides: dict[str, str]) -> None:
+    """Write profile-only overrides, preserving existing notes.
+
+    Entries present in *overrides* are upserted; entries absent from *overrides*
+    are removed only if they also have no note.
+    """
+    existing = load_override_data(path)
+    new_data: dict[str, dict[str, str]] = {}
+
+    # Keep entries from existing that have a note but are not in the new overrides
+    for key, entry in existing.items():
+        if key not in overrides and entry.get('note'):
+            new_data[key] = {'profile': '', 'note': entry['note']}
+
+    # Upsert every entry from overrides
+    for key, profile in overrides.items():
+        note = existing.get(key, {}).get('note', '')
+        new_data[key] = {'profile': profile, 'note': note}
+
+    save_override_data(path, new_data)
+
+
+# ---------------------------------------------------------------------------
 # Public API — main entry point
 # ---------------------------------------------------------------------------
 
@@ -734,6 +961,7 @@ def profile_islands(
     map_context: dict,
     map_graph: dict,
     base_grid_size: int,
+    overrides: Optional[dict[str, str]] = None,
 ) -> list[IslandProfile]:
     """Profile all canonical island shapes in a map.
 
@@ -749,6 +977,10 @@ def profile_islands(
         Parsed map_graph.json dict.
     base_grid_size:
         Map-level adaptive grid size (used to derive per-island overrides).
+    overrides:
+        Optional dict mapping canonical_key → profile label.  When provided,
+        the effective island_type is replaced by the override; auto_profile
+        still records the algorithm-computed classification.
     """
     all_islands = map_context.get('islands', [])
 
@@ -773,6 +1005,8 @@ def profile_islands(
             key = f'_solo_{isl["id"]}'
         groups.setdefault(key, []).append(isl)
 
+    active_overrides: dict[str, str] = overrides or {}
+
     profiles: list[IslandProfile] = []
     for canonical_key, group_islands in sorted(groups.items()):
         # Use the first island as the canonical representative for feature extraction
@@ -782,12 +1016,14 @@ def profile_islands(
 
         graph_dict = graph_by_id.get(island_id)
         features = extract_island_features(canonical_key, representative, graph_dict)
-        island_type = classify_island(features)
+        auto_profile = classify_island(features)
+        island_type = active_overrides.get(canonical_key, auto_profile)
         raster_strategy = build_raster_strategy(island_type, features, base_grid_size)
 
         profiles.append(IslandProfile(
             canonical_key=canonical_key,
             island_type=island_type,
+            auto_profile=auto_profile,
             raw_island_ids=raw_island_ids,
             features=features,
             raster_strategy=raster_strategy,
@@ -820,6 +1056,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
         data.append({
             'canonical_key': profile.canonical_key,
             'island_type': profile.island_type,
+            'auto_profile': profile.auto_profile,
             'raw_island_ids': profile.raw_island_ids,
             'features': {
                 'canonical_key': feat.canonical_key,
@@ -843,6 +1080,9 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'skeleton_total_length': feat.skeleton_total_length,
                 'skeleton_topology': feat.skeleton_topology,
                 'skeleton_path_bends': feat.skeleton_path_bends,
+                'bbox_cutout_count': feat.bbox_cutout_count,
+                'bbox_cutout_min_fill': feat.bbox_cutout_min_fill,
+                'bbox_cutout_coverage': feat.bbox_cutout_coverage,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -888,6 +1128,9 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 skeleton_total_length=feat_d.get('skeleton_total_length'),
                 skeleton_topology=feat_d.get('skeleton_topology'),
                 skeleton_path_bends=feat_d.get('skeleton_path_bends'),
+                bbox_cutout_count=feat_d.get('bbox_cutout_count'),
+                bbox_cutout_min_fill=feat_d.get('bbox_cutout_min_fill'),
+                bbox_cutout_coverage=feat_d.get('bbox_cutout_coverage'),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),
@@ -898,6 +1141,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
             profiles.append(IslandProfile(
                 canonical_key=entry['canonical_key'],
                 island_type=entry['island_type'],
+                auto_profile=entry.get('auto_profile', entry['island_type']),
                 raw_island_ids=entry['raw_island_ids'],
                 features=features,
                 raster_strategy=raster_strategy,
