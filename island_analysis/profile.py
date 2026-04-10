@@ -541,8 +541,8 @@ def classify_island(features: IslandFeatures) -> str:
     ------------
     1.  square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
     2.  rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
-    3.  donut       hole_count ≥ 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
-                    (enclosed air pocket with a smooth outer ring — true ring/annular shape)
+    3.  donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
+                    (exactly one enclosed air pocket with a smooth outer ring)
     4.  circle      convexity ≥ 0.88 AND
                     (aspect ≤ 1.2 AND circle_fit_residual < 0.08
                      OR aspect > 1.2 AND ellipse_residual < 0.09)
@@ -564,11 +564,13 @@ def classify_island(features: IslandFeatures) -> str:
     Design notes
     ------------
     - square/rectangle: fill ≥ 0.85 selects only truly rectangular platforms
-    - donut: hole_count ≥ 1 alone is insufficient — any rugged or forked island that
-      encloses a small air gap will have hole_count ≥ 1.  convexity ≥ 0.92 ensures the
-      outer ring is smooth (not a jagged rugged shape); rugosity ≤ 1.1 enforces a clean
-      outer perimeter.  Reference examples: kingdom (0.988, 0.993), ouroboros (0.944,
-      1.058), pineium_ctw (0.952, 1.000).
+    - donut: hole_count == 1 (not ≥ 1) — a genuine ring has exactly one interior void.
+      hole_count > 1 indicates structural complexity (e.g. a ring whose blocks don't
+      fully close, producing multiple separate air pockets) rather than a simple donut.
+      convexity ≥ 0.92 and rugosity ≤ 1.1 ensure the outer ring is smooth — any rugged
+      or forked island can enclose a small gap without being ring-shaped.
+      Reference examples: kingdom (0.988, 0.993), ouroboros (0.944, 1.058),
+      pineium_ctw (0.952, 1.000).
     - shard: threshold raised from 0.88 to 0.93 — all verified shard examples have
       convexity ≥ 0.938 (fd4f5230, b8c73a35, c3bb195c, 59523759).  Values 0.88–0.93
       correspond to irregular small islands with a line skeleton, not true shards.
@@ -598,11 +600,14 @@ def classify_island(features: IslandFeatures) -> str:
             and features.convexity >= 0.85):
         return 'rectangle'
 
-    # Rule 3: donut — ring/annular shape with enclosed interior air pocket.
-    # hole_count alone is insufficient: any complex island whose blocks fully enclose
-    # an air gap (rugged ridges, fork shapes) will have hole_count ≥ 1.  A true donut
-    # has a smooth outer ring: convexity ≥ 0.92 and rugosity ≤ 1.1.
-    if (features.hole_count >= 1
+    # Rule 3: donut — ring/annular shape with exactly one enclosed interior air pocket.
+    # hole_count == 1: a true donut has a single interior void (the hole in the ring).
+    #   hole_count > 1 → structurally complex island (e.g. multiple enclosed pockets
+    #   from an irregular block arrangement), not a simple ring — must be excluded.
+    # convexity ≥ 0.92 and rugosity ≤ 1.1: the outer boundary must be smooth.
+    #   Any rugged or forked island can enclose a small gap (hole_count ≥ 1) without
+    #   being ring-shaped; these produce low convexity and high rugosity.
+    if (features.hole_count == 1
             and features.convexity >= 0.92
             and features.rugosity <= 1.1):
         return 'donut'

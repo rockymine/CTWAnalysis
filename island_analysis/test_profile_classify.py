@@ -163,6 +163,26 @@ class TestDonut(unittest.TestCase):
         )
         self.assertNotEqual(classify_island(feat), 'donut')
 
+    def test_multiple_holes_not_donut(self):
+        """hole_count > 1 is NOT a donut — a genuine ring has exactly one void.
+
+        e22d8e28 (emergency_meeting): circle-shaped ring whose blocks don't fully
+        close at the top, creating two separate air pockets (hole_count=2).
+        15ef7fba (goo_lagoon): complex island with 4 enclosed pockets.
+        Both had smooth outer boundaries that passed the old hole_count >= 1 rule.
+        """
+        for holes in (2, 3, 4):
+            feat = _make_features(
+                hole_count=holes,
+                convexity=0.93,
+                rugosity=1.00,
+                skeleton_topology='none',
+            )
+            self.assertNotEqual(
+                classify_island(feat), 'donut',
+                msg=f'hole_count={holes} should not classify as donut',
+            )
+
 
 class TestCircleEllipse(unittest.TestCase):
     """Rule 4 — circle or ellipse: fits a circle/ellipse curve well.
