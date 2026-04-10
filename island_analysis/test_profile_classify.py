@@ -30,6 +30,8 @@ def _make_features(**overrides) -> IslandFeatures:
         perimeter=80.0,
         bbox_fill_ratio=1.0,
         rugosity=1.0,
+        circle_fit_residual=0.30,   # high by default → not round; override for circles
+        ellipse_residual=0.25,      # high by default → not round; override for ellipses
         skeleton_endpoint_count=2,
         skeleton_junction_count=0,
         skeleton_total_length=20.0,
@@ -162,19 +164,111 @@ class TestDonut(unittest.TestCase):
         self.assertNotEqual(classify_island(feat), 'donut')
 
 
+class TestCircleEllipse(unittest.TestCase):
+    """Rule 4 — circle or ellipse: fits a circle/ellipse curve well.
+
+    Verified reference examples:
+      a6d59506 → summertime_at_browns_farms  asp=1.00 circle_fit_residual=0.032
+      e23c5e30 → sweetopia / thunderbolt     asp=1.00 circle_fit_residual=0.046
+      696bce97 → exitium                     asp=2.27 ellipse_residual=0.072
+      5e5e0548 → chestnut                    asp=1.55 ellipse_residual=0.072
+      422ead87 → xion                        asp=2.27 ellipse_residual=0.086
+      68672a4c → xion                        asp=1.44 ellipse_residual=0.079
+
+    Previously misclassified as shard (a6d59506, e23c5e30) or blob (696bce97 etc.)
+    because the old rule used topo='line' as a shard discriminator.  Minecraft
+    pixelated circles frequently have line topology.
+    """
+
+    def test_circle_near_square_low_residual(self):
+        """Near-circular island with low circle_fit_residual → circle.
+
+        Mirrors a6d59506 (asp=1.00, circ_res=0.032) and e23c5e30 (circ_res=0.046).
+        """
+        feat = _make_features(
+            convexity=0.95,
+            aspect_ratio=1.0,
+            circle_fit_residual=0.040,
+            ellipse_residual=0.042,
+            skeleton_topology='line',   # line topology must NOT block circle detection
+            skeleton_path_bends=0,
+            bbox_fill_ratio=0.78,
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
+    def test_circle_with_line_topology_not_shard(self):
+        """A Minecraft circle with line skeleton must not be classified as shard.
+
+        This was the root cause: topo='line' was incorrectly used as a shard proxy.
+        The residual is the correct discriminator.
+        """
+        feat = _make_features(
+            convexity=0.934,
+            aspect_ratio=1.0,
+            circle_fit_residual=0.046,   # e23c5e30 actual value
+            ellipse_residual=0.046,
+            skeleton_topology='line',
+            skeleton_path_bends=0,
+            bbox_fill_ratio=0.778,
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
+    def test_ellipse_elongated_low_residual(self):
+        """Elongated oval (aspect > 1.2) with low ellipse_residual → circle.
+
+        Mirrors 696bce97 (asp=2.27, ell_res=0.072).
+        """
+        feat = _make_features(
+            convexity=0.942,
+            aspect_ratio=2.27,
+            circle_fit_residual=0.262,   # high — fitting a circle to an ellipse
+            ellipse_residual=0.072,      # low — good ellipse fit
+            skeleton_topology='line',
+            skeleton_path_bends=0,
+            bbox_fill_ratio=0.826,
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
+    def test_ellipse_moderate_aspect_low_residual(self):
+        """Aspect ~1.5 ellipse → circle.  Mirrors 5e5e0548 (asp=1.55, ell_res=0.072)."""
+        feat = _make_features(
+            convexity=0.924,
+            aspect_ratio=1.55,
+            circle_fit_residual=0.175,
+            ellipse_residual=0.072,
+            skeleton_topology='line',
+            skeleton_path_bends=0,
+            bbox_fill_ratio=0.786,
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
+    def test_circle_boundary_residual_at_threshold(self):
+        """Residual just below 0.08 passes; just above fails."""
+        below = _make_features(convexity=0.90, aspect_ratio=1.0,
+                               circle_fit_residual=0.079, ellipse_residual=0.079,
+                               skeleton_topology='none', bbox_fill_ratio=0.75)
+        above = _make_features(convexity=0.90, aspect_ratio=1.0,
+                               circle_fit_residual=0.081, ellipse_residual=0.081,
+                               skeleton_topology='none', bbox_fill_ratio=0.75)
+        self.assertEqual(classify_island(below), 'circle')
+        self.assertNotEqual(classify_island(above), 'circle')
+
+
 class TestShard(unittest.TestCase):
     """Rule 5 — smooth two-pointed shape (diamond, rhombus, lens).
 
     Verified reference examples:
-      fd4f5230 → station_x           convexity=0.962, topo=line
-      b8c73a35 → ruedigers_octawool  convexity=0.950, topo=line
-      c3bb195c → keipha_ctw          convexity=0.943, topo=line
-      59523759 → nether_war_ctw      convexity=0.938, topo=line
+      fd4f5230 → station_x           convexity=0.962, circle_fit_residual=0.161
+      b8c73a35 → ruedigers_octawool  convexity=0.950, circle_fit_residual=0.147
+      c3bb195c → keipha_ctw          convexity=0.943, circle_fit_residual=0.179
+      59523759 → nether_war_ctw      convexity=0.938, circle_fit_residual=0.297
     """
 
     def test_shard_station_x_like(self):
         feat = _make_features(
             convexity=0.962,
+            circle_fit_residual=0.161,
+            ellipse_residual=0.068,   # moderate but aspect=1.0 so circ_res governs
             skeleton_topology='line',
             skeleton_junction_count=0,
             skeleton_endpoint_count=2,
@@ -183,10 +277,12 @@ class TestShard(unittest.TestCase):
         )
         self.assertEqual(classify_island(feat), 'shard')
 
-    def test_shard_minimum_threshold(self):
-        """Lowest convexity among verified examples is 0.938 — just above 0.93."""
+    def test_shard_diamond_like(self):
+        """Strong diamond shape (59523759): fill ≈ 0.5, high circle_fit_residual."""
         feat = _make_features(
             convexity=0.938,
+            circle_fit_residual=0.297,
+            ellipse_residual=0.145,
             skeleton_topology='line',
             skeleton_junction_count=0,
             skeleton_endpoint_count=2,
@@ -195,13 +291,12 @@ class TestShard(unittest.TestCase):
         )
         self.assertEqual(classify_island(feat), 'shard')
 
-    def test_line_topology_below_threshold_not_shard(self):
-        """Line topology with convexity 0.88–0.93 is irregular — should not be shard.
-
-        These were the 44 false positives in the old rule (threshold was 0.88).
-        """
+    def test_line_topology_below_convexity_threshold_not_shard(self):
+        """Line topology with convexity 0.88–0.93 is irregular — should not be shard."""
         feat = _make_features(
             convexity=0.89,
+            circle_fit_residual=0.20,
+            ellipse_residual=0.18,
             skeleton_topology='line',
             skeleton_junction_count=0,
             skeleton_endpoint_count=2,
@@ -210,17 +305,33 @@ class TestShard(unittest.TestCase):
         )
         self.assertNotEqual(classify_island(feat), 'shard')
 
+    def test_shard_requires_poor_ellipse_fit(self):
+        """High convexity + line topology but LOW residual → circle, not shard.
+
+        Prevents a Minecraft circle with line skeleton being classified as shard.
+        """
+        feat = _make_features(
+            convexity=0.96,
+            circle_fit_residual=0.040,  # good circle fit — it IS a circle
+            ellipse_residual=0.040,
+            bbox_fill_ratio=0.78,
+            skeleton_topology='line',
+            skeleton_path_bends=0,
+        )
+        self.assertEqual(classify_island(feat), 'circle')
+
     def test_shard_requires_line_topology(self):
         """High convexity alone is not enough — shard needs line topology."""
         feat = _make_features(
             convexity=0.96,
-            bbox_fill_ratio=0.70,  # below square/rect threshold so circle rule fires
+            circle_fit_residual=0.20,
+            ellipse_residual=0.18,
+            bbox_fill_ratio=0.70,
             skeleton_topology='none',
             skeleton_junction_count=0,
             skeleton_endpoint_count=0,
         )
-        # Should hit circle (aspect_ratio=1.0 ≤ 1.35, convexity ≥ 0.88) not shard
-        self.assertEqual(classify_island(feat), 'circle')
+        self.assertNotEqual(classify_island(feat), 'shard')
 
 
 class TestPlus(unittest.TestCase):

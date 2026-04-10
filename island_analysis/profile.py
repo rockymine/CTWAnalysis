@@ -110,6 +110,8 @@ class IslandFeatures:
     perimeter: float          # polygon exterior perimeter in world units
     bbox_fill_ratio: float    # area / (bbox_width × bbox_height) — 1.0 = perfect rectangle
     rugosity: float           # perimeter / bbox_perimeter — 1.0 = rectangle, >1.0 = jagged
+    circle_fit_residual: float  # algebraic circle fit: RMS deviation / radius — 0 = perfect circle
+    ellipse_residual: float     # PCA-normalised radial residual — 0 = perfect axis-aligned ellipse
     # Tier B — skeleton-derived (Optional — see docstring)
     skeleton_endpoint_count: Optional[int]
     skeleton_junction_count: Optional[int]
@@ -319,6 +321,77 @@ def _polygon_area_shoelace(exterior: list[list[float]]) -> float:
     return 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
 
 
+def _circle_fit_residual(exterior: list[list[float]]) -> float:
+    """Algebraic least-squares circle fit.  Returns normalised RMS residual.
+
+    Solves Ax + Bz + C = -(x² + z²) for the best-fit circle centre and
+    radius, then returns RMS(|dist_i - r_fit|) / r_fit.
+
+    Near 0  → points lie close to a circle.
+    ~0.15+  → angular / diamond shape.
+
+    Robust choice for near-square bounding boxes (aspect_ratio ≤ 1.2):
+    a Minecraft diamond with fill ≈ 0.5 produces values ~0.15–0.30,
+    while a genuine Minecraft circle produces values < 0.06.
+    """
+    pts = np.asarray(exterior, dtype=float)
+    if len(pts) < 3:
+        return 1.0
+    x, z = pts[:, 0], pts[:, 1]
+    A_mat = np.column_stack([x, z, np.ones(len(x))])
+    b_vec = -(x ** 2 + z ** 2)
+    coeffs, _, _, _ = np.linalg.lstsq(A_mat, b_vec, rcond=None)
+    A, B, C = coeffs
+    cx, cz = -A / 2.0, -B / 2.0
+    r_sq = cx ** 2 + cz ** 2 - C
+    if r_sq <= 0:
+        return 1.0
+    r = math.sqrt(r_sq)
+    dists = np.sqrt((x - cx) ** 2 + (z - cz) ** 2)
+    rms = math.sqrt(float(np.mean((dists - r) ** 2)))
+    return float(rms / r)
+
+
+def _ellipse_residual(exterior: list[list[float]]) -> float:
+    """PCA-normalised radial residual — measures how well the polygon fits an
+    axis-aligned ellipse.
+
+    Steps:
+      1. Centre the points.
+      2. Rotate to the principal-component axes.
+      3. Scale each axis by 1/sqrt(eigenvalue) → map the best-fit ellipse to
+         a unit circle in this normalised space.
+      4. Return RMS(|r_i - r_mean|) / r_mean in the normalised space.
+
+    Near 0  → shape is close to an ellipse (or circle).
+    ~0.10+  → shape has corners / flat sides that deviate from an ellipse.
+
+    Preferred over circle_fit_residual for elongated shapes (aspect > 1.2)
+    because it accounts for the axis ratio before measuring roundness.
+    """
+    pts = np.asarray(exterior, dtype=float)
+    if len(pts) < 3:
+        return 1.0
+    centroid = pts.mean(axis=0)
+    centered = pts - centroid
+    cov = np.cov(centered.T)
+    if cov.ndim < 2:
+        return 1.0
+    try:
+        eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    except np.linalg.LinAlgError:
+        return 1.0
+    eigenvalues = np.maximum(eigenvalues, 1e-9)
+    rotated = centered @ eigenvectors
+    scaled = rotated / np.sqrt(eigenvalues)
+    radii = np.linalg.norm(scaled, axis=1)
+    r_mean = float(radii.mean())
+    if r_mean < 1e-9:
+        return 1.0
+    rms = math.sqrt(float(np.mean((radii - r_mean) ** 2)))
+    return float(rms / r_mean)
+
+
 # ---------------------------------------------------------------------------
 # Public API — feature extraction
 # ---------------------------------------------------------------------------
@@ -442,6 +515,8 @@ def extract_island_features(
         perimeter=round(perimeter, 2),
         bbox_fill_ratio=round(bbox_fill_ratio, 4),
         rugosity=round(rugosity, 4),
+        circle_fit_residual=round(_circle_fit_residual(exterior), 4),
+        ellipse_residual=round(_ellipse_residual(exterior), 4),
         skeleton_endpoint_count=skel_endpoint_count,
         skeleton_junction_count=skel_junction_count,
         skeleton_total_length=skel_total_length,
@@ -468,11 +543,12 @@ def classify_island(features: IslandFeatures) -> str:
     2.  rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
     3.  donut       hole_count ≥ 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                     (enclosed air pocket with a smooth outer ring — true ring/annular shape)
-    4.  circle      aspect_ratio ≤ 1.35 AND convexity ≥ 0.88 AND topo ≠ 'line'
-                    (topo='line' means a pointy diamond, not a round shape)
-    5.  shard       topo == 'line' AND convexity ≥ 0.93
-                    (smooth two-pointed shape: diamond, rhombus, lens — fill < 0.85
-                    guaranteed since square/rect already fired)
+    4.  circle      convexity ≥ 0.88 AND
+                    (aspect ≤ 1.2 AND circle_fit_residual < 0.08
+                     OR aspect > 1.2 AND ellipse_residual < 0.09)
+                    (circle or ellipse: shape closely fits an elliptic curve)
+    5.  shard       topo == 'line' AND convexity ≥ 0.93 AND NOT round
+                    (smooth two-pointed diamond/lens — poor elliptic fit)
     6.  plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
                     (T / Y / + / star: one central branch point, ≥ 3 arms)
     7.  fork        junctions ≥ 2 AND convexity < 0.70
@@ -496,8 +572,13 @@ def classify_island(features: IslandFeatures) -> str:
     - shard: threshold raised from 0.88 to 0.93 — all verified shard examples have
       convexity ≥ 0.938 (fd4f5230, b8c73a35, c3bb195c, 59523759).  Values 0.88–0.93
       correspond to irregular small islands with a line skeleton, not true shards.
-    - circle vs shard: both are smooth but a shard has a line skeleton (two pointed tips)
-      while a true circle has topo='none' or topo='mesh'
+    - circle vs shard: a circle/ellipse fits an elliptic curve (low residual); a shard
+      (diamond, rhombus, lens) has flat sides and sharp tips that deviate strongly from
+      an ellipse.  circle_fit_residual distinguishes them for near-square shapes
+      (aspect ≤ 1.2); ellipse_residual handles elongated shapes (aspect > 1.2).
+      Minecraft staircase polygons produce very low residuals for genuinely round shapes
+      because the staircase error scales as 1/radius — at typical island sizes the
+      normalised residual is < 0.06 for circles and > 0.10 for diamonds.
     - plus vs fork: plus has exactly one junction (the centre) with ≥ 3 endpoints;
       fork has two or more junctions indicating a more complex branching network
     - L_shape / Z_shape require path_bends, which is only computed for topo='line';
@@ -526,22 +607,43 @@ def classify_island(features: IslandFeatures) -> str:
             and features.rugosity <= 1.1):
         return 'donut'
 
-    # Rule 4: circle — smooth round/oval shape.
-    # Exclude topo='line': a diamond/shard has line topology and looks smooth but
-    # is pointy, not round.
-    if (features.aspect_ratio <= 1.35
-            and features.convexity >= 0.88
-            and features.skeleton_topology != 'line'):
-        return 'circle'
+    # Rule 4: circle / ellipse — smooth curved shape with a good elliptic fit.
+    #
+    # Two residuals measure fit quality depending on aspect ratio:
+    #   aspect ≤ 1.2  →  circle_fit_residual  (algebraic circle; best for near-square)
+    #   aspect > 1.2  →  ellipse_residual      (PCA-normalised; handles elongation)
+    #
+    # Thresholds derive from verified examples:
+    #   circle (a6d59506=0.032, e23c5e30=0.046, 3ebd22ae=0.059) — all < 0.08
+    #   shard  (fd4f5230=0.161, b8c73a35=0.147, c3bb195c=0.179) — all > 0.10
+    #   ellipse (696bce97=0.072, 5e5e0548=0.072, 422ead87=0.086) — all < 0.09
+    #   elongated shard (ae3a807d=0.122, 4de71324=0.126) — all > 0.12
+    #
+    # There is no topology constraint here: Minecraft pixelated circles often
+    # receive a 'line' skeleton topology because the staircase approximation
+    # slightly elongates the shape.  The residual is the correct discriminator.
+    if features.convexity >= 0.88:
+        if features.aspect_ratio <= 1.2:
+            is_round = features.circle_fit_residual < 0.08
+        else:
+            is_round = features.ellipse_residual < 0.09
+        if is_round:
+            return 'circle'
 
     # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens).
-    # Detected by line topology (two skeleton endpoints, no junctions) combined
-    # with high convexity (smooth outline).  fill < 0.85 guaranteed here.
-    # Threshold 0.93 (not 0.88): all verified shards have convexity ≥ 0.938
+    # Requires line topology (two skeleton endpoints, no junctions), high convexity,
+    # and a POOR elliptic fit — distinguishing it from line-topology circles.
+    # convexity ≥ 0.93: all verified shards have convexity ≥ 0.938
     # (fd4f5230=0.962, b8c73a35=0.950, c3bb195c=0.943, 59523759=0.938).
-    # Values 0.88–0.93 are small irregular islands with a line skeleton, not shards.
+    # is_round gate: lines 4 sets is_round=False for low-convexity shapes so
+    # we recompute it here for the shard convexity range (0.93+).
     if features.skeleton_topology == 'line' and features.convexity >= 0.93:
-        return 'shard'
+        if features.aspect_ratio <= 1.2:
+            shard_not_round = features.circle_fit_residual >= 0.08
+        else:
+            shard_not_round = features.ellipse_residual >= 0.09
+        if shard_not_round:
+            return 'shard'
 
     # Rules 6 & 7: branching shapes — require skeleton data
     junction_count = features.skeleton_junction_count
@@ -723,6 +825,8 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'perimeter': feat.perimeter,
                 'bbox_fill_ratio': feat.bbox_fill_ratio,
                 'rugosity': feat.rugosity,
+                'circle_fit_residual': feat.circle_fit_residual,
+                'ellipse_residual': feat.ellipse_residual,
                 'skeleton_endpoint_count': feat.skeleton_endpoint_count,
                 'skeleton_junction_count': feat.skeleton_junction_count,
                 'skeleton_total_length': feat.skeleton_total_length,
@@ -766,6 +870,8 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 perimeter=feat_d.get('perimeter', 0.0),
                 bbox_fill_ratio=feat_d.get('bbox_fill_ratio', 0.0),
                 rugosity=feat_d.get('rugosity', 0.0),
+                circle_fit_residual=feat_d.get('circle_fit_residual', 1.0),
+                ellipse_residual=feat_d.get('ellipse_residual', 1.0),
                 skeleton_endpoint_count=feat_d.get('skeleton_endpoint_count'),
                 skeleton_junction_count=feat_d.get('skeleton_junction_count'),
                 skeleton_total_length=feat_d.get('skeleton_total_length'),
