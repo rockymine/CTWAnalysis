@@ -128,6 +128,8 @@ python ctw.py islands --map NAME [--force]
 
 Re-run island spatial profiling from cached `map_context.json` + `map_graph.json`.
 Produces `island_profiles.json` (one entry per canonical shape).
+Automatically loads manual overrides from `output/_debug/island_profile_overrides.json`
+if the file exists.
 
 ```
 python ctw.py islands profile [--map NAME] [--output DIR] [--plot] [--force]
@@ -148,9 +150,11 @@ Print a detailed feature table and classification breakdown for every canonical 
 python ctw.py islands profile-inspect --map NAME [--output DIR]
 ```
 
-Output includes: `island_type`, `raw_island_ids`, `area`, `bbox_fill_ratio`, `rugosity`,
+Output includes: `island_type` (effective, after any override), `auto_profile` (algorithm
+result before overrides), `raw_island_ids`, `area`, `bbox_fill_ratio`, `rugosity`,
 `aspect_ratio`, `compactness`, `convexity`, `pca_elongation`, `pca_angle_deg`,
-`hole_ratio`, and full skeleton topology/counts when available.
+`hole_ratio`, skeleton topology/counts, and `bbox_cutout_count/min_fill/coverage`
+when the cutout rule is active.
 
 #### `islands profile-canonical`
 
@@ -160,6 +164,30 @@ Print canonical groupings (unique shapes + instance counts) read directly from
 ```
 python ctw.py islands profile-canonical --map NAME [--output DIR]
 ```
+
+#### `islands profile-review`
+
+Start a local HTTP review server (no external dependencies) and open a browser page
+for interactively reviewing and correcting island classifications.
+
+```
+python ctw.py islands profile-review [--map NAME] [--output DIR] [--type TYPE] [--port N]
+```
+
+| Flag | Description |
+|---|---|
+| `--map NAME` | Show islands from one map only (default: all maps) |
+| `--output DIR` | Output root directory (default: `output/`) |
+| `--type TYPE` | Filter to one profile type: `circle`, `shard`, `L_shape`, etc. |
+| `--port N` | Local TCP port (default: 7890) |
+
+Each island cell shows an SVG thumbnail, copyable canonical key, key metrics
+(convexity, aspect ratio, circle/ellipse residuals, fill, path bends, cutout
+count+coverage), a reclassify dropdown, and a notes textarea. Changes save
+immediately to `output/_debug/island_profile_overrides.json`. Press Ctrl+C to stop.
+
+Run `ctw islands profile --force` after a review session to regenerate
+`island_profiles.json` with the updated overrides applied.
 
 ---
 
