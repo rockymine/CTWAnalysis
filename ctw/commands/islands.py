@@ -10,6 +10,7 @@ Sub-actions
 profile           Compute island spatial profiles from cached JSON
 profile-inspect   Print per-island feature table and classification details
 profile-canonical Show canonical groupings (unique shapes + instance counts)
+profile-review    Start interactive web server to review and correct classifications
 """
 
 import argparse
@@ -33,14 +34,17 @@ Sub-actions (default: detect):
   profile           Compute/re-run island spatial profiles from cached JSON
   profile-inspect   Print feature table and classification details per island
   profile-canonical Show canonical groupings for a map
+  profile-review    Start local web server to review and correct classifications
 
 Examples:
   python ctw.py islands --map tumbleweed
   python ctw.py islands profile --map tumbleweed
   python ctw.py islands profile --map tumbleweed --plot
-  python ctw.py islands profile                      # all maps
+  python ctw.py islands profile                          # all maps
   python ctw.py islands profile-inspect --map tumbleweed
   python ctw.py islands profile-canonical --map tumbleweed
+  python ctw.py islands profile-review                   # all maps, browser opens
+  python ctw.py islands profile-review --type circle     # only circle islands
 """,
     )
     # Shared flags (--map optional here; detect handler validates it)
@@ -106,6 +110,21 @@ Examples:
                              help='Output root directory (default: output/)')
     p_canonical.set_defaults(func=handle_profile_canonical)
 
+    # islands profile-review
+    p_review = islands_sub.add_parser(
+        'profile-review',
+        help='Start a local web server to interactively review and correct island classifications',
+    )
+    p_review.add_argument('--map', default=None,
+                          help='Map slug (default: all maps with island_profiles.json)')
+    p_review.add_argument('--output', default=None,
+                          help='Output root directory (default: output/)')
+    p_review.add_argument('--type', default=None, dest='island_type',
+                          help='Only show islands of this type (default: all types)')
+    p_review.add_argument('--port', type=int, default=7890,
+                          help='Local port for the review server (default: 7890)')
+    p_review.set_defaults(func=handle_profile_review)
+
 
 def handler(args):
     # If a sub-action was dispatched, don't run the default detect handler
@@ -156,8 +175,15 @@ def handle_profile(args) -> None:
     import json
     from island_analysis.profile import (
         profile_islands, save_profiles, plot_island_profiles, load_profiles,
+        load_overrides,
     )
     from map_analysis.grid_base import _adaptive_grid_size
+
+    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
+    overrides_path = output_root / '_debug' / 'island_profile_overrides.json'
+    overrides = load_overrides(overrides_path)
+    if overrides:
+        print(f'  Applying {len(overrides)} override(s) from {overrides_path.name}')
 
     map_dirs = _resolve_profile_map_dirs(args)
     processed = 0
@@ -184,7 +210,7 @@ def handle_profile(args) -> None:
                 map_graph = json.load(fh)
 
             base_grid_size = _adaptive_grid_size(map_context.get('total_blocks', 1000))
-            profiles = profile_islands(map_context, map_graph, base_grid_size)
+            profiles = profile_islands(map_context, map_graph, base_grid_size, overrides=overrides)
             save_profiles(profiles, profiles_path)
             print(f'  [OK] {map_dir.name}: {len(profiles)} canonical shapes')
 
@@ -240,8 +266,10 @@ def handle_profile_inspect(args) -> None:
     for profile in profiles:
         feat = profile.features
         strat = profile.raster_strategy
+        override_note = f'  [overridden from {profile.auto_profile}]' if profile.island_type != profile.auto_profile else ''
         print(f'\n  canonical_key : {profile.canonical_key}')
-        print(f'  island_type   : {profile.island_type}')
+        print(f'  island_type   : {profile.island_type}{override_note}')
+        print(f'  auto_profile  : {profile.auto_profile}')
         print(f'  raw_island_ids: {profile.raw_island_ids}')
         print(f'  grid_override : {strat.grid_size_override}')
         print(f'  align_angle   : {strat.alignment_angle_deg}')
@@ -268,6 +296,12 @@ def handle_profile_inspect(args) -> None:
                 print(f'    skeleton_path_bends  = {feat.skeleton_path_bends}')
         else:
             print(f'    skeleton             = [unavailable]')
+
+        cutout_count = feat.bbox_cutout_count
+        if cutout_count is not None and cutout_count > 0:
+            print(f'    bbox_cutout_count    = {cutout_count}')
+            print(f'    bbox_cutout_min_fill = {feat.bbox_cutout_min_fill:.4f}')
+            print(f'    bbox_cutout_coverage = {feat.bbox_cutout_coverage:.4f}')
 
         # Skeleton reliability warning: high hole_ratio + low compactness suggests ring
         if feat.hole_ratio > 0.3 and feat.compactness < 0.3:
@@ -314,3 +348,43 @@ def handle_profile_canonical(args) -> None:
     for key, ids in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         print(f'  {key:<20}  {len(ids):>9}  {ids}')
     print(f'\n{len(groups)} unique shapes\n')
+
+
+def handle_profile_review(args) -> None:
+    """Start the interactive profile review web server."""
+    import json as _json
+    from island_analysis.profile import load_profiles
+    from island_analysis.profile_review import run_review_server
+
+    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
+    map_name = getattr(args, 'map', None)
+    if map_name:
+        map_dirs = [output_root / map_name]
+    else:
+        map_dirs = sorted(d for d in output_root.iterdir() if d.is_dir())
+
+    entries: list[tuple[str, object, dict]] = []
+    for map_dir in map_dirs:
+        profiles = load_profiles(map_dir / 'island_profiles.json')
+        if profiles is None:
+            continue
+        context_path = map_dir / 'map_context.json'
+        if not context_path.exists():
+            continue
+        with open(context_path, encoding='utf-8') as fh:
+            map_context = _json.load(fh)
+        island_by_id = {isl['id']: isl for isl in map_context.get('islands', [])}
+        for profile in profiles:
+            rep_id = profile.raw_island_ids[0] if profile.raw_island_ids else None
+            if rep_id is None or rep_id not in island_by_id:
+                continue
+            entries.append((map_dir.name, profile, island_by_id[rep_id]))
+
+    if not entries:
+        print('No island profiles found. Run "ctw islands profile" first.')
+        return
+
+    overrides_path = output_root / '_debug' / 'island_profile_overrides.json'
+    island_type_filter = getattr(args, 'island_type', None)
+    port = getattr(args, 'port', 7890)
+    run_review_server(entries, overrides_path, island_type_filter, port)
