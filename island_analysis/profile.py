@@ -45,7 +45,11 @@ _TYPE_COLORS: dict[str, str] = {
     'square':    '#27ae60',   # green
     'rectangle': '#2980b9',   # blue
     'circle':    '#e74c3c',   # red
+    'donut':     '#1abc9c',   # cyan/teal
+    'shard':     '#f39c12',   # amber
     'L_shape':   '#8e44ad',   # purple
+    'Z_shape':   '#e67e22',   # dark orange
+    'plus':      '#3498db',   # light blue
     'fork':      '#d35400',   # orange
     'rugged':    '#c0392b',   # dark red / coral
     'linear':    '#16a085',   # teal
@@ -60,7 +64,11 @@ _TYPE_SORT_METRIC: dict[str, tuple[str, bool]] = {
     'square':    ('bbox_fill_ratio', True),   # most box-filling first
     'rectangle': ('bbox_fill_ratio', True),   # most box-filling first
     'circle':    ('convexity',       True),   # smoothest / most convex first
+    'donut':     ('bbox_fill_ratio', False),  # most ring-like (lowest fill) first
+    'shard':     ('convexity',       True),   # most convex / sharpest points first
     'L_shape':   ('convexity',       False),  # most concave (most L-like) first
+    'Z_shape':   ('aspect_ratio',    True),   # most elongated first
+    'plus':      ('convexity',       False),  # most arm-like (most concave) first
     'fork':      ('convexity',       False),  # most concave (most branched) first
     'rugged':    ('rugosity',        True),   # highest perimeter ratio first
     'linear':    ('aspect_ratio',    True),   # most elongated first
@@ -94,6 +102,7 @@ class IslandFeatures:
     convexity: float          # area / convex_hull_area — 1.0 = fully convex
     pca_elongation: float     # sqrt(λ₁/λ₂) from PCA of exterior vertices
     pca_angle_deg: float      # principal axis angle, degrees (−180 .. 180)
+    hole_count: int           # number of interior polygon rings (holes)
     hole_ratio: float         # hole_count / area
     bbox_width: float         # canonical bounding box width  (x extent)
     bbox_height: float        # canonical bounding box height (z extent)
@@ -106,6 +115,7 @@ class IslandFeatures:
     skeleton_junction_count: Optional[int]
     skeleton_total_length: Optional[float]
     skeleton_topology: Optional[str]   # 'line' | 'tree' | 'mesh' | 'none' | None
+    skeleton_path_bends: Optional[int] # direction changes in line-topology path (L=1, Z=2+, straight=0)
 
 
 @dataclass
@@ -210,6 +220,96 @@ def _skeleton_topology(
     return 'tree'
 
 
+def _rdp_simplify(pts: np.ndarray, epsilon: float) -> np.ndarray:
+    """Ramer-Douglas-Peucker path simplification.
+
+    Recursively collapses path segments whose interior points deviate less than
+    *epsilon* from the straight line between their endpoints.  Returns a
+    reduced array of waypoints that preserves genuine corners.
+    """
+    if len(pts) < 3:
+        return pts
+
+    start, end = pts[0], pts[-1]
+    line_vec = end - start
+    line_len = float(np.linalg.norm(line_vec))
+
+    if line_len < 1e-9:
+        return np.array([pts[0], pts[-1]])
+
+    # Perpendicular distance of each interior point from the start→end line
+    perp = pts - start
+    proj_scalar = perp @ line_vec / (line_len ** 2)
+    proj_pts = start + np.outer(proj_scalar, line_vec)
+    dists = np.linalg.norm(pts - proj_pts, axis=1)
+
+    max_idx = int(np.argmax(dists))
+    max_dist = dists[max_idx]
+
+    if max_dist < epsilon:
+        return np.array([pts[0], pts[-1]])
+
+    left = _rdp_simplify(pts[: max_idx + 1], epsilon)
+    right = _rdp_simplify(pts[max_idx:], epsilon)
+    return np.vstack([left[:-1], right])
+
+
+def _skeleton_path_bends(
+    edge_pixels: dict | list,
+    epsilon: float = 2.0,
+    min_turn_deg: float = 40.0,
+) -> int:
+    """Count major direction changes in a line-topology skeleton path.
+
+    Only meaningful when skeleton_topology == 'line' (0 junctions, 2 endpoints,
+    1 edge).  Uses RDP simplification to collapse near-straight sub-paths (so
+    single diagonal corner pixels don't produce phantom bends), then counts
+    consecutive segment pairs whose angle difference exceeds *min_turn_deg*.
+
+    Returns
+    -------
+    0   straight path (linear / shard / straight rectangle)
+    1   single bend (L-shape — one ~90° corner)
+    2+  two or more bends (Z / S / staircase)
+    """
+    # Extract the single edge's pixel list
+    pixel_path: list = []
+    if isinstance(edge_pixels, dict):
+        for edge_entry in edge_pixels.values():
+            pixel_path = (
+                edge_entry.get('pixels', []) if isinstance(edge_entry, dict) else edge_entry
+            )
+            break
+    else:
+        for edge_entry in edge_pixels:
+            pixel_path = (
+                edge_entry.get('pixels', []) if isinstance(edge_entry, dict) else edge_entry
+            )
+            break
+
+    if len(pixel_path) < 4:
+        return 0
+
+    pts = np.array(pixel_path, dtype=float)
+    simplified = _rdp_simplify(pts, epsilon)
+
+    if len(simplified) < 3:
+        return 0
+
+    diffs = np.diff(simplified, axis=0)
+    angles = np.degrees(np.arctan2(diffs[:, 1], diffs[:, 0]))
+
+    bends = 0
+    for i in range(1, len(angles)):
+        delta = abs(angles[i] - angles[i - 1])
+        if delta > 180.0:
+            delta = 360.0 - delta
+        if delta > min_turn_deg:
+            bends += 1
+
+    return bends
+
+
 def _polygon_area_shoelace(exterior: list[list[float]]) -> float:
     """Shoelace formula area of a simple polygon."""
     pts = np.asarray(exterior, dtype=float)
@@ -285,6 +385,7 @@ def extract_island_features(
     skel_junction_count: Optional[int] = None
     skel_total_length: Optional[float] = None
     skel_topology: Optional[str] = None
+    skel_path_bends: Optional[int] = None
 
     if graph_dict is not None:
         skeleton = graph_dict.get('skeleton')
@@ -321,6 +422,11 @@ def extract_island_features(
             skel_total_length = round(total_length, 2)
             skel_topology = _skeleton_topology(junction_count, endpoint_count, edge_count)
 
+            # Path bend count — only meaningful for line topology (1 edge, 2 endpoints)
+            skel_path_bends: Optional[int] = None
+            if skel_topology == 'line' and edge_pixels:
+                skel_path_bends = _skeleton_path_bends(edge_pixels)
+
     return IslandFeatures(
         canonical_key=canonical_key,
         aspect_ratio=round(aspect_ratio, 4),
@@ -328,6 +434,7 @@ def extract_island_features(
         convexity=round(convexity, 4),
         pca_elongation=round(pca_elongation, 4),
         pca_angle_deg=round(pca_angle_deg, 2),
+        hole_count=int(hole_count),
         hole_ratio=round(hole_ratio, 6),
         bbox_width=round(bbox_width, 2),
         bbox_height=round(bbox_height, 2),
@@ -339,6 +446,7 @@ def extract_island_features(
         skeleton_junction_count=skel_junction_count,
         skeleton_total_length=skel_total_length,
         skeleton_topology=skel_topology,
+        skeleton_path_bends=skel_path_bends,
     )
 
 
@@ -348,31 +456,54 @@ def extract_island_features(
 
 
 def classify_island(features: IslandFeatures) -> str:
-    """Apply geometry-first rule cascade and return the island_type string.
+    """Apply skeleton-informed rule cascade and return the island_type string.
 
     Rules are applied in priority order; the first match wins.
-    Skeleton features (Tier B) are used only where available — all rules
-    degrade gracefully when skeleton data is absent.
+    Skeleton features (Tier B) are used where available — most rules degrade
+    gracefully when skeleton data is absent.
 
     Rule cascade
     ------------
-    1. square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
-    2. rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
-    3. circle      aspect_ratio ≤ 1.35 AND convexity ≥ 0.88
-                   (fill < 0.85 guaranteed here since square/rect already fired for fill ≥ 0.85)
-    4. L_shape     skeleton available AND junctions == 1 AND convexity < 0.82
-    5. fork        skeleton available AND junctions ≥ 2 AND convexity < 0.70
-    6. rugged      rugosity ≥ 1.2 (perimeter noticeably larger than bbox perimeter)
-    7. linear      aspect_ratio ≥ 2.5
-    8. blob        (default)
+    1.  square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
+    2.  rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
+    3.  donut       hole_count ≥ 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
+                    (enclosed air pocket with a smooth outer ring — true ring/annular shape)
+    4.  circle      aspect_ratio ≤ 1.35 AND convexity ≥ 0.88 AND topo ≠ 'line'
+                    (topo='line' means a pointy diamond, not a round shape)
+    5.  shard       topo == 'line' AND convexity ≥ 0.93
+                    (smooth two-pointed shape: diamond, rhombus, lens — fill < 0.85
+                    guaranteed since square/rect already fired)
+    6.  plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
+                    (T / Y / + / star: one central branch point, ≥ 3 arms)
+    7.  fork        junctions ≥ 2 AND convexity < 0.70
+                    (complex multi-branching, deep concavity)
+    8.  L_shape     topo == 'line' AND path_bends == 1
+                    (0 junctions, single path with one ~90° direction change)
+    9.  Z_shape     topo == 'line' AND path_bends ≥ 2
+                    (0 junctions, single path with two+ direction changes)
+    10. rugged      rugosity ≥ 1.2
+    11. linear      aspect_ratio ≥ 2.5
+    12. blob        (default)
 
     Design notes
     ------------
     - square/rectangle: fill ≥ 0.85 selects only truly rectangular platforms
-    - circle: fill < 0.85 is implicit since rules 1/2 already fired; catches round blobs
-      whose convexity is ≥ 0.88 (very smooth outline) and aspect_ratio ≤ 1.35
+    - donut: hole_count ≥ 1 alone is insufficient — any rugged or forked island that
+      encloses a small air gap will have hole_count ≥ 1.  convexity ≥ 0.92 ensures the
+      outer ring is smooth (not a jagged rugged shape); rugosity ≤ 1.1 enforces a clean
+      outer perimeter.  Reference examples: kingdom (0.988, 0.993), ouroboros (0.944,
+      1.058), pineium_ctw (0.952, 1.000).
+    - shard: threshold raised from 0.88 to 0.93 — all verified shard examples have
+      convexity ≥ 0.938 (fd4f5230, b8c73a35, c3bb195c, 59523759).  Values 0.88–0.93
+      correspond to irregular small islands with a line skeleton, not true shards.
+    - circle vs shard: both are smooth but a shard has a line skeleton (two pointed tips)
+      while a true circle has topo='none' or topo='mesh'
+    - plus vs fork: plus has exactly one junction (the centre) with ≥ 3 endpoints;
+      fork has two or more junctions indicating a more complex branching network
+    - L_shape / Z_shape require path_bends, which is only computed for topo='line';
+      shapes without skeleton data degrade to rugged/linear/blob
     - fork vs rugged: fork has deep concave gaps (convexity < 0.70); rugged has many
-      surface irregularities without deep concavity (convexity ≥ 0.70 but rugosity ≥ 1.2)
+      surface irregularities without deep concavity
     """
     # Rule 1: square — tight rectangular fill, near-square
     if (features.bbox_fill_ratio >= 0.85
@@ -386,34 +517,64 @@ def classify_island(features: IslandFeatures) -> str:
             and features.convexity >= 0.85):
         return 'rectangle'
 
-    # Rule 3: circle — round/oval shape (fill < 0.85 guaranteed here).
-    # High convexity (≥ 0.88) and low aspect ratio together select smooth, round islands.
-    if features.aspect_ratio <= 1.35 and features.convexity >= 0.88:
+    # Rule 3: donut — ring/annular shape with enclosed interior air pocket.
+    # hole_count alone is insufficient: any complex island whose blocks fully enclose
+    # an air gap (rugged ridges, fork shapes) will have hole_count ≥ 1.  A true donut
+    # has a smooth outer ring: convexity ≥ 0.92 and rugosity ≤ 1.1.
+    if (features.hole_count >= 1
+            and features.convexity >= 0.92
+            and features.rugosity <= 1.1):
+        return 'donut'
+
+    # Rule 4: circle — smooth round/oval shape.
+    # Exclude topo='line': a diamond/shard has line topology and looks smooth but
+    # is pointy, not round.
+    if (features.aspect_ratio <= 1.35
+            and features.convexity >= 0.88
+            and features.skeleton_topology != 'line'):
         return 'circle'
 
-    # Rules 4 & 5: branching shapes — require skeleton data
-    junction_count = features.skeleton_junction_count
-    if junction_count is not None:
-        # Rule 4: L_shape — single junction, concave (one corner/bend)
-        if junction_count == 1 and features.convexity < 0.82:
-            return 'L_shape'
+    # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens).
+    # Detected by line topology (two skeleton endpoints, no junctions) combined
+    # with high convexity (smooth outline).  fill < 0.85 guaranteed here.
+    # Threshold 0.93 (not 0.88): all verified shards have convexity ≥ 0.938
+    # (fd4f5230=0.962, b8c73a35=0.950, c3bb195c=0.943, 59523759=0.938).
+    # Values 0.88–0.93 are small irregular islands with a line skeleton, not shards.
+    if features.skeleton_topology == 'line' and features.convexity >= 0.93:
+        return 'shard'
 
-        # Rule 5: fork — multiple junctions, strongly concave (T/Y/H/complex arm).
-        # Threshold 0.70 separates deep-branching forks (convexity 0.48-0.67 in practice)
-        # from moderately-irregular shapes better captured by the rugged rule.
+    # Rules 6 & 7: branching shapes — require skeleton data
+    junction_count = features.skeleton_junction_count
+    endpoint_count = features.skeleton_endpoint_count
+    if junction_count is not None and endpoint_count is not None:
+        # Rule 6: plus — one central junction with three or more arms (T, Y, +, star)
+        if junction_count == 1 and endpoint_count >= 3:
+            return 'plus'
+
+        # Rule 7: fork — multiple junctions, strongly concave (complex branching).
         if junction_count >= 2 and features.convexity < 0.70:
             return 'fork'
 
-    # Rule 6: rugged — polygon perimeter noticeably larger than bbox perimeter.
-    # Captures irregular/jagged shapes not caught by the fork rule (convexity ≥ 0.70).
+    # Rules 8 & 9: bent-path shapes — require line topology with path_bends
+    if (features.skeleton_topology == 'line'
+            and features.skeleton_path_bends is not None):
+        # Rule 8: L_shape — single 90°-ish bend in an otherwise straight path
+        if features.skeleton_path_bends == 1:
+            return 'L_shape'
+
+        # Rule 9: Z_shape — two or more direction changes (Z, S, staircase)
+        if features.skeleton_path_bends >= 2:
+            return 'Z_shape'
+
+    # Rule 10: rugged — polygon perimeter noticeably larger than bbox perimeter.
     if features.rugosity >= 1.2:
         return 'rugged'
 
-    # Rule 7: linear — elongated corridor
+    # Rule 11: linear — elongated corridor
     if features.aspect_ratio >= 2.5:
         return 'linear'
 
-    # Rule 8: blob (default)
+    # Rule 12: blob (default)
     return 'blob'
 
 
@@ -554,6 +715,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'convexity': feat.convexity,
                 'pca_elongation': feat.pca_elongation,
                 'pca_angle_deg': feat.pca_angle_deg,
+                'hole_count': feat.hole_count,
                 'hole_ratio': feat.hole_ratio,
                 'bbox_width': feat.bbox_width,
                 'bbox_height': feat.bbox_height,
@@ -565,6 +727,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'skeleton_junction_count': feat.skeleton_junction_count,
                 'skeleton_total_length': feat.skeleton_total_length,
                 'skeleton_topology': feat.skeleton_topology,
+                'skeleton_path_bends': feat.skeleton_path_bends,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -595,6 +758,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 convexity=feat_d['convexity'],
                 pca_elongation=feat_d['pca_elongation'],
                 pca_angle_deg=feat_d['pca_angle_deg'],
+                hole_count=feat_d.get('hole_count', 0),
                 hole_ratio=feat_d['hole_ratio'],
                 bbox_width=feat_d['bbox_width'],
                 bbox_height=feat_d['bbox_height'],
@@ -606,6 +770,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 skeleton_junction_count=feat_d.get('skeleton_junction_count'),
                 skeleton_total_length=feat_d.get('skeleton_total_length'),
                 skeleton_topology=feat_d.get('skeleton_topology'),
+                skeleton_path_bends=feat_d.get('skeleton_path_bends'),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),
