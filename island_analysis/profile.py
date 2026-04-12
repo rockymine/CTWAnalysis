@@ -122,6 +122,8 @@ class IslandFeatures:
     bbox_cutout_count: Optional[int]      # qualifying rectangular corner cutouts (L=1, Z=2)
     bbox_cutout_min_fill: Optional[float] # min fill ratio among those cutouts
     bbox_cutout_coverage: Optional[float] # corner area / total negative space (1.0 = clean L/Z)
+    # Tier A extended — point symmetry
+    has_point_symmetry: bool = False      # block set maps to itself under 180° rotation about bbox centre
 
 
 @dataclass
@@ -512,6 +514,55 @@ def _bbox_corner_cutout_count(
 
 
 # ---------------------------------------------------------------------------
+# Point-symmetry helper
+# ---------------------------------------------------------------------------
+
+
+def _check_point_symmetry(exterior: list, bbox: list) -> bool:
+    """Return True if the island block set has 180° rotational (point) symmetry.
+
+    The rotation centre is the bounding-box midpoint:
+        cx = (min_x + max_x) / 2
+        cz = (min_z + max_z) / 2
+
+    This is always one of the four valid centre types:
+        1×1  — cx half-integer, cz half-integer  (odd width, odd height)
+        2×1  — cx integer,      cz half-integer  (even width, odd height)
+        1×2  — cx half-integer, cz integer       (odd width, even height)
+        2×2  — cx integer,      cz integer       (even width, even height)
+
+    For any of these, 2*cx − x and 2*cz − z map integers to integers, so the
+    rotated positions land back on valid block indices.
+    """
+    from shapely.geometry import Polygon, Point
+
+    if len(exterior) < 3:
+        return False
+
+    min_x, max_x, min_z, max_z = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+    cx = (min_x + max_x) / 2.0
+    cz = (min_z + max_z) / 2.0
+
+    shapely_poly = Polygon(exterior)
+    blocks: frozenset[tuple[int, int]] = frozenset(
+        (x, z)
+        for x in range(int(min_x), int(max_x))
+        for z in range(int(min_z), int(max_z))
+        if shapely_poly.contains(Point(x + 0.5, z + 0.5))
+    )
+    if not blocks:
+        return False
+
+    # Rotate block centres (x+0.5, z+0.5) about (cx, cz), then convert back to
+    # block index: x' = (2*cx - (x+0.5)) - 0.5 = 2*cx - x - 1.
+    rotated: frozenset[tuple[int, int]] = frozenset(
+        (int(round(2.0 * cx - x - 1.0)), int(round(2.0 * cz - z - 1.0)))
+        for x, z in blocks
+    )
+    return rotated == blocks
+
+
+# ---------------------------------------------------------------------------
 # Public API — feature extraction
 # ---------------------------------------------------------------------------
 
@@ -625,6 +676,9 @@ def extract_island_features(
         exterior, holes, float(area)
     )
 
+    # Point-symmetry check (for circle / ellipse gate)
+    has_point_symmetry = _check_point_symmetry(exterior, bbox)
+
     return IslandFeatures(
         canonical_key=canonical_key,
         aspect_ratio=round(aspect_ratio, 4),
@@ -650,6 +704,7 @@ def extract_island_features(
         bbox_cutout_count=cutout_count if cutout_count > 0 else None,
         bbox_cutout_min_fill=round(cutout_min_fill, 4) if cutout_count > 0 else None,
         bbox_cutout_coverage=round(cutout_coverage, 4) if cutout_count > 0 else None,
+        has_point_symmetry=has_point_symmetry,
     )
 
 
@@ -671,10 +726,10 @@ def classify_island(features: IslandFeatures) -> str:
     2.   rectangle   bbox_fill_ratio == 1.0 AND aspect_ratio > 1.3
     3.   donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                      (exactly one enclosed air pocket with a smooth outer ring)
-    4.   circle      convexity ≥ 0.88 AND hole_count == 0 AND
+    4.   circle      convexity ≥ 0.88 AND hole_count == 0 AND has_point_symmetry AND
                      (aspect ≤ 1.2 AND circle_fit_residual < 0.12
                       OR aspect > 1.2 AND ellipse_residual < 0.10 AND bbox_fill_ratio ≥ 0.72)
-                     (circle or ellipse: smooth solid shape fitting an elliptic curve)
+                     (circle or ellipse: smooth solid shape with 180° rotational symmetry)
     4.5  L_shape     bbox_cutout_count == 1 AND bbox_cutout_coverage >= 0.70
                      (one rectangular corner cutout accounting for ≥ 70 % of negative space)
     4.6  Z_shape     bbox_cutout_count == 2 AND bbox_cutout_coverage >= 0.70
@@ -761,7 +816,7 @@ def classify_island(features: IslandFeatures) -> str:
     #
     # No topology constraint: Minecraft pixelated circles often get 'line' skeleton
     # topology because the staircase approximation slightly elongates the shape.
-    if features.convexity >= 0.88 and features.hole_count == 0:
+    if features.convexity >= 0.88 and features.hole_count == 0 and features.has_point_symmetry:
         if features.aspect_ratio <= 1.2:
             is_round = features.circle_fit_residual < 0.12
         else:
@@ -1081,6 +1136,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'bbox_cutout_count': feat.bbox_cutout_count,
                 'bbox_cutout_min_fill': feat.bbox_cutout_min_fill,
                 'bbox_cutout_coverage': feat.bbox_cutout_coverage,
+                'has_point_symmetry': feat.has_point_symmetry,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -1129,6 +1185,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 bbox_cutout_count=feat_d.get('bbox_cutout_count'),
                 bbox_cutout_min_fill=feat_d.get('bbox_cutout_min_fill'),
                 bbox_cutout_coverage=feat_d.get('bbox_cutout_coverage'),
+                has_point_symmetry=feat_d.get('has_point_symmetry', False),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),
