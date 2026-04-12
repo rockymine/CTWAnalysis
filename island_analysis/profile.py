@@ -141,6 +141,7 @@ class IslandFeatures:
     # Tier A extended — point symmetry
     has_point_symmetry: bool = False      # block set maps to itself under 180° rotation about bbox centre
     bbox_cutout_corners: Optional[frozenset[str]] = None  # which corners cut: subset of {'TL','TR','BL','BR'}
+    skeleton_min_arm_angle: Optional[float] = None        # min angular gap (°) between arms around single junction
 
 
 @dataclass
@@ -551,6 +552,35 @@ def _bbox_corner_cutout_count(
 
 
 # ---------------------------------------------------------------------------
+# Arm-angle helper (for plus classifier)
+# ---------------------------------------------------------------------------
+
+
+def _min_arm_angle(nodes: list[dict]) -> Optional[float]:
+    """Return the minimum angular gap (degrees) between consecutive arms around
+    the single junction node, or None if there is not exactly one junction.
+
+    Angles are measured from the junction to each endpoint, sorted, then the
+    gaps between consecutive angles (including the wrap-around gap) are computed.
+    For a perfect plus/cross the four gaps are all ~90°; for a skewed shape
+    where several arms cluster on one side the minimum gap is much smaller.
+    """
+    junction_nodes = [n for n in nodes if n.get('type') == 'junction']
+    endpoint_nodes = [n for n in nodes if n.get('type') == 'endpoint']
+    if len(junction_nodes) != 1 or len(endpoint_nodes) < 2:
+        return None
+    jx = float(junction_nodes[0]['x'])
+    jz = float(junction_nodes[0]['z'])
+    angles = sorted(
+        math.degrees(math.atan2(float(n['z']) - jz, float(n['x']) - jx))
+        for n in endpoint_nodes
+    )
+    gaps = [angles[i + 1] - angles[i] for i in range(len(angles) - 1)]
+    gaps.append(360.0 - angles[-1] + angles[0])  # wrap-around gap
+    return round(min(gaps), 1)
+
+
+# ---------------------------------------------------------------------------
 # Point-symmetry helper
 # ---------------------------------------------------------------------------
 
@@ -666,6 +696,7 @@ def extract_island_features(
     skel_total_length: Optional[float] = None
     skel_topology: Optional[str] = None
     skel_path_bends: Optional[int] = None
+    skel_min_arm_angle: Optional[float] = None
 
     if graph_dict is not None:
         skeleton = graph_dict.get('skeleton')
@@ -707,6 +738,9 @@ def extract_island_features(
             if skel_topology == 'line' and edge_pixels:
                 skel_path_bends = _skeleton_path_bends(edge_pixels)
 
+            # Minimum arm angle — only meaningful when there is exactly one junction
+            skel_min_arm_angle = _min_arm_angle(nodes)
+
     # Bounding-box corner cutout analysis (for L_shape / Z_shape / T_shape detection)
     holes = poly.get('holes') or []
     cutout_count, cutout_min_fill, cutout_coverage, cutout_corners = _bbox_corner_cutout_count(
@@ -743,6 +777,7 @@ def extract_island_features(
         bbox_cutout_coverage=round(cutout_coverage, 4) if cutout_count > 0 else None,
         has_point_symmetry=has_point_symmetry,
         bbox_cutout_corners=cutout_corners if cutout_count > 0 else None,
+        skeleton_min_arm_angle=skel_min_arm_angle,
     )
 
 
@@ -776,8 +811,8 @@ def classify_island(features: IslandFeatures) -> str:
                      (TL+TR, BL+BR, TL+BL, or TR+BR; cutout fill ≥ 0.95 per corner)
     5.   shard       topo == 'line' AND convexity ≥ 0.87 AND NOT round
                      (smooth two-pointed diamond/lens/tear — poor elliptic fit or low fill)
-    6.   plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
-                     (T / Y / + / star: one central branch point, ≥ 3 arms)
+    6.   plus        topo == 'tree' AND junctions == 1 AND endpoints == 4 AND min_arm_angle >= 60°
+                     (+ / cross: four arms evenly distributed around the central junction)
     7.   fork        junctions ≥ 2 AND convexity < 0.70
                      (complex multi-branching, deep concavity)
     8.   rugged      rugosity ≥ 1.2
@@ -809,7 +844,7 @@ def classify_island(features: IslandFeatures) -> str:
       second gate:  a true ellipse fills π/4 ≈ 0.785 of its bounding box;
       shards/tears fill ≤ 0.70 (296006fc=0.697, de43e1a0=0.619, ad1f82ab=0.600).
       Threshold 0.72 sits in the observed gap between ellipses (≥ 0.77) and shards.
-    - plus vs fork: plus has exactly one junction (the centre) with ≥ 3 endpoints;
+    - plus vs fork: plus has exactly one junction (the centre) with exactly 4 endpoints;
       fork has two or more junctions indicating a more complex branching network
     - L_shape / Z_shape / T_shape are exclusively classified by the corner-cutout geometry
       rules (4.5 / 4.6 / 4.7); skeleton path_bends fallbacks are intentionally removed
@@ -904,8 +939,11 @@ def classify_island(features: IslandFeatures) -> str:
     junction_count = features.skeleton_junction_count
     endpoint_count = features.skeleton_endpoint_count
     if junction_count is not None and endpoint_count is not None:
-        # Rule 6: plus — one central junction with three or more arms (T, Y, +, star)
-        if junction_count == 1 and endpoint_count >= 3:
+        # Rule 6: plus — one central junction with exactly four arms evenly distributed.
+        # min_arm_angle >= 60° ensures arms are spread around the junction rather than
+        # clustered on one side (a true + has gaps of ~90°; skewed shapes drop to ~45°).
+        if (junction_count == 1 and endpoint_count == 4
+                and (features.skeleton_min_arm_angle or 0.0) >= 60.0):
             return 'plus'
 
         # Rule 7: fork — multiple junctions, strongly concave (complex branching).
@@ -1174,6 +1212,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'bbox_cutout_coverage': feat.bbox_cutout_coverage,
                 'has_point_symmetry': feat.has_point_symmetry,
                 'bbox_cutout_corners': sorted(feat.bbox_cutout_corners) if feat.bbox_cutout_corners else None,
+                'skeleton_min_arm_angle': feat.skeleton_min_arm_angle,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -1223,6 +1262,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 bbox_cutout_min_fill=feat_d.get('bbox_cutout_min_fill'),
                 bbox_cutout_coverage=feat_d.get('bbox_cutout_coverage'),
                 has_point_symmetry=feat_d.get('has_point_symmetry', False),
+                skeleton_min_arm_angle=feat_d.get('skeleton_min_arm_angle'),
                 bbox_cutout_corners=(
                     frozenset(feat_d['bbox_cutout_corners'])
                     if feat_d.get('bbox_cutout_corners') else None
