@@ -153,7 +153,7 @@ def _skeleton_result_to_svg_polylines(
 # ---------------------------------------------------------------------------
 
 
-def _island_svg(island_dict: dict, color: str, size: int = 110) -> str:
+def _island_svg(island_dict: dict, color: str, size: int = 110, traffic_svg: str = '') -> str:
     """Render island polygon as a self-contained SVG element.
 
     Normalizes the polygon to fill the viewport with padding so all shapes
@@ -243,11 +243,118 @@ def _island_svg(island_dict: dict, color: str, size: int = 110) -> str:
         f'xmlns="http://www.w3.org/2000/svg" style="display:block">'
         f'<path d="{path_d}" fill="{color}" fill-opacity="0.30" '
         f'stroke="#333" stroke-width="0.8" fill-rule="evenodd"/>'
+        f'{traffic_svg}'
         f'{skeleton_group}'
         f'{smooth_group}'
         f'{smooth_skel_group}'
         f'</svg>'
     )
+
+
+# ---------------------------------------------------------------------------
+# Traffic heatmap builder
+# ---------------------------------------------------------------------------
+
+
+def _build_traffic_overlays(
+    entries: list[tuple[str, IslandProfile, dict]],
+    svg_norm: dict[str, tuple],
+    db_path: Path,
+) -> dict[str, str]:
+    """Build per-canonical-key player traffic heatmap SVG groups.
+
+    Queries position_events grouped by (map_slug, island_id, x, z) and
+    accumulates visit counts across all matches for each canonical shape.
+    Each canonical key maps to a hidden <g class="traffic-overlay"> with one
+    <rect> per visited block, coloured by log-scaled visit density.
+
+    Returns canonical_key -> SVG group string.  Keys with no data are absent.
+    """
+    import math
+    import duckdb
+    import logging
+    _log = logging.getLogger('ctw')
+
+    # Build (map_slug, island_id) -> (canonical_key, min_x, min_z).
+    # min_x/min_z from bounding_box allow positions to be expressed relative
+    # to each instance's own origin before mapping into the SVG viewport.
+    instance_meta: dict[tuple[str, int], tuple[str, float, float]] = {}
+    for map_slug, profile, island_dict in entries:
+        key = profile.canonical_key
+        if key not in svg_norm:
+            continue
+        island_id = island_dict.get('id')
+        bbox = island_dict.get('bounding_box')   # [min_x, max_x, min_z, max_z]
+        if island_id is None or not bbox:
+            continue
+        instance_meta[(map_slug, island_id)] = (key, float(bbox[0]), float(bbox[2]))
+
+    if not instance_meta:
+        return {}
+
+    # One bulk query: visit counts per (map_slug, island_id, x, z).
+    try:
+        con = duckdb.connect(str(db_path), read_only=True)
+        rows = con.execute("""
+            SELECT m.map_slug, pe.island_id, pe.x, pe.z, COUNT(*) AS visits
+            FROM position_events pe
+            JOIN matches mt ON pe.match_id = mt.match_id
+            JOIN maps   m  ON mt.map_id   = m.map_id
+            WHERE pe.location_type = 'island'
+            GROUP BY m.map_slug, pe.island_id, pe.x, pe.z
+        """).fetchall()
+        con.close()
+    except Exception as exc:
+        _log.warning(f'Traffic overlay query failed: {exc}')
+        return {}
+
+    # Accumulate visit counts per canonical key using relative coords (offset
+    # from each instance's bbox origin).  Instances of the same canonical shape
+    # have the same extents so their relative grids overlay correctly.
+    grids: dict[str, dict[tuple[int, int], int]] = {}
+    for map_slug, island_id, px, pz, visits in rows:
+        meta = instance_meta.get((map_slug, island_id))
+        if meta is None:
+            continue
+        key, min_x, min_z = meta
+        rel_x = int(px) - int(min_x)
+        rel_z = int(pz) - int(min_z)
+        if rel_x < 0 or rel_z < 0:
+            continue
+        grid = grids.setdefault(key, {})
+        coord = (rel_x, rel_z)
+        grid[coord] = grid.get(coord, 0) + visits
+
+    # Render each key's grid as SVG <rect> elements with log-scaled opacity.
+    result: dict[str, str] = {}
+    for key, grid in grids.items():
+        if not grid or key not in svg_norm:
+            continue
+        _min_xy, extent, padding, draw_size = svg_norm[key]
+        block_px = draw_size / extent   # SVG pixels per one world block
+
+        max_count = max(grid.values())
+        log_max = math.log(max_count + 1)
+
+        rects: list[str] = []
+        for (rel_x, rel_z), count in grid.items():
+            svg_x = rel_x / extent * draw_size + padding
+            svg_y = rel_z / extent * draw_size + padding
+            opacity = 0.08 + 0.62 * math.log(count + 1) / log_max
+            rects.append(
+                f'<rect x="{svg_x:.1f}" y="{svg_y:.1f}" '
+                f'width="{block_px:.1f}" height="{block_px:.1f}" '
+                f'fill="#4a9eda" opacity="{opacity:.2f}"/>'
+            )
+
+        if rects:
+            result[key] = (
+                '<g class="traffic-overlay" style="display:none">'
+                + ''.join(rects)
+                + '</g>'
+            )
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +367,7 @@ def _build_html(
     override_data: dict[str, dict[str, str]],
     type_filter: Optional[str] = None,
     key_has_matches: Optional[dict[str, bool]] = None,
+    traffic_svg_by_key: Optional[dict[str, str]] = None,
 ) -> str:
     """Generate the full review page HTML.
 
@@ -274,8 +382,12 @@ def _build_html(
     key_has_matches:
         canonical_key → bool; True if the shape appears in a map with recorded
         match data.  When None or empty, the matches-only toggle is hidden.
+    traffic_svg_by_key:
+        canonical_key → pre-rendered SVG traffic heatmap group string.
+        When None or empty, the position data toggle is hidden.
     """
     key_has_matches = key_has_matches or {}
+    traffic_svg_by_key = traffic_svg_by_key or {}
     # Build a lookup from canonical_key to all map slugs where it appears
     key_maps: dict[str, list[str]] = {}
     for map_slug, profile, _ in entries:
@@ -305,7 +417,7 @@ def _build_html(
         f'<option value="{t}">{t}</option>' for t in _ALL_TYPES
     )
 
-    sections_html = _build_sections(by_type, override_data, key_maps, all_options_html, key_has_matches)
+    sections_html = _build_sections(by_type, override_data, key_maps, all_options_html, key_has_matches, traffic_svg_by_key)
 
     nav_links = ' | '.join(
         f'<a href="#{t}">{t} ({len(by_type[t])})</a>'
@@ -317,6 +429,10 @@ def _build_html(
     matches_btn = (
         '<button id="matches-only" class="hdr-btn">hide maps &lt;10 matches</button>'
         if key_has_matches else ''
+    )
+    traffic_btn = (
+        '<button id="traffic-all" class="hdr-btn">show position data</button>'
+        if traffic_svg_by_key else ''
     )
 
     return f'''<!DOCTYPE html>
@@ -377,6 +493,7 @@ textarea.note-input.has-note {{ background: #fffef0; border-color: #f0c040; }}
     <a style="color:#7ec8e3" href="/overrides.json">overrides.json</a>
     &nbsp;|&nbsp;
     {matches_btn}
+    {traffic_btn}
     <button id="skel-all" class="hdr-btn">show skeletons</button>
     &nbsp;|&nbsp;
     <div class="smooth-ctrl">
@@ -461,6 +578,19 @@ document.querySelectorAll('textarea.note-input').forEach(ta => {{
     }}
   }});
 }});
+
+// ── position data (traffic heatmap) toggle ───────────────────────────────────
+const trafficBtn = document.getElementById('traffic-all');
+if (trafficBtn) {{
+  trafficBtn.addEventListener('click', function() {{
+    const visible = !this.classList.contains('active');
+    this.classList.toggle('active', visible);
+    this.textContent = visible ? 'hide position data' : 'show position data';
+    document.querySelectorAll('.traffic-overlay').forEach(g => {{
+      g.style.display = visible ? '' : 'none';
+    }});
+  }});
+}}
 
 // ── block-raster skeleton toggle ──────────────────────────────────────────────
 function setSkelVisible(visible) {{
@@ -657,6 +787,7 @@ def _build_sections(
     key_maps: dict[str, list[str]],
     all_options_html: str,
     key_has_matches: dict[str, bool],
+    traffic_svg_by_key: dict[str, str],
 ) -> str:
     """Build the per-type section HTML blocks."""
     import html as _html
@@ -683,7 +814,7 @@ def _build_sections(
             maps_for_key = key_maps.get(key, [map_slug])
             map_label = map_slug if len(maps_for_key) == 1 else f'{map_slug} +{len(maps_for_key) - 1}'
 
-            svg = _island_svg(island_dict, color, size=144)
+            svg = _island_svg(island_dict, color, size=144, traffic_svg=traffic_svg_by_key.get(key, ''))
             has_skeleton = bool(
                 (island_dict.get('skeleton') or {}).get('edge_pixels')
             )
@@ -770,6 +901,9 @@ class _ReviewHandler(BaseHTTPRequestHandler):
     # canonical_key → True if any map containing this shape has match data.
     # Empty dict when DB was unavailable (toggle hidden in that case).
     key_has_matches: dict[str, bool]
+    # canonical_key → pre-rendered SVG traffic heatmap group.
+    # Empty dict when DB was unavailable or query returned no rows.
+    traffic_svg_by_key: dict[str, str]
 
     def do_GET(self) -> None:
         if self.path in ('/', '/index.html'):
@@ -779,6 +913,7 @@ class _ReviewHandler(BaseHTTPRequestHandler):
                 override_data,
                 self.__class__.type_filter,
                 self.__class__.key_has_matches,
+                self.__class__.traffic_svg_by_key,
             )
             self._respond(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
@@ -981,6 +1116,15 @@ def run_review_server(
             if map_slug in maps_with_matches:
                 key_has_matches[key] = True
 
+    # Build traffic heatmap overlays from position_events DB (if available).
+    from ctw.common import PROJECT_ROOT
+    db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
+    traffic_svg_by_key: dict[str, str] = {}
+    if db_path.exists():
+        print('  Building traffic overlays from position data…')
+        traffic_svg_by_key = _build_traffic_overlays(entries, svg_norm, db_path)
+        print(f'  Traffic overlays built for {len(traffic_svg_by_key)} shapes.')
+
     _ReviewHandler.server_entries = entries
     _ReviewHandler.overrides_path = overrides_path
     _ReviewHandler.type_filter = type_filter
@@ -988,6 +1132,7 @@ def run_review_server(
     _ReviewHandler.island_dict_by_key = island_dict_by_key
     _ReviewHandler._blocks_cache = {}
     _ReviewHandler.key_has_matches = key_has_matches
+    _ReviewHandler.traffic_svg_by_key = traffic_svg_by_key
 
     server = HTTPServer(('localhost', port), _ReviewHandler)
     url = f'http://localhost:{port}/'
