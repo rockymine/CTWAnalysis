@@ -180,6 +180,7 @@ def _save_islands_json(
             'distance_to_center': round(island.distance_to_center, 2),
             'hole_count': len(island.holes),
             'simplified_polygon': island.simplified_polygon,
+            'smoothed_polygon': island.smoothed_polygon,
         })
 
     data = {
@@ -313,6 +314,7 @@ def _build_island_dicts(islands: list[Island]) -> list[dict[str, Any]]:
             'has_center': island.has_center,
             'team': island.team,
             'simplified_polygon': island.simplified_polygon,
+            'smoothed_polygon': island.smoothed_polygon,
         }
         for island in islands
     ]
@@ -573,6 +575,7 @@ def run_symmetry(
                 'area': isl.area,
                 'center': list(isl.center),
                 'simplified_polygon': isl.simplified_polygon,
+                'smoothed_polygon': isl.smoothed_polygon,
             }
             for isl in geometry.islands
         ]
@@ -843,6 +846,7 @@ def _rerun_symmetry_without_observer(
             'area': isl.area,
             'center': list(isl.center),
             'simplified_polygon': isl.simplified_polygon,
+            'smoothed_polygon': isl.smoothed_polygon,
         }
         for isl in final_islands
         if not isl.is_observer_island

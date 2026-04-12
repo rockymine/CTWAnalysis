@@ -80,6 +80,7 @@ def build_map_context(
             'is_observer_island': island.is_observer_island,
             'hole_count': len(island.holes),
             'simplified_polygon': island.simplified_polygon,
+            'smoothed_polygon': island.smoothed_polygon,
             'canonical_key': island_canonical_key.get(island.id),
         })
 
