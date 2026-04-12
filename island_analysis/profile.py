@@ -667,8 +667,8 @@ def classify_island(features: IslandFeatures) -> str:
 
     Rule cascade
     ------------
-    1.   square      bbox_fill_ratio ≥ 0.85 AND aspect_ratio ≤ 1.3 AND convexity ≥ 0.85
-    2.   rectangle   bbox_fill_ratio ≥ 0.85 AND aspect_ratio > 1.3 AND convexity ≥ 0.85
+    1.   square      bbox_fill_ratio == 1.0 AND aspect_ratio ≤ 1.3
+    2.   rectangle   bbox_fill_ratio == 1.0 AND aspect_ratio > 1.3
     3.   donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                      (exactly one enclosed air pocket with a smooth outer ring)
     4.   circle      convexity ≥ 0.88 AND hole_count == 0 AND
@@ -695,7 +695,7 @@ def classify_island(features: IslandFeatures) -> str:
 
     Design notes
     ------------
-    - square/rectangle: fill ≥ 0.85 selects only truly rectangular platforms
+    - square/rectangle: fill == 1.0 requires a literally perfect rectangle (no missing corners)
     - donut: hole_count == 1 (not ≥ 1) — a genuine ring has exactly one interior void.
       hole_count > 1 indicates structural complexity (e.g. a ring whose blocks don't
       fully close, producing multiple separate air pockets) rather than a simple donut.
@@ -725,16 +725,14 @@ def classify_island(features: IslandFeatures) -> str:
     - fork vs rugged: fork has deep concave gaps (convexity < 0.70); rugged has many
       surface irregularities without deep concavity
     """
-    # Rule 1: square — tight rectangular fill, near-square
-    if (features.bbox_fill_ratio >= 0.85
-            and features.aspect_ratio <= 1.3
-            and features.convexity >= 0.85):
+    # Rule 1: square — perfect rectangular fill, near-square
+    if (features.bbox_fill_ratio == 1.0
+            and features.aspect_ratio <= 1.3):
         return 'square'
 
-    # Rule 2: rectangle — tight rectangular fill, elongated
-    if (features.bbox_fill_ratio >= 0.85
-            and features.aspect_ratio > 1.3
-            and features.convexity >= 0.85):
+    # Rule 2: rectangle — perfect rectangular fill, elongated
+    if (features.bbox_fill_ratio == 1.0
+            and features.aspect_ratio > 1.3):
         return 'rectangle'
 
     # Rule 3: donut — ring/annular shape with exactly one enclosed interior air pocket.
@@ -1514,7 +1512,7 @@ def plot_feature_distributions(
 
     # Add threshold lines corresponding to classification rules
     axes[0].axvline(0.85, color='#2980b9', linestyle='--', linewidth=1.0,
-                    alpha=0.7, label='square/rect (fill≥0.85)')
+                    alpha=0.7, label='square/rect (fill=1.0)')
     axes[1].axvline(1.2, color='#c0392b', linestyle='--', linewidth=1.0,
                     alpha=0.7, label='rugged (rugosity≥1.2)')
     axes[2].axvline(2.5, color='#16a085', linestyle='--', linewidth=1.0,
