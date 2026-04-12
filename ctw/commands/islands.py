@@ -374,17 +374,56 @@ def handle_profile_review(args) -> None:
         with open(context_path, encoding='utf-8') as fh:
             map_context = _json.load(fh)
         island_by_id = {isl['id']: isl for isl in map_context.get('islands', [])}
+
+        # Load skeleton data from map_graph.json so the review UI can overlay it.
+        skel_by_island_id: dict[int, dict] = {}
+        graph_path = map_dir / 'map_graph.json'
+        if graph_path.exists():
+            with open(graph_path, encoding='utf-8') as fh:
+                map_graph = _json.load(fh)
+            for graph_island in map_graph.get('islands', []):
+                iid = graph_island.get('island_id')
+                skel = graph_island.get('skeleton')
+                if iid is not None and skel:
+                    skel_by_island_id[iid] = skel
+
         for profile in profiles:
             rep_id = profile.raw_island_ids[0] if profile.raw_island_ids else None
             if rep_id is None or rep_id not in island_by_id:
                 continue
-            entries.append((map_dir.name, profile, island_by_id[rep_id]))
+            island_dict = dict(island_by_id[rep_id])
+            if rep_id in skel_by_island_id:
+                island_dict['skeleton'] = skel_by_island_id[rep_id]
+            entries.append((map_dir.name, profile, island_dict))
 
     if not entries:
         print('No island profiles found. Run "ctw islands profile" first.')
         return
 
+    # Query the DB for map slugs that have at least MIN_MATCHES recorded matches.
+    # Graceful fallback: if the DB is absent or the query fails, the toggle
+    # simply won't appear in the review page.
+    MIN_MATCHES = 10
+    maps_with_matches: set[str] = set()
+    try:
+        import duckdb
+        from ctw.common import PROJECT_ROOT
+        db_path = PROJECT_ROOT / 'match_analysis' / 'metadata.db'
+        if db_path.exists():
+            con = duckdb.connect(str(db_path), read_only=True)
+            rows = con.execute(
+                'SELECT m.map_slug FROM maps m '
+                'JOIN matches mt ON m.map_id = mt.map_id '
+                'GROUP BY m.map_slug '
+                f'HAVING COUNT(*) >= {MIN_MATCHES}'
+            ).fetchall()
+            con.close()
+            maps_with_matches = {row[0] for row in rows}
+            print(f'  Maps with ≥{MIN_MATCHES} matches: {len(maps_with_matches)}')
+    except Exception as exc:
+        print(f'  Warning: could not query match DB ({exc}); match filter unavailable')
+
     overrides_path = output_root / '_debug' / 'island_profile_overrides.json'
     island_type_filter = getattr(args, 'island_type', None)
     port = getattr(args, 'port', 7890)
-    run_review_server(entries, overrides_path, island_type_filter, port)
+    run_review_server(entries, overrides_path, island_type_filter, port, maps_with_matches)
