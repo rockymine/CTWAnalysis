@@ -49,6 +49,7 @@ _TYPE_COLORS: dict[str, str] = {
     'shard':     '#f39c12',   # amber
     'L_shape':   '#8e44ad',   # purple
     'Z_shape':   '#e67e22',   # dark orange
+    'T_shape':   '#f1c40f',   # yellow
     'plus':      '#3498db',   # light blue
     'fork':      '#d35400',   # orange
     'rugged':    '#c0392b',   # dark red / coral
@@ -68,12 +69,27 @@ _TYPE_SORT_METRIC: dict[str, tuple[str, bool]] = {
     'shard':     ('convexity',       True),   # most convex / sharpest points first
     'L_shape':   ('convexity',       False),  # most concave (most L-like) first
     'Z_shape':   ('aspect_ratio',    True),   # most elongated first
+    'T_shape':   ('convexity',       False),  # most concave (most T-like) first
     'plus':      ('convexity',       False),  # most arm-like (most concave) first
     'fork':      ('convexity',       False),  # most concave (most branched) first
     'rugged':    ('rugosity',        True),   # highest perimeter ratio first
     'linear':    ('aspect_ratio',    True),   # most elongated first
     'blob':      ('compactness',     True),   # most compact blobs first
 }
+
+# Corner-pair sets used in Rules 4.6 / 4.7.
+# Diagonal pairs → Z_shape (TL+BR or TR+BL)
+# Adjacent pairs → T_shape (two corners sharing one bbox edge)
+_DIAGONAL_CORNER_PAIRS: tuple[frozenset[str], ...] = (
+    frozenset({'TL', 'BR'}),
+    frozenset({'TR', 'BL'}),
+)
+_ADJACENT_CORNER_PAIRS: tuple[frozenset[str], ...] = (
+    frozenset({'TL', 'TR'}),  # both on the top edge
+    frozenset({'BL', 'BR'}),  # both on the bottom edge
+    frozenset({'TL', 'BL'}),  # both on the left edge
+    frozenset({'TR', 'BR'}),  # both on the right edge
+)
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +135,12 @@ class IslandFeatures:
     skeleton_topology: Optional[str]   # 'line' | 'tree' | 'mesh' | 'none' | None
     skeleton_path_bends: Optional[int] # direction changes in line-topology path (L=1, Z=2+, straight=0)
     # Tier A extended — bounding-box negative space
-    bbox_cutout_count: Optional[int]      # qualifying rectangular corner cutouts (L=1, Z=2)
+    bbox_cutout_count: Optional[int]      # qualifying rectangular corner cutouts (L=1, Z=2, T=2)
     bbox_cutout_min_fill: Optional[float] # min fill ratio among those cutouts
-    bbox_cutout_coverage: Optional[float] # corner area / total negative space (1.0 = clean L/Z)
+    bbox_cutout_coverage: Optional[float] # corner area / total negative space (1.0 = clean L/Z/T)
     # Tier A extended — point symmetry
     has_point_symmetry: bool = False      # block set maps to itself under 180° rotation about bbox centre
+    bbox_cutout_corners: Optional[frozenset[str]] = None  # which corners cut: subset of {'TL','TR','BL','BR'}
 
 
 @dataclass
@@ -407,7 +424,7 @@ def _bbox_corner_cutout_count(
     exterior: list[list[float]],
     holes: list[list[list[float]]],
     island_area: float,
-) -> tuple[int, float]:
+) -> tuple[int, float, float, frozenset[str]]:
     """Count approximately-rectangular corner cutouts in the bounding box.
 
     Computes (bounding_box − island_polygon) using Shapely and analyses each
@@ -415,42 +432,49 @@ def _bbox_corner_cutout_count(
     when it:
       (a) touches exactly two *adjacent* (non-opposite) edges of the global
           bounding box, and
-      (b) has a bbox_fill_ratio ≥ 0.65 — i.e. is itself approximately
-          rectangular.
+      (b) has a bbox_fill_ratio ≥ 0.95 — i.e. is itself a near-perfect
+          rectangle (strict: only axis-aligned rectangular cuts qualify).
 
     Corner piece fill values for reference shapes:
-      perfect rectangle cut  ≈ 1.00
-      noisy rectangle cut    ≈ 0.80 – 0.95
-      L with rounded corner  ≈ 0.70
-      circle-corner sliver   ≈ 0.21   (excluded by threshold)
+      perfect rectangle cut  ≈ 1.00   ← only these qualify (threshold 0.95)
+      noisy rectangle cut    ≈ 0.80 – 0.95  (excluded)
+      L with rounded corner  ≈ 0.70   (excluded)
+      circle-corner sliver   ≈ 0.21   (excluded)
 
-    coverage_ratio is the key discriminator between genuine L/Z shapes and
+    coverage_ratio is the key discriminator between genuine L/Z/T shapes and
     other shapes (sickles, boomerangs) that happen to leave one empty corner:
-      clean L/Z: all negative space sits in the corner(s) → coverage ≈ 0.9–1.0
-      sickle:    corner is only part of the negative space  → coverage ≈ 0.3–0.6
+      clean L/Z/T: all negative space sits in the corner(s) → coverage ≈ 0.9–1.0
+      sickle:      corner is only part of the negative space  → coverage ≈ 0.3–0.6
+
+    Corner labels (geographic-style, with z increasing downward / southward):
+      'TL' — touches left edge  (min_x) AND top edge    (min_z)
+      'TR' — touches right edge (max_x) AND top edge    (min_z)
+      'BL' — touches left edge  (min_x) AND bottom edge (max_z)
+      'BR' — touches right edge (max_x) AND bottom edge (max_z)
 
     Returns
     -------
-    (count, min_fill, coverage_ratio) where:
+    (count, min_fill, coverage_ratio, corners) where:
       count          : number of qualifying corner cutout regions
       min_fill       : minimum fill ratio among those regions (1.0 if count == 0)
       coverage_ratio : sum(qualifying corner areas) / total negative space area
+      corners        : frozenset of corner labels for qualifying cutouts
     """
     try:
         from shapely.geometry import Polygon as ShapelyPolygon
         from shapely.geometry import box as shapely_box
     except ImportError:
-        return 0, 1.0, 0.0
+        return 0, 1.0, 0.0, frozenset()
 
     if len(exterior) < 3:
-        return 0, 1.0, 0.0
+        return 0, 1.0, 0.0, frozenset()
 
     pts = np.asarray(exterior, dtype=float)
     min_x, min_z = pts.min(axis=0)
     max_x, max_z = pts.max(axis=0)
 
     if (max_x - min_x) < 1 or (max_z - min_z) < 1:
-        return 0, 1.0, 0.0
+        return 0, 1.0, 0.0, frozenset()
 
     bbox_geom = shapely_box(min_x, min_z, max_x, max_z)
     hole_rings = [ring for ring in holes if len(ring) >= 3]
@@ -460,15 +484,18 @@ def _bbox_corner_cutout_count(
             island_poly = island_poly.buffer(0)
         negative = bbox_geom.difference(island_poly)
     except Exception:
-        return 0, 1.0, 0.0
+        return 0, 1.0, 0.0, frozenset()
 
     if negative.is_empty:
-        return 0, 1.0, 0.0
+        return 0, 1.0, 0.0, frozenset()
 
     components = list(negative.geoms) if hasattr(negative, 'geoms') else [negative]
 
-    # Ignore slivers smaller than 2 % of the island area
-    min_component_area = max(1.0, island_area * 0.02)
+    # Minimum component area: 1 block (1.0 world units²).
+    # The comp_fill >= 0.95 gate already rejects non-rectangular noise; no
+    # percentage-based threshold is needed — even a single-block corner cutout
+    # is a legitimate signal.
+    min_component_area = 1.0
     # Edge-touch tolerance: 2 % of the shorter bbox dimension
     eps = max(0.5, min(max_x - min_x, max_z - min_z) * 0.02)
 
@@ -476,6 +503,7 @@ def _bbox_corner_cutout_count(
     min_fill = 1.0
     total_corner_area = 0.0
     total_negative_area = float(negative.area)
+    corner_labels: list[str] = []
 
     for comp in components:
         if comp.area < min_component_area:
@@ -491,26 +519,35 @@ def _bbox_corner_cutout_count(
         # Which global bbox edges does this component reach?
         touches_left   = bounds[0] <= min_x + eps
         touches_right  = bounds[2] >= max_x - eps
-        touches_bottom = bounds[1] <= min_z + eps
-        touches_top    = bounds[3] >= max_z - eps
+        touches_top    = bounds[1] <= min_z + eps   # min_z = "top" (z increases downward)
+        touches_bottom = bounds[3] >= max_z - eps   # max_z = "bottom"
 
-        edge_count = sum([touches_left, touches_right, touches_bottom, touches_top])
-        is_opposite = (touches_left and touches_right) or (touches_bottom and touches_top)
+        edge_count = sum([touches_left, touches_right, touches_top, touches_bottom])
+        is_opposite = (touches_left and touches_right) or (touches_top and touches_bottom)
 
         # Corner: exactly 2 adjacent (non-opposite) edges
         is_corner = (edge_count == 2) and not is_opposite
 
-        if is_corner and comp_fill >= 0.68:
+        if is_corner and comp_fill >= 0.95:
             corner_count += 1
             min_fill = min(min_fill, comp_fill)
             total_corner_area += float(comp.area)
+            # Determine which corner this cutout occupies
+            if touches_left and touches_top:
+                corner_labels.append('TL')
+            elif touches_right and touches_top:
+                corner_labels.append('TR')
+            elif touches_left and touches_bottom:
+                corner_labels.append('BL')
+            else:  # touches_right and touches_bottom
+                corner_labels.append('BR')
 
     if total_negative_area > 1e-6:
         coverage_ratio = total_corner_area / total_negative_area
     else:
         coverage_ratio = 0.0
 
-    return corner_count, min_fill, coverage_ratio
+    return corner_count, min_fill, coverage_ratio, frozenset(corner_labels)
 
 
 # ---------------------------------------------------------------------------
@@ -670,9 +707,9 @@ def extract_island_features(
             if skel_topology == 'line' and edge_pixels:
                 skel_path_bends = _skeleton_path_bends(edge_pixels)
 
-    # Bounding-box corner cutout analysis (for L_shape / Z_shape detection)
+    # Bounding-box corner cutout analysis (for L_shape / Z_shape / T_shape detection)
     holes = poly.get('holes') or []
-    cutout_count, cutout_min_fill, cutout_coverage = _bbox_corner_cutout_count(
+    cutout_count, cutout_min_fill, cutout_coverage, cutout_corners = _bbox_corner_cutout_count(
         exterior, holes, float(area)
     )
 
@@ -705,6 +742,7 @@ def extract_island_features(
         bbox_cutout_min_fill=round(cutout_min_fill, 4) if cutout_count > 0 else None,
         bbox_cutout_coverage=round(cutout_coverage, 4) if cutout_count > 0 else None,
         has_point_symmetry=has_point_symmetry,
+        bbox_cutout_corners=cutout_corners if cutout_count > 0 else None,
     )
 
 
@@ -730,23 +768,21 @@ def classify_island(features: IslandFeatures) -> str:
                      (aspect ≤ 1.2 AND circle_fit_residual < 0.12
                       OR aspect > 1.2 AND ellipse_residual < 0.10 AND bbox_fill_ratio ≥ 0.72)
                      (circle or ellipse: smooth solid shape with 180° rotational symmetry)
-    4.5  L_shape     bbox_cutout_count == 1 AND bbox_cutout_coverage >= 0.70
-                     (one rectangular corner cutout accounting for ≥ 70 % of negative space)
-    4.6  Z_shape     bbox_cutout_count == 2 AND bbox_cutout_coverage >= 0.70
-                     (two rectangular corner cutouts, together ≥ 70 % of negative space)
+    4.5  L_shape     bbox_cutout_count == 1 AND coverage >= 0.90
+                     (cutout fill ≥ 0.95: only near-perfect rectangular corner cuts qualify)
+    4.6  Z_shape     bbox_cutout_count == 2 AND coverage >= 0.90 AND diagonal corners (TL+BR or TR+BL)
+                     (cutout fill ≥ 0.95 per corner; single-block corners count)
+    4.7  T_shape     bbox_cutout_count == 2 AND coverage >= 0.90 AND adjacent corners
+                     (TL+TR, BL+BR, TL+BL, or TR+BR; cutout fill ≥ 0.95 per corner)
     5.   shard       topo == 'line' AND convexity ≥ 0.87 AND NOT round
                      (smooth two-pointed diamond/lens/tear — poor elliptic fit or low fill)
     6.   plus        topo == 'tree' AND junctions == 1 AND endpoints ≥ 3
                      (T / Y / + / star: one central branch point, ≥ 3 arms)
     7.   fork        junctions ≥ 2 AND convexity < 0.70
                      (complex multi-branching, deep concavity)
-    8.   L_shape     topo == 'line' AND path_bends == 1
-                     (fallback: line skeleton with one ~90° direction change)
-    9.   Z_shape     topo == 'line' AND path_bends ≥ 2
-                     (fallback: line skeleton with two+ direction changes)
-    10.  rugged      rugosity ≥ 1.2
-    11.  linear      aspect_ratio ≥ 2.5
-    12.  blob        (default)
+    8.   rugged      rugosity ≥ 1.2
+    9.   linear      aspect_ratio ≥ 2.5
+    10.  blob        (default)
 
     Design notes
     ------------
@@ -775,8 +811,8 @@ def classify_island(features: IslandFeatures) -> str:
       Threshold 0.72 sits in the observed gap between ellipses (≥ 0.77) and shards.
     - plus vs fork: plus has exactly one junction (the centre) with ≥ 3 endpoints;
       fork has two or more junctions indicating a more complex branching network
-    - L_shape / Z_shape require path_bends, which is only computed for topo='line';
-      shapes without skeleton data degrade to rugged/linear/blob
+    - L_shape / Z_shape / T_shape are exclusively classified by the corner-cutout geometry
+      rules (4.5 / 4.6 / 4.7); skeleton path_bends fallbacks are intentionally removed
     - fork vs rugged: fork has deep concave gaps (convexity < 0.70); rugged has many
       surface irregularities without deep concavity
     """
@@ -825,21 +861,28 @@ def classify_island(features: IslandFeatures) -> str:
         if is_round:
             return 'circle'
 
-    # Rule 4.5: L_shape via bbox-cutout — a rectangle with exactly one rectangular
-    # corner removed.  Fires before the shard rule so that angular L shapes are not
-    # intercepted by the line-topology shard gate.
-    # coverage_ratio >= 0.70: the qualifying corner(s) must account for ≥ 70 % of
+    # Rule 4.5: L_shape via bbox-cutout — a rectangle with exactly one perfect
+    # rectangular corner removed (cutout fill ≥ 0.95 enforced in detection).
+    # coverage_ratio >= 0.70: the qualifying corner must account for ≥ 70 % of
     # the total negative space; this rejects sickles/boomerangs whose empty corner
     # represents only a fraction of their bounding-box gap.
     if (features.bbox_cutout_count == 1
-            and (features.bbox_cutout_coverage or 0.0) >= 0.70):
+            and (features.bbox_cutout_coverage or 0.0) >= 0.90):
         return 'L_shape'
 
-    # Rule 4.6: Z_shape via bbox-cutout — a rectangle with two rectangular corner
-    # cuts on opposite sides (Z / S staircase form).
+    # Rule 4.6: Z_shape via bbox-cutout — a rectangle with two perfect rectangular
+    # corner cuts at *diagonally opposite* corners (TL+BR or TR+BL).
     if (features.bbox_cutout_count == 2
-            and (features.bbox_cutout_coverage or 0.0) >= 0.70):
+            and (features.bbox_cutout_coverage or 0.0) >= 0.90
+            and features.bbox_cutout_corners in (_DIAGONAL_CORNER_PAIRS)):
         return 'Z_shape'
+
+    # Rule 4.7: T_shape via bbox-cutout — a rectangle with two perfect rectangular
+    # corner cuts at *adjacent* corners sharing one side (TL+TR, BL+BR, TL+BL, TR+BR).
+    if (features.bbox_cutout_count == 2
+            and (features.bbox_cutout_coverage or 0.0) >= 0.90
+            and features.bbox_cutout_corners in (_ADJACENT_CORNER_PAIRS)):
+        return 'T_shape'
 
     # Rule 5: shard — smooth two-pointed shape (diamond, rhombus, lens, tear).
     # Requires line topology (two skeleton endpoints, no junctions), convexity ≥ 0.87,
@@ -869,26 +912,19 @@ def classify_island(features: IslandFeatures) -> str:
         if junction_count >= 2 and features.convexity < 0.70:
             return 'fork'
 
-    # Rules 8 & 9: bent-path shapes — require line topology with path_bends
-    if (features.skeleton_topology == 'line'
-            and features.skeleton_path_bends is not None):
-        # Rule 8: L_shape — single 90°-ish bend in an otherwise straight path
-        if features.skeleton_path_bends == 1:
-            return 'L_shape'
+    # Rules 8 & 9 (path_bends fallbacks for L/Z) are intentionally removed.
+    # L_shape, Z_shape, and T_shape are now exclusively classified by the
+    # strict corner-cutout geometry rules (4.5 / 4.6 / 4.7) above.
 
-        # Rule 9: Z_shape — two or more direction changes (Z, S, staircase)
-        if features.skeleton_path_bends >= 2:
-            return 'Z_shape'
-
-    # Rule 10: rugged — polygon perimeter noticeably larger than bbox perimeter.
+    # Rule 8: rugged — polygon perimeter noticeably larger than bbox perimeter.
     if features.rugosity >= 1.2:
         return 'rugged'
 
-    # Rule 11: linear — elongated corridor
+    # Rule 9: linear — elongated corridor
     if features.aspect_ratio >= 2.5:
         return 'linear'
 
-    # Rule 12: blob (default)
+    # Rule 10: blob (default)
     return 'blob'
 
 
@@ -1137,6 +1173,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'bbox_cutout_min_fill': feat.bbox_cutout_min_fill,
                 'bbox_cutout_coverage': feat.bbox_cutout_coverage,
                 'has_point_symmetry': feat.has_point_symmetry,
+                'bbox_cutout_corners': sorted(feat.bbox_cutout_corners) if feat.bbox_cutout_corners else None,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -1186,6 +1223,10 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 bbox_cutout_min_fill=feat_d.get('bbox_cutout_min_fill'),
                 bbox_cutout_coverage=feat_d.get('bbox_cutout_coverage'),
                 has_point_symmetry=feat_d.get('has_point_symmetry', False),
+                bbox_cutout_corners=(
+                    frozenset(feat_d['bbox_cutout_corners'])
+                    if feat_d.get('bbox_cutout_corners') else None
+                ),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),
