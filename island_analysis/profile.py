@@ -140,8 +140,9 @@ class IslandFeatures:
     bbox_cutout_coverage: Optional[float] # corner area / total negative space (1.0 = clean L/Z/T)
     # Tier A extended — point symmetry
     has_point_symmetry: bool = False      # block set maps to itself under 180° rotation about bbox centre
-    bbox_cutout_corners: Optional[frozenset[str]] = None  # which corners cut: subset of {'TL','TR','BL','BR'}
-    skeleton_min_arm_angle: Optional[float] = None        # min angular gap (°) between arms around single junction
+    bbox_cutout_corners: Optional[frozenset[str]] = None       # which corners cut: subset of {'TL','TR','BL','BR'}
+    bbox_cutout_min_side_coverage: Optional[float] = None      # min fraction of any bbox side covered between its two corner cuts
+    skeleton_min_arm_angle: Optional[float] = None             # min angular gap (°) between arms around single junction
 
 
 @dataclass
@@ -425,7 +426,7 @@ def _bbox_corner_cutout_count(
     exterior: list[list[float]],
     holes: list[list[list[float]]],
     island_area: float,
-) -> tuple[int, float, float, frozenset[str]]:
+) -> tuple[int, float, float, frozenset[str], float]:
     """Count approximately-rectangular corner cutouts in the bounding box.
 
     Computes (bounding_box − island_polygon) using Shapely and analyses each
@@ -455,27 +456,32 @@ def _bbox_corner_cutout_count(
 
     Returns
     -------
-    (count, min_fill, coverage_ratio, corners) where:
-      count          : number of qualifying corner cutout regions
-      min_fill       : minimum fill ratio among those regions (1.0 if count == 0)
-      coverage_ratio : sum(qualifying corner areas) / total negative space area
-      corners        : frozenset of corner labels for qualifying cutouts
+    (count, min_fill, coverage_ratio, corners, min_side_coverage) where:
+      count             : number of qualifying corner cutout regions
+      min_fill          : minimum fill ratio among those regions (1.0 if count == 0)
+      coverage_ratio    : sum(qualifying corner areas) / total negative space area
+      corners           : frozenset of corner labels for qualifying cutouts
+      min_side_coverage : minimum fraction of any bbox side covered by the island
+                          between its two adjacent corner cuts (only meaningful when
+                          all 4 corners are present; 0.0 otherwise).  Used to
+                          distinguish chamfered rectangles (high side coverage, small
+                          cuts) from plus/cross shapes (low side coverage, large cuts).
     """
     try:
         from shapely.geometry import Polygon as ShapelyPolygon
         from shapely.geometry import box as shapely_box
     except ImportError:
-        return 0, 1.0, 0.0, frozenset()
+        return 0, 1.0, 0.0, frozenset(), 0.0
 
     if len(exterior) < 3:
-        return 0, 1.0, 0.0, frozenset()
+        return 0, 1.0, 0.0, frozenset(), 0.0
 
     pts = np.asarray(exterior, dtype=float)
     min_x, min_z = pts.min(axis=0)
     max_x, max_z = pts.max(axis=0)
 
     if (max_x - min_x) < 1 or (max_z - min_z) < 1:
-        return 0, 1.0, 0.0, frozenset()
+        return 0, 1.0, 0.0, frozenset(), 0.0
 
     bbox_geom = shapely_box(min_x, min_z, max_x, max_z)
     hole_rings = [ring for ring in holes if len(ring) >= 3]
@@ -485,10 +491,10 @@ def _bbox_corner_cutout_count(
             island_poly = island_poly.buffer(0)
         negative = bbox_geom.difference(island_poly)
     except Exception:
-        return 0, 1.0, 0.0, frozenset()
+        return 0, 1.0, 0.0, frozenset(), 0.0
 
     if negative.is_empty:
-        return 0, 1.0, 0.0, frozenset()
+        return 0, 1.0, 0.0, frozenset(), 0.0
 
     components = list(negative.geoms) if hasattr(negative, 'geoms') else [negative]
 
@@ -505,6 +511,9 @@ def _bbox_corner_cutout_count(
     total_corner_area = 0.0
     total_negative_area = float(negative.area)
     corner_labels: list[str] = []
+    # Store the (minx, minz, maxx, maxz) bounds of each qualifying corner cut,
+    # keyed by corner label — used to compute per-side coverage below.
+    corner_cut_bounds: dict[str, tuple[float, float, float, float]] = {}
 
     for comp in components:
         if comp.area < min_component_area:
@@ -535,20 +544,40 @@ def _bbox_corner_cutout_count(
             total_corner_area += float(comp.area)
             # Determine which corner this cutout occupies
             if touches_left and touches_top:
-                corner_labels.append('TL')
+                label = 'TL'
             elif touches_right and touches_top:
-                corner_labels.append('TR')
+                label = 'TR'
             elif touches_left and touches_bottom:
-                corner_labels.append('BL')
+                label = 'BL'
             else:  # touches_right and touches_bottom
-                corner_labels.append('BR')
+                label = 'BR'
+            corner_labels.append(label)
+            corner_cut_bounds[label] = bounds
 
     if total_negative_area > 1e-6:
         coverage_ratio = total_corner_area / total_negative_area
     else:
         coverage_ratio = 0.0
 
-    return corner_count, min_fill, coverage_ratio, frozenset(corner_labels)
+    # Compute minimum side coverage — only defined when all 4 corners are present.
+    # For each bbox side, side_coverage = 1 - (cut_a_extent + cut_b_extent) / side_length,
+    # where cut_a_extent and cut_b_extent are the widths of the two corner cuts that
+    # adjoin that side, measured along the side's axis.
+    min_side_coverage = 0.0
+    all_four = frozenset(corner_labels) == frozenset({'TL', 'TR', 'BL', 'BR'})
+    if all_four:
+        bbox_w = max_x - min_x
+        bbox_h = max_z - min_z
+        tl, tr, bl, br = (corner_cut_bounds[c] for c in ('TL', 'TR', 'BL', 'BR'))
+        # Each bound is (minx, minz, maxx, maxz).
+        # Cut width along x-axis: maxx − minx; cut height along z-axis: maxz − minz.
+        top_cov    = 1.0 - ((tl[2] - tl[0]) + (tr[2] - tr[0])) / bbox_w
+        bottom_cov = 1.0 - ((bl[2] - bl[0]) + (br[2] - br[0])) / bbox_w
+        left_cov   = 1.0 - ((tl[3] - tl[1]) + (bl[3] - bl[1])) / bbox_h
+        right_cov  = 1.0 - ((tr[3] - tr[1]) + (br[3] - br[1])) / bbox_h
+        min_side_coverage = round(min(top_cov, bottom_cov, left_cov, right_cov), 4)
+
+    return corner_count, min_fill, coverage_ratio, frozenset(corner_labels), min_side_coverage
 
 
 # ---------------------------------------------------------------------------
@@ -743,8 +772,8 @@ def extract_island_features(
 
     # Bounding-box corner cutout analysis (for L_shape / Z_shape / T_shape detection)
     holes = poly.get('holes') or []
-    cutout_count, cutout_min_fill, cutout_coverage, cutout_corners = _bbox_corner_cutout_count(
-        exterior, holes, float(area)
+    cutout_count, cutout_min_fill, cutout_coverage, cutout_corners, cutout_min_side_cov = (
+        _bbox_corner_cutout_count(exterior, holes, float(area))
     )
 
     # Point-symmetry check (for circle / ellipse gate)
@@ -777,6 +806,7 @@ def extract_island_features(
         bbox_cutout_coverage=round(cutout_coverage, 4) if cutout_count > 0 else None,
         has_point_symmetry=has_point_symmetry,
         bbox_cutout_corners=cutout_corners if cutout_count > 0 else None,
+        bbox_cutout_min_side_coverage=cutout_min_side_cov if cutout_count > 0 else None,
         skeleton_min_arm_angle=skel_min_arm_angle,
     )
 
@@ -795,8 +825,11 @@ def classify_island(features: IslandFeatures) -> str:
 
     Rule cascade
     ------------
-    1.   square      bbox_fill_ratio == 1.0 AND aspect_ratio ≤ 1.3
-    2.   rectangle   bbox_fill_ratio == 1.0 AND aspect_ratio > 1.3
+    1.   square      bbox_fill_ratio == 1.0 AND bbox_width == bbox_height  (all sides equal)
+    2.   rectangle   bbox_fill_ratio == 1.0 (any aspect), OR chamfered, OR near-perfect
+                     chamfered = cutout_count==4 AND all corners AND coverage >= 0.99
+                                 AND min_side_coverage >= 0.60
+                     near-perfect = fill >= 0.95 AND convexity >= 0.95 AND hole_count == 0
     3.   donut       hole_count == 1 AND convexity ≥ 0.92 AND rugosity ≤ 1.1
                      (exactly one enclosed air pocket with a smooth outer ring)
     4.   circle      convexity ≥ 0.88 AND hole_count == 0 AND has_point_symmetry AND
@@ -821,7 +854,10 @@ def classify_island(features: IslandFeatures) -> str:
 
     Design notes
     ------------
-    - square/rectangle: fill == 1.0 requires a literally perfect rectangle (no missing corners)
+    - square: fill == 1.0 AND bbox_width == bbox_height — both conditions are exact equality;
+      a 10×11 island (AR=1.1) is a rectangle, not a square.
+    - rectangle: fill == 1.0 covers any aspect ratio; chamfered and near-perfect (fill≥0.95,
+      convexity≥0.95) variants are also matched before the circle rule fires.
     - donut: hole_count == 1 (not ≥ 1) — a genuine ring has exactly one interior void.
       hole_count > 1 indicates structural complexity (e.g. a ring whose blocks don't
       fully close, producing multiple separate air pockets) rather than a simple donut.
@@ -851,14 +887,44 @@ def classify_island(features: IslandFeatures) -> str:
     - fork vs rugged: fork has deep concave gaps (convexity < 0.70); rugged has many
       surface irregularities without deep concavity
     """
-    # Rule 1: square — perfect rectangular fill, near-square
+    # Rule 1: square — strictly perfect rectangular fill, all four sides equal length.
+    # Uses exact dimension equality rather than an aspect-ratio threshold so that
+    # e.g. a 10×11 island (AR=1.1) is correctly called a rectangle, not a square.
     if (features.bbox_fill_ratio == 1.0
-            and features.aspect_ratio <= 1.3):
+            and features.bbox_width == features.bbox_height):
         return 'square'
 
-    # Rule 2: rectangle — perfect rectangular fill, elongated
-    if (features.bbox_fill_ratio == 1.0
-            and features.aspect_ratio > 1.3):
+    # Rule 2: rectangle — perfect rectangular fill (any aspect ratio), or any
+    # chamfered shape (all 4 corners clipped with near-perfect rectangular cuts).
+    # Chamfered condition: all 4 corners cut, coverage >= 0.99 (corner cuts account
+    # for essentially all negative space), and min_side_coverage >= 0.60 (each side of
+    # the bbox must be at least 60 % flush with the island — rejects plus/cross shapes
+    # where the corner cuts are large and the sides are mostly empty).
+    # Chamfered shapes always classify as rectangle regardless of aspect ratio — a
+    # clipped corner disqualifies a shape from being a perfect square.
+    _is_chamfered_rect = (
+        features.bbox_cutout_count == 4
+        and features.bbox_cutout_corners == frozenset({'TL', 'TR', 'BL', 'BR'})
+        and (features.bbox_cutout_coverage or 0.0) >= 0.99
+        and (features.bbox_cutout_min_side_coverage or 0.0) >= 0.60
+    )
+    if _is_chamfered_rect:
+        return 'rectangle'
+    if features.bbox_fill_ratio == 1.0:
+        return 'rectangle'
+
+    # Rule 2.5: near-perfect rectangle — very high fill (≥ 0.95) with a smooth,
+    # convex outline (convexity ≥ 0.95) and no holes.  Catches WorldEdit-rounded
+    # rectangles and other near-solid rectangular shapes that would otherwise
+    # fall through to the circle rule despite being clearly non-circular.
+    # Excluded when any corner cutout is detected — those shapes belong to
+    # Rules 4.5/4.6/4.7 (L/Z/T) instead.
+    if (features.bbox_fill_ratio >= 0.95
+            and features.convexity >= 0.95
+            and features.hole_count == 0
+            and not features.bbox_cutout_count):
+        if features.bbox_width == features.bbox_height:
+            return 'square'
         return 'rectangle'
 
     # Rule 3: donut — ring/annular shape with exactly one enclosed interior air pocket.
@@ -1212,6 +1278,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'bbox_cutout_coverage': feat.bbox_cutout_coverage,
                 'has_point_symmetry': feat.has_point_symmetry,
                 'bbox_cutout_corners': sorted(feat.bbox_cutout_corners) if feat.bbox_cutout_corners else None,
+                'bbox_cutout_min_side_coverage': feat.bbox_cutout_min_side_coverage,
                 'skeleton_min_arm_angle': feat.skeleton_min_arm_angle,
             },
             'raster_strategy': {
@@ -1263,6 +1330,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 bbox_cutout_coverage=feat_d.get('bbox_cutout_coverage'),
                 has_point_symmetry=feat_d.get('has_point_symmetry', False),
                 skeleton_min_arm_angle=feat_d.get('skeleton_min_arm_angle'),
+                bbox_cutout_min_side_coverage=feat_d.get('bbox_cutout_min_side_coverage'),
                 bbox_cutout_corners=(
                     frozenset(feat_d['bbox_cutout_corners'])
                     if feat_d.get('bbox_cutout_corners') else None

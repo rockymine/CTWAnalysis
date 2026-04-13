@@ -45,7 +45,7 @@ class TestNoCutouts(unittest.TestCase):
 
     def test_perfect_rectangle(self):
         ext = _solid_rect_exterior(0, 0, 6, 4)
-        count, min_fill, coverage, corners = _bbox_corner_cutout_count(ext, [], 24.0)
+        count, min_fill, coverage, corners, _msc = _bbox_corner_cutout_count(ext, [], 24.0)
         self.assertEqual(count, 0)
         self.assertEqual(corners, frozenset())
 
@@ -57,7 +57,7 @@ class TestNoCutouts(unittest.TestCase):
             [0, 0], [2, 0], [2, 2], [4, 2], [4, 0], [6, 0],
             [6, 4], [0, 4], [0, 0],
         ]
-        count, _mf, _cov, corners = _bbox_corner_cutout_count(exterior, [], 20.0)
+        count, _mf, _cov, corners, _msc = _bbox_corner_cutout_count(exterior, [], 20.0)
         self.assertEqual(count, 0)
         self.assertEqual(corners, frozenset())
 
@@ -71,7 +71,7 @@ class TestOneCutout(unittest.TestCase):
     """Shapes with one qualifying rectangular corner cutout."""
 
     def _assert_one_cutout(self, exterior: list, area: float, expected_corner: str) -> None:
-        count, _mf, coverage, corners = _bbox_corner_cutout_count(exterior, [], area)
+        count, _mf, coverage, corners, _msc = _bbox_corner_cutout_count(exterior, [], area)
         self.assertEqual(count, 1, f"Expected 1 cutout, got {count}")
         self.assertGreater(coverage, 0.70, f"Coverage {coverage:.2f} < 0.70")
         self.assertIn(expected_corner, corners)
@@ -126,7 +126,7 @@ class TestDiagonalCutouts(unittest.TestCase):
     """Two corner cutouts at diagonally opposite corners → Z_shape."""
 
     def _assert_diagonal(self, exterior: list, area: float, pair: frozenset) -> None:
-        count, _mf, coverage, corners = _bbox_corner_cutout_count(exterior, [], area)
+        count, _mf, coverage, corners, _msc = _bbox_corner_cutout_count(exterior, [], area)
         self.assertEqual(count, 2, f"Expected 2 cutouts, got {count}")
         self.assertGreater(coverage, 0.70)
         self.assertEqual(corners, pair)
@@ -155,7 +155,7 @@ class TestAdjacentCutouts(unittest.TestCase):
     """Two corner cutouts at adjacent corners sharing one side → T_shape."""
 
     def _assert_adjacent(self, exterior: list, area: float, pair: frozenset) -> None:
-        count, _mf, coverage, corners = _bbox_corner_cutout_count(exterior, [], area)
+        count, _mf, coverage, corners, _msc = _bbox_corner_cutout_count(exterior, [], area)
         self.assertEqual(count, 2, f"Expected 2 cutouts, got {count}")
         self.assertGreater(coverage, 0.70)
         self.assertEqual(corners, pair)
@@ -224,7 +224,7 @@ class TestFourCutouts(unittest.TestCase):
             [3, 3], [3, 4], [1, 4], [1, 3], [0, 3],
             [0, 1], [1, 1], [1, 0],
         ]
-        count, _mf, _cov, corners = _bbox_corner_cutout_count(exterior, [], 12.0)
+        count, _mf, _cov, corners, _msc = _bbox_corner_cutout_count(exterior, [], 12.0)
         self.assertEqual(count, 4)
         self.assertEqual(corners, frozenset({'TL', 'TR', 'BL', 'BR'}))
 
@@ -236,7 +236,7 @@ class TestFourCutouts(unittest.TestCase):
             [3, 3], [3, 5], [2, 5], [2, 3], [0, 3],
             [0, 2], [2, 2], [2, 0],
         ]
-        count, _mf, _cov, corners = _bbox_corner_cutout_count(exterior, [], 9.0)
+        count, _mf, _cov, corners, _msc = _bbox_corner_cutout_count(exterior, [], 9.0)
         self.assertEqual(count, 4)
         self.assertEqual(corners, frozenset({'TL', 'TR', 'BL', 'BR'}))
 
