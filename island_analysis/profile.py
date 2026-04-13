@@ -71,10 +71,20 @@ _TYPE_SORT_METRIC: dict[str, tuple[str, bool]] = {
     'Z_shape':   ('aspect_ratio',    True),   # most elongated first
     'T_shape':   ('convexity',       False),  # most concave (most T-like) first
     'plus':      ('convexity',       False),  # most arm-like (most concave) first
-    'fork':      ('convexity',       False),  # most concave (most branched) first
+    'fork':      ('skeleton_junction_count', True),  # used as fallback; see _TYPE_SORT_SCORE
     'rugged':    ('rugosity',        True),   # highest perimeter ratio first
     'linear':    ('aspect_ratio',    True),   # most elongated first
     'blob':      ('compactness',     True),   # most compact blobs first
+}
+
+# Per-type compound sort scores for types where two features should jointly
+# drive example diversity.  When present, overrides _TYPE_SORT_METRIC.
+# Each entry is a callable (IslandFeatures) → float; higher = "more characteristic".
+_TYPE_SORT_SCORE: dict[str, object] = {
+    # Fork: weight holes heavily (holes * 5) so high-hole islands appear at the
+    # top of the list, then use junction count as the tiebreaker.
+    # This ensures examples span from complex multi-hole arenas to simple 2-arm forks.
+    'fork': lambda f: (f.hole_count or 0) * 5 + (f.skeleton_junction_count or 0),
 }
 
 # Corner-pair sets used in Rules 4.6 / 4.7.
@@ -1538,6 +1548,176 @@ def plot_profile_landscape(
     plt.savefig(output_path, dpi=130, bbox_inches='tight')
     plt.close(fig)
     logger.info('Saved landscape plot: %s', output_path)
+
+
+def save_profile_examples(
+    all_profiles: list[tuple[str, IslandProfile, dict]],
+    output_dir: str,
+    n_per_type: int = 5,
+) -> list[dict]:
+    """Render a labeled mosaic strip of n_per_type diverse examples per type.
+
+    For each island type, selects up to n_per_type examples spread across the
+    primary sort metric range (first, evenly-spaced middle, last after sorting),
+    then renders them as a single PNG mosaic row (1 × n cells) with map_slug and
+    canonical_key labels — identical in style to plot_profile_mosaic.
+
+    Sort metric per type is taken from _TYPE_SORT_METRIC (e.g. fork sorts by
+    skeleton_junction_count descending so the most complex forks appear first).
+
+    Files are saved as <output_dir>/<type>.png.
+
+    Returns
+    -------
+    List of metadata dicts, one per selected island (not per file):
+        {type, n, filename, canonical_key, map_slug, features}
+    where features is a dict of the most relevant feature values.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path as MplPath
+
+    # Group by effective island type — skip types not in the defined taxonomy
+    # (e.g. 'manual' override value has no associated classifier rule).
+    by_type: dict[str, list[tuple[str, IslandProfile, dict]]] = {}
+    for map_slug, profile, island_dict in all_profiles:
+        if profile.island_type not in _ALL_TYPES:
+            continue
+        by_type.setdefault(profile.island_type, []).append((map_slug, profile, island_dict))
+
+    metadata: list[dict] = []
+
+    for island_type, entries in by_type.items():
+        if not entries:
+            continue
+
+        # Sort: use compound score function if available, else primary metric attr.
+        # None values default to 0 so missing skeleton data sorts to the bottom.
+        if island_type in _TYPE_SORT_SCORE:
+            score_fn = _TYPE_SORT_SCORE[island_type]
+            entries.sort(key=lambda entry: (-score_fn(entry[1].features), entry[0]))
+        else:
+            sort_attr, sort_desc = _TYPE_SORT_METRIC.get(island_type, ('compactness', True))
+
+            def _sort_key(entry: tuple) -> tuple:
+                val = getattr(entry[1].features, sort_attr)
+                if val is None:
+                    val = 0
+                return (-val if sort_desc else val, entry[0])
+
+            entries.sort(key=_sort_key)
+
+        # Pick n_per_type spread-out indices across the sorted range.
+        # For n_per_type >= 2, always include index 0 and 1 (top-2 most characteristic)
+        # so complex compound-sort types (fork) reliably show extreme examples.
+        # Remaining slots are evenly spread from the middle to the end.
+        n = len(entries)
+        if n == 1:
+            indices = [0]
+        elif n <= n_per_type:
+            indices = list(range(n))
+        elif n_per_type >= 2:
+            tail_count = n_per_type - 2  # how many to spread after the first two
+            if tail_count <= 0:
+                indices = [0, 1]
+            else:
+                tail_step = (n - 1 - 1) / tail_count  # spread from idx 2 to idx n-1
+                tail = [round(1 + (i + 1) * tail_step) for i in range(tail_count)]
+                indices = [0, 1] + tail
+                indices = list(dict.fromkeys(indices))  # deduplicate
+        else:
+            indices = [0]
+
+        selected = [entries[i] for i in indices]
+        cols = len(selected)
+        color = _TYPE_COLORS.get(island_type, '#cccccc')
+
+        fig, axes = plt.subplots(1, cols, figsize=(cols * 2.5, 2.8))
+        fig.suptitle(
+            f'{island_type}  —  {cols} diverse examples  (of {n} total)',
+            fontsize=9, fontweight='bold',
+        )
+        axes_flat = [axes] if cols == 1 else list(axes)
+
+        for cell_idx, (map_slug, profile, island_dict) in enumerate(selected):
+            ax = axes_flat[cell_idx]
+            ax.set_aspect('equal')
+            ax.axis('off')
+
+            poly = island_dict.get('simplified_polygon') or {}
+            exterior = poly.get('exterior') or []
+            holes = poly.get('holes') or []
+
+            if len(exterior) >= 3:
+                pts = np.asarray(exterior, dtype=float)
+                min_xy = pts.min(axis=0)
+                scale = max(float(np.ptp(pts, axis=0).max()), 1.0)
+                pts_n = (pts - min_xy) / scale
+
+                verts = list(pts_n) + [pts_n[0]]
+                codes = ([MplPath.MOVETO]
+                         + [MplPath.LINETO] * (len(pts_n) - 1)
+                         + [MplPath.CLOSEPOLY])
+                for hole in holes:
+                    if len(hole) >= 3:
+                        h_pts = (np.asarray(hole, dtype=float) - min_xy) / scale
+                        verts += list(h_pts) + [h_pts[0]]
+                        codes += ([MplPath.MOVETO]
+                                  + [MplPath.LINETO] * (len(h_pts) - 1)
+                                  + [MplPath.CLOSEPOLY])
+                path = MplPath(verts, codes)
+                patch = PathPatch(path, facecolor=color, alpha=0.6,
+                                  edgecolor='#333333', linewidth=0.8)
+                ax.add_patch(patch)
+                ax.set_xlim(-0.05, 1.05)
+                ax.set_ylim(-0.05, 1.05)
+                ax.invert_yaxis()
+
+            label = f'{map_slug[:8]}\n{profile.canonical_key[:8]}'
+            ax.set_title(label, fontsize=5.5, pad=2)
+
+            # Collect key features for documentation / stdout report
+            f = profile.features
+            features_summary: dict = {
+                'area': f.area,
+                'aspect_ratio': f.aspect_ratio,
+                'bbox_fill_ratio': f.bbox_fill_ratio,
+                'convexity': f.convexity,
+                'rugosity': f.rugosity,
+                'compactness': round(f.compactness, 4),
+                'hole_count': f.hole_count,
+                'bbox_width': f.bbox_width,
+                'bbox_height': f.bbox_height,
+            }
+            if f.bbox_cutout_count is not None:
+                features_summary['bbox_cutout_count'] = f.bbox_cutout_count
+                features_summary['bbox_cutout_coverage'] = f.bbox_cutout_coverage
+            if f.skeleton_topology is not None:
+                features_summary['skeleton_topology'] = f.skeleton_topology
+                features_summary['skeleton_junction_count'] = f.skeleton_junction_count
+                features_summary['skeleton_endpoint_count'] = f.skeleton_endpoint_count
+            if f.circle_fit_residual is not None:
+                features_summary['circle_fit_residual'] = f.circle_fit_residual
+            if f.ellipse_residual is not None:
+                features_summary['ellipse_residual'] = f.ellipse_residual
+
+            metadata.append({
+                'type': island_type,
+                'n': cell_idx + 1,
+                'filename': f'{island_type}.png',
+                'canonical_key': profile.canonical_key,
+                'map_slug': map_slug,
+                'features': features_summary,
+            })
+
+        out_path = os.path.join(output_dir, f'{island_type}.png')
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=130, bbox_inches='tight')
+        plt.close(fig)
+        logger.info('Saved examples: %s', out_path)
+
+    return metadata
 
 
 def plot_profile_mosaic(

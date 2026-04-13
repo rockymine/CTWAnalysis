@@ -93,10 +93,6 @@ Actions:
   terrain-height    Load terrain height data into the map_terrain_height table
   authors           Parse map.xml authors/contributors and look up Minecraft names
   geometry-graph    Build geometry-derived adjacency graph from map polygons
-  profile-summary   Print cross-map island type counts (console only)
-  profile-landscape Cross-map feature scatter plot of all canonical islands
-  profile-mosaic    Grid of island polygon shapes grouped by type
-  profile-distributions Feature histograms across all maps
 
 Examples:
   python ctw.py maps load --map annealing_iv
@@ -115,11 +111,6 @@ Examples:
   python ctw.py maps chest-classify --map arabia
   python ctw.py maps geometry-graph --map tumbleweed
   python ctw.py maps geometry-graph             # all maps with output data
-  python ctw.py maps profile-summary
-  python ctw.py maps profile-landscape
-  python ctw.py maps profile-mosaic
-  python ctw.py maps profile-mosaic --type linear
-  python ctw.py maps profile-distributions
 """,
     )
     maps_sub = maps_parser.add_subparsers(
@@ -236,57 +227,6 @@ Examples:
                    help='Target node count for --adaptive-nodes / --contour-nodes '
                         '(default: 300)')
     p.set_defaults(func=handle_geometry_graph)
-
-    # maps profile-summary
-    p = maps_sub.add_parser(
-        'profile-summary',
-        help='Print cross-map island type count table (console only)',
-    )
-    p.add_argument('--map', default=None,
-                   help='Map slug (default: all maps with island_profiles.json)')
-    p.add_argument('--output', default=None,
-                   help='Output root directory (default: output/)')
-    p.set_defaults(func=handle_profile_summary)
-
-    # maps profile-landscape
-    p = maps_sub.add_parser(
-        'profile-landscape',
-        help='Cross-map scatter of all canonical islands on feature axes',
-    )
-    p.add_argument('--map', default=None,
-                   help='Map slug (default: all maps with island_profiles.json)')
-    p.add_argument('--output', default=None,
-                   help='Output root directory (default: output/)')
-    p.add_argument('--feature-x', default='aspect_ratio', dest='feature_x',
-                   help='Feature for x axis (default: aspect_ratio)')
-    p.add_argument('--feature-y', default='compactness', dest='feature_y',
-                   help='Feature for y axis (default: compactness)')
-    p.set_defaults(func=handle_profile_landscape)
-
-    # maps profile-mosaic
-    p = maps_sub.add_parser(
-        'profile-mosaic',
-        help='Grid of island polygon shapes grouped by type',
-    )
-    p.add_argument('--map', default=None,
-                   help='Map slug (default: all maps with island_profiles.json)')
-    p.add_argument('--output', default=None,
-                   help='Output root directory (default: output/)')
-    p.add_argument('--type', default=None, dest='island_type',
-                   help='Only render islands of this type (default: all types)')
-    p.set_defaults(func=handle_profile_mosaic)
-
-    # maps profile-distributions
-    p = maps_sub.add_parser(
-        'profile-distributions',
-        help='Feature distribution histograms stacked by type across all maps',
-    )
-    p.add_argument('--map', default=None,
-                   help='Map slug (default: all maps with island_profiles.json)')
-    p.add_argument('--output', default=None,
-                   help='Output root directory (default: output/)')
-    p.set_defaults(func=handle_profile_distributions)
-
 
 def _resolve_map_dirs(args):
     """Resolve map output directories from args. Returns list of Path or None."""
@@ -1395,164 +1335,3 @@ def handle_geometry_graph(args: object) -> None:
             conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Island profile cross-map handlers
-# ---------------------------------------------------------------------------
-
-
-def _is_map_skipped(map_slug: str) -> bool:
-    """Return True if the map is flagged skip:true in map_layouts.yaml."""
-    from layout_analysis.map_layout_config import get_map_layout
-    cfg = get_map_layout(map_slug)
-    return cfg is not None and cfg.skip
-
-
-def _load_all_profiles(args) -> list[tuple[str, object]]:
-    """Load (map_slug, IslandProfile) pairs from all relevant map directories.
-
-    Maps flagged skip:true in map_layouts.yaml are excluded.
-    """
-    from island_analysis.profile import load_profiles
-
-    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    map_name = getattr(args, 'map', None)
-    if map_name:
-        map_dirs = [output_root / map_name]
-    else:
-        map_dirs = sorted(d for d in output_root.iterdir() if d.is_dir())
-
-    all_pairs: list[tuple[str, object]] = []
-    for map_dir in map_dirs:
-        if _is_map_skipped(map_dir.name):
-            continue
-        profiles = load_profiles(map_dir / 'island_profiles.json')
-        if profiles:
-            for profile in profiles:
-                all_pairs.append((map_dir.name, profile))
-    return all_pairs
-
-
-def handle_profile_summary(args) -> None:
-    """Print cross-map island type count table."""
-    from island_analysis.profile import _ALL_TYPES, load_profiles
-
-    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    map_name = getattr(args, 'map', None)
-    if map_name:
-        map_dirs = [output_root / map_name]
-    else:
-        map_dirs = sorted(d for d in output_root.iterdir() if d.is_dir())
-
-    rows = []
-    for map_dir in map_dirs:
-        if _is_map_skipped(map_dir.name):
-            continue
-        profiles = load_profiles(map_dir / 'island_profiles.json')
-        if profiles is None:
-            continue
-        counts = {t: 0 for t in _ALL_TYPES}
-        for profile in profiles:
-            counts[profile.island_type] = counts.get(profile.island_type, 0) + 1
-        rows.append((map_dir.name, len(profiles), counts))
-
-    if not rows:
-        print('No island_profiles.json files found.')
-        return
-
-    # Header
-    type_cols = _ALL_TYPES
-    header = f'  {"map":<24}  {"total":>5}  ' + '  '.join(f'{t[:6]:>6}' for t in type_cols)
-    print(f'\n{header}')
-    print(f'  {"-" * 24}  {"-" * 5}  ' + '  '.join('-' * 6 for _ in type_cols))
-    for map_slug, total, counts in rows:
-        row = f'  {map_slug:<24}  {total:>5}  '
-        row += '  '.join(f'{counts.get(t, 0):>6}' for t in type_cols)
-        print(row)
-    total_all = sum(r[1] for r in rows)
-    print(f'  {"-" * 24}  {"-" * 5}  ' + '  '.join('-' * 6 for _ in type_cols))
-    total_by_type = {t: sum(r[2].get(t, 0) for r in rows) for t in type_cols}
-    print(f'  {"TOTAL":<24}  {total_all:>5}  ' + '  '.join(f'{total_by_type[t]:>6}' for t in type_cols))
-    print()
-
-
-def handle_profile_landscape(args) -> None:
-    """Generate cross-map scatter landscape plot."""
-    from island_analysis.profile import plot_profile_landscape
-
-    all_pairs = _load_all_profiles(args)
-    if not all_pairs:
-        print('No island_profiles.json files found.')
-        return
-
-    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    images_dir = output_root / '_debug'
-    images_dir.mkdir(parents=True, exist_ok=True)
-
-    feature_x = getattr(args, 'feature_x', 'aspect_ratio')
-    feature_y = getattr(args, 'feature_y', 'compactness')
-    out_path = str(images_dir / 'island_landscape.png')
-    plot_profile_landscape(all_pairs, feature_x, feature_y, out_path)
-    print(f'Saved: {out_path}')
-
-
-def handle_profile_mosaic(args) -> None:
-    """Generate island shape mosaic plot(s) grouped by type."""
-    import json as _json
-    from island_analysis.profile import load_profiles, plot_profile_mosaic
-
-    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    map_name = getattr(args, 'map', None)
-    if map_name:
-        map_dirs = [output_root / map_name]
-    else:
-        map_dirs = sorted(d for d in output_root.iterdir() if d.is_dir())
-
-    # Collect (map_slug, IslandProfile, representative island_dict) triples
-    entries: list[tuple[str, object, dict]] = []
-    for map_dir in map_dirs:
-        if _is_map_skipped(map_dir.name):
-            continue
-        profiles = load_profiles(map_dir / 'island_profiles.json')
-        if profiles is None:
-            continue
-        context_path = map_dir / 'map_context.json'
-        if not context_path.exists():
-            continue
-        with open(context_path, encoding='utf-8') as fh:
-            map_context = _json.load(fh)
-        island_by_id = {isl['id']: isl for isl in map_context.get('islands', [])}
-
-        for profile in profiles:
-            rep_id = profile.raw_island_ids[0] if profile.raw_island_ids else None
-            if rep_id is None or rep_id not in island_by_id:
-                continue
-            entries.append((map_dir.name, profile, island_by_id[rep_id]))
-
-    if not entries:
-        print('No island profiles found.')
-        return
-
-    images_dir = output_root / '_debug'
-    images_dir.mkdir(parents=True, exist_ok=True)
-    out_template = str(images_dir / 'island_mosaic_{type}.png')
-    island_type_filter = getattr(args, 'island_type', None)
-    output_files = plot_profile_mosaic(entries, island_type_filter, out_template)
-    for out_path in output_files:
-        print(f'Saved: {out_path}')
-
-
-def handle_profile_distributions(args) -> None:
-    """Generate feature distribution histogram plot."""
-    from island_analysis.profile import plot_feature_distributions
-
-    all_pairs = _load_all_profiles(args)
-    if not all_pairs:
-        print('No island_profiles.json files found.')
-        return
-
-    output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
-    images_dir = output_root / '_debug'
-    images_dir.mkdir(parents=True, exist_ok=True)
-    out_path = str(images_dir / 'island_feature_distributions.png')
-    plot_feature_distributions(all_pairs, out_path)
-    print(f'Saved: {out_path}')
