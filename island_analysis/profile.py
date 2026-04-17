@@ -1095,23 +1095,31 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
             and f.bbox_cutout_corners in (_ADJACENT_CORNER_PAIRS)):
         return ('T', 'noisy', False, None)
 
-    # Rule 5: shard -- smooth two-pointed shape (diamond, rhombus, lens, tear)
-    if f.skeleton_topology == 'line' and f.convexity >= 0.87:
+    # Rule 5: shard -- smooth two-pointed shape (diamond, rhombus, lens, tear).
+    # Corner cutouts disqualify a shape -- those belong to L/Z/T families.
+    # For elongated shapes (ar > 1.2) a fill cap of 0.88 excludes bars/planks that
+    # happen to have line skeleton topology but are clearly rectangular at high fill.
+    if f.skeleton_topology == 'line' and f.convexity >= 0.87 and not f.bbox_cutout_count:
         if f.aspect_ratio <= 1.2:
-            shard_not_round = f.circle_fit_residual >= 0.12
+            # Near-square shards are diamonds/rhombi: they have low fill (≤ 0.85).
+            # High-fill near-squares are chamfered rectangles, not shards.
+            shard_not_round = (f.bbox_fill_ratio < 0.85
+                               and f.circle_fit_residual >= 0.12)
         else:
-            shard_not_round = (f.ellipse_residual >= 0.10
-                               or f.bbox_fill_ratio < 0.72)
+            shard_not_round = (f.bbox_fill_ratio < 0.88
+                               and (f.ellipse_residual >= 0.10
+                                    or f.bbox_fill_ratio < 0.72))
         if shard_not_round:
             return ('shard', 'clean', False, None)
 
     # Rule 5.5: chopped rectangle -- shape with at least one full bbox side but missing
     # area elsewhere; placed after circle and shard so those get priority.
-    # Exclusions: circular shapes (circ_residual < 0.15), line-topology shards
-    # (skeleton_topology == 'line' and convexity >= 0.82), and shapes with more than
-    # 2 skeleton junctions (too branchy to be a merely-chopped rectangle).
-    _is_circ_like = (f.circle_fit_residual is not None and f.circle_fit_residual < 0.15)
-    _is_shard_like = (f.skeleton_topology == 'line' and f.convexity >= 0.82)
+    # Exclusions: circular shapes (circ_residual < 0.12, matching circle rule threshold);
+    # low-fill line-topology shapes that are true shards (line + conv >= 0.82 + fill < 0.85)
+    # — high-fill bars with line topology (fill >= 0.85) fall through here correctly.
+    _is_circ_like = (f.circle_fit_residual is not None and f.circle_fit_residual < 0.12)
+    _is_shard_like = (f.skeleton_topology == 'line' and f.convexity >= 0.82
+                      and f.bbox_fill_ratio < 0.85)
     if (f.bbox_fill_ratio >= 0.45
             and f.convexity >= 0.75
             and f.hole_count == 0
