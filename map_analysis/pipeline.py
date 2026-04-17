@@ -180,6 +180,7 @@ def _save_islands_json(
             'distance_to_center': round(island.distance_to_center, 2),
             'hole_count': len(island.holes),
             'simplified_polygon': island.simplified_polygon,
+            'smoothed_polygon': island.smoothed_polygon,
         })
 
     data = {
@@ -313,6 +314,7 @@ def _build_island_dicts(islands: list[Island]) -> list[dict[str, Any]]:
             'has_center': island.has_center,
             'team': island.team,
             'simplified_polygon': island.simplified_polygon,
+            'smoothed_polygon': island.smoothed_polygon,
         }
         for island in islands
     ]
@@ -573,6 +575,7 @@ def run_symmetry(
                 'area': isl.area,
                 'center': list(isl.center),
                 'simplified_polygon': isl.simplified_polygon,
+                'smoothed_polygon': isl.smoothed_polygon,
             }
             for isl in geometry.islands
         ]
@@ -843,6 +846,7 @@ def _rerun_symmetry_without_observer(
             'area': isl.area,
             'center': list(isl.center),
             'simplified_polygon': isl.simplified_polygon,
+            'smoothed_polygon': isl.smoothed_polygon,
         }
         for isl in final_islands
         if not isl.is_observer_island
@@ -1025,4 +1029,39 @@ def assemble_map(
     )
 
     logger.debug("  map_context.json written")
+
+    # Stage 8: Island spatial profiling (non-blocking)
+    _run_island_profiling(map_ctx, map_output_dir, map_context_exporter)
+
     return map_ctx, symmetry
+
+
+def _run_island_profiling(
+    map_ctx,
+    map_output_dir: Path,
+    map_context_exporter,
+) -> None:
+    """Compute island spatial profiles and write island_profiles.json.
+
+    Non-blocking: if map_graph.json is absent or profiling fails, a warning
+    is logged and the function returns without raising.
+    """
+    import json as _json
+    from island_analysis.profile import profile_islands, save_profiles
+    from map_analysis.grid_base import _adaptive_grid_size
+
+    map_graph_path = map_output_dir / 'map_graph.json'
+    if not map_graph_path.exists():
+        logger.warning('  island profiling: map_graph.json not found, skipping')
+        return
+
+    try:
+        with open(map_graph_path, encoding='utf-8') as fh:
+            map_graph = _json.load(fh)
+
+        ctx_dict = map_context_exporter.to_dict(map_ctx)
+        base_grid_size = _adaptive_grid_size(map_ctx.total_blocks)
+        profiles = profile_islands(ctx_dict, map_graph, base_grid_size)
+        save_profiles(profiles, map_output_dir / 'island_profiles.json')
+    except Exception as exc:
+        logger.warning('  island profiling: failed: %s', exc)

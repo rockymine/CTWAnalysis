@@ -34,6 +34,8 @@ CTWAnalysisWithClaudeCode/
 ├── island_analysis/
 │   ├── detection.py                  detect_islands(), find_island_holes()
 │   ├── datatypes.py                  Island dataclass
+│   ├── profile.py                    IslandFeatures/IslandProfile/IslandRasterStrategy; profile_islands(), classify_island(), save/load_profiles(); override helpers; cross-map plots
+│   ├── profile_review.py             Interactive web review server; run via `ctw islands profile-review`
 │   └── triangulation.py             triangulate_islands_canonical()
 │
 ├── skeleton_analysis/
@@ -47,6 +49,18 @@ CTWAnalysisWithClaudeCode/
 │   ├── regions.py                    Region types: Rectangle, Cuboid, Union, Mirror, Translate…
 │   ├── build_regions.py              Build region extraction (void decomposition)
 │   └── datatypes.py                  MapData, MapXmlContext
+│
+├── map_analysis/
+│   ├── pipeline.py                   run_island_geometry() + assemble_map() — produces map_context.json
+│   ├── datatypes.py                  IslandAnalysis, MapContext dataclasses
+│   ├── builder.py                    Island construction from geometry + XML
+│   ├── exporter.py                   JSON serialisation helpers
+│   ├── poi_annotation.py             POI (spawn/wool/monument) assignment to islands
+│   ├── team_assignment.py            Team color/slug resolution
+│   ├── grid_base.py                  GridBase + rasterize_map_polygons() + _adaptive_grid_size()
+│   │                                 Converts map_context polygons to grid cells (no DB required)
+│   │                                 apply_profile_grid_sizes() + load_grid_base_profiled() — per-island grid hints
+│   └── geometry_graph.py             build_geometry_graph() — 4-connected adjacency graph from GridBase
 │
 ├── match_analysis/
 │   ├── metadata.db                   DuckDB database (READ-ONLY for analysis; write for processing)
@@ -82,8 +96,13 @@ CTWAnalysisWithClaudeCode/
 │   ├── map_context.json              Complete assembled map model (primary reference)
 │   ├── map_graph.json                Inter-island connectivity graph
 │   ├── symmetry.json                 Detected symmetry
-│   ├── traffic_graph.json            Data-driven navigation graph
+│   ├── traffic_graph.json            Data-driven navigation graph (player movement)
+│   ├── geometry_graph.json          Geometry-derived adjacency graph (no match data needed)
+│   ├── island_profiles.json         Island spatial profiles (one per canonical shape; written by Stage 8 of assemble_map)
 │   └── island_analysis/             Island geometry + debug images
+│
+├── output/_debug/
+│   └── island_profile_overrides.json  Manual classification overrides: canonical_key → {profile, note}
 │
 ├── match_logs/                       Raw match parquet files (not in git)
 ├── map_layouts.yaml                  Per-map extraction config (layer, exclude, playable_bbox)
@@ -288,6 +307,7 @@ All tables in `match_analysis/metadata.db` (DuckDB).
 | `wool_events` | wool_event_id PK, match_id FK, timestamp, event_type (6=touch,7=capture), player_id, wool_id, x, y, z, segment_idx |
 | `player_team_segments` | team_segment_id PK, match_id FK, player_id, team, start_timestamp, end_timestamp |
 | `map_terrain_height` | map_id FK, world_x, world_z, surface_y, lowest_y — PRIMARY KEY (map_id, world_x, world_z) |
+| `island_profiles` | profile_id PK, map_id FK, canonical_key, island_type (square\|rectangle\|circle\|donut\|shard\|L_shape\|Z_shape\|plus\|fork\|rugged\|linear\|blob), area, perimeter, bbox_fill_ratio, rugosity, aspect_ratio, compactness, convexity, pca_elongation, pca_angle_deg, hole_count, hole_ratio, skeleton_topology, skeleton_path_bends, skeleton_available — UNIQUE (map_id, canonical_key) |
 
 ### Feature / Derived Tables
 
@@ -413,6 +433,15 @@ Both rules are inseparable — either alone causes a 0.5-block shift.
 | `ctw maps kits` | `handle_kits()` | Reads `map.xml` → `map_kit_items`, `map_kit_armor` |
 | `ctw maps spatial-relations` | `handle_spatial_relations()` | Reads `map_wool_locations`, `map_spawns` → `map_wool_attack_relations`, `map_team_spatial` |
 | `ctw maps terrain-height` | `handle_terrain_height()` | `match_analysis/database/terrain_height.py:populate_terrain_height()` |
+| `ctw maps geometry-graph` | `handle_geometry_graph()` | `map_analysis/grid_base.py:rasterize_map_polygons()` + `map_analysis/geometry_graph.py:build_geometry_graph()` |
+| `ctw maps profile-summary` | `handle_profile_summary()` | Cross-map island type count table (console only); reads `island_profiles.json` from all maps |
+| `ctw maps profile-landscape` | `handle_profile_landscape()` | `island_analysis/profile.py:plot_profile_landscape()` → `output/images/island_landscape.png` |
+| `ctw maps profile-mosaic` | `handle_profile_mosaic()` | `island_analysis/profile.py:plot_profile_mosaic()` → `output/images/island_mosaic_<type>.png`; `--type` filters |
+| `ctw maps profile-distributions` | `handle_profile_distributions()` | `island_analysis/profile.py:plot_feature_distributions()` → `output/images/island_feature_distributions.png` |
+| `ctw islands profile` | `handle_profile()` in `ctw/commands/islands.py` | Re-run profiling from cached JSON; loads overrides from `output/_debug/island_profile_overrides.json`; `--map` optional (all maps); `--plot` emits `island_profiles.png` |
+| `ctw islands profile-inspect` | `handle_profile_inspect()` | Console feature table per canonical island; shows both `island_type` (effective) and `auto_profile` (algorithm); `--map` required |
+| `ctw islands profile-canonical` | `handle_profile_canonical()` | Show canonical groupings (unique shapes + instance counts) from `map_context.json` |
+| `ctw islands profile-review` | `handle_profile_review()` → `island_analysis/profile_review.py:run_review_server()` | Local HTTP review page; SVG thumbnails + reclassify dropdown + notes; saves to `island_profile_overrides.json`; `--map`, `--type`, `--port` |
 | `ctw matches index` | `handle_index()` | `match_analysis/database/indexer.py:index_match_files()` — recurse logs dir, create stub maps as needed |
 | `ctw matches extract` | `handle_extract()` | `match_analysis/processing/processor.py:extract_match_data()` + `insert_match_data()` |
 | `ctw matches classify` | `handle_classify()` | `match_analysis/processing/processor.py:classify_match()` — spatial annotation + traffic features |

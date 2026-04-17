@@ -33,6 +33,7 @@ class IslandPolygon(IslandBlocks):
     """
     hull_vertices: Optional[np.ndarray] = None
     simplified_polygon: Optional[dict] = None   # {exterior: [[x,z],...], holes: [[x,z],...]}
+    smoothed_polygon: Optional[dict] = None     # same shape; only set when buffer>0 or simplify>0
     holes: list = field(default_factory=list)   # list[np.ndarray] internal air pockets
     has_center: bool = False
     distance_to_center: float = 0.0

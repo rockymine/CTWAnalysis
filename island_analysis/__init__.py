@@ -9,6 +9,14 @@ from .detection import detect_islands, find_island_holes
 from .canonicalize import canonicalize_island
 from .polygon import build_island_polygon, build_island_polygons_canonical
 from .statistics import compute_island_statistics, classify_islands
+from .profile import (
+    IslandFeatures,
+    IslandRasterStrategy,
+    IslandProfile,
+    profile_islands,
+    save_profiles,
+    load_profiles,
+)
 from .visualization import (
     plot_islands,
     plot_island_polygons,
@@ -35,6 +43,13 @@ __all__ = [
     # Statistics
     "compute_island_statistics",
     "classify_islands",
+    # Spatial profiling
+    "IslandFeatures",
+    "IslandRasterStrategy",
+    "IslandProfile",
+    "profile_islands",
+    "save_profiles",
+    "load_profiles",
     # Visualization
     "plot_islands",
     "plot_island_polygons",

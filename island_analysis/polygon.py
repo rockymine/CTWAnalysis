@@ -25,7 +25,7 @@ logger = logging.getLogger('ctw')
 def build_island_polygon(
     island: IslandPolygon,
     buffer_distance: float = 0.0,
-    simplify_tolerance: float = 1.0,
+    simplify_tolerance: float = 0.0,
     detect_holes: bool = True
 ) -> None:
     """
@@ -37,12 +37,18 @@ def build_island_polygon(
     3. Optionally smoothing with buffer-unbuffer operation
     4. Simplifying with topology-preserving algorithm
 
-    Sets island.simplified_polygon and island.hull_vertices.
+    Always sets island.simplified_polygon to the exact (buffer=0, simplify=0) polygon
+    so downstream code always has access to the true block shape.  When
+    buffer_distance > 0 or simplify_tolerance > 0, also sets island.smoothed_polygon
+    to the result of applying those parameters.
+
+    Sets island.simplified_polygon, island.hull_vertices, and (optionally)
+    island.smoothed_polygon.
 
     Args:
         island: IslandPolygon object
         buffer_distance: Buffer distance for smoothing (0 = no smoothing)
-        simplify_tolerance: Tolerance for Douglas-Peucker simplification
+        simplify_tolerance: Tolerance for Douglas-Peucker simplification (0 = no simplification)
         detect_holes: Whether to preserve internal holes
     """
     from shapely.geometry import Polygon
@@ -53,21 +59,28 @@ def build_island_polygon(
     if detect_holes:
         island.holes = find_island_holes(island)
 
-    polygon = _build_union_polygon(
-        island.blocks, buffer_distance, simplify_tolerance
-    )
-    if polygon is None:
+    # Always build the exact polygon (no buffer, no simplification).
+    exact_polygon = _build_union_polygon(island.blocks, 0.0, 0.0)
+    if exact_polygon is None:
         return
 
-    if isinstance(polygon, Polygon) and not polygon.is_empty:
-        island.hull_vertices = np.array(polygon.exterior.coords[:-1])
-        island.simplified_polygon = _extract_polygon_coords(polygon)
+    if isinstance(exact_polygon, Polygon) and not exact_polygon.is_empty:
+        island.hull_vertices = np.array(exact_polygon.exterior.coords[:-1])
+        island.simplified_polygon = _extract_polygon_coords(exact_polygon)
+
+    # Optionally build the smoothed/simplified variant.
+    if buffer_distance > 0 or simplify_tolerance > 0:
+        smooth_polygon = _build_union_polygon(
+            island.blocks, buffer_distance, simplify_tolerance
+        )
+        if smooth_polygon is not None and isinstance(smooth_polygon, Polygon) and not smooth_polygon.is_empty:
+            island.smoothed_polygon = _extract_polygon_coords(smooth_polygon)
 
 
 def build_island_polygons_canonical(
     islands: list[IslandPolygon],
     buffer_distance: float = 0.0,
-    simplify_tolerance: float = 1.0,
+    simplify_tolerance: float = 0.0,
     detect_holes: bool = True,
     allow_mirror: bool = True
 ) -> None:
@@ -77,15 +90,20 @@ def build_island_polygons_canonical(
     Canonically identical islands (related by D4 symmetry) are grouped
     together.  Polygons are built from world-space blocks for each island.
 
+    Always sets island.simplified_polygon to the exact (buffer=0, simplify=0) polygon.
+    When buffer_distance > 0 or simplify_tolerance > 0, also sets island.smoothed_polygon.
+
     Args:
         islands: List of IslandPolygon objects
         buffer_distance: Buffer distance for smoothing (0 = no smoothing)
-        simplify_tolerance: Tolerance for Douglas-Peucker simplification
+        simplify_tolerance: Tolerance for Douglas-Peucker simplification (0 = no simplification)
         detect_holes: Whether to preserve internal holes
         allow_mirror: Allow mirror in D4 canonicalization
     """
     from shapely.geometry import Polygon
     from .canonicalize import canonicalize_island
+
+    want_smooth = buffer_distance > 0 or simplify_tolerance > 0
 
     # Step 1: Canonicalize all islands and group by canonical_key
     groups: dict[str, list[tuple[IslandPolygon, Any]]] = {}
@@ -115,15 +133,22 @@ def build_island_polygons_canonical(
     # rotated if we build the polygon in canonical space and transform back.
     for key, group in groups.items():
         for island, canonical in group:
-            polygon = _build_union_polygon(
-                island.blocks, buffer_distance, simplify_tolerance
-            )
-            if polygon is None:
+            # Always compute the exact polygon.
+            exact_polygon = _build_union_polygon(island.blocks, 0.0, 0.0)
+            if exact_polygon is None:
                 continue
 
-            if isinstance(polygon, Polygon) and not polygon.is_empty:
-                island.hull_vertices = np.array(polygon.exterior.coords[:-1])
-                island.simplified_polygon = _extract_polygon_coords(polygon)
+            if isinstance(exact_polygon, Polygon) and not exact_polygon.is_empty:
+                island.hull_vertices = np.array(exact_polygon.exterior.coords[:-1])
+                island.simplified_polygon = _extract_polygon_coords(exact_polygon)
+
+            # Optionally compute the smoothed/simplified variant.
+            if want_smooth:
+                smooth_polygon = _build_union_polygon(
+                    island.blocks, buffer_distance, simplify_tolerance
+                )
+                if smooth_polygon is not None and isinstance(smooth_polygon, Polygon) and not smooth_polygon.is_empty:
+                    island.smoothed_polygon = _extract_polygon_coords(smooth_polygon)
 
 
 # ---------------------------------------------------------------------------
