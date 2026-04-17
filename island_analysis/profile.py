@@ -952,12 +952,14 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
     4.8   L_noisy     bbox_cutout_count == 1 AND coverage >= 0.70
     4.9   Z_noisy     bbox_cutout_count == 2 AND coverage >= 0.70 AND diagonal corners
     4.10  T_noisy     bbox_cutout_count == 2 AND coverage >= 0.70 AND adjacent corners
-    5.    shard       topo == 'line' AND convexity >= 0.87 AND NOT round
-    6.    plus        junctions == 1 AND endpoints == 4 AND min_arm_angle >= 60 deg
-    7.    fork        junctions >= 2 AND convexity < 0.70
-    8.    amoeba_rugged  rugosity >= 1.2
-    9.    linear      aspect_ratio >= 2.5
-    10.   amoeba      (default)
+    5.    shard       topo == 'line' AND convexity >= 0.87 AND NOT round AND no cutouts
+    5.5   rectangle_chopped  fill >= 0.45, conv >= 0.75, full side, no holes/cutouts
+    6.    maze        hole_count >= 2  -> boundary='rugged' if rugosity >= 1.2
+    7.    plus        junctions == 1 AND endpoints == 4 AND min_arm_angle >= 60 deg
+    8.    fork        junctions >= 2 AND convexity < 0.70
+    9.    amoeba_rugged  rugosity >= 1.2
+    10.   linear      aspect_ratio >= 2.5
+    11.   amoeba      (default)
 
     Design notes
     ------------
@@ -1131,20 +1133,26 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
             and not _is_shard_like):
         return ('rectangle', 'chopped', False, None)
 
-    # Rules 6 & 7: branching shapes -- require skeleton data
+    # Rule 6: maze -- shape with multiple interior holes; boundary='rugged' when rough.
+    # Placed before fork so that shapes with holes AND branching go to maze, not fork.
+    if f.hole_count >= 2:
+        boundary = 'rugged' if f.rugosity >= 1.2 else 'clean'
+        return ('maze', boundary, False, None)
+
+    # Rules 7 & 8: branching shapes -- require skeleton data
     junction_count = f.skeleton_junction_count
     endpoint_count = f.skeleton_endpoint_count
     if junction_count is not None and endpoint_count is not None:
-        # Rule 6: plus -- one central junction with exactly four evenly-distributed arms
+        # Rule 7: plus -- one central junction with exactly four evenly-distributed arms
         if (junction_count == 1 and endpoint_count == 4
                 and (f.skeleton_min_arm_angle or 0.0) >= 60.0):
             return ('plus', 'clean', False, None)
 
-        # Rule 7: fork -- multiple junctions with deep concavity
+        # Rule 8: fork -- multiple junctions with deep concavity
         if junction_count >= 2 and f.convexity < 0.70:
             return ('fork', 'clean', False, None)
 
-    # Rule 8: amoeba_rugged -- noticeably rough perimeter without deep concavity
+    # Rule 9: amoeba_rugged -- noticeably rough perimeter without deep concavity
     if f.rugosity >= 1.2:
         return ('amoeba', 'rugged', False, None)
 
@@ -1180,7 +1188,7 @@ def build_raster_strategy(
     archetype, _boundary = _island_type_to_archetype_boundary(island_type)
     if archetype in ('rectangle', 'linear'):
         alignment_angle_deg = features.pca_angle_deg
-    elif archetype in ('fork', 'amoeba'):
+    elif archetype in ('fork', 'maze', 'amoeba'):
         grid_size_override = max(2, base_grid_size // 2)
 
     return IslandRasterStrategy(
