@@ -1016,16 +1016,24 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
             and f.rugosity >= 1.08):
         return ('rectangle', 'noisy', False, None)
 
-    # Rule 3: ring (clean) -- smooth annular shape with exactly one interior void
+    # Rule 3: ring (clean) -- smooth annular shape with exactly one interior void.
+    # area >= 30 rejects micro-shapes where a single missing block creates an
+    # accidental 'hole'.  bbox_fill_ratio >= 0.25 rejects ultra-thin rectangular
+    # frames (border < 2 blocks wide around a large interior) that look like
+    # rectangles from the outside.
     if (f.hole_count == 1
             and f.convexity >= 0.92
-            and f.rugosity <= 1.1):
+            and f.rugosity <= 1.1
+            and f.area >= 30
+            and f.bbox_fill_ratio >= 0.25):
         return ('ring', 'clean', False, None)
 
-    # Rule 3.5: ring_rugged -- rough annular shape
+    # Rule 3.5: ring_rugged -- rough annular shape (same area/fill guards apply)
     if (f.hole_count == 1
             and f.convexity >= 0.85
-            and f.rugosity <= 1.25):
+            and f.rugosity <= 1.25
+            and f.area >= 30
+            and f.bbox_fill_ratio >= 0.25):
         return ('ring', 'rugged', False, None)
 
     # Rule 4: circle / ellipse -- smooth solid curved shape with good elliptic fit;
@@ -1057,19 +1065,32 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
             and f.bbox_cutout_corners in (_ADJACENT_CORNER_PAIRS)):
         return ('T', 'clean', False, None)
 
-    # Rule 4.8: L_noisy -- one corner cut with weaker coverage (imprecise or eroded)
-    if (f.bbox_cutout_count == 1
+    # Rules 4.8-4.10: noisy L/Z/T -- weaker coverage corner cuts.
+    # Additional guards: convexity >= 0.60 (a genuine L/Z/T is mostly convex even
+    # when rough; deeply concave shapes with incidental corner areas are NOT L/Z/T)
+    # and junction_count <= 1 (complex multi-junction skeletons indicate branching
+    # complexity, not a simple corner-cut shape).
+    _noisy_lzt_ok = (
+        f.convexity >= 0.60
+        and (f.skeleton_junction_count is None or f.skeleton_junction_count <= 1)
+    )
+
+    # Rule 4.8: L_noisy
+    if (_noisy_lzt_ok
+            and f.bbox_cutout_count == 1
             and (f.bbox_cutout_coverage or 0.0) >= 0.70):
         return ('L', 'noisy', False, None)
 
-    # Rule 4.9: Z_noisy -- two diagonal corner cuts with weaker coverage
-    if (f.bbox_cutout_count == 2
+    # Rule 4.9: Z_noisy
+    if (_noisy_lzt_ok
+            and f.bbox_cutout_count == 2
             and (f.bbox_cutout_coverage or 0.0) >= 0.70
             and f.bbox_cutout_corners in (_DIAGONAL_CORNER_PAIRS)):
         return ('Z', 'noisy', False, None)
 
-    # Rule 4.10: T_noisy -- two adjacent corner cuts with weaker coverage
-    if (f.bbox_cutout_count == 2
+    # Rule 4.10: T_noisy
+    if (_noisy_lzt_ok
+            and f.bbox_cutout_count == 2
             and (f.bbox_cutout_coverage or 0.0) >= 0.70
             and f.bbox_cutout_corners in (_ADJACENT_CORNER_PAIRS)):
         return ('T', 'noisy', False, None)
@@ -1083,6 +1104,24 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
                                or f.bbox_fill_ratio < 0.72)
         if shard_not_round:
             return ('shard', 'clean', False, None)
+
+    # Rule 5.5: chopped rectangle -- shape with at least one full bbox side but missing
+    # area elsewhere; placed after circle and shard so those get priority.
+    # Exclusions: circular shapes (circ_residual < 0.15), line-topology shards
+    # (skeleton_topology == 'line' and convexity >= 0.82), and shapes with more than
+    # 2 skeleton junctions (too branchy to be a merely-chopped rectangle).
+    _is_circ_like = (f.circle_fit_residual is not None and f.circle_fit_residual < 0.15)
+    _is_shard_like = (f.skeleton_topology == 'line' and f.convexity >= 0.82)
+    if (f.bbox_fill_ratio >= 0.45
+            and f.convexity >= 0.75
+            and f.hole_count == 0
+            and not f.bbox_cutout_count
+            and f.bbox_side_coverages is not None
+            and max(f.bbox_side_coverages) >= 0.95
+            and (f.skeleton_junction_count or 0) <= 2
+            and not _is_circ_like
+            and not _is_shard_like):
+        return ('rectangle', 'chopped', False, None)
 
     # Rules 6 & 7: branching shapes -- require skeleton data
     junction_count = f.skeleton_junction_count
