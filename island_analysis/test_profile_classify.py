@@ -28,7 +28,7 @@ def _make_features(**overrides) -> IslandFeatures:
         bbox_height=20.0,
         area=400,
         perimeter=80.0,
-        bbox_fill_ratio=1.0,
+        bbox_fill_ratio=0.78,    # neutral default; override to 1.0 for rectangle tests
         rugosity=1.0,
         circle_fit_residual=0.30,   # high by default → not round; override for circles
         ellipse_residual=0.25,      # high by default → not round; override for ellipses
@@ -37,6 +37,7 @@ def _make_features(**overrides) -> IslandFeatures:
         skeleton_total_length=20.0,
         skeleton_topology='line',
         skeleton_path_bends=0,
+        has_point_symmetry=False,
     )
     defaults.update(overrides)
     return IslandFeatures(**defaults)
@@ -45,26 +46,36 @@ def _make_features(**overrides) -> IslandFeatures:
 class TestSquareAndRectangle(unittest.TestCase):
     """Rules 1 & 2 — box-filling shapes."""
 
-    def test_square(self):
+    def test_square_folds_into_rectangle(self):
+        """Near-square shape (equal bbox sides) -> 'rectangle', is_square=True."""
         feat = _make_features(
             bbox_fill_ratio=0.95,
             aspect_ratio=1.05,
             convexity=0.96,
             skeleton_topology='none',
+            bbox_width=20.0,
+            bbox_height=20.0,  # equal sides → is_square=True
         )
-        self.assertEqual(classify_island(feat), 'square')
+        # classify_island returns 'rectangle' for squares; is_square flag via _classify_full
+        self.assertEqual(classify_island(feat), 'rectangle')
+        from island_analysis.profile import _classify_full
+        arch, bnd, is_sq, _ = _classify_full(feat)
+        self.assertEqual(arch, 'rectangle')
+        self.assertTrue(is_sq)
 
     def test_rectangle(self):
         feat = _make_features(
-            bbox_fill_ratio=0.92,
+            bbox_fill_ratio=1.0,
             aspect_ratio=2.0,
             convexity=0.95,
             skeleton_topology='none',
+            bbox_width=10.0,
+            bbox_height=20.0,   # different sides -> not square
         )
         self.assertEqual(classify_island(feat), 'rectangle')
 
-    def test_square_below_fill_threshold_not_square(self):
-        """Low fill ratio must not classify as square even if otherwise round."""
+    def test_square_below_fill_threshold_not_rectangle(self):
+        """Low fill ratio must not classify as rectangle."""
         feat = _make_features(
             bbox_fill_ratio=0.70,
             aspect_ratio=1.0,
@@ -74,8 +85,8 @@ class TestSquareAndRectangle(unittest.TestCase):
         self.assertNotIn(classify_island(feat), ('square', 'rectangle'))
 
 
-class TestDonut(unittest.TestCase):
-    """Rule 3 — ring/annular shape.
+class TestRing(unittest.TestCase):
+    """Rules 3/3.5 — ring/annular shape (formerly 'donut').
 
     Verified reference examples (canonical_key prefix → map):
       8b48d700 → kingdom      convexity=0.988, rugosity=0.993, holes=1
@@ -83,7 +94,7 @@ class TestDonut(unittest.TestCase):
       00ad665f → pineium_ctw  convexity=0.952, rugosity=1.000, holes=1
     """
 
-    def test_donut_kingdom_like(self):
+    def test_ring_kingdom_like(self):
         """High-convexity ring, single hole."""
         feat = _make_features(
             hole_count=1,
@@ -92,9 +103,9 @@ class TestDonut(unittest.TestCase):
             bbox_fill_ratio=0.715,
             skeleton_topology='none',
         )
-        self.assertEqual(classify_island(feat), 'donut')
+        self.assertEqual(classify_island(feat), 'ring')
 
-    def test_donut_ouroboros_like(self):
+    def test_ring_ouroboros_like(self):
         """Moderate-convexity ring."""
         feat = _make_features(
             hole_count=1,
@@ -103,9 +114,9 @@ class TestDonut(unittest.TestCase):
             bbox_fill_ratio=0.34,
             skeleton_topology='none',
         )
-        self.assertEqual(classify_island(feat), 'donut')
+        self.assertEqual(classify_island(feat), 'ring')
 
-    def test_donut_pineium_like(self):
+    def test_ring_pineium_like(self):
         """Small ring with single hole."""
         feat = _make_features(
             hole_count=1,
@@ -114,7 +125,7 @@ class TestDonut(unittest.TestCase):
             bbox_fill_ratio=0.82,
             skeleton_topology='none',
         )
-        self.assertEqual(classify_island(feat), 'donut')
+        self.assertEqual(classify_island(feat), 'ring')
 
     def test_rugged_with_hole_not_donut(self):
         """Rugged island that encloses an air gap should NOT be classified as donut.
@@ -129,7 +140,7 @@ class TestDonut(unittest.TestCase):
             rugosity=1.64,    # well above 1.1 — perimeter is very irregular
             skeleton_topology='none',
         )
-        self.assertNotEqual(classify_island(feat), 'donut')
+        self.assertNotEqual(classify_island(feat), 'ring')
 
     def test_fork_with_hole_not_donut(self):
         """Complex branching island with enclosed pocket must not become donut."""
@@ -141,7 +152,7 @@ class TestDonut(unittest.TestCase):
             skeleton_endpoint_count=4,
             skeleton_topology='tree',
         )
-        self.assertNotEqual(classify_island(feat), 'donut')
+        self.assertNotEqual(classify_island(feat), 'ring')
 
     def test_boundary_convexity_below_threshold(self):
         """hole_count=1 with convexity just below 0.92 is not donut."""
@@ -151,7 +162,7 @@ class TestDonut(unittest.TestCase):
             rugosity=1.00,
             skeleton_topology='none',
         )
-        self.assertNotEqual(classify_island(feat), 'donut')
+        self.assertNotEqual(classify_island(feat), 'ring')
 
     def test_boundary_rugosity_above_threshold(self):
         """hole_count=1 with rugosity just above 1.1 is not donut."""
@@ -161,7 +172,7 @@ class TestDonut(unittest.TestCase):
             rugosity=1.11,
             skeleton_topology='none',
         )
-        self.assertNotEqual(classify_island(feat), 'donut')
+        self.assertNotEqual(classify_island(feat), 'ring')
 
     def test_multiple_holes_not_donut(self):
         """hole_count > 1 is NOT a donut — a genuine ring has exactly one void.
@@ -179,8 +190,8 @@ class TestDonut(unittest.TestCase):
                 skeleton_topology='none',
             )
             self.assertNotEqual(
-                classify_island(feat), 'donut',
-                msg=f'hole_count={holes} should not classify as donut',
+                classify_island(feat), 'ring',
+                msg=f'hole_count={holes} should not classify as ring',
             )
 
 
@@ -213,6 +224,7 @@ class TestCircleEllipse(unittest.TestCase):
             skeleton_topology='line',   # line topology must NOT block circle detection
             skeleton_path_bends=0,
             bbox_fill_ratio=0.78,
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -230,6 +242,7 @@ class TestCircleEllipse(unittest.TestCase):
             skeleton_topology='line',
             skeleton_path_bends=0,
             bbox_fill_ratio=0.778,
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -246,6 +259,7 @@ class TestCircleEllipse(unittest.TestCase):
             skeleton_topology='line',
             skeleton_path_bends=0,
             bbox_fill_ratio=0.826,
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -259,6 +273,7 @@ class TestCircleEllipse(unittest.TestCase):
             skeleton_topology='line',
             skeleton_path_bends=0,
             bbox_fill_ratio=0.786,
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -266,10 +281,12 @@ class TestCircleEllipse(unittest.TestCase):
         """circ_res just below 0.12 passes; just above fails (near-square shapes)."""
         below = _make_features(convexity=0.90, aspect_ratio=1.0,
                                circle_fit_residual=0.119, ellipse_residual=0.119,
-                               skeleton_topology='none', bbox_fill_ratio=0.75)
+                               skeleton_topology='none', bbox_fill_ratio=0.75,
+                               has_point_symmetry=True)
         above = _make_features(convexity=0.90, aspect_ratio=1.0,
                                circle_fit_residual=0.121, ellipse_residual=0.121,
-                               skeleton_topology='none', bbox_fill_ratio=0.75)
+                               skeleton_topology='none', bbox_fill_ratio=0.75,
+                               has_point_symmetry=True)
         self.assertEqual(classify_island(below), 'circle')
         self.assertNotEqual(classify_island(above), 'circle')
 
@@ -284,6 +301,7 @@ class TestCircleEllipse(unittest.TestCase):
             circle_fit_residual=0.1097, ellipse_residual=0.1172,
             bbox_fill_ratio=0.84, area=21,
             skeleton_topology='none',
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -296,7 +314,7 @@ class TestCircleEllipse(unittest.TestCase):
         ellipse = _make_features(
             convexity=0.900, aspect_ratio=1.43,
             ellipse_residual=0.0942, circle_fit_residual=0.15,
-            bbox_fill_ratio=0.7714,
+            bbox_fill_ratio=0.7714, has_point_symmetry=True,
             skeleton_topology='line',
         )
         shard_shape = _make_features(
@@ -452,6 +470,7 @@ class TestShard(unittest.TestCase):
             bbox_fill_ratio=0.78,
             skeleton_topology='line',
             skeleton_path_bends=0,
+            has_point_symmetry=True,
         )
         self.assertEqual(classify_island(feat), 'circle')
 
@@ -484,12 +503,13 @@ class TestPlus(unittest.TestCase):
             skeleton_topology='tree',
             skeleton_junction_count=1,
             skeleton_endpoint_count=4,
+            skeleton_min_arm_angle=90.0,  # well above 60° threshold
             skeleton_path_bends=None,
         )
         self.assertEqual(classify_island(feat), 'plus')
 
-    def test_plus_three_arm(self):
-        """T / Y shapes also count — ≥ 3 endpoints."""
+    def test_plus_three_arm_not_plus(self):
+        """3-endpoint shapes do NOT match plus (requires exactly 4 endpoints)."""
         feat = _make_features(
             convexity=0.72,
             skeleton_topology='tree',
@@ -497,7 +517,7 @@ class TestPlus(unittest.TestCase):
             skeleton_endpoint_count=3,
             skeleton_path_bends=None,
         )
-        self.assertEqual(classify_island(feat), 'plus')
+        self.assertNotEqual(classify_island(feat), 'plus')
 
     def test_two_junctions_not_plus(self):
         """Two junctions → fork territory, not plus."""
@@ -512,96 +532,99 @@ class TestPlus(unittest.TestCase):
 
 
 class TestLShape(unittest.TestCase):
-    """Rule 8 — single 90° bend in a line-topology path.
+    """Rules 4.5/4.8 — L-shape via bbox corner cutout."""
 
-    Verified reference examples:
-      5a56b3ce → garf    bends=1, topo=line
-      8129bfc8 → vertex  bends=1, topo=line
-      26cfa209 → vesuvius bends=1, topo=line
-    """
-
-    def test_l_shape_garf_like(self):
+    def test_l_clean(self):
+        """One clean corner cut (coverage >= 0.90) -> 'L'."""
         feat = _make_features(
             convexity=0.714,
             skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=1,
-            bbox_fill_ratio=0.56,
+            bbox_fill_ratio=0.75,
+            bbox_cutout_count=1,
+            bbox_cutout_coverage=0.93,
+            bbox_cutout_min_fill=0.97,
+            bbox_cutout_corners=frozenset({'TL'}),
         )
-        self.assertEqual(classify_island(feat), 'L_shape')
+        self.assertEqual(classify_island(feat), 'L')
 
-    def test_l_shape_vesuvius_like(self):
+    def test_l_noisy(self):
+        """One corner cut with weaker coverage (0.70-0.90) -> 'L_noisy'."""
         feat = _make_features(
-            convexity=0.662,
-            skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=1,
-            bbox_fill_ratio=0.49,
+            convexity=0.68,
+            skeleton_topology='none',
+            bbox_fill_ratio=0.75,
+            bbox_cutout_count=1,
+            bbox_cutout_coverage=0.75,
+            bbox_cutout_min_fill=0.95,
+            bbox_cutout_corners=frozenset({'BR'}),
         )
-        self.assertEqual(classify_island(feat), 'L_shape')
+        self.assertEqual(classify_island(feat), 'L_noisy')
 
-    def test_zero_bends_not_l(self):
-        """Straight line path must not be L_shape."""
+    def test_no_cutout_not_l(self):
+        """No corner cut must not be L."""
         feat = _make_features(
             convexity=0.71,
             skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=0,
             bbox_fill_ratio=0.55,
         )
-        self.assertNotEqual(classify_island(feat), 'L_shape')
+        self.assertNotIn(classify_island(feat), ('L', 'L_noisy'))
 
 
 class TestZShape(unittest.TestCase):
-    """Rule 9 — two or more direction changes in a line-topology path."""
+    """Rules 4.6/4.9 — Z-shape via diagonal bbox corner cutouts."""
 
-    def test_z_shape_two_bends(self):
+    def test_z_clean_diagonal(self):
+        """Two diagonal corner cuts (TL+BR) -> 'Z'."""
         feat = _make_features(
             convexity=0.775,
-            skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=2,
-            bbox_fill_ratio=0.49,
+            skeleton_topology='none',
+            bbox_fill_ratio=0.65,
+            bbox_cutout_count=2,
+            bbox_cutout_coverage=0.92,
+            bbox_cutout_min_fill=0.96,
+            bbox_cutout_corners=frozenset({'TL', 'BR'}),
         )
-        self.assertEqual(classify_island(feat), 'Z_shape')
+        self.assertEqual(classify_island(feat), 'Z')
 
-    def test_z_shape_three_bends(self):
+    def test_z_noisy_diagonal(self):
+        """Weaker diagonal cuts -> 'Z_noisy'."""
         feat = _make_features(
-            convexity=0.737,
-            skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=3,
+            convexity=0.75,
+            skeleton_topology='none',
+            bbox_fill_ratio=0.65,
+            bbox_cutout_count=2,
+            bbox_cutout_coverage=0.78,
+            bbox_cutout_min_fill=0.95,
+            bbox_cutout_corners=frozenset({'TR', 'BL'}),
         )
-        self.assertEqual(classify_island(feat), 'Z_shape')
+        self.assertEqual(classify_island(feat), 'Z_noisy')
 
-    def test_one_bend_not_z(self):
-        """One bend is L_shape, not Z_shape."""
+    def test_adjacent_cuts_not_z(self):
+        """Two adjacent corner cuts are T not Z."""
         feat = _make_features(
-            convexity=0.72,
-            skeleton_topology='line',
-            skeleton_junction_count=0,
-            skeleton_endpoint_count=2,
-            skeleton_path_bends=1,
+            convexity=0.75,
+            skeleton_topology='none',
+            bbox_fill_ratio=0.65,
+            bbox_cutout_count=2,
+            bbox_cutout_coverage=0.92,
+            bbox_cutout_min_fill=0.96,
+            bbox_cutout_corners=frozenset({'TL', 'TR'}),
         )
-        self.assertEqual(classify_island(feat), 'L_shape')
+        self.assertNotEqual(classify_island(feat), 'Z')
 
 
 class TestFallthrough(unittest.TestCase):
-    """Remaining categories — rugged, linear, blob."""
+    """Remaining categories — amoeba_rugged, linear, amoeba."""
 
-    def test_rugged(self):
+    def test_amoeba_rugged(self):
+        """Rugosity >= 1.2 and no deep concavity -> 'amoeba_rugged'."""
         feat = _make_features(
             rugosity=1.5,
             convexity=0.65,
             aspect_ratio=1.2,
             skeleton_topology='none',
         )
-        self.assertEqual(classify_island(feat), 'rugged')
+        self.assertEqual(classify_island(feat), 'amoeba_rugged')
 
     def test_linear(self):
         feat = _make_features(
@@ -610,18 +633,18 @@ class TestFallthrough(unittest.TestCase):
             convexity=0.72,
             skeleton_topology='line',
             skeleton_path_bends=0,
-            # bends=0 so L/Z don't fire; low convexity so shard doesn't fire
         )
         self.assertEqual(classify_island(feat), 'linear')
 
-    def test_blob(self):
+    def test_amoeba(self):
+        """Default fallthrough -> 'amoeba' (formerly 'blob')."""
         feat = _make_features(
             aspect_ratio=1.2,
             rugosity=1.05,
             convexity=0.72,
             skeleton_topology='none',
         )
-        self.assertEqual(classify_island(feat), 'blob')
+        self.assertEqual(classify_island(feat), 'amoeba')
 
 
 if __name__ == '__main__':
