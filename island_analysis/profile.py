@@ -191,6 +191,7 @@ class IslandFeatures:
     # Phase 0 additions
     bbox_side_coverages: Optional[tuple[float, float, float, float]] = None  # (top, bottom, left, right) bbox side coverage fractions (always computed)
     bbox_fill_ratio_rotated: Optional[float] = None  # bbox fill in PCA-principal-axis-aligned frame (for rotated-rectangle detection)
+    bbox_flush_side_max: Optional[float] = None  # max fraction of any bbox side traced by a flat polygon segment (1.0 = full rectangular edge flush with bbox)
 
 
 @dataclass
@@ -680,6 +681,47 @@ def _rotated_bbox_fill_ratio(exterior: list[list[float]], angle_deg: float) -> f
     return min(1.0, area / bbox_area)
 
 
+def _bbox_side_edge_coverages(
+    exterior: list[list[float]],
+    bbox: list[float],
+) -> tuple[float, float, float, float]:
+    """Fraction of each bbox side that is actually traced by polygon boundary segments.
+
+    Returns (top, bottom, left, right) fractions in [0, 1].
+
+    A value of 1.0 on a side means the entire bbox edge on that side is formed
+    by a flat polygon segment flush with the bounding box — i.e., the island has
+    a straight rectangular edge there.  Values near 0 mean the island boundary
+    only touches that side at a point (blob/circle touching the bbox at the
+    extremal block).  Used to detect shapes with at least one "full flush side."
+    """
+    if len(exterior) < 3:
+        return (0.0, 0.0, 0.0, 0.0)
+    min_x, max_x, min_z, max_z = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+    bbox_w = max(max_x - min_x, 1e-6)
+    bbox_h = max(max_z - min_z, 1e-6)
+    eps = 0.01
+    top = bottom = left = right = 0.0
+    n = len(exterior)
+    for i in range(n):
+        x0, z0 = float(exterior[i][0]), float(exterior[i][1])
+        x1, z1 = float(exterior[(i + 1) % n][0]), float(exterior[(i + 1) % n][1])
+        if abs(z0 - max_z) < eps and abs(z1 - max_z) < eps:
+            top += abs(x1 - x0)
+        if abs(z0 - min_z) < eps and abs(z1 - min_z) < eps:
+            bottom += abs(x1 - x0)
+        if abs(x0 - min_x) < eps and abs(x1 - min_x) < eps:
+            left += abs(z1 - z0)
+        if abs(x0 - max_x) < eps and abs(x1 - max_x) < eps:
+            right += abs(z1 - z0)
+    return (
+        round(min(1.0, top / bbox_w), 4),
+        round(min(1.0, bottom / bbox_w), 4),
+        round(min(1.0, left / bbox_h), 4),
+        round(min(1.0, right / bbox_h), 4),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Point-symmetry helper
 # ---------------------------------------------------------------------------
@@ -889,6 +931,7 @@ def extract_island_features(
         skeleton_min_arm_angle=skel_min_arm_angle,
         bbox_side_coverages=side_coverages,
         bbox_fill_ratio_rotated=bbox_fill_ratio_rotated,
+        bbox_flush_side_max=max(_bbox_side_edge_coverages(exterior, bbox)) if exterior else None,
     )
 
 
@@ -1010,12 +1053,14 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
     if 20.0 <= _pca_mod <= 70.0 and (f.bbox_fill_ratio_rotated or 0.0) >= 0.92:
         return ('rectangle', 'staircase', False, None)
 
-    # Rule 2.9: noisy rectangle -- high fill, convex but slightly rough perimeter
+    # Rule 2.9: noisy rectangle -- high fill, convex but slightly rough perimeter;
+    # jct <= 1 excludes branching shapes (complex topology != rough rectangle).
     if (f.bbox_fill_ratio >= 0.88
             and f.convexity >= 0.88
             and f.hole_count == 0
             and not f.bbox_cutout_count
-            and f.rugosity >= 1.08):
+            and f.rugosity >= 1.08
+            and (f.skeleton_junction_count or 0) <= 1):
         return ('rectangle', 'noisy', False, None)
 
     # Rule 3: ring (clean) -- smooth annular shape with exactly one interior void.
@@ -1114,23 +1159,23 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
         if shard_not_round:
             return ('shard', 'clean', False, None)
 
-    # Rule 5.5: chopped rectangle -- shape with at least one full bbox side but missing
-    # area elsewhere; placed after circle and shard so those get priority.
-    # Exclusions: circular shapes (circ_residual < 0.12, matching circle rule threshold);
-    # low-fill line-topology shapes that are true shards (line + conv >= 0.82 + fill < 0.85)
-    # — high-fill bars with line topology (fill >= 0.85) fall through here correctly.
-    _is_circ_like = (f.circle_fit_residual is not None and f.circle_fit_residual < 0.12)
-    _is_shard_like = (f.skeleton_topology == 'line' and f.convexity >= 0.82
-                      and f.bbox_fill_ratio < 0.85)
-    if (f.bbox_fill_ratio >= 0.45
-            and f.convexity >= 0.75
+    # Rule 5.5: chopped rectangle -- shape that has at least one full rectangular edge
+    # flush with its bounding box; placed after circle and shard so those get priority.
+    # bbox_flush_side_max measures the actual fraction of each bbox side traced by a
+    # straight polygon segment (0 = blob touching only at a point, 1 = full edge flush).
+    # This distinguishes true chopped rectangles from irregular blobs that merely happen
+    # to span their bounding box in all directions.
+    # Additional guards: high fill (the shape is mostly rectangular), high convexity
+    # (only one simple bite is missing), low rugosity (clean straight edges), at most
+    # one skeleton junction (not a branching shape), and no holes or corner cutouts.
+    if (f.bbox_flush_side_max is not None
+            and f.bbox_flush_side_max >= 0.80
+            and f.bbox_fill_ratio >= 0.65
+            and f.convexity >= 0.82
+            and f.rugosity <= 1.12
             and f.hole_count == 0
             and not f.bbox_cutout_count
-            and f.bbox_side_coverages is not None
-            and max(f.bbox_side_coverages) >= 0.95
-            and (f.skeleton_junction_count or 0) <= 2
-            and not _is_circ_like
-            and not _is_shard_like):
+            and (f.skeleton_junction_count or 0) <= 1):
         return ('rectangle', 'chopped', False, None)
 
     # Rule 6: maze -- shape with multiple interior holes; boundary='rugged' when rough.
@@ -1431,6 +1476,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'skeleton_min_arm_angle': feat.skeleton_min_arm_angle,
                 'bbox_side_coverages': list(feat.bbox_side_coverages) if feat.bbox_side_coverages else None,
                 'bbox_fill_ratio_rotated': feat.bbox_fill_ratio_rotated,
+                'bbox_flush_side_max': feat.bbox_flush_side_max,
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -1491,6 +1537,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                     if feat_d.get('bbox_side_coverages') else None
                 ),
                 bbox_fill_ratio_rotated=feat_d.get('bbox_fill_ratio_rotated'),
+                bbox_flush_side_max=feat_d.get('bbox_flush_side_max'),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),
