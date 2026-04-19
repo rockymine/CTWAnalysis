@@ -613,6 +613,100 @@ class TestZShape(unittest.TestCase):
         self.assertNotEqual(classify_island(feat), 'Z')
 
 
+class TestFork(unittest.TestCase):
+    """Rules 7.5 & 8 — fork / comb / trident shapes.
+
+    Verified reference examples (canonical_key prefix → map):
+      dbc2f9a3 → onier              junct=1, endpt=3, cv=0.764, rg=1.317  (Rule 7.5)
+      b2e7b871 → jupiter            junct=1, endpt=3, cv=0.606, rg=1.420  (Rule 7.5)
+      42486dee → philosophers_stone  junct=1, endpt=3, cv=0.734, rg=1.629  (Rule 7.5)
+      32a7b6eb → peloponnesia       junct=1, endpt=3, cv=0.498, rg=1.613  (Rule 7.5)
+      784c96ff → fall_of_babylon    junct=6, endpt=4, cv=0.851, rg=1.457  (Rule 8 rough-comb)
+      8ecd14fa → fall_of_babylon    junct=6, endpt=4, cv=0.850, rg=1.457  (Rule 8 rough-comb)
+    """
+
+    def test_fork_simple_y_deep_concavity(self):
+        """Rule 7.5: single junction, 3 arms, convexity well below 0.80 -> fork."""
+        feat = _make_features(
+            convexity=0.60,
+            rugosity=1.42,
+            skeleton_topology='tree',
+            skeleton_junction_count=1,
+            skeleton_endpoint_count=3,
+            skeleton_path_bends=None,
+        )
+        self.assertEqual(classify_island(feat), 'fork')
+
+    def test_fork_simple_y_moderate_concavity(self):
+        """Rule 7.5: single junction, 3 arms, convexity just below 0.80 threshold -> fork.
+
+        Matches real shapes like dbc2f9a3 (cv=0.764) and 42486dee (cv=0.734).
+        """
+        feat = _make_features(
+            convexity=0.76,
+            rugosity=1.32,
+            skeleton_topology='tree',
+            skeleton_junction_count=1,
+            skeleton_endpoint_count=3,
+            skeleton_path_bends=None,
+        )
+        self.assertEqual(classify_island(feat), 'fork')
+
+    def test_fork_simple_y_high_convexity_not_fork(self):
+        """Rule 7.5 boundary: convexity >= 0.80 with 1 junction, 3 arms -> not fork."""
+        feat = _make_features(
+            convexity=0.85,
+            rugosity=1.30,
+            skeleton_topology='tree',
+            skeleton_junction_count=1,
+            skeleton_endpoint_count=3,
+            skeleton_path_bends=None,
+        )
+        self.assertNotEqual(classify_island(feat), 'fork')
+
+    def test_fork_thick_comb_rough(self):
+        """Rule 8 rough-comb branch: multiple junctions, endpoints >= 3, rugosity >= 1.3,
+        convexity < 0.90 -> fork even when convexity > 0.70.
+
+        Matches real shapes like 784c96ff / 8ecd14fa (cv=0.851, rg=1.457, jc=6, ep=4).
+        """
+        feat = _make_features(
+            convexity=0.85,
+            rugosity=1.46,
+            skeleton_topology='tree',
+            skeleton_junction_count=6,
+            skeleton_endpoint_count=4,
+            skeleton_path_bends=None,
+        )
+        self.assertEqual(classify_island(feat), 'fork')
+
+    def test_fork_thick_comb_smooth_not_fork(self):
+        """Rule 8 rough-comb boundary: same topology but low rugosity -> not fork
+        (smooth high-convexity shapes with multiple branches are amoeba, not comb).
+        """
+        feat = _make_features(
+            convexity=0.85,
+            rugosity=1.10,
+            skeleton_topology='tree',
+            skeleton_junction_count=6,
+            skeleton_endpoint_count=4,
+            skeleton_path_bends=None,
+        )
+        self.assertNotEqual(classify_island(feat), 'fork')
+
+    def test_fork_not_plus(self):
+        """Fork (junctions=1, endpoints=3) is not classified as plus."""
+        feat = _make_features(
+            convexity=0.72,
+            rugosity=1.32,
+            skeleton_topology='tree',
+            skeleton_junction_count=1,
+            skeleton_endpoint_count=3,
+            skeleton_path_bends=None,
+        )
+        self.assertNotEqual(classify_island(feat), 'plus')
+
+
 class TestFallthrough(unittest.TestCase):
     """Remaining categories — amoeba_rugged, linear, amoeba."""
 

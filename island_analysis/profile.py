@@ -999,7 +999,9 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
     5.5   rectangle_chopped  fill >= 0.45, conv >= 0.75, full side, no holes/cutouts
     6.    maze        hole_count >= 2  -> boundary='rugged' if rugosity >= 1.2
     7.    plus        junctions == 1 AND endpoints == 4 AND min_arm_angle >= 60 deg
-    8.    fork        junctions >= 2 AND convexity < 0.70
+    7.5   fork        junctions == 1 AND endpoints == 3 AND convexity < 0.80
+    8.    fork        junctions >= 2 AND (convexity < 0.70 OR
+                        (endpoints >= 3 AND rugosity >= 1.3 AND convexity < 0.90))
     9.    amoeba_rugged  rugosity >= 1.2
     10.   linear      aspect_ratio >= 2.5
     11.   amoeba      (default)
@@ -1018,8 +1020,11 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
       catch WorldEdit-rounded or block-eroded rectangles below the clean gate.
     - L/Z/T noisy (Rules 4.8-4.10): coverage threshold relaxed to 0.70 to capture
       L/Z/T shapes whose corner cut is imprecise or partially filled.
-    - fork vs amoeba_rugged: fork has deep concave gaps (convexity < 0.70);
-      amoeba_rugged has surface roughness without deep concavity.
+    - fork vs amoeba_rugged: fork has deep concave gaps (convexity < 0.70) or is a
+      rough multi-branch comb (endpoints >= 3, rugosity >= 1.3, convexity < 0.90);
+      amoeba_rugged has surface roughness without structural branching.
+    - Rule 7.5 captures Y/trident shapes (1 junction, 3 arms) that fall between plus
+      (requires 4 arms) and the general fork rule (requires junctions >= 2).
     - shard: convexity >= 0.87 captures diamond/tear shapes down to 0.882 (ad1f82ab).
       circle_fit_residual / ellipse_residual + bbox_fill_ratio gate discriminates
       circle from shard (unchanged from prior version).
@@ -1193,8 +1198,21 @@ def _classify_full(features: IslandFeatures) -> tuple[str, str, bool, Optional[s
                 and (f.skeleton_min_arm_angle or 0.0) >= 60.0):
             return ('plus', 'clean', False, None)
 
-        # Rule 8: fork -- multiple junctions with deep concavity
-        if junction_count >= 2 and f.convexity < 0.70:
+        # Rule 7.5: simple fork (Y/trident) -- single junction, 3 arms, noticeable concavity.
+        # Fills the gap between plus (requires 4 arms) and the general fork rule (requires
+        # junctions >= 2): a Y-shaped or trident island has exactly one branching point.
+        if junction_count == 1 and endpoint_count == 3 and f.convexity < 0.80:
+            return ('fork', 'clean', False, None)
+
+        # Rule 8: fork -- multiple junctions with deep concavity, or rough comb topology.
+        # The rough-comb branch captures thick multi-pronged shapes where fat prongs make
+        # the skeletoniser generate many junction nodes (junctions > 1 but convexity is
+        # above the simple 0.70 threshold because the prong gaps are narrow relative to
+        # total area); high rugosity distinguishes them from smooth high-convexity blobs.
+        _rough_comb = (endpoint_count >= 3
+                       and (f.rugosity or 1.0) >= 1.3
+                       and f.convexity < 0.90)
+        if junction_count >= 2 and (f.convexity < 0.70 or _rough_comb):
             return ('fork', 'clean', False, None)
 
     # Rule 9: amoeba_rugged -- noticeably rough perimeter without deep concavity
