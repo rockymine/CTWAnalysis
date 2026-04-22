@@ -192,6 +192,8 @@ class IslandFeatures:
     bbox_side_coverages: Optional[tuple[float, float, float, float]] = None  # (top, bottom, left, right) bbox side coverage fractions (always computed)
     bbox_fill_ratio_rotated: Optional[float] = None  # bbox fill in PCA-principal-axis-aligned frame (for rotated-rectangle detection)
     bbox_flush_side_max: Optional[float] = None  # max fraction of any bbox side traced by a flat polygon segment (1.0 = full rectangular edge flush with bbox)
+    # Axis symmetry
+    axis_symmetry: frozenset[str] = field(default_factory=frozenset)  # subset of {'x', 'z', 'diag'}: which reflection axes the block set is invariant under
 
 
 @dataclass
@@ -771,6 +773,79 @@ def _check_point_symmetry(exterior: list, bbox: list) -> bool:
     return rotated == blocks
 
 
+def _check_symmetry(exterior: list, bbox: list) -> frozenset[str]:
+    """Return the set of symmetries the block set satisfies.
+
+    Symmetry is checked in the *canonical* orientation of the block set (the
+    lexicographically smallest D4 transform with min-corner at the origin), so
+    the result is independent of the world-space position or rotation of the
+    island.  This matches what the profile review card displays.
+
+    Four symmetry types are tested in the canonical (0-based) frame:
+
+      'x'    — horizontal reflection (z = H/2): (bx, bz) → (bx, H−1−bz)
+      'z'    — vertical reflection   (x = W/2): (bx, bz) → (W−1−bx, bz)
+      'diag' — diagonal reflection (square only): main diagonal (bx,bz)→(bz,bx)
+               or anti-diagonal (bx,bz)→(H−1−bz, W−1−bx); either qualifies.
+      'rot'  — 4-fold rotational symmetry (C4, square only): 90° CW rotation
+               (bx, bz) → (H−1−bz, bx) maps the block set to itself.
+
+    Returns a frozenset whose elements are the labels of satisfied symmetries.
+    """
+    import numpy as np
+    from shapely.geometry import Polygon, Point
+    from island_analysis.canonicalize import canonicalize_island
+
+    if len(exterior) < 3:
+        return frozenset()
+
+    min_x = float(bbox[0])
+    max_x = float(bbox[1])
+    min_z = float(bbox[2])
+    max_z = float(bbox[3])
+
+    shapely_poly = Polygon(exterior)
+    world_blocks = [
+        (bx, bz)
+        for bx in range(int(min_x), int(max_x))
+        for bz in range(int(min_z), int(max_z))
+        if shapely_poly.contains(Point(bx + 0.5, bz + 0.5))
+    ]
+    if not world_blocks:
+        return frozenset()
+
+    # Canonicalize: find the lexicographically smallest D4 orientation, min at (0,0)
+    canon = canonicalize_island(0, np.array(world_blocks))
+    cb = canon.canonical_points          # Nx2 int array, min at (0,0)
+    W = int(cb[:, 0].max()) + 1
+    H = int(cb[:, 1].max()) + 1
+    canon_set: frozenset[tuple[int, int]] = frozenset(map(tuple, cb.tolist()))
+
+    syms: set[str] = set()
+
+    # x-axis symmetry: reflect z (bz → H−1−bz)
+    if frozenset((bx, H - 1 - bz) for bx, bz in canon_set) == canon_set:
+        syms.add('x')
+
+    # z-axis symmetry: reflect x (bx → W−1−bx)
+    if frozenset((W - 1 - bx, bz) for bx, bz in canon_set) == canon_set:
+        syms.add('z')
+
+    if W == H:
+        # Diagonal reflection (square only): main diagonal (bx,bz)→(bz,bx) or
+        # anti-diagonal (bx,bz)→(H−1−bz, W−1−bx); either qualifies as 'diag'
+        main_diag = frozenset((bz, bx) for bx, bz in canon_set)
+        anti_diag = frozenset((H - 1 - bz, W - 1 - bx) for bx, bz in canon_set)
+        if main_diag == canon_set or anti_diag == canon_set:
+            syms.add('diag')
+
+        # 4-fold rotational symmetry (C4): 90° CW rotation (bx,bz)→(H−1−bz, bx)
+        if frozenset((H - 1 - bz, bx) for bx, bz in canon_set) == canon_set:
+            syms.add('rot')
+
+    return frozenset(syms)
+
+
 # ---------------------------------------------------------------------------
 # Public API — feature extraction
 # ---------------------------------------------------------------------------
@@ -893,6 +968,9 @@ def extract_island_features(
     # Point-symmetry check (for circle / ellipse gate)
     has_point_symmetry = _check_point_symmetry(exterior, bbox)
 
+    # Axis-symmetry check (x, z, diagonal)
+    island_axis_symmetry = _check_symmetry(exterior, bbox)
+
     # Rotated-frame fill ratio — computed for shapes whose PCA axis is far from
     # aligned (|angle mod 90| in [20°, 70°]), useful for rotated-rectangle detection.
     pca_mod_90 = abs(pca_angle_deg) % 90
@@ -932,6 +1010,7 @@ def extract_island_features(
         bbox_side_coverages=side_coverages,
         bbox_fill_ratio_rotated=bbox_fill_ratio_rotated,
         bbox_flush_side_max=max(_bbox_side_edge_coverages(exterior, bbox)) if exterior else None,
+        axis_symmetry=island_axis_symmetry,
     )
 
 
@@ -1495,6 +1574,7 @@ def save_profiles(profiles: list[IslandProfile], output_path: Path) -> None:
                 'bbox_side_coverages': list(feat.bbox_side_coverages) if feat.bbox_side_coverages else None,
                 'bbox_fill_ratio_rotated': feat.bbox_fill_ratio_rotated,
                 'bbox_flush_side_max': feat.bbox_flush_side_max,
+                'axis_symmetry': sorted(feat.axis_symmetry),
             },
             'raster_strategy': {
                 'grid_size_override': strat.grid_size_override,
@@ -1556,6 +1636,7 @@ def load_profiles(output_path: Path) -> Optional[list[IslandProfile]]:
                 ),
                 bbox_fill_ratio_rotated=feat_d.get('bbox_fill_ratio_rotated'),
                 bbox_flush_side_max=feat_d.get('bbox_flush_side_max'),
+                axis_symmetry=frozenset(feat_d.get('axis_symmetry', [])),
             )
             raster_strategy = IslandRasterStrategy(
                 grid_size_override=strat_d.get('grid_size_override'),

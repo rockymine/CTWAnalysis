@@ -10,7 +10,7 @@ Run with:
 
 import unittest
 
-from island_analysis.profile import IslandFeatures, classify_island
+from island_analysis.profile import IslandFeatures, classify_island, _check_symmetry
 
 
 def _make_features(**overrides) -> IslandFeatures:
@@ -739,6 +739,81 @@ class TestFallthrough(unittest.TestCase):
             skeleton_topology='none',
         )
         self.assertEqual(classify_island(feat), 'amoeba')
+
+
+class TestSymmetry(unittest.TestCase):
+    """_check_symmetry — reflection-axis and rotational symmetry detection."""
+
+    @staticmethod
+    def _box_ext(x0: float, x1: float, z0: float, z1: float) -> list:
+        from shapely.geometry import box
+        return list(box(x0, z0, x1, z1).exterior.coords)
+
+    def test_square_has_all_symmetries(self):
+        """A filled N×N square is symmetric under x, z, diagonal reflection, and 90° rotation."""
+        ext = self._box_ext(0, 4, 0, 4)
+        result = _check_symmetry(ext, [0, 4, 0, 4])
+        self.assertEqual(result, frozenset({'x', 'z', 'diag', 'rot'}))
+
+    def test_non_square_rectangle_has_x_and_z_only(self):
+        """A filled 2×4 rectangle has x and z symmetry but not diagonal or rotational."""
+        ext = self._box_ext(0, 2, 0, 4)
+        result = _check_symmetry(ext, [0, 2, 0, 4])
+        self.assertEqual(result, frozenset({'x', 'z'}))
+
+    def test_l_shape_has_no_symmetry(self):
+        """An L-shape (one bbox corner missing) has no symmetry."""
+        from shapely.geometry import Polygon
+        # 2×3 bbox, blocks: (0,0),(1,0),(0,1),(0,2) — top-right column absent
+        poly = Polygon([(0, 0), (2, 0), (2, 1), (1, 1), (1, 3), (0, 3), (0, 0)])
+        result = _check_symmetry(list(poly.exterior.coords), [0, 2, 0, 3])
+        self.assertEqual(result, frozenset())
+
+    def test_diagonal_only_symmetry(self):
+        """A staircase-triangle is symmetric under diagonal reflection but not x, z, or rot."""
+        from shapely.ops import unary_union
+        from shapely.geometry import box
+        # Blocks (0,0),(1,0),(0,1) in a 2×2 square bbox
+        geom = unary_union([box(x, z, x + 1, z + 1) for x, z in [(0, 0), (1, 0), (0, 1)]])
+        result = _check_symmetry(list(geom.exterior.coords), [0, 2, 0, 2])
+        self.assertIn('diag', result)
+        self.assertNotIn('x', result)
+        self.assertNotIn('z', result)
+        self.assertNotIn('rot', result)
+
+    def test_z_shape_has_no_symmetry(self):
+        """A Z-shape has 180° point symmetry but no reflection or rotational symmetry."""
+        from shapely.ops import unary_union
+        from shapely.geometry import box
+        # 3×3 bbox Z: top-right pair + middle + bottom-left pair
+        z_blocks = [(1, 0), (2, 0), (1, 1), (0, 2), (1, 2)]
+        geom = unary_union([box(x, z, x + 1, z + 1) for x, z in z_blocks])
+        result = _check_symmetry(list(geom.exterior.coords), [0, 3, 0, 3])
+        self.assertEqual(result, frozenset())
+
+    def test_plus_has_rotational_symmetry(self):
+        """A 3×3 plus/cross has x, z, and 4-fold rotational symmetry."""
+        from shapely.ops import unary_union
+        from shapely.geometry import box
+        plus_blocks = [(1, 0), (0, 1), (1, 1), (2, 1), (1, 2)]
+        geom = unary_union([box(x, z, x + 1, z + 1) for x, z in plus_blocks])
+        result = _check_symmetry(list(geom.exterior.coords), [0, 3, 0, 3])
+        self.assertIn('rot', result)
+        self.assertIn('x', result)
+        self.assertIn('z', result)
+
+    def test_diagonal_staircase_has_no_rotational_symmetry(self):
+        """A diagonal staircase has diagonal symmetry but NOT 4-fold rotational symmetry."""
+        from shapely.ops import unary_union
+        from shapely.geometry import box
+        geom = unary_union([box(x, z, x + 1, z + 1) for x, z in [(0, 0), (1, 0), (0, 1)]])
+        result = _check_symmetry(list(geom.exterior.coords), [0, 2, 0, 2])
+        self.assertNotIn('rot', result)
+
+    def test_degenerate_exterior_returns_empty(self):
+        """Fewer than 3 exterior points returns empty frozenset without error."""
+        result = _check_symmetry([(0, 0), (1, 0)], [0, 1, 0, 1])
+        self.assertEqual(result, frozenset())
 
 
 if __name__ == '__main__':

@@ -461,6 +461,7 @@ code.key {{ display: block; text-align: center; font-size: 11px; user-select: al
 .meta {{ font-size: 10px; color: #999; text-align: center; line-height: 1.3; margin-bottom: 3px; }}
 .auto-badge {{ font-size: 10px; color: #2ecc71; display: block; }}
 .override-badge {{ font-size: 10px; color: #e67e22; font-weight: bold; display: block; }}
+.symm-badge {{ font-size: 10px; color: #9b59b6; display: block; }}
 .metrics {{ font-size: 9px; color: #aaa; line-height: 1.5; }}
 select.reclassify {{ font-size: 10px; width: 100%; margin-top: 5px; padding: 2px; }}
 textarea.note-input {{ font-size: 9px; width: 100%; margin-top: 4px; padding: 2px; resize: vertical; min-height: 36px; border: 1px solid #ddd; border-radius: 2px; font-family: monospace; color: #555; background: #fafafa; }}
@@ -850,12 +851,24 @@ def _build_sections(
                 '<button class="skel-toggle" title="Show/hide skeleton">skel</button>'
                 if has_skeleton else ''
             )
+            _axis_label_map = {'x': 'x', 'z': 'z', 'diag': 'x/z', 'rot': 'rot'}
+            _axis_sort_order = {'x': 0, 'z': 1, 'diag': 2, 'rot': 3}
+            _axis_labels = [
+                _axis_label_map[axis]
+                for axis in sorted(feat.axis_symmetry, key=lambda a: _axis_sort_order.get(a, 9))
+            ]
+            symm_html = (
+                f'<span class="symm-badge">symmetry: {", ".join(_axis_labels)}</span>'
+                if _axis_labels else ''
+            )
+
             cells_html += f'''
 <div class="{cell_class}" data-key="{key}" data-has-matches="{'1' if key_has_matches.get(key) else '0'}">
   <div class="svg-wrap">{svg}{skel_btn}</div>
   <code class="key">{key[:8]}</code>
   <div class="meta">{map_label}</div>
   {badge_html}
+  {symm_html}
   <div class="metrics">
     conv:{feat.convexity:.3f}  ar:{feat.aspect_ratio:.2f}<br>
     cfr:{feat.circle_fit_residual:.3f}  er:{feat.ellipse_residual:.3f}<br>
