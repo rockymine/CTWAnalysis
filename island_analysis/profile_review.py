@@ -851,8 +851,10 @@ def _build_sections(
                 '<button class="skel-toggle" title="Show/hide skeleton">skel</button>'
                 if has_skeleton else ''
             )
-            _axis_label_map = {'x': 'x', 'z': 'z', 'diag': 'x/z', 'rot': 'rot'}
-            _axis_sort_order = {'x': 0, 'z': 1, 'diag': 2, 'rot': 3}
+            _axis_label_map = {'x': 'x', 'z': 'z', 'diag': 'x/z', 'rot': 'rot',
+                               'x~': 'x~', 'z~': 'z~', 'diag~': 'x/z~'}
+            _axis_sort_order = {'x': 0, 'z': 1, 'diag': 2, 'rot': 3,
+                                'x~': 4, 'z~': 5, 'diag~': 6}
             _axis_labels = [
                 _axis_label_map[axis]
                 for axis in sorted(feat.axis_symmetry, key=lambda a: _axis_sort_order.get(a, 9))

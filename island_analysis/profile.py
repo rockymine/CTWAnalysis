@@ -773,15 +773,20 @@ def _check_point_symmetry(exterior: list, bbox: list) -> bool:
     return rotated == blocks
 
 
+# A shape is "near-symmetric" under an axis when the number of blocks that
+# must change (symmetric difference / 2) is at most this fraction of total area.
+_NEAR_SYMMETRY_THRESHOLD = 0.03
+
+
 def _check_symmetry(exterior: list, bbox: list) -> frozenset[str]:
-    """Return the set of symmetries the block set satisfies.
+    """Return the set of symmetries the block set satisfies (exact and near).
 
     Symmetry is checked in the *canonical* orientation of the block set (the
     lexicographically smallest D4 transform with min-corner at the origin), so
     the result is independent of the world-space position or rotation of the
     island.  This matches what the profile review card displays.
 
-    Four symmetry types are tested in the canonical (0-based) frame:
+    Four exact symmetry types are tested in the canonical (0-based) frame:
 
       'x'    — horizontal reflection (z = H/2): (bx, bz) → (bx, H−1−bz)
       'z'    — vertical reflection   (x = W/2): (bx, bz) → (W−1−bx, bz)
@@ -789,6 +794,10 @@ def _check_symmetry(exterior: list, bbox: list) -> frozenset[str]:
                or anti-diagonal (bx,bz)→(H−1−bz, W−1−bx); either qualifies.
       'rot'  — 4-fold rotational symmetry (C4, square only): 90° CW rotation
                (bx, bz) → (H−1−bz, bx) maps the block set to itself.
+
+    Near-symmetry variants ('x~', 'z~', 'diag~') are added for axes that fail
+    the exact test but whose mismatch (blocks needing to change) is at most
+    _NEAR_SYMMETRY_THRESHOLD × total_area.  Near-rot is not tested.
 
     Returns a frozenset whose elements are the labels of satisfied symmetries.
     """
@@ -820,16 +829,28 @@ def _check_symmetry(exterior: list, bbox: list) -> frozenset[str]:
     W = int(cb[:, 0].max()) + 1
     H = int(cb[:, 1].max()) + 1
     canon_set: frozenset[tuple[int, int]] = frozenset(map(tuple, cb.tolist()))
+    total_area = len(canon_set)
+    near_threshold = _NEAR_SYMMETRY_THRESHOLD * total_area
 
     syms: set[str] = set()
 
+    def _mismatch(reflected: frozenset[tuple[int, int]]) -> int:
+        """Number of blocks that must change to achieve symmetry (sym-diff / 2)."""
+        return len(canon_set.symmetric_difference(reflected)) // 2
+
     # x-axis symmetry: reflect z (bz → H−1−bz)
-    if frozenset((bx, H - 1 - bz) for bx, bz in canon_set) == canon_set:
+    ref_x = frozenset((bx, H - 1 - bz) for bx, bz in canon_set)
+    if ref_x == canon_set:
         syms.add('x')
+    elif _mismatch(ref_x) <= near_threshold:
+        syms.add('x~')
 
     # z-axis symmetry: reflect x (bx → W−1−bx)
-    if frozenset((W - 1 - bx, bz) for bx, bz in canon_set) == canon_set:
+    ref_z = frozenset((W - 1 - bx, bz) for bx, bz in canon_set)
+    if ref_z == canon_set:
         syms.add('z')
+    elif _mismatch(ref_z) <= near_threshold:
+        syms.add('z~')
 
     if W == H:
         # Diagonal reflection (square only): main diagonal (bx,bz)→(bz,bx) or
@@ -838,6 +859,8 @@ def _check_symmetry(exterior: list, bbox: list) -> frozenset[str]:
         anti_diag = frozenset((H - 1 - bz, W - 1 - bx) for bx, bz in canon_set)
         if main_diag == canon_set or anti_diag == canon_set:
             syms.add('diag')
+        elif _mismatch(main_diag) <= near_threshold or _mismatch(anti_diag) <= near_threshold:
+            syms.add('diag~')
 
         # 4-fold rotational symmetry (C4): 90° CW rotation (bx,bz)→(H−1−bz, bx)
         if frozenset((H - 1 - bz, bx) for bx, bz in canon_set) == canon_set:

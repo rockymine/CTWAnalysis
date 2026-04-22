@@ -810,6 +810,34 @@ class TestSymmetry(unittest.TestCase):
         result = _check_symmetry(list(geom.exterior.coords), [0, 2, 0, 2])
         self.assertNotIn('rot', result)
 
+    def test_near_symmetry_one_block_off(self):
+        """A shape with one block off from z-symmetry gets the 'z~' label, not 'z'."""
+        from shapely.ops import unary_union
+        from shapely.geometry import box
+        # 4×20 rectangle minus one block on the left edge: 1/79 ≈ 1.3% mismatch for z
+        all_blocks = [(x, z) for x in range(4) for z in range(20)]
+        near_blocks = [(x, z) for x, z in all_blocks if not (x == 0 and z == 10)]
+        geom = unary_union([box(x, z, x + 1, z + 1) for x, z in near_blocks])
+        result = _check_symmetry(list(geom.exterior.coords), [0, 4, 0, 20])
+        self.assertIn('z~', result)
+        self.assertNotIn('z', result)
+
+    def test_near_symmetry_too_many_blocks_off(self):
+        """A shape with >3% mismatch does not get a '~' label."""
+        from shapely.geometry import Polygon
+        # L-shape: ~50% mismatch for both x and z — far beyond the 3% threshold
+        poly = Polygon([(0, 0), (2, 0), (2, 1), (1, 1), (1, 3), (0, 3), (0, 0)])
+        result = _check_symmetry(list(poly.exterior.coords), [0, 2, 0, 3])
+        self.assertEqual(result, frozenset())
+
+    def test_exact_symmetry_takes_priority_over_near(self):
+        """An exactly symmetric shape never gets '~' labels."""
+        ext = self._box_ext(0, 4, 0, 4)
+        result = _check_symmetry(ext, [0, 4, 0, 4])
+        self.assertNotIn('x~', result)
+        self.assertNotIn('z~', result)
+        self.assertNotIn('diag~', result)
+
     def test_degenerate_exterior_returns_empty(self):
         """Fewer than 3 exterior points returns empty frozenset without error."""
         result = _check_symmetry([(0, 0), (1, 0)], [0, 1, 0, 1])
