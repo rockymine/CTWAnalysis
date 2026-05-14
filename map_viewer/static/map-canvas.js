@@ -507,12 +507,14 @@ export class MapCanvas {
         cx, cy, rx: rw / 2, ry: rh / 2,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        "vector-effect": "non-scaling-stroke",
       }));
     } else {
       g.appendChild(svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        "vector-effect": "non-scaling-stroke",
       }));
     }
     return g;
@@ -527,7 +529,7 @@ export class MapCanvas {
     return svgEl("path", {
       d, fill: color, "fill-opacity": "0.12",
       stroke: color, "stroke-width": "1.5", "stroke-dasharray": "6,3",
-      "fill-rule": "evenodd",
+      "fill-rule": "evenodd", "vector-effect": "non-scaling-stroke",
     });
   }
 
