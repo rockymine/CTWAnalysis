@@ -73,12 +73,17 @@ export class RegionDetail {
     this.#renderEmpty();
   }
 
+  // Composite region types carry no own coordinates — their bounds are
+  // purely derived from children and have no XML representation.
+  static #COMPOSITE_TYPES = new Set(["union", "negative", "intersect", "complement"]);
+
   show(node) {
     this.#el.innerHTML = "";
     this.#xmlCodeEl = null;
     this.#el.appendChild(this.#buildHeader(node));
     this.#el.appendChild(this.#buildFields(node));
-    if (node.bounds) this.#el.appendChild(this.#buildBounds(node));
+    const isComposite = RegionDetail.#COMPOSITE_TYPES.has(node.type);
+    if (node.bounds && !isComposite) this.#el.appendChild(this.#buildBounds(node));
     if ((node.children || []).length > 0) this.#el.appendChild(this.#buildChildren(node.children));
     this.#el.appendChild(this.#buildXmlPreview(node));
   }
