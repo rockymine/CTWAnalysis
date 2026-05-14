@@ -53,6 +53,7 @@ export class MapCanvas {
 
   // ── live DOM references ───────────────────────────────────────────────────
   #regionGroupMap = new Map();  // id → SVG <g> for fast setSelectedRegions
+  #shapeMap       = new Map();  // id → { shape, type } for live bound updates
   #viewportG      = null;
   #overlayLayer   = null;  // outside viewport — fixed-size labels at screen coords
   #highlightRect  = null;
@@ -79,6 +80,7 @@ export class MapCanvas {
     this.#groups = groups;
     this.#selectedNode = null;
     this.#regionGroupMap.clear();
+    this.#shapeMap.clear();
     // Reset zoom/pan for a newly loaded map
     this.#scale = 1;
     this.#panX  = 0;
@@ -120,6 +122,42 @@ export class MapCanvas {
     const selectedSet = new Set(ids);
     for (const [id, g] of this.#regionGroupMap) {
       g.style.display = selectedSet.has(id) ? "" : "none";
+    }
+  }
+
+  /**
+   * Apply new bounds to a region node in-place and refresh its SVG shape,
+   * anchor blocks, and overlay — without a full repaint.
+   */
+  updateRegionBounds(node, newBounds) {
+    Object.assign(node.bounds, newBounds);
+
+    const entry = this.#shapeMap.get(node.id);
+    if (entry && this.#toSvg) {
+      const { min_x, min_z, max_x, max_z } = node.bounds;
+      const p1 = this.#toSvg(min_x, min_z);
+      const p2 = this.#toSvg(max_x, max_z);
+      if (["cylinder", "circle", "sphere"].includes(entry.type)) {
+        const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+        const rw = Math.abs(p2.x - p1.x), rh = Math.abs(p2.y - p1.y);
+        entry.shape.setAttribute("cx", cx);
+        entry.shape.setAttribute("cy", cy);
+        entry.shape.setAttribute("rx", rw / 2);
+        entry.shape.setAttribute("ry", rh / 2);
+      } else {
+        entry.shape.setAttribute("x",      Math.min(p1.x, p2.x));
+        entry.shape.setAttribute("y",      Math.min(p1.y, p2.y));
+        entry.shape.setAttribute("width",  Math.abs(p2.x - p1.x));
+        entry.shape.setAttribute("height", Math.abs(p2.y - p1.y));
+      }
+    }
+
+    if (this.#selectedNode?.id === node.id) {
+      if (this.#anchorLayer) {
+        while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+        this.#renderAnchors();
+      }
+      this.#updateOverlay();
     }
   }
 
@@ -477,6 +515,7 @@ export class MapCanvas {
 
   #buildXmlRegions() {
     this.#regionGroupMap.clear();
+    this.#shapeMap.clear();
     const g = svgEl("g", { id: "layer-regions" });
     for (const region of this.#flattenNamed(this.#groups)) {
       const regionG = this.#regionGroup(region);
@@ -503,19 +542,23 @@ export class MapCanvas {
       g.appendChild(this.#negativeShape(region, color));
       g.appendChild(this.#label(id, this.#mapCenter(), color, "0.75"));
     } else if (type === "cylinder" || type === "circle" || type === "sphere") {
-      g.appendChild(svgEl("ellipse", {
+      const shape = svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
-      }));
+      });
+      g.appendChild(shape);
+      this.#shapeMap.set(id, { shape, type });
     } else {
-      g.appendChild(svgEl("rect", {
+      const shape = svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
-      }));
+      });
+      g.appendChild(shape);
+      this.#shapeMap.set(id, { shape, type });
     }
     return g;
   }

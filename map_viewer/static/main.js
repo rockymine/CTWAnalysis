@@ -49,7 +49,22 @@ const canvas = new MapCanvas(
   },
 );
 
-const detail = new RegionDetail(document.getElementById("region-detail"));
+let currentMap = null;
+
+const detail = new RegionDetail(
+  document.getElementById("region-detail"),
+  {
+    onBoundsChange: (node, bounds) => {
+      canvas.updateRegionBounds(node, bounds);
+    },
+    onBoundsSave: (node, bounds) => {
+      if (!currentMap) return;
+      api.patchRegion(currentMap, node.id, bounds).catch((err) => {
+        console.error("Region save failed:", err);
+      });
+    },
+  },
+);
 
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
@@ -64,6 +79,7 @@ document.getElementById("toggle-wools").addEventListener("change",  (e) => canva
 // ── map selection ──────────────────────────────────────────────────────────
 
 async function loadMap(name) {
+  currentMap = name;
   setStatus("Loading…");
   try {
     const [ctx, groups] = await Promise.all([

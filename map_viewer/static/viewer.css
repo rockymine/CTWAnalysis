@@ -174,6 +174,22 @@ body {
 .detail-child-dot  { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .detail-child-name { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-child-type { color: #475569; flex-shrink: 0; }
+.detail-bounds-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #94a3b8;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px;
+  text-align: right;
+  width: 68px;
+  outline: none;
+}
+.detail-bounds-input:hover { border-color: #334155; }
+.detail-bounds-input:focus { border-color: #475569; color: #e2e8f0; background: #0f172a; }
+
 .detail-child-bounds {
   color: #334155; font-size: 10px; font-variant-numeric: tabular-nums;
   white-space: nowrap;

@@ -1,30 +1,32 @@
 /**
- * RegionDetail — owns the inspector panel below the sidebar tree.
+ * RegionDetail — owns the inspector panel.
  *
- * Shows all fields of the selected region node: id, type, flags, bounds,
- * and children list. Each coordinate row is a plain <span> for now; they
- * will become <input> elements when the editor is wired up.
+ * Shows all fields of the selected region node. Bound values are editable
+ * inputs for named regions; synthetic regions are read-only.
+ *
+ * Callbacks injected at construction:
+ *   onBoundsChange(node, bounds)  — fired on every keystroke for live canvas preview
+ *   onBoundsSave(node, bounds)    — fired on blur / Enter to persist to server
  */
 
 export class RegionDetail {
   #el;
+  #callbacks;
 
-  /** @param {HTMLElement} el  The #region-detail container. */
-  constructor(el) {
-    this.#el = el;
+  constructor(el, callbacks = {}) {
+    this.#el        = el;
+    this.#callbacks = callbacks;
     this.#renderEmpty();
   }
 
-  /** Show details for the given encoded region node. */
   show(node) {
     this.#el.innerHTML = "";
     this.#el.appendChild(this.#buildHeader(node));
     this.#el.appendChild(this.#buildFields(node));
-    if (node.bounds) this.#el.appendChild(this.#buildBounds(node.bounds));
+    if (node.bounds) this.#el.appendChild(this.#buildBounds(node));
     if ((node.children || []).length > 0) this.#el.appendChild(this.#buildChildren(node.children));
   }
 
-  /** Reset to the idle placeholder. */
   clear() {
     this.#el.innerHTML = "";
     this.#renderEmpty();
@@ -44,9 +46,7 @@ export class RegionDetail {
     row.className = "detail-header";
 
     const dot = document.createElement("div");
-    dot.className = node.synthetic_id
-      ? "detail-dot detail-dot--synthetic"
-      : "detail-dot";
+    dot.className = node.synthetic_id ? "detail-dot detail-dot--synthetic" : "detail-dot";
     if (node.synthetic_id) { dot.style.borderColor = node.color; }
     else                   { dot.style.background  = node.color; }
 
@@ -69,53 +69,115 @@ export class RegionDetail {
     section.className = "detail-section";
 
     const rows = [
-      ["id", node.id],
-      ["label", node.label !== node.id ? node.label : null],
+      ["id",       node.id],
+      ["label",    node.label !== node.id ? node.label : null],
       ["synthetic", node.synthetic_id ? "yes" : null],
-      ["negative", node.is_negative ? "yes" : null],
+      ["negative",  node.is_negative  ? "yes" : null],
     ].filter(([, v]) => v !== null);
 
-    for (const [key, val] of rows) {
-      section.appendChild(this.#fieldRow(key, val));
-    }
+    for (const [key, val] of rows) section.appendChild(this.#fieldRow(key, val));
     return section;
   }
 
-  #buildBounds(bounds) {
+  #buildBounds(node) {
+    // Snapshot the bounds at show-time so Escape can revert correctly.
+    const origBounds = { ...node.bounds };
+    const editable   = !node.synthetic_id;  // synthetic nodes have no server-side id
+
     const section = document.createElement("div");
     section.className = "detail-section";
 
     const heading = document.createElement("div");
     heading.className = "detail-section-label";
-    heading.textContent = "bounds";
+    heading.textContent = editable ? "bounds  (enter to save · esc to revert)" : "bounds";
     section.appendChild(heading);
 
     const table = document.createElement("table");
     table.className = "detail-table";
+    section.appendChild(table);
 
     const thead = table.createTHead();
-    const hr = thead.insertRow();
-    for (const text of ["", "min", "max", "size"]) {
+    const hrow  = thead.insertRow();
+    for (const col of ["", "min", "max", "size"]) {
       const th = document.createElement("th");
-      th.textContent = text;
-      hr.appendChild(th);
+      th.textContent = col;
+      hrow.appendChild(th);
     }
 
-    const tbody = table.createTBody();
-    for (const [axis, minVal, maxVal] of [
-      ["X", bounds.min_x, bounds.max_x],
-      ["Z", bounds.min_z, bounds.max_z],
-    ]) {
-      const size = +(maxVal - minVal).toFixed(4);
-      const tr = tbody.insertRow();
-      const axisCell = tr.insertCell(); axisCell.className = "detail-axis"; axisCell.textContent = axis;
-      const minCell  = tr.insertCell(); minCell.className  = "detail-val";  minCell.textContent  = minVal;
-      const maxCell  = tr.insertCell(); maxCell.className  = "detail-val";  maxCell.textContent  = maxVal;
-      const sizeCell = tr.insertCell(); sizeCell.className = "detail-size"; sizeCell.textContent = size;
+    const tbody        = table.createTBody();
+    const sizeUpdaters = [];
+
+    for (const [axis, minF, maxF] of [["X", "min_x", "max_x"], ["Z", "min_z", "max_z"]]) {
+      const row   = tbody.insertRow();
+      const axisC = row.insertCell(); axisC.className = "detail-axis"; axisC.textContent = axis;
+      const minC  = row.insertCell(); minC.className  = "detail-val";
+      const maxC  = row.insertCell(); maxC.className  = "detail-val";
+      const sizeC = row.insertCell(); sizeC.className = "detail-size";
+
+      const refreshSize = () => {
+        const sz = node.bounds[maxF] - node.bounds[minF];
+        sizeC.textContent = Number.isInteger(sz) ? String(sz) : sz.toFixed(1);
+      };
+      refreshSize();
+      sizeUpdaters.push(refreshSize);
+
+      if (editable) {
+        minC.appendChild(this.#makeBoundInput(minF, node, origBounds, sizeUpdaters));
+        maxC.appendChild(this.#makeBoundInput(maxF, node, origBounds, sizeUpdaters));
+      } else {
+        minC.appendChild(this.#staticVal(node.bounds[minF]));
+        maxC.appendChild(this.#staticVal(node.bounds[maxF]));
+      }
     }
 
-    section.appendChild(table);
     return section;
+  }
+
+  #makeBoundInput(field, node, origBounds, sizeUpdaters) {
+    const input = document.createElement("input");
+    input.type      = "number";
+    input.step      = "any";
+    input.value     = node.bounds[field];
+    input.className = "detail-bounds-input";
+
+    const notify = () => {
+      sizeUpdaters.forEach(fn => fn());
+      if (this.#callbacks.onBoundsChange) this.#callbacks.onBoundsChange(node, node.bounds);
+    };
+
+    input.addEventListener("input", () => {
+      const val = parseFloat(input.value);
+      if (!isNaN(val)) { node.bounds[field] = val; notify(); }
+    });
+
+    input.addEventListener("blur", () => {
+      const val = parseFloat(input.value);
+      if (isNaN(val)) {
+        // Revert invalid text to last valid bound value
+        input.value = node.bounds[field];
+      } else {
+        if (this.#callbacks.onBoundsSave) this.#callbacks.onBoundsSave(node, node.bounds);
+      }
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        node.bounds[field] = origBounds[field];
+        input.value = origBounds[field];
+        notify();
+      }
+    });
+
+    return input;
+  }
+
+  #staticVal(value) {
+    const el = document.createElement("span");
+    el.className = "detail-val";
+    el.textContent = value;
+    return el;
   }
 
   #buildChildren(children) {
@@ -132,9 +194,7 @@ export class RegionDetail {
       row.className = "detail-child-row";
 
       const dot = document.createElement("span");
-      dot.className = child.synthetic_id
-        ? "detail-child-dot region-dot--synthetic"
-        : "detail-child-dot";
+      dot.className = child.synthetic_id ? "detail-child-dot region-dot--synthetic" : "detail-child-dot";
       if (child.synthetic_id) { dot.style.borderColor = child.color; }
       else                    { dot.style.background  = child.color; }
 
@@ -161,7 +221,6 @@ export class RegionDetail {
       row.appendChild(boundsEl);
       section.appendChild(row);
     }
-
     return section;
   }
 

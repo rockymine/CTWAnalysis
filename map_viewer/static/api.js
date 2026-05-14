@@ -1,4 +1,4 @@
-/** All server communication. One place to add save/update endpoints later. */
+/** All server communication. */
 
 export async function fetchMaps() {
   const r = await fetch("/api/maps");
@@ -15,5 +15,18 @@ export async function fetchContext(mapName) {
 export async function fetchRegions(mapName) {
   const r = await fetch(`/api/map/${mapName}/regions`);
   if (!r.ok) throw new Error(`Failed to load regions for ${mapName}`);
+  return r.json();
+}
+
+export async function patchRegion(mapName, regionId, bounds) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bounds }),
+    },
+  );
+  if (!r.ok) throw new Error(`Save failed (${r.status})`);
   return r.json();
 }
