@@ -1,37 +1,34 @@
 /**
- * RegionSidebar — owns the sidebar DOM tree.
+ * RegionSidebar — owns the layers panel DOM tree.
  *
- * Renders the category headers and per-region rows. All layout/size styles
- * live in viewer.css (classes); only data-driven colours are set inline.
- * Delegates all checkbox cascade logic to RegionRegistry.
+ * Renders category headers and per-region rows. No checkboxes; visibility
+ * is driven entirely by selection. All layout/size styles live in viewer.css;
+ * only data-driven colours are set inline.
  */
 
 const TYPE_CLASS = {
   union: "type-union", negative: "type-negative", intersect: "type-intersect",
 };
-const CAT_COLOR = "#4a5568";  // single muted slate for all category headers
+const CAT_COLOR = "#4a5568";
 
 export class RegionSidebar {
   #listEl;
-  #registry;
   #onSelect;
-  #selectedRowEl = null;
+  #rowMap = new Map();  // id → rowEl
 
   /**
-   * @param {HTMLElement} listEl      The #region-list container.
-   * @param {RegionRegistry} registry Shared registry for cascade + visibility.
+   * @param {HTMLElement} listEl
    * @param {object} [callbacks]
    * @param {function} [callbacks.onSelect]  Called with the node when a row is clicked.
    */
-  constructor(listEl, registry, { onSelect } = {}) {
-    this.#listEl    = listEl;
-    this.#registry  = registry;
-    this.#onSelect  = onSelect || null;
+  constructor(listEl, { onSelect } = {}) {
+    this.#listEl   = listEl;
+    this.#onSelect = onSelect || null;
   }
 
   /** Rebuild the sidebar for a freshly loaded map. */
   build(groups) {
-    this.#selectedRowEl = null;
+    this.#rowMap.clear();
     this.#listEl.innerHTML = "";
 
     const hasRegions = groups.some(g => g.regions.length > 0);
@@ -40,15 +37,23 @@ export class RegionSidebar {
       return;
     }
 
-    // Register all nodes in the registry before building DOM
-    // (registry needs the full tree before checkboxes are attached)
-    for (const group of groups) {
-      for (const root of group.regions) this.#registry.register(root, null);
-    }
-
     for (const group of groups) {
       this.#listEl.appendChild(this.#categoryHeader(group));
       this.#appendTree(group.regions, this.#listEl, 0, []);
+    }
+  }
+
+  /**
+   * Highlight the row for primaryId and clear all other row highlights.
+   * Passing null deselects everything.
+   */
+  setSelected(primaryId) {
+    for (const [id, rowEl] of this.#rowMap) {
+      rowEl.classList.toggle("region-row--selected", id === primaryId);
+    }
+    if (primaryId) {
+      const row = this.#rowMap.get(primaryId);
+      if (row) row.scrollIntoView({ block: "nearest" });
     }
   }
 
@@ -58,11 +63,9 @@ export class RegionSidebar {
     const el = document.createElement("div");
     el.className = "cat-header";
     el.style.color = CAT_COLOR;
-
     const line = document.createElement("div");
     line.className = "cat-header-line";
     line.style.background = CAT_COLOR;
-
     el.appendChild(document.createTextNode(group.label));
     el.appendChild(line);
     return el;
@@ -85,26 +88,15 @@ export class RegionSidebar {
     row.dataset.regionId = node.id;
 
     row.appendChild(this.#treeIndent(depth, isLast, isLastChild));
-    const cb = this.#checkbox(node);
-    row.appendChild(cb.wrap);
     row.appendChild(this.#dot(node.color, node.synthetic_id));
     row.appendChild(this.#label(node));
     row.appendChild(this.#typeBadge(node.type));
 
-    row.addEventListener("click", (e) => {
-      // Any click within the checkbox wrapper is for visibility only — not selection.
-      if (cb.wrap.contains(e.target)) return;
-      if (this.#selectedRowEl && this.#selectedRowEl !== row)
-        this.#selectedRowEl.classList.remove("region-row--selected");
-      this.#selectedRowEl = row;
-      row.classList.add("region-row--selected");
-      // Focusing a region automatically enables its overlay.
-      if (!cb.input.checked) {
-        cb.input.checked = true;
-        cb.input.dispatchEvent(new Event("change"));
-      }
+    row.addEventListener("click", () => {
       if (this.#onSelect) this.#onSelect(node);
     });
+
+    this.#rowMap.set(node.id, row);
     return row;
   }
 
@@ -126,28 +118,11 @@ export class RegionSidebar {
     return wrap;
   }
 
-  #checkbox(node) {
-    const wrap = document.createElement("div");
-    wrap.className = "checkbox-wrap";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = false;
-    input.addEventListener("change", () => {
-      this.#registry.setVisible(node.id, input.checked);
-    });
-    this.#registry.attachCheckbox(node.id, input);
-    wrap.appendChild(input);
-    return { wrap, input };
-  }
-
   #dot(color, isSynthetic) {
     const el = document.createElement("div");
     el.className = isSynthetic ? "region-dot region-dot--synthetic" : "region-dot";
-    if (isSynthetic) {
-      el.style.borderColor = color;
-    } else {
-      el.style.background = color;
-    }
+    if (isSynthetic) { el.style.borderColor = color; }
+    else             { el.style.background  = color; }
     return el;
   }
 

@@ -2,16 +2,17 @@
  * MapCanvas — owns the SVG element and all rendering.
  *
  * Public surface:
- *   render(ctx, groups)         full repaint + zoom reset
- *   setRegionVisible(id, v)     show/hide a region overlay
- *   resize()                    re-render at new dimensions (preserves zoom)
- *   showAnchors(node)           highlight anchor blocks for selected region
- *   clearAnchors()              remove anchor highlights
- *   setSpawnsVisible(v)         toggle spawn star markers
- *   setWoolsVisible(v)          toggle wool diamond markers
+ *   render(ctx, groups)            full repaint + zoom reset
+ *   setSelectedRegions(ids)        show overlays only for the given id set
+ *   resize()                       re-render at new dimensions (preserves zoom)
+ *   showAnchors(node)              highlight anchor blocks for focused region
+ *   clearAnchors()                 remove anchor highlights
+ *   setSpawnsVisible(v)            toggle spawn star markers
+ *   setWoolsVisible(v)             toggle wool diamond markers
  *
  * Callbacks injected at construction:
- *   onCoords(x, z)              block coords under mouse (null, null on leave)
+ *   onCoords(x, z)                 block coords under mouse (null, null on leave)
+ *   onCanvasClick(node | null)     region hit under click, or null for empty space
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
@@ -44,12 +45,14 @@ export class MapCanvas {
   #panX  = 0;
   #panY  = 0;
 
-  // ── drag state ────────────────────────────────────────────────────────────
-  #isDragging  = false;
-  #dragAnchor  = null;   // { x, y, panX, panY }
-  #didDrag     = false;  // true if mouse moved enough to count as a pan
+  // ── drag / click state ───────────────────────────────────────────────────
+  #isDragging   = false;
+  #dragAnchor   = null;   // { x, y, panX, panY }
+  #didDrag      = false;  // true if mouse moved enough to count as a pan
+  #clickWasDrag = false;  // latched in mouseup, consumed in click handler
 
   // ── live DOM references ───────────────────────────────────────────────────
+  #regionGroupMap = new Map();  // id → SVG <g> for fast setSelectedRegions
   #viewportG      = null;
   #highlightRect  = null;
   #anchorLayer    = null;
@@ -74,6 +77,7 @@ export class MapCanvas {
     this.#ctx    = ctx;
     this.#groups = groups;
     this.#selectedNode = null;
+    this.#regionGroupMap.clear();
     // Reset zoom/pan for a newly loaded map
     this.#scale = 1;
     this.#panX  = 0;
@@ -106,9 +110,12 @@ export class MapCanvas {
     if (this.#woolLayerEl) this.#woolLayerEl.style.display = v ? "" : "none";
   }
 
-  setRegionVisible(id, visible) {
-    const g = this.#svg.querySelector(`#region-${CSS.escape(id)}`);
-    if (g) g.style.display = visible ? "" : "none";
+  /** Show overlays for exactly the given ids; hide everything else. */
+  setSelectedRegions(ids) {
+    const selectedSet = new Set(ids);
+    for (const [id, g] of this.#regionGroupMap) {
+      g.style.display = selectedSet.has(id) ? "" : "none";
+    }
   }
 
   resize() {
@@ -180,12 +187,19 @@ export class MapCanvas {
       this.#applyViewportTransform();
     }, { passive: false });
 
-    // ── pan (left-drag) ──────────────────────────────────────────────────────
+    // ── pan (left-drag) / click ──────────────────────────────────────────────
     this.#svg.addEventListener("mousedown", (e) => {
       if (!this.#viewportG || e.button !== 0) return;
+      this.#clickWasDrag = false;  // reset for each new gesture
       this.#isDragging = true;
       this.#didDrag    = false;
       this.#dragAnchor = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
+    });
+
+    // Canvas click: latch wasDrag (set in mouseup which fires first), then hit-test
+    this.#svg.addEventListener("click", (e) => {
+      if (this.#clickWasDrag) return;
+      this.#handleCanvasClick(e.clientX, e.clientY);
     });
 
     // ── mouse move: pan + coordinate tracking + block highlight ─────────────
@@ -212,13 +226,43 @@ export class MapCanvas {
       if (this.#callbacks.onCoords) this.#callbacks.onCoords(null, null);
     });
 
-    // End drag on mouseup anywhere in the window
+    // End drag on mouseup anywhere in the window; latch drag state before reset
     window.addEventListener("mouseup", (e) => {
       if (e.button !== 0) return;
+      this.#clickWasDrag = this.#didDrag;
       this.#isDragging = false;
       this.#didDrag    = false;
       this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
     });
+  }
+
+  #handleCanvasClick(clientX, clientY) {
+    if (!this.#toWorld || !this.#callbacks.onCanvasClick) return;
+    const svgPt = this.#clientToSvg(clientX, clientY);
+    const world = this.#toWorld(svgPt.x, svgPt.y);
+
+    // Collect all regions the click lands inside, pick the smallest by area
+    const candidates = this.#flattenNamed(this.#groups)
+      .filter(r => r.bounds && !r.is_negative && this.#pointInRegion(world, r));
+    candidates.sort((a, b) => this.#regionArea(a) - this.#regionArea(b));
+    this.#callbacks.onCanvasClick(candidates[0] ?? null);
+  }
+
+  #pointInRegion({ x, z }, region) {
+    const { min_x, min_z, max_x, max_z } = region.bounds;
+    const isCircular = ["cylinder", "circle", "sphere"].includes(region.type);
+    if (isCircular) {
+      const cx = (min_x + max_x) / 2, cz = (min_z + max_z) / 2;
+      const rx = (max_x - min_x) / 2, rz = (max_z - min_z) / 2;
+      if (rx === 0 || rz === 0) return false;
+      return ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 <= 1;
+    }
+    return x >= min_x && x <= max_x && z >= min_z && z <= max_z;
+  }
+
+  #regionArea(region) {
+    const { min_x, min_z, max_x, max_z } = region.bounds;
+    return (max_x - min_x) * (max_z - min_z);
   }
 
   #updateCoordsAndHighlight(clientX, clientY) {
@@ -357,9 +401,12 @@ export class MapCanvas {
   }
 
   #buildXmlRegions() {
+    this.#regionGroupMap.clear();
     const g = svgEl("g", { id: "layer-regions" });
     for (const region of this.#flattenNamed(this.#groups)) {
-      g.appendChild(this.#regionGroup(region));
+      const regionG = this.#regionGroup(region);
+      this.#regionGroupMap.set(region.id, regionG);
+      g.appendChild(regionG);
     }
     return g;
   }

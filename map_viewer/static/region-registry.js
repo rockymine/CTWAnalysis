@@ -1,97 +1,59 @@
 /**
- * RegionRegistry — owns the checkbox cascade and selection state.
+ * RegionRegistry — tracks the region tree and selection state.
  *
- * Knows nothing about the DOM beyond checkboxes; talks to the canvas and
- * sidebar via callbacks injected at construction time.
+ * Selection is single-primary: clicking a node selects it and all its
+ * descendants. The onSelectionChange callback receives the primary node
+ * object and the full array of selected ids (primary + all descendants).
  */
 export class RegionRegistry {
-  // id → { parentId, directChildIds, el: HTMLInputElement|null }
-  #entries = new Map();
-  #onVisibilityChange;  // (id, visible) => void  — wired to canvas
-  #toggleAllEl = null;
+  #entries = new Map();   // id → { parentId, childIds, node }
+  #onSelectionChange;     // (primaryNode | null, selectedIds: string[]) => void
+  #selectedIds = new Set();
+  #primaryId = null;
 
-  constructor({ onVisibilityChange }) {
-    this.#onVisibilityChange = onVisibilityChange;
-  }
-
-  setToggleAllEl(el) {
-    this.#toggleAllEl = el;
+  constructor({ onSelectionChange } = {}) {
+    this.#onSelectionChange = onSelectionChange || null;
   }
 
   clear() {
     this.#entries.clear();
+    this.#selectedIds.clear();
+    this.#primaryId = null;
   }
 
   /** Recursively register a tree node and all its descendants. */
   register(node, parentId = null) {
-    const directChildIds = (node.children || []).filter(c => c.id).map(c => c.id);
-    this.#entries.set(node.id, { parentId, directChildIds, el: null });
+    const childIds = (node.children || []).map(c => c.id).filter(Boolean);
+    this.#entries.set(node.id, { parentId, childIds, node });
     for (const child of (node.children || [])) this.register(child, node.id);
   }
 
-  /** Called by the sidebar after it creates a checkbox element. */
-  attachCheckbox(id, el) {
-    const info = this.#entries.get(id);
-    if (info) info.el = el;
-  }
-
-  /** Toggle a region and cascade to all descendants. */
-  setVisible(id, checked) {
-    this.#cascade(id, checked);
-    this.#updateAncestors(id);
-    this.#syncToggleAll();
-  }
-
-  /** Cascade down without ancestor update — used by setVisible internally. */
-  #cascade(id, checked) {
+  /** Select a node by id; fires onSelectionChange with the node + all descendants. */
+  select(id) {
     const info = this.#entries.get(id);
     if (!info) return;
-    if (info.el) {
-      info.el.checked = checked;
-      info.el.indeterminate = false;
-    }
-    this.#onVisibilityChange(id, checked);
-    for (const childId of info.directChildIds) this.#cascade(childId, checked);
+    this.#primaryId = id;
+    this.#selectedIds.clear();
+    this.#collectDescendants(id, this.#selectedIds);
+    if (this.#onSelectionChange) this.#onSelectionChange(info.node, [...this.#selectedIds]);
   }
 
-  #updateAncestors(id) {
+  /** Clear selection; fires onSelectionChange with null and an empty array. */
+  deselect() {
+    this.#primaryId = null;
+    this.#selectedIds.clear();
+    if (this.#onSelectionChange) this.#onSelectionChange(null, []);
+  }
+
+  /** Return the stored node object for a given id, or null. */
+  getNode(id) {
+    return this.#entries.get(id)?.node ?? null;
+  }
+
+  #collectDescendants(id, out) {
+    out.add(id);
     const info = this.#entries.get(id);
-    if (!info?.parentId) return;
-    const parent = this.#entries.get(info.parentId);
-    if (!parent) { this.#updateAncestors(info.parentId); return; }
-    if (parent.el) {
-      const states = parent.directChildIds.map(cid => {
-        const c = this.#entries.get(cid);
-        return c?.el ? c.el.checked && !c.el.indeterminate : true;
-      });
-      const allChecked = states.every(Boolean);
-      const anyChecked = states.some(Boolean);
-      parent.el.indeterminate = anyChecked && !allChecked;
-      if (!parent.el.indeterminate) parent.el.checked = allChecked;
-    }
-    this.#updateAncestors(info.parentId);
-  }
-
-  #syncToggleAll() {
-    if (!this.#toggleAllEl) return;
-    const els = [...this.#entries.values()].filter(i => i.el).map(i => i.el);
-    const allChecked = els.every(el => el.checked && !el.indeterminate);
-    const anyChecked = els.some(el => el.checked || el.indeterminate);
-    this.#toggleAllEl.indeterminate = anyChecked && !allChecked;
-    this.#toggleAllEl.checked = allChecked;
-  }
-
-  /** Set all regions on or off (called by the toggle-all checkbox). */
-  setAllVisible(checked) {
-    for (const [id, info] of this.#entries) {
-      if (!info.parentId) this.#cascade(id, checked);
-    }
-    this.#syncToggleAll();
-  }
-
-  rootIds() {
-    return [...this.#entries.entries()]
-      .filter(([, i]) => !i.parentId)
-      .map(([id]) => id);
+    if (!info) return;
+    for (const childId of info.childIds) this.#collectDescendants(childId, out);
   }
 }

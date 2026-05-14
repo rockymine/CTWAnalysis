@@ -1,9 +1,14 @@
 /**
  * Application bootstrap — wires components together.
  *
- * This is the only file that knows about all three components.
- * Cross-component communication (e.g. canvas click → sidebar highlight) is
- * added here as callbacks, keeping each component ignorant of the others.
+ * Cross-component communication flows through here as callbacks so each
+ * component stays ignorant of the others.
+ *
+ * Selection model:
+ *   - Clicking a layer row or canvas region → registry.select(id)
+ *   - Registry fires onSelectionChange(primaryNode, selectedIds)
+ *   - Canvas shows overlays for all selectedIds; inspector shows primaryNode
+ *   - Clicking empty canvas → registry.deselect() → clears everything
  */
 
 import { MapCanvas }      from "./map-canvas.js";
@@ -15,7 +20,17 @@ import * as api           from "./api.js";
 // ── component instances ────────────────────────────────────────────────────
 
 const registry = new RegionRegistry({
-  onVisibilityChange: (id, visible) => canvas.setRegionVisible(id, visible),
+  onSelectionChange: (primaryNode, selectedIds) => {
+    canvas.setSelectedRegions(selectedIds);
+    sidebar.setSelected(primaryNode?.id ?? null);
+    if (primaryNode) {
+      detail.show(primaryNode);
+      canvas.showAnchors(primaryNode);
+    } else {
+      detail.clear();
+      canvas.clearAnchors();
+    }
+  },
 });
 
 const coordsEl = document.getElementById("cursor-coords");
@@ -27,6 +42,10 @@ const canvas = new MapCanvas(
     onCoords: (x, z) => {
       coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
     },
+    onCanvasClick: (node) => {
+      if (node) registry.select(node.id);
+      else registry.deselect();
+    },
   },
 );
 
@@ -34,15 +53,8 @@ const detail = new RegionDetail(document.getElementById("region-detail"));
 
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
-  registry,
-  { onSelect: (node) => { detail.show(node); canvas.showAnchors(node); } },
+  { onSelect: (node) => registry.select(node.id) },
 );
-
-// ── toggle-all wiring ──────────────────────────────────────────────────────
-
-const toggleAllEl = document.getElementById("toggle-all");
-registry.setToggleAllEl(toggleAllEl);
-toggleAllEl.addEventListener("change", (e) => registry.setAllVisible(e.target.checked));
 
 // ── POI layer toggles ─────────────────────────────────────────────────────
 
@@ -63,6 +75,10 @@ async function loadMap(name) {
     sidebar.build(groups);
     detail.clear();
     canvas.clearAnchors();
+    // Register all nodes so registry can resolve ids to node objects
+    for (const group of groups) {
+      for (const root of group.regions) registry.register(root, null);
+    }
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,

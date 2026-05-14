@@ -7,14 +7,27 @@ _RED     = "#c06060"   # muted red   — red-team regions
 _NEUTRAL = "#64748b"   # slate gray  — everything else
 
 # Canonical category order and display labels.
-_CATEGORY_ORDER = ["spawn", "wool", "monument", "build", "other"]
+# wool+block → monument; wool+other → wool_room
+# spawn+point → spawn_point; spawn+other → spawn_area
+# The original "monument" category in region_categories is always empty in practice.
+_CATEGORY_ORDER = ["spawn_area", "spawn_point", "wool_room", "monument", "build", "other"]
 _CATEGORY_LABELS = {
-    "spawn":    "Spawns",
-    "wool":     "Wool",
-    "monument": "Monuments",
-    "build":    "Build",
-    "other":    "Other",
+    "spawn_area":  "Spawn Areas",
+    "spawn_point": "Spawn Points",
+    "wool_room":   "Wool Rooms",
+    "monument":    "Monuments",
+    "build":       "Build",
+    "other":       "Other",
 }
+
+
+def _refine_category(base_cat: str, region_type: str) -> str:
+    """Refine coarse XML categories into semantically distinct groups."""
+    if base_cat == "wool":
+        return "monument" if region_type == "block" else "wool_room"
+    if base_cat == "spawn":
+        return "spawn_point" if region_type == "point" else "spawn_area"
+    return base_cat
 
 
 def _region_color(region_id: str) -> str:
@@ -134,10 +147,11 @@ def encode_region_tree_categorized(
         if region_id not in named_child_ids
     ]
 
-    # Group root nodes by category
+    # Group root nodes by (refined) category
     groups: dict[str, list[dict]] = {}
     for node in root_nodes:
-        cat = id_to_category.get(node["id"], "other")
+        base_cat = id_to_category.get(node["id"], "other")
+        cat = _refine_category(base_cat, node["type"])
         groups.setdefault(cat, []).append(node)
 
     # Emit in canonical order, then any extra categories, skipping empty groups
