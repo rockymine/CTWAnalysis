@@ -9,6 +9,7 @@
 import { MapCanvas }      from "./map-canvas.js";
 import { RegionSidebar }  from "./region-sidebar.js";
 import { RegionRegistry } from "./region-registry.js";
+import { RegionDetail }   from "./region-detail.js";
 import * as api           from "./api.js";
 
 // ── component instances ────────────────────────────────────────────────────
@@ -22,9 +23,12 @@ const canvas = new MapCanvas(
   document.getElementById("canvas-wrap"),
 );
 
+const detail = new RegionDetail(document.getElementById("region-detail"));
+
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
   registry,
+  { onSelect: (node) => detail.show(node) },
 );
 
 // ── toggle-all wiring ──────────────────────────────────────────────────────
@@ -45,6 +49,7 @@ async function loadMap(name) {
     registry.clear();
     canvas.render(ctx, groups);
     sidebar.build(groups);
+    detail.clear();
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
