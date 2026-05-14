@@ -44,10 +44,11 @@ export class RegionDetail {
     row.className = "detail-header";
 
     const dot = document.createElement("div");
-    dot.className = "detail-dot";
-    dot.style.cssText = node.synthetic_id
-      ? `background:transparent; border:1px dashed ${node.color};`
-      : `background:${node.color};`;
+    dot.className = node.synthetic_id
+      ? "detail-dot detail-dot--synthetic"
+      : "detail-dot";
+    if (node.synthetic_id) { dot.style.borderColor = node.color; }
+    else                   { dot.style.background  = node.color; }
 
     const label = document.createElement("span");
     label.className = "detail-label";
@@ -131,10 +132,11 @@ export class RegionDetail {
       row.className = "detail-child-row";
 
       const dot = document.createElement("span");
-      dot.className = "detail-child-dot";
-      dot.style.cssText = child.synthetic_id
-        ? `background:transparent; border:1px dashed ${child.color};`
-        : `background:${child.color};`;
+      dot.className = child.synthetic_id
+        ? "detail-child-dot region-dot--synthetic"
+        : "detail-child-dot";
+      if (child.synthetic_id) { dot.style.borderColor = child.color; }
+      else                    { dot.style.background  = child.color; }
 
       const nameEl = document.createElement("span");
       nameEl.className = "detail-child-name";

@@ -1,9 +1,9 @@
 /**
  * RegionSidebar — owns the sidebar DOM tree.
  *
- * Renders the category headers and per-region rows. Delegates all checkbox
- * cascade logic to RegionRegistry. Designed to grow a coordinate detail
- * panel below the tree for the editor.
+ * Renders the category headers and per-region rows. All layout/size styles
+ * live in viewer.css (classes); only data-driven colours are set inline.
+ * Delegates all checkbox cascade logic to RegionRegistry.
  */
 
 const TYPE_CLASS = {
@@ -60,13 +60,13 @@ export class RegionSidebar {
   #categoryHeader(group) {
     const color = CAT_COLORS[group.name] || "#64748b";
     const el = document.createElement("div");
-    el.style.cssText = `
-      display:flex; align-items:center; gap:6px; padding:8px 10px 4px 10px;
-      font-size:10px; font-weight:700; letter-spacing:.07em;
-      color:${color}; text-transform:uppercase; user-select:none;
-    `;
+    el.className = "cat-header";
+    el.style.color = color;
+
     const line = document.createElement("div");
-    line.style.cssText = `flex:1; height:1px; background:${color}; opacity:0.25;`;
+    line.className = "cat-header-line";
+    line.style.background = color;
+
     el.appendChild(document.createTextNode(group.label));
     el.appendChild(line);
     return el;
@@ -84,7 +84,6 @@ export class RegionSidebar {
   }
 
   #regionRow(node, depth, isLast, isLastChild) {
-    const isSynthetic = !!node.synthetic_id;
     const row = document.createElement("div");
     row.className = "region-row";
     row.dataset.regionId = node.id;
@@ -92,8 +91,8 @@ export class RegionSidebar {
     row.appendChild(this.#treeIndent(depth, isLast, isLastChild));
     const cb = this.#checkbox(node);
     row.appendChild(cb.wrap);
-    row.appendChild(this.#dot(node.color, isSynthetic));
-    row.appendChild(this.#label(node, isSynthetic));
+    row.appendChild(this.#dot(node.color, node.synthetic_id));
+    row.appendChild(this.#label(node));
     row.appendChild(this.#typeBadge(node.type));
 
     row.addEventListener("click", (e) => {
@@ -111,18 +110,15 @@ export class RegionSidebar {
   #treeIndent(depth, isLast, isLastChild) {
     const wrap = document.createElement("div");
     wrap.className = "region-indent";
-    wrap.style.paddingLeft = "8px";
     for (let d = 0; d < depth; d++) {
-      const line = document.createElement("span");
-      line.style.cssText = `
-        display:inline-block; width:14px; flex-shrink:0;
-        border-left:1px solid ${isLast[d] ? "transparent" : "#2d4263"};
-      `;
-      wrap.appendChild(line);
+      const pipe = document.createElement("span");
+      pipe.className = "indent-pipe";
+      pipe.style.borderColor = isLast[d] ? "transparent" : "#2d4263";
+      wrap.appendChild(pipe);
     }
     if (depth > 0) {
       const elbow = document.createElement("span");
-      elbow.style.cssText = "display:inline-block; width:14px; flex-shrink:0; font-size:9px; color:#334155; line-height:22px;";
+      elbow.className = "indent-elbow";
       elbow.textContent = isLastChild ? "└" : "├";
       wrap.appendChild(elbow);
     }
@@ -131,7 +127,7 @@ export class RegionSidebar {
 
   #checkbox(node) {
     const wrap = document.createElement("div");
-    wrap.style.cssText = "width:17px; flex-shrink:0; display:flex; justify-content:center;";
+    wrap.className = "checkbox-wrap";
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = false;
@@ -145,28 +141,30 @@ export class RegionSidebar {
 
   #dot(color, isSynthetic) {
     const el = document.createElement("div");
-    el.style.cssText = isSynthetic
-      ? `width:9px; height:9px; border-radius:2px; flex-shrink:0; opacity:0.5; background:transparent; border:1px dashed ${color};`
-      : `width:9px; height:9px; border-radius:2px; flex-shrink:0; opacity:0.85; background:${color};`;
+    el.className = isSynthetic ? "region-dot region-dot--synthetic" : "region-dot";
+    if (isSynthetic) {
+      el.style.borderColor = color;
+    } else {
+      el.style.background = color;
+    }
     return el;
   }
 
-  #label(node, isSynthetic) {
+  #label(node) {
     const el = document.createElement("span");
-    el.style.cssText = `
-      flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px;
-      ${isSynthetic ? "font-style:italic; color:#64748b;" : "color:#cbd5e1;"}
-    `;
+    el.className = node.synthetic_id
+      ? "region-label region-label--synthetic"
+      : "region-label";
     el.textContent = node.label;
-    el.title = isSynthetic ? `${node.label}  (id: ${node.id})` : node.label;
+    el.title = node.synthetic_id ? `${node.label}  (id: ${node.id})` : node.label;
     return el;
   }
 
   #typeBadge(type) {
     const el = document.createElement("span");
-    const cls = TYPE_CLASS[type];
-    el.style.cssText = "font-size:9px; background:#0f172a; padding:1px 4px; border-radius:3px; flex-shrink:0;";
-    if (cls) { el.className = cls; } else { el.style.color = "#475569"; }
+    el.className = "region-type-badge";
+    const typeClass = TYPE_CLASS[type];
+    if (typeClass) el.classList.add(typeClass);
     el.textContent = type;
     return el;
   }
