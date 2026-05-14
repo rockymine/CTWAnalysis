@@ -174,10 +174,20 @@ function polyToPath(poly) {
 // ── flatten tree → named+bounded nodes for SVG ────────────────────────────
 function flattenNamed(nodes, out = []) {
   for (const node of nodes) {
-    if (node.id && node.bounds) out.push(node);
+    if (node.id && (node.bounds || node.is_negative)) out.push(node);
     flattenNamed(node.children || [], out);
   }
   return out;
+}
+
+// Convert a bounds dict {min_x, min_z, max_x, max_z} to an SVG path ring.
+function boundsToRingPath(bounds) {
+  const {min_x, min_z, max_x, max_z} = bounds;
+  const corners = [[min_x, min_z], [max_x, min_z], [max_x, max_z], [min_x, max_z]];
+  return corners.map(([wx, wz], i) => {
+    const p = _toSvg(wx, wz);
+    return (i === 0 ? "M" : "L") + `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  }).join(" ") + " Z";
 }
 
 // ── rendering ──────────────────────────────────────────────────────────────
@@ -257,40 +267,77 @@ function renderMap(ctx, tree) {
   const regionsGroup = svgEl("g", { id: "layer-regions" });
   for (const region of flattenNamed(tree)) {
     const { id, type, color, bounds } = region;
-    const p1 = _toSvg(bounds.min_x, bounds.min_z);
-    const p2 = _toSvg(bounds.max_x, bounds.max_z);
-    const rx = Math.min(p1.x, p2.x), ry = Math.min(p1.y, p2.y);
-    const rw = Math.abs(p2.x - p1.x), rh = Math.abs(p2.y - p1.y);
-    const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+    // bounds may be null for negative regions — compute derived coords only when present
+    const p1 = bounds ? _toSvg(bounds.min_x, bounds.min_z) : null;
+    const p2 = bounds ? _toSvg(bounds.max_x, bounds.max_z) : null;
+    const rx = p1 ? Math.min(p1.x, p2.x) : 0, ry = p1 ? Math.min(p1.y, p2.y) : 0;
+    const rw = p1 ? Math.abs(p2.x - p1.x) : 0, rh = p1 ? Math.abs(p2.y - p1.y) : 0;
+    const cx = p1 ? (p1.x + p2.x) / 2 : 0, cy = p1 ? (p1.y + p2.y) / 2 : 0;
 
     const g = svgEl("g", { id: `region-${id}`, style: "display:none" });
     const title = svgEl("title");
     title.textContent = `${id} (${type})`;
     g.appendChild(title);
 
-    if (type === "cylinder" || type === "circle" || type === "sphere") {
+    if (region.is_negative) {
+      // Negative (complement) region: render as map bounding box with child
+      // bounds cut out as holes, so the shaded area shows what IS covered
+      // (everything on the map except the excluded children).
+      const [mapMinX, mapMaxX, mapMinZ, mapMaxZ] = ctx.bounding_box;
+      const mapBounds = {min_x: mapMinX, min_z: mapMinZ, max_x: mapMaxX, max_z: mapMaxZ};
+      let d = boundsToRingPath(mapBounds);
+      for (const child of (region.children || [])) {
+        if (child.bounds) d += " " + boundsToRingPath(child.bounds);
+      }
+      g.appendChild(svgEl("path", {
+        d,
+        fill: color, "fill-opacity": "0.12",
+        stroke: color, "stroke-width": "1.5", "stroke-dasharray": "6,3",
+        "fill-rule": "evenodd",
+      }));
+      // Label at center of map bbox
+      const mapCx = (_toSvg(mapMinX, mapMinZ).x + _toSvg(mapMaxX, mapMaxZ).x) / 2;
+      const mapCy = (_toSvg(mapMinX, mapMinZ).y + _toSvg(mapMaxX, mapMaxZ).y) / 2;
+      const lbl = svgEl("text", {
+        x: mapCx, y: mapCy,
+        "text-anchor": "middle", "dominant-baseline": "middle",
+        "font-size": "9", fill: color, "fill-opacity": "0.75",
+        "pointer-events": "none",
+      });
+      lbl.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
+      g.appendChild(lbl);
+    } else if (type === "cylinder" || type === "circle" || type === "sphere") {
       g.appendChild(svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
       }));
+      if (rw > 20 || rh > 20) {
+        const lbl = svgEl("text", {
+          x: cx, y: cy,
+          "text-anchor": "middle", "dominant-baseline": "middle",
+          "font-size": "9", fill: color, "fill-opacity": "0.9",
+          "pointer-events": "none",
+        });
+        lbl.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
+        g.appendChild(lbl);
+      }
     } else {
       g.appendChild(svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
       }));
-    }
-
-    if (rw > 20 || rh > 20) {
-      const lbl = svgEl("text", {
-        x: cx, y: cy,
-        "text-anchor": "middle", "dominant-baseline": "middle",
-        "font-size": "9", fill: color, "fill-opacity": "0.9",
-        "pointer-events": "none",
-      });
-      lbl.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
-      g.appendChild(lbl);
+      if (rw > 20 || rh > 20) {
+        const lbl = svgEl("text", {
+          x: cx, y: cy,
+          "text-anchor": "middle", "dominant-baseline": "middle",
+          "font-size": "9", fill: color, "fill-opacity": "0.9",
+          "pointer-events": "none",
+        });
+        lbl.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
+        g.appendChild(lbl);
+      }
     }
     regionsGroup.appendChild(g);
   }

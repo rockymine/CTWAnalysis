@@ -36,6 +36,9 @@ def _encode_node(region: dict) -> dict:
     Anonymous children (empty id) are encoded with a generated label and no
     SVG id so the frontend skips them in the SVG layer but still shows them in
     the sidebar.
+
+    ``is_negative`` is set for complement regions so the frontend can render
+    them as map-bbox-minus-children instead of drawing the bounds directly.
     """
     region_id = region.get("id") or ""
     region_type = region.get("type", "unknown")
@@ -47,6 +50,7 @@ def _encode_node(region: dict) -> dict:
         "label": label,
         "color": _region_color(region_id),
         "bounds": _encode_bounds(region),
+        "is_negative": region_type == "negative",
         "children": children,
     }
 
