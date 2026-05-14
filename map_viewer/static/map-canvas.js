@@ -1,20 +1,19 @@
 /**
  * MapCanvas — owns the SVG element and all rendering.
  *
- * Public surface deliberately small so the editor can extend it:
- *   render(ctx, groups)       full repaint
+ * Public surface:
+ *   render(ctx, groups)       full repaint + zoom reset
  *   setRegionVisible(id, v)   show/hide a region overlay
- *   resize()                  re-render at new dimensions (call on window resize)
+ *   resize()                  re-render at new dimensions (preserves zoom)
  *
- * Callbacks injected at construction (add more for editor interactions):
- *   onRegionClick(id)         user clicked a region overlay (future)
- *   onCanvasCoords(x, z)      mouse world-coords for status bar (future)
+ * Callbacks injected at construction:
+ *   onCoords(x, z)            block coords under mouse (null, null on leave)
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
          ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
 
-const TEAM_FILL        = { blue: "#3b82f6", red: "#ef4444" };
+const TEAM_FILL         = { blue: "#3b82f6", red: "#ef4444" };
 const TEAM_FILL_DEFAULT = "#6b7280";
 const WOOL_COLORS = {
   orange: "#f97316", pink: "#ec4899", lime: "#84cc16", yellow: "#eab308",
@@ -23,26 +22,49 @@ const WOOL_COLORS = {
   green: "#22c55e", red: "#ef4444", blue: "#3b82f6",
 };
 
+const ZOOM_FACTOR = 1.15;
+const ZOOM_MIN    = 0.5;
+const ZOOM_MAX    = 200;
+
 export class MapCanvas {
   #svg;
   #wrap;
-  #ctx = null;
+  #ctx    = null;
   #groups = [];
-  #toSvg = null;
+  #toSvg  = null;
   #toWorld = null;
   #callbacks;
 
+  // ── zoom / pan state ──────────────────────────────────────────────────────
+  #scale = 1;
+  #panX  = 0;
+  #panY  = 0;
+
+  // ── drag state ────────────────────────────────────────────────────────────
+  #isDragging  = false;
+  #dragAnchor  = null;   // { x, y, panX, panY }
+  #didDrag     = false;  // true if mouse moved enough to count as a pan
+
+  // ── live DOM references ───────────────────────────────────────────────────
+  #viewportG      = null;
+  #highlightRect  = null;
+
   constructor(svgEl, wrapEl, callbacks = {}) {
-    this.#svg  = svgEl;
-    this.#wrap = wrapEl;
+    this.#svg       = svgEl;
+    this.#wrap      = wrapEl;
     this.#callbacks = callbacks;
+    this.#setupEvents();
   }
 
-  // ── public API ─────────────────────────────────────────────────────────
+  // ── public API ─────────────────────────────────────────────────────────────
 
   render(ctx, groups) {
     this.#ctx    = ctx;
     this.#groups = groups;
+    // Reset zoom/pan for a newly loaded map
+    this.#scale = 1;
+    this.#panX  = 0;
+    this.#panY  = 0;
     this.#repaint();
   }
 
@@ -52,10 +74,10 @@ export class MapCanvas {
   }
 
   resize() {
-    if (this.#ctx) this.#repaint();
+    if (this.#ctx) this.#repaint();  // preserves current #scale / #panX / #panY
   }
 
-  // ── rendering ──────────────────────────────────────────────────────────
+  // ── rendering ──────────────────────────────────────────────────────────────
 
   #repaint() {
     const w = this.#wrap.clientWidth  - 24;
@@ -65,12 +87,131 @@ export class MapCanvas {
     this.#svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     this.#toSvg   = buildTransform(this.#ctx.bounding_box, w, h);
     this.#toWorld = buildInverseTransform(this.#ctx.bounding_box, w, h);
+
     while (this.#svg.firstChild) this.#svg.removeChild(this.#svg.firstChild);
 
-    this.#svg.appendChild(this.#buildBuildRegion());
-    this.#svg.appendChild(this.#buildIslands());
-    this.#svg.appendChild(this.#buildPois());
-    this.#svg.appendChild(this.#buildXmlRegions());
+    // All layers live inside the viewport group so one transform handles zoom+pan.
+    const viewport = svgEl("g");
+    this.#viewportG = viewport;
+    this.#applyViewportTransform();
+
+    viewport.appendChild(this.#buildBuildRegion());
+    viewport.appendChild(this.#buildIslands());
+    viewport.appendChild(this.#buildPois());
+    viewport.appendChild(this.#buildXmlRegions());
+    viewport.appendChild(this.#buildBlockHighlight());
+
+    this.#svg.appendChild(viewport);
+  }
+
+  // ── viewport transform helpers ─────────────────────────────────────────────
+
+  #applyViewportTransform() {
+    if (!this.#viewportG) return;
+    const { x: s, panX: tx, panY: ty } = { x: this.#scale, panX: this.#panX, panY: this.#panY };
+    this.#viewportG.setAttribute("transform", `matrix(${s},0,0,${s},${tx},${ty})`);
+  }
+
+  /** Convert a mouse event's client position to pre-zoom SVG coordinates. */
+  #clientToSvg(clientX, clientY) {
+    const rect = this.#svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left  - this.#panX) / this.#scale,
+      y: (clientY - rect.top - this.#panY) / this.#scale,
+    };
+  }
+
+  // ── event wiring (called once from constructor) ────────────────────────────
+
+  #setupEvents() {
+    // ── zoom ────────────────────────────────────────────────────────────────
+    this.#svg.addEventListener("wheel", (e) => {
+      if (!this.#viewportG) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+      const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.#scale * factor));
+      const rect = this.#svg.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // Keep the world point under the mouse stationary
+      this.#panX = mx - (mx - this.#panX) * (newScale / this.#scale);
+      this.#panY = my - (my - this.#panY) * (newScale / this.#scale);
+      this.#scale = newScale;
+      this.#applyViewportTransform();
+    }, { passive: false });
+
+    // ── pan (left-drag) ──────────────────────────────────────────────────────
+    this.#svg.addEventListener("mousedown", (e) => {
+      if (!this.#viewportG || e.button !== 0) return;
+      this.#isDragging = true;
+      this.#didDrag    = false;
+      this.#dragAnchor = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
+    });
+
+    // ── mouse move: pan + coordinate tracking + block highlight ─────────────
+    this.#svg.addEventListener("mousemove", (e) => {
+      if (this.#isDragging && this.#dragAnchor) {
+        const dx = e.clientX - this.#dragAnchor.x;
+        const dy = e.clientY - this.#dragAnchor.y;
+        if (!this.#didDrag && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) this.#didDrag = true;
+        if (this.#didDrag) {
+          this.#panX = this.#dragAnchor.panX + dx;
+          this.#panY = this.#dragAnchor.panY + dy;
+          this.#applyViewportTransform();
+          this.#svg.style.cursor = "grabbing";
+        }
+      }
+
+      this.#updateCoordsAndHighlight(e.clientX, e.clientY);
+    });
+
+    this.#svg.addEventListener("mouseleave", () => {
+      this.#isDragging = false;
+      this.#svg.style.cursor = "";
+      if (this.#highlightRect) this.#highlightRect.setAttribute("width", "0");
+      if (this.#callbacks.onCoords) this.#callbacks.onCoords(null, null);
+    });
+
+    // End drag on mouseup anywhere in the window
+    window.addEventListener("mouseup", (e) => {
+      if (e.button !== 0) return;
+      this.#isDragging = false;
+      this.#didDrag    = false;
+      this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
+    });
+  }
+
+  #updateCoordsAndHighlight(clientX, clientY) {
+    if (!this.#toWorld || !this.#toSvg) return;
+    const svgPt = this.#clientToSvg(clientX, clientY);
+    const world = this.#toWorld(svgPt.x, svgPt.y);
+    const bx = Math.floor(world.x);
+    const bz = Math.floor(world.z);
+
+    // Move highlight rect to the block under the cursor
+    if (this.#highlightRect) {
+      const p1 = this.#toSvg(bx,     bz);
+      const p2 = this.#toSvg(bx + 1, bz + 1);
+      this.#highlightRect.setAttribute("x",      Math.min(p1.x, p2.x));
+      this.#highlightRect.setAttribute("y",      Math.min(p1.y, p2.y));
+      this.#highlightRect.setAttribute("width",  Math.abs(p2.x - p1.x));
+      this.#highlightRect.setAttribute("height", Math.abs(p2.y - p1.y));
+    }
+
+    if (this.#callbacks.onCoords) this.#callbacks.onCoords(bx, bz);
+  }
+
+  // ── layer builders ─────────────────────────────────────────────────────────
+
+  #buildBlockHighlight() {
+    this.#highlightRect = svgEl("rect", {
+      x: 0, y: 0, width: 0, height: 0,
+      fill: "white", "fill-opacity": "0.06",
+      stroke: "white", "stroke-opacity": "0.4", "stroke-width": "1",
+      "vector-effect": "non-scaling-stroke",
+      "pointer-events": "none",
+    });
+    return this.#highlightRect;
   }
 
   #buildBuildRegion() {

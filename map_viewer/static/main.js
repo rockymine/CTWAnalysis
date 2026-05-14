@@ -18,9 +18,16 @@ const registry = new RegionRegistry({
   onVisibilityChange: (id, visible) => canvas.setRegionVisible(id, visible),
 });
 
+const coordsEl = document.getElementById("cursor-coords");
+
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
   document.getElementById("canvas-wrap"),
+  {
+    onCoords: (x, z) => {
+      coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
+    },
+  },
 );
 
 const detail = new RegionDetail(document.getElementById("region-detail"));
