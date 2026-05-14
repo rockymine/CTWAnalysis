@@ -66,9 +66,9 @@ def extract_build_region(
 
     source = "xml"
     if build_allowed is None or build_allowed.is_empty:
-        # Fallback to block 36
-        build_allowed = _extract_block36_region(y0_df)
-        source = "block_36"
+        # Fallback to y=0 build-platform blocks (block 36, water)
+        build_allowed = _extract_y0_platform_region(y0_df)
+        source = "y0_blocks"
 
     if build_allowed is None or build_allowed.is_empty:
         return None
@@ -98,34 +98,48 @@ def extract_build_region(
 
 def _extract_from_xml(map_data: MapData, shapely_bounds: tuple[float, float, float, float]) -> Optional[Polygon]:
     """
-    Find deny(void) apply rules, decompose the void-area region, and
-    return only the structurally meaningful allowed children as
-    the build-allowed area.
+    Find build-allowed geometry from apply rules using two strategies:
+
+    1. Void-complement (primary): rules with 'void' in a filter value whose
+       region is a negative/complement — children of the void region are the
+       allowed areas.
+    2. Allow-always (fallback): rules with ``block="always"`` or
+       ``block-place="always"`` pointing to a named region — that region IS
+       the build-allowed area directly (no decomposition needed).  Used by
+       maps like gethsemane that define a positive build-area instead of a
+       void-complement.
     """
     if not hasattr(map_data, 'apply_rules') or not map_data.apply_rules:
         return None
 
-    void_rules = _find_deny_void_rules(map_data.apply_rules)
-    if not void_rules:
-        return None
-
+    # ── Strategy 1: void-complement ───────────────────────────────────────
     allowed_parts = []
-    for rule in void_rules:
+    for rule in _find_deny_void_rules(map_data.apply_rules):
         region = _resolve_rule_to_region(rule, map_data.regions)
         if region is None:
             continue
-
         allowed = _extract_allowed_from_void_region(
             region, map_data.regions, shapely_bounds
         )
         if allowed and not allowed.is_empty:
             allowed_parts.append(allowed)
 
+    if allowed_parts:
+        return _ensure_valid(_safe_union(allowed_parts))
+
+    # ── Strategy 2: allow-always (positive build region) ──────────────────
+    for rule in _find_allow_always_rules(map_data.apply_rules):
+        region = _resolve_rule_to_region(rule, map_data.regions)
+        if region is None:
+            continue
+        geom = region.to_shapely_2d(shapely_bounds, map_data.regions)
+        if geom and not geom.is_empty:
+            allowed_parts.append(_ensure_valid(geom))
+
     if not allowed_parts:
         return None
 
-    build_allowed = _safe_union(allowed_parts)
-    return _ensure_valid(build_allowed)
+    return _ensure_valid(_safe_union(allowed_parts))
 
 
 def _find_deny_void_rules(apply_rules: list[ApplyRule]) -> list[ApplyRule]:
@@ -138,6 +152,20 @@ def _find_deny_void_rules(apply_rules: list[ApplyRule]) -> list[ApplyRule]:
                 void_rules.append(rule)
                 break
     return void_rules
+
+
+def _find_allow_always_rules(apply_rules: list[ApplyRule]) -> list[ApplyRule]:
+    """Return apply rules that positively allow building in a named region.
+
+    These use ``block="always"`` or ``block-place="always"`` and reference a
+    specific region (as opposed to global rules with no region).  The region
+    directly defines the build-allowed area — no void decomposition needed.
+    """
+    return [
+        r for r in apply_rules
+        if (r.block_filter == 'always' or r.block_place_filter == 'always')
+        and (r.region_id or r.inline_region is not None)
+    ]
 
 
 def _resolve_rule_to_region(rule: ApplyRule, regions_dict: dict[str, Region]) -> Optional[Region]:
@@ -224,38 +252,43 @@ def _should_exclude_void_child(child: Region) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Block 36 fallback
+# y=0 build-platform block fallback
 # ---------------------------------------------------------------------------
 
-def _extract_block36_region(y0_df: Optional[pd.DataFrame]) -> Optional[Any]:
-    """
-    Build a region from block 36 (invisible piston head) at y=0.
+# Block IDs that indicate a build platform at y=0.
+# The PGM plugin treats any non-air block at y=0 under a player as
+# non-void, so these blocks silently define build-allowed areas:
+#   36 — invisible piston head (used when islands are raised above y=0)
+#    8 — flowing water  }  used on flat maps where the void between
+#    9 — stationary water}  islands is filled with water at y=0
+_Y0_PLATFORM_BLOCK_IDS: frozenset[int] = frozenset([36, 8, 9])
 
-    Block 36 acts as an implicit build platform.
+
+def _extract_y0_platform_region(y0_df: Optional[pd.DataFrame]) -> Optional[Any]:
+    """Build a region from build-platform blocks at y=0.
+
+    Recognises block 36 (invisible piston head), flowing water (8), and
+    stationary water (9).  All three indicate areas where the PGM plugin
+    implicitly allows building because a non-air block exists at y=0.
 
     Args:
         y0_df: Pre-loaded Y=0 layout DataFrame, or None if unavailable.
     """
-    if y0_df is None:
+    if y0_df is None or 'block_id' not in y0_df.columns:
         return None
 
-    if 'block_id' not in y0_df.columns:
+    platform = y0_df[y0_df['block_id'].isin(_Y0_PLATFORM_BLOCK_IDS)]
+    if platform.empty:
         return None
 
-    block36 = y0_df[y0_df['block_id'] == 36]
-    if block36.empty:
-        return None
+    x_col = 'world_x' if 'world_x' in platform.columns else 'x'
+    z_col = 'world_z' if 'world_z' in platform.columns else 'z'
 
-    x_col = 'world_x' if 'world_x' in block36.columns else 'x'
-    z_col = 'world_z' if 'world_z' in block36.columns else 'z'
-
-    coords = list(zip(block36[x_col].astype(float), block36[z_col].astype(float)))
-
+    coords = list(zip(platform[x_col].astype(float), platform[z_col].astype(float)))
     if not coords:
         return None
 
-    region = world_blocks_to_shapely(coords)
-    return _ensure_valid(region)
+    return _ensure_valid(world_blocks_to_shapely(coords))
 
 
 # ---------------------------------------------------------------------------
