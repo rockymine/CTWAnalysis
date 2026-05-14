@@ -69,7 +69,6 @@ _HTML = r"""<!DOCTYPE html>
     min-height: 22px;
   }
   .region-row:hover { background: #0f172a22; }
-  .region-row.is-anon { cursor: default; opacity: 0.5; }
   .region-indent { flex-shrink: 0; display: flex; align-items: center; }
   /* vertical tree connector from parent */
   .region-indent-line {
@@ -420,10 +419,10 @@ function buildSidebarTree(nodes, container, depth, isLast = []) {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     const isLastChild = i === nodes.length - 1;
-    const isAnon = !node.id;
+    const isSynthetic = !!node.synthetic_id;   // id generated, not from XML
 
     const row = document.createElement("div");
-    row.className = "region-row" + (isAnon ? " is-anon" : "");
+    row.className = "region-row";
 
     // Indentation: one column per ancestor, showing vertical connector lines
     // except at the last branch which gets an elbow.
@@ -450,47 +449,47 @@ function buildSidebarTree(nodes, container, depth, isLast = []) {
     }
     row.appendChild(indent);
 
-    // Checkbox (named nodes only)
+    // Checkbox — all nodes are selectable now (synthetic ids for anonymous ones)
     const cbWrap = document.createElement("div");
     cbWrap.style.cssText = "width:17px; flex-shrink:0; display:flex; justify-content:center;";
-    if (!isAnon) {
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.style.cssText = "width:12px; height:12px; cursor:pointer; accent-color:#60a5fa;";
-      cb.checked = false;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.style.cssText = "width:12px; height:12px; cursor:pointer; accent-color:#60a5fa;";
+    cb.checked = false;
 
-      const info = _reg.get(node.id);
-      if (info) info.el = cb;
+    const info = _reg.get(node.id);
+    if (info) info.el = cb;
 
-      cb.addEventListener("change", () => {
-        toggleSvg(node.id, cb.checked);
-        for (const childId of (info?.directChildIds || [])) cascadeDown(childId, cb.checked);
-        updateAncestors(node.id);
-        syncToggleAll();
-      });
+    cb.addEventListener("change", () => {
+      toggleSvg(node.id, cb.checked);
+      for (const childId of (info?.directChildIds || [])) cascadeDown(childId, cb.checked);
+      updateAncestors(node.id);
+      syncToggleAll();
+    });
 
-      row.addEventListener("click", (e) => { if (e.target !== cb) cb.click(); });
-      cbWrap.appendChild(cb);
-    }
+    row.addEventListener("click", (e) => { if (e.target !== cb) cb.click(); });
+    cbWrap.appendChild(cb);
     row.appendChild(cbWrap);
 
-    // Colored dot
+    // Colored dot (muted + dashed border for synthetic-id nodes)
     const dot = document.createElement("div");
-    dot.style.cssText = `
-      width:9px; height:9px; border-radius:2px; flex-shrink:0;
-      opacity:${isAnon ? "0.4" : "0.85"};
-      background:${node.color};
-    `;
+    dot.style.cssText = isSynthetic
+      ? `width:9px; height:9px; border-radius:2px; flex-shrink:0;
+         opacity:0.5; background:transparent;
+         border:1px dashed ${node.color};`
+      : `width:9px; height:9px; border-radius:2px; flex-shrink:0;
+         opacity:0.85; background:${node.color};`;
     row.appendChild(dot);
 
-    // Label
+    // Label (italic for synthetic-id nodes to signal "no XML name")
     const label = document.createElement("span");
     label.style.cssText = `
       flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      font-size:11px; color:${isAnon ? "#4b5563" : "#cbd5e1"};
+      font-size:11px; color:#cbd5e1;
+      ${isSynthetic ? "font-style:italic; color:#64748b;" : ""}
     `;
     label.textContent = node.label;
-    label.title = node.label;
+    label.title = isSynthetic ? `${node.label}  (id: ${node.id})` : node.label;
     row.appendChild(label);
 
     // Type badge

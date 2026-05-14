@@ -40,27 +40,36 @@ def _encode_bounds(region: dict) -> dict | None:
     return {"min_x": mn["x"], "min_z": mn["z"], "max_x": mx["x"], "max_z": mx["z"]}
 
 
-def _encode_node(region: dict) -> dict:
+def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     """Recursively encode a region dict (with optional children) into a tree node.
 
-    Anonymous children (empty id) are encoded with a generated label and no
-    SVG id so the frontend skips them in the SVG layer but still shows them in
-    the sidebar.
+    Anonymous children (those with no ``id`` in the XML) receive a synthetic
+    deterministic id of the form ``{parent_id}__{index}`` so the browser can
+    create a uniquely addressable SVG group and checkbox for each one.  The
+    displayed ``label`` is kept as ``[type]`` to make clear it has no XML name.
 
-    ``is_negative`` is set for complement regions so the frontend can render
-    them as map-bbox-minus-children instead of drawing the bounds directly.
+    ``is_negative`` is set for complement regions so the frontend renders them
+    as map-bbox-minus-children rather than drawing the bounds directly.
     """
-    region_id = region.get("id") or ""
+    xml_id = region.get("id") or ""
     region_type = region.get("type", "unknown")
-    label = region_id if region_id else f"[{region_type}]"
-    children = [_encode_node(child) for child in region.get("children", [])]
+
+    # Assign a synthetic id for anonymous nodes so they are selectable
+    region_id = xml_id if xml_id else (f"{parent_id}__{index}" if parent_id else f"__anon_{index}")
+    label = xml_id if xml_id else f"[{region_type}]"
+
+    children = [
+        _encode_node(child, parent_id=region_id, index=i)
+        for i, child in enumerate(region.get("children", []))
+    ]
     return {
         "id": region_id,
         "type": region_type,
         "label": label,
-        "color": _region_color(region_id),
+        "color": _region_color(xml_id),  # color based on XML id; anon nodes get neutral
         "bounds": _encode_bounds(region),
         "is_negative": region_type == "negative",
+        "synthetic_id": not bool(xml_id),  # True when id was generated, not from XML
         "children": children,
     }
 
