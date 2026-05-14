@@ -66,6 +66,41 @@ def _encode_bounds(region: dict) -> dict | None:
     return {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z}
 
 
+def _encode_coords(region: dict) -> dict | None:
+    """Extract type-specific coordinates needed to reconstruct the XML element.
+
+    Returns a flat dict of the fields that cannot be derived from bounds_2d
+    (e.g. y-coordinates, radius, height). 2D coordinates for rectangle and
+    cuboid are also included so the viewer can round-trip them to XML even
+    before the region has been rendered to bounds_2d.
+    """
+    region_type = region.get("type")
+    if region_type == "rectangle":
+        return {k: region.get(k) for k in ("min_x", "min_z", "max_x", "max_z")}
+    if region_type == "cuboid":
+        return {k: region.get(k) for k in ("min_x", "min_y", "min_z", "max_x", "max_y", "max_z")}
+    if region_type == "cylinder":
+        base = region.get("base") or {}
+        return {
+            "base_x": base.get("x"), "base_y": base.get("y"), "base_z": base.get("z"),
+            "radius": region.get("radius"), "height": region.get("height"),
+        }
+    if region_type == "circle":
+        center = region.get("center") or {}
+        return {"center_x": center.get("x"), "center_z": center.get("z"),
+                "radius": region.get("radius")}
+    if region_type == "sphere":
+        origin = region.get("origin") or {}
+        return {
+            "origin_x": origin.get("x"), "origin_y": origin.get("y"), "origin_z": origin.get("z"),
+            "radius": region.get("radius"),
+        }
+    if region_type in ("block", "point"):
+        pos = region.get("position") or {}
+        return {"x": pos.get("x"), "y": pos.get("y"), "z": pos.get("z")}
+    return None
+
+
 def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     """Recursively encode a region dict (with optional children) into a tree node.
 
@@ -94,6 +129,7 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
         "label": label,
         "color": _region_color(xml_id),  # color based on XML id; anon nodes get neutral
         "bounds": _encode_bounds(region),
+        "coords": _encode_coords(region),
         "is_negative": region_type == "negative",
         "synthetic_id": not bool(xml_id),  # True when id was generated, not from XML
         "children": children,

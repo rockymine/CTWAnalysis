@@ -9,9 +9,63 @@
  *   onBoundsSave(node, bounds)    — fired on blur / Enter to persist to server
  */
 
+/**
+ * Reconstruct the XML element for a region node.
+ * 2D coordinate fields come from node.bounds (kept in sync with edits).
+ * Type-specific non-2D fields (y, radius, height) come from node.coords.
+ */
+function nodeToXml(node, depth = 0) {
+  const indent = "  ".repeat(depth);
+  const id     = node.synthetic_id ? "" : ` id="${node.label}"`;
+  const t      = node.type;
+  const b      = node.bounds  ?? {};
+  const c      = node.coords  ?? {};
+
+  let attr = "";
+
+  if (t === "rectangle") {
+    attr = ` min="${b.min_x},${b.min_z}" max="${b.max_x},${b.max_z}"`;
+  } else if (t === "cuboid") {
+    const minY = c.min_y ?? "?";
+    const maxY = c.max_y ?? "?";
+    attr = ` min="${b.min_x},${minY},${b.min_z}" max="${b.max_x},${maxY},${b.max_z}"`;
+  } else if (t === "cylinder") {
+    const by = c.base_y ?? "?";
+    attr = ` base="${b.min_x + (b.max_x - b.min_x) / 2},${by},${b.min_z + (b.max_z - b.min_z) / 2}"` +
+           ` radius="${c.radius ?? "?"}" height="${c.height ?? "?"}"`;
+  } else if (t === "circle") {
+    attr = ` center="${b.min_x + (b.max_x - b.min_x) / 2},${b.min_z + (b.max_z - b.min_z) / 2}"` +
+           ` radius="${c.radius ?? "?"}"`;
+  } else if (t === "sphere") {
+    const oy = c.origin_y ?? "?";
+    attr = ` origin="${b.min_x + (b.max_x - b.min_x) / 2},${oy},${b.min_z + (b.max_z - b.min_z) / 2}"` +
+           ` radius="${c.radius ?? "?"}"`;
+  }
+
+  const composite = ["union", "negative", "intersect", "complement"].includes(t);
+  if (composite) {
+    const inner = (node.children || [])
+      .map(ch => nodeToXml(ch, depth + 1))
+      .join("\n");
+    return inner
+      ? `${indent}<${t}${id}>\n${inner}\n${indent}</${t}>`
+      : `${indent}<${t}${id}/>`;
+  }
+
+  if (t === "block" || t === "point") {
+    const x = c.x ?? "?", y = c.y ?? "?", z = c.z ?? "?";
+    return `${indent}<${t}${id}>${x},${y},${z}</${t}>`;
+  }
+
+  return attr
+    ? `${indent}<${t}${id}${attr}/>`
+    : `${indent}<${t}${id}/>`;
+}
+
 export class RegionDetail {
   #el;
   #callbacks;
+  #xmlCodeEl = null;
 
   constructor(el, callbacks = {}) {
     this.#el        = el;
@@ -21,15 +75,23 @@ export class RegionDetail {
 
   show(node) {
     this.#el.innerHTML = "";
+    this.#xmlCodeEl = null;
     this.#el.appendChild(this.#buildHeader(node));
     this.#el.appendChild(this.#buildFields(node));
     if (node.bounds) this.#el.appendChild(this.#buildBounds(node));
     if ((node.children || []).length > 0) this.#el.appendChild(this.#buildChildren(node.children));
+    this.#el.appendChild(this.#buildXmlPreview(node));
   }
 
   clear() {
     this.#el.innerHTML = "";
+    this.#xmlCodeEl = null;
     this.#renderEmpty();
+  }
+
+  /** Refresh XML preview after bounds have been edited live. */
+  updateXmlPreview(node) {
+    if (this.#xmlCodeEl) this.#xmlCodeEl.textContent = nodeToXml(node);
   }
 
   // ── private ─────────────────────────────────────────────────────────────
@@ -221,6 +283,24 @@ export class RegionDetail {
       row.appendChild(boundsEl);
       section.appendChild(row);
     }
+    return section;
+  }
+
+  #buildXmlPreview(node) {
+    const section = document.createElement("div");
+    section.className = "detail-section";
+
+    const heading = document.createElement("div");
+    heading.className = "detail-section-label";
+    heading.textContent = "xml";
+    section.appendChild(heading);
+
+    const pre = document.createElement("pre");
+    pre.className = "detail-xml-pre";
+    pre.textContent = nodeToXml(node);
+    section.appendChild(pre);
+
+    this.#xmlCodeEl = pre;
     return section;
   }
 
