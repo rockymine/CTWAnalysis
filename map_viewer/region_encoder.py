@@ -37,7 +37,23 @@ def _encode_bounds(region: dict) -> dict | None:
     mx = bounds_2d.get("max", {})
     if "x" not in mn or "z" not in mn:
         return None
-    return {"min_x": mn["x"], "min_z": mn["z"], "max_x": mx["x"], "max_z": mx["z"]}
+    min_x, min_z = mn["x"], mn["z"]
+    max_x, max_z = mx["x"], mx["z"]
+    # Older map_data.json files store min==max (zero area) for block and point.
+    # Expand here so existing outputs display correctly without a pipeline re-run.
+    # block: index (x,z) occupies [x, x+1] × [z, z+1]  → max += 1
+    # point: continuous coord — shown as 1×1 square centred on it → ±0.5
+    region_type = region.get("type")
+    if max_x == min_x and max_z == min_z:
+        if region_type == "block":
+            max_x = min_x + 1
+            max_z = min_z + 1
+        elif region_type == "point":
+            min_x -= 0.5
+            min_z -= 0.5
+            max_x += 0.5
+            max_z += 0.5
+    return {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z}
 
 
 def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:

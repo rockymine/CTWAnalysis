@@ -219,7 +219,8 @@ class BlockRegion(Region):
     region_type: str = "block"
 
     def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
-        return (self.x, self.z), (self.x, self.z)
+        # block index (x, z) occupies [x, x+1] × [z, z+1]
+        return (self.x, self.z), (self.x + 1, self.z + 1)
 
     def to_shapely_2d(self, bounds, registry=None):
         min_x, min_z, max_x, max_z = _expand_block_bounds(
@@ -237,7 +238,8 @@ class PointRegion(Region):
     region_type: str = "point"
 
     def get_bounds_2d(self) -> tuple[tuple[float, float], tuple[float, float]]:
-        return (self.x, self.z), (self.x, self.z)
+        # point is a continuous coordinate; show as 1×1 square centred on it
+        return (self.x - 0.5, self.z - 0.5), (self.x + 0.5, self.z + 0.5)
 
     def to_shapely_2d(self, bounds, registry=None):
         return _shapely_box(self.x - 0.5, self.z - 0.5, self.x + 0.5, self.z + 0.5)
