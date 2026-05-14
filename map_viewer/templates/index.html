@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CTW Map Viewer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='viewer.css') }}"/>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>CTW Map Viewer</h1>
+  <select id="map-select"><option value="">— select map —</option></select>
+  <span id="status"></span>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
+      <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+            fill="#334155" font-size="14">Select a map to begin</text>
+    </svg>
+  </div>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <input type="checkbox" id="toggle-all" checked title="Toggle all regions"/>
+      XML Regions
+    </div>
+    <div id="region-list">
+      <div id="empty-msg">No map loaded</div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='viewer.js') }}"></script>
+</body>
+</html>
