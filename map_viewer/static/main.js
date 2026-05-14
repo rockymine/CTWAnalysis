@@ -22,7 +22,7 @@ import * as api           from "./api.js";
 const registry = new RegionRegistry({
   onSelectionChange: (primaryNode, selectedIds) => {
     canvas.setSelectedRegions(selectedIds);
-    sidebar.setSelected(primaryNode?.id ?? null);
+    sidebar.setSelected(primaryNode?.id ?? null, selectedIds);
     if (primaryNode) {
       detail.show(primaryNode);
       canvas.showAnchors(primaryNode);

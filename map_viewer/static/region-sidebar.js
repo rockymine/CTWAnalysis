@@ -44,12 +44,17 @@ export class RegionSidebar {
   }
 
   /**
-   * Highlight the row for primaryId and clear all other row highlights.
-   * Passing null deselects everything.
+   * Highlight the primary row in full blue and descendant rows in a lighter
+   * tint. Passing null clears all highlights.
+   *
+   * @param {string|null} primaryId  The directly-selected node id.
+   * @param {string[]}    allIds     All selected ids (primary + descendants).
    */
-  setSelected(primaryId) {
+  setSelected(primaryId, allIds = []) {
+    const descendantSet = new Set(allIds);
     for (const [id, rowEl] of this.#rowMap) {
-      rowEl.classList.toggle("region-row--selected", id === primaryId);
+      rowEl.classList.toggle("region-row--selected",       id === primaryId);
+      rowEl.classList.toggle("region-row--selected-child", id !== primaryId && descendantSet.has(id));
     }
     if (primaryId) {
       const row = this.#rowMap.get(primaryId);

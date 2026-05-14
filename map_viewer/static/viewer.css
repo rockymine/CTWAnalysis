@@ -78,8 +78,9 @@ body {
   padding: 4px 12px 4px 0;
   cursor: pointer; user-select: none; min-height: 28px;
 }
-.region-row:hover     { background: #1e3a5f44; }
-.region-row--selected { background: #1e3a5f; }
+.region-row:hover          { background: #1e3a5f44; }
+.region-row--selected      { background: #1e3a5f; }
+.region-row--selected-child { background: #1e3a5f77; }
 
 /* tree indent */
 .region-indent { flex-shrink: 0; display: flex; align-items: center; padding-left: 10px; }
