@@ -17,18 +17,24 @@ const CAT_COLORS = {
 export class RegionSidebar {
   #listEl;
   #registry;
+  #onSelect;
+  #selectedRowEl = null;
 
   /**
    * @param {HTMLElement} listEl      The #region-list container.
    * @param {RegionRegistry} registry Shared registry for cascade + visibility.
+   * @param {object} [callbacks]
+   * @param {function} [callbacks.onSelect]  Called with the node when a row is clicked.
    */
-  constructor(listEl, registry) {
+  constructor(listEl, registry, { onSelect } = {}) {
     this.#listEl    = listEl;
     this.#registry  = registry;
+    this.#onSelect  = onSelect || null;
   }
 
   /** Rebuild the sidebar for a freshly loaded map. */
   build(groups) {
+    this.#selectedRowEl = null;
     this.#listEl.innerHTML = "";
 
     const hasRegions = groups.some(g => g.regions.length > 0);
@@ -91,7 +97,13 @@ export class RegionSidebar {
     row.appendChild(this.#typeBadge(node.type));
 
     row.addEventListener("click", (e) => {
-      if (e.target !== cb.input) cb.input.click();
+      // Any click within the checkbox wrapper is for visibility only — not selection.
+      if (cb.wrap.contains(e.target)) return;
+      if (this.#selectedRowEl && this.#selectedRowEl !== row)
+        this.#selectedRowEl.classList.remove("region-row--selected");
+      this.#selectedRowEl = row;
+      row.classList.add("region-row--selected");
+      if (this.#onSelect) this.#onSelect(node);
     });
     return row;
   }
