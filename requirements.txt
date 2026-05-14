@@ -12,4 +12,5 @@ anvil-parser
 shapely
 duckdb
 pyyaml
+flask
 pytest
