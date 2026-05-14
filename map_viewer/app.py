@@ -5,7 +5,7 @@ Routes
 GET /                              Single-page HTML app
 GET /api/maps                      List available maps (those with map_context.json)
 GET /api/map/<name>/context        map_context.json payload
-GET /api/map/<name>/regions        Named regions encoded for rendering
+GET /api/map/<name>/regions        Named regions encoded as a hierarchy tree
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, abort
 
-from map_viewer.region_encoder import encode_regions
+from map_viewer.region_encoder import encode_region_tree
 
 OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 
@@ -51,7 +51,7 @@ _HTML = r"""<!DOCTYPE html>
   #map-svg { max-width: 100%; max-height: 100%; }
 
   /* ── sidebar ── */
-  #sidebar { width: 260px; flex-shrink: 0; background: #1e293b;
+  #sidebar { width: 270px; flex-shrink: 0; background: #1e293b;
              border-left: 1px solid #334155; display: flex;
              flex-direction: column; overflow: hidden; }
   #sidebar-header { padding: 10px 12px; border-bottom: 1px solid #334155;
@@ -59,18 +59,44 @@ _HTML = r"""<!DOCTYPE html>
                     letter-spacing: .05em; display: flex;
                     align-items: center; gap: 8px; }
   #toggle-all { cursor: pointer; accent-color: #60a5fa; }
-  #region-list { flex: 1; overflow-y: auto; padding: 6px 0; }
-  .region-row { display: flex; align-items: center; gap: 7px;
-                padding: 4px 12px; cursor: pointer; }
-  .region-row:hover { background: #0f172a; }
-  .region-dot { width: 10px; height: 10px; border-radius: 2px;
+  #region-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+
+  /* ── region tree rows ── */
+  .region-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 10px 3px 0;
+    cursor: pointer; user-select: none;
+    min-height: 22px;
+  }
+  .region-row:hover { background: #0f172a22; }
+  .region-row.is-anon { cursor: default; opacity: 0.5; }
+  .region-indent { flex-shrink: 0; display: flex; align-items: center; }
+  /* vertical tree connector from parent */
+  .region-indent-line {
+    display: inline-block; width: 14px; height: 100%;
+    border-left: 1px solid #334155; margin-left: 7px;
+  }
+  /* last-item elbow */
+  .tree-elbow {
+    display: inline-flex; align-items: center; width: 14px; flex-shrink: 0;
+    color: #334155; font-size: 10px; line-height: 1;
+  }
+  .region-cb-wrap { width: 17px; flex-shrink: 0; display: flex; justify-content: center; }
+  .region-dot { width: 9px; height: 9px; border-radius: 2px;
                 flex-shrink: 0; opacity: 0.85; }
   .region-label { flex: 1; white-space: nowrap; overflow: hidden;
                   text-overflow: ellipsis; font-size: 11px; color: #cbd5e1; }
-  .region-type { font-size: 10px; color: #64748b; margin-left: auto;
-                 flex-shrink: 0; }
-  input[type=checkbox] { cursor: pointer; accent-color: #60a5fa; }
+  .region-type { font-size: 9px; color: #475569; flex-shrink: 0;
+                 background: #0f172a; padding: 1px 4px;
+                 border-radius: 3px; margin-left: 2px; }
+  input[type=checkbox] { cursor: pointer; accent-color: #60a5fa;
+                         width: 12px; height: 12px; }
   #empty-msg { padding: 20px 12px; color: #475569; font-size: 11px; }
+
+  /* composite type badge colours */
+  .type-union    { color: #60a5fa; }
+  .type-negative { color: #f87171; }
+  .type-intersect{ color: #a78bfa; }
 </style>
 </head>
 <body>
@@ -101,20 +127,20 @@ _HTML = r"""<!DOCTYPE html>
 
 <script>
 // ── state ──────────────────────────────────────────────────────────────────
-let _ctx = null;      // map_context.json
-let _regions = [];    // encoded region list
+let _ctx = null;
+let _regionTree = [];
+
+// Registry: id → { parentId, directChildIds, el (checkbox or null) }
+const _reg = new Map();
 
 // ── coordinate helpers ─────────────────────────────────────────────────────
 const PAD = 20;
-let _toSvg = null;    // (wx, wz) → {x, y}
+let _toSvg = null;
 
 function buildTransform(bbox, svgW, svgH) {
-  // bbox = [min_x, max_x, min_z, max_z]
   const [minX, maxX, minZ, maxZ] = bbox;
-  const worldW = maxX - minX;
-  const worldH = maxZ - minZ;
-  const drawW = svgW - 2 * PAD;
-  const drawH = svgH - 2 * PAD;
+  const worldW = maxX - minX, worldH = maxZ - minZ;
+  const drawW = svgW - 2 * PAD, drawH = svgH - 2 * PAD;
   const scale = Math.min(drawW / worldW, drawH / worldH);
   const offX = PAD + (drawW - worldW * scale) / 2;
   const offY = PAD + (drawH - worldH * scale) / 2;
@@ -145,6 +171,15 @@ function polyToPath(poly) {
   return d;
 }
 
+// ── flatten tree → named+bounded nodes for SVG ────────────────────────────
+function flattenNamed(nodes, out = []) {
+  for (const node of nodes) {
+    if (node.id && node.bounds) out.push(node);
+    flattenNamed(node.children || [], out);
+  }
+  return out;
+}
+
 // ── rendering ──────────────────────────────────────────────────────────────
 const TEAM_FILL = { blue: "#3b82f6", red: "#ef4444" };
 const TEAM_FILL_DEFAULT = "#6b7280";
@@ -155,23 +190,17 @@ const WOOL_COLORS = {
   green:"#22c55e", red:"#ef4444", blue:"#3b82f6",
 };
 
-function renderMap(ctx, regions) {
+function renderMap(ctx, tree) {
   const svg = document.getElementById("map-svg");
-
-  // Compute canvas size from element dimensions
   const wrap = document.getElementById("canvas-wrap");
-  const svgW = wrap.clientWidth - 24;
-  const svgH = wrap.clientHeight - 24;
+  const svgW = wrap.clientWidth - 24, svgH = wrap.clientHeight - 24;
   svg.setAttribute("width", svgW);
   svg.setAttribute("height", svgH);
   svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
-
   _toSvg = buildTransform(ctx.bounding_box, svgW, svgH);
-
-  // Clear
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  // Layer 1: build region (green, semi-transparent)
+  // Layer 1: build region
   const buildGroup = svgEl("g", { id: "layer-build" });
   for (const poly of (ctx.build_region?.buildable_void || [])) {
     buildGroup.appendChild(svgEl("path", {
@@ -224,9 +253,9 @@ function renderMap(ctx, regions) {
   }
   svg.appendChild(poiGroup);
 
-  // Layer 4: XML regions (hidden by default, toggled per-region)
+  // Layer 4: XML regions (one <g> per named+bounded node, hidden by default)
   const regionsGroup = svgEl("g", { id: "layer-regions" });
-  for (const region of regions) {
+  for (const region of flattenNamed(tree)) {
     const { id, type, color, bounds } = region;
     const p1 = _toSvg(bounds.min_x, bounds.min_z);
     const p2 = _toSvg(bounds.max_x, bounds.max_z);
@@ -253,7 +282,6 @@ function renderMap(ctx, regions) {
       }));
     }
 
-    // Label (only when big enough)
     if (rw > 20 || rh > 20) {
       const lbl = svgEl("text", {
         x: cx, y: cy,
@@ -264,79 +292,217 @@ function renderMap(ctx, regions) {
       lbl.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
       g.appendChild(lbl);
     }
-
     regionsGroup.appendChild(g);
   }
   svg.appendChild(regionsGroup);
 }
 
-// ── sidebar ────────────────────────────────────────────────────────────────
-function buildSidebar(regions) {
+// ── region checkbox cascade helpers ───────────────────────────────────────
+
+function toggleSvg(id, visible) {
+  const g = document.getElementById(`region-${id}`);
+  if (g) g.style.display = visible ? "" : "none";
+}
+
+function cascadeDown(id, checked) {
+  const info = _reg.get(id);
+  if (!info) return;
+  if (info.el) {
+    info.el.checked = checked;
+    info.el.indeterminate = false;
+    toggleSvg(id, checked);
+  }
+  for (const childId of info.directChildIds) cascadeDown(childId, checked);
+}
+
+function updateAncestors(id) {
+  const info = _reg.get(id);
+  if (!info || !info.parentId) return;
+  const parentInfo = _reg.get(info.parentId);
+  if (!parentInfo) { updateAncestors(info.parentId); return; }
+
+  if (parentInfo.el) {
+    const childStates = parentInfo.directChildIds
+      .map(cid => {
+        const c = _reg.get(cid);
+        return c?.el ? c.el.checked && !c.el.indeterminate : true;
+      });
+    const allChecked = childStates.every(Boolean);
+    const anyChecked = childStates.some(Boolean);
+    parentInfo.el.indeterminate = anyChecked && !allChecked;
+    if (!parentInfo.el.indeterminate) parentInfo.el.checked = allChecked;
+  }
+  updateAncestors(info.parentId);
+}
+
+function syncToggleAll() {
+  const allEls = [..._reg.values()].filter(info => info.el).map(info => info.el);
+  const allChecked = allEls.every(el => el.checked && !el.indeterminate);
+  const anyChecked = allEls.some(el => el.checked || el.indeterminate);
+  const ta = document.getElementById("toggle-all");
+  ta.indeterminate = anyChecked && !allChecked;
+  ta.checked = allChecked;
+}
+
+// ── sidebar tree builder ───────────────────────────────────────────────────
+
+const TYPE_CLASS = { union: "type-union", negative: "type-negative", intersect: "type-intersect" };
+
+function buildRegistryEntry(node, parentId) {
+  const namedChildIds = (node.children || [])
+    .filter(c => c.id)
+    .map(c => c.id);
+  _reg.set(node.id || `__anon_${Math.random()}`, {
+    parentId,
+    directChildIds: namedChildIds,
+    el: null,
+  });
+  for (const child of (node.children || [])) {
+    buildRegistryEntry(child, node.id || null);
+  }
+}
+
+function buildSidebarTree(nodes, container, depth, isLast = []) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const isLastChild = i === nodes.length - 1;
+    const isAnon = !node.id;
+
+    const row = document.createElement("div");
+    row.className = "region-row" + (isAnon ? " is-anon" : "");
+
+    // Indentation: one column per ancestor, showing vertical connector lines
+    // except at the last branch which gets an elbow.
+    const indent = document.createElement("div");
+    indent.className = "region-indent";
+    indent.style.paddingLeft = "8px";
+    for (let d = 0; d < depth; d++) {
+      const line = document.createElement("span");
+      // If an ancestor at depth d was the last child, no continuing line
+      line.style.cssText = `
+        display:inline-block; width:14px; flex-shrink:0;
+        border-left: 1px solid ${isLast[d] ? "transparent" : "#2d4263"};
+      `;
+      indent.appendChild(line);
+    }
+    if (depth > 0) {
+      const elbow = document.createElement("span");
+      elbow.style.cssText = `
+        display:inline-block; width:14px; flex-shrink:0; color:#334155;
+        font-size:9px; line-height:22px;
+      `;
+      elbow.textContent = isLastChild ? "└" : "├";
+      indent.appendChild(elbow);
+    }
+    row.appendChild(indent);
+
+    // Checkbox (named nodes only)
+    const cbWrap = document.createElement("div");
+    cbWrap.style.cssText = "width:17px; flex-shrink:0; display:flex; justify-content:center;";
+    if (!isAnon) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.style.cssText = "width:12px; height:12px; cursor:pointer; accent-color:#60a5fa;";
+      cb.checked = false;
+
+      const info = _reg.get(node.id);
+      if (info) info.el = cb;
+
+      cb.addEventListener("change", () => {
+        toggleSvg(node.id, cb.checked);
+        for (const childId of (info?.directChildIds || [])) cascadeDown(childId, cb.checked);
+        updateAncestors(node.id);
+        syncToggleAll();
+      });
+
+      row.addEventListener("click", (e) => { if (e.target !== cb) cb.click(); });
+      cbWrap.appendChild(cb);
+    }
+    row.appendChild(cbWrap);
+
+    // Colored dot
+    const dot = document.createElement("div");
+    dot.style.cssText = `
+      width:9px; height:9px; border-radius:2px; flex-shrink:0;
+      opacity:${isAnon ? "0.4" : "0.85"};
+      background:${node.color};
+    `;
+    row.appendChild(dot);
+
+    // Label
+    const label = document.createElement("span");
+    label.style.cssText = `
+      flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      font-size:11px; color:${isAnon ? "#4b5563" : "#cbd5e1"};
+    `;
+    label.textContent = node.label;
+    label.title = node.label;
+    row.appendChild(label);
+
+    // Type badge
+    const typeEl = document.createElement("span");
+    const typeClass = TYPE_CLASS[node.type] || "";
+    typeEl.style.cssText = `
+      font-size:9px; color:${typeClass ? "" : "#475569"};
+      background:#0f172a; padding:1px 4px; border-radius:3px; flex-shrink:0;
+    `;
+    if (typeClass) typeEl.className = typeClass;
+    typeEl.textContent = node.type;
+    row.appendChild(typeEl);
+
+    container.appendChild(row);
+
+    // Recurse into children
+    if ((node.children || []).length > 0) {
+      buildSidebarTree(node.children, container, depth + 1, [...isLast, isLastChild]);
+    }
+  }
+}
+
+function buildSidebar(tree) {
+  _reg.clear();
   const list = document.getElementById("region-list");
   list.innerHTML = "";
 
-  if (!regions.length) {
+  const named = flattenNamed(tree);
+  if (!named.length) {
     list.innerHTML = '<div id="empty-msg">No named regions found</div>';
     return;
   }
 
-  for (const region of regions) {
-    const row = document.createElement("div");
-    row.className = "region-row";
+  // Build registry first (needs full tree traversal before DOM creation)
+  for (const root of tree) buildRegistryEntry(root, null);
 
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.dataset.regionId = region.id;
-    cb.addEventListener("change", () => {
-      const g = document.getElementById(`region-${region.id}`);
-      if (g) g.style.display = cb.checked ? "" : "none";
-      syncToggleAll();
-    });
-
-    const dot = document.createElement("div");
-    dot.className = "region-dot";
-    dot.style.background = region.color;
-
-    const label = document.createElement("span");
-    label.className = "region-label";
-    label.textContent = region.label;
-    label.title = region.label;
-
-    const type = document.createElement("span");
-    type.className = "region-type";
-    type.textContent = region.type;
-
-    row.appendChild(cb);
-    row.appendChild(dot);
-    row.appendChild(label);
-    row.appendChild(type);
-    row.addEventListener("click", (e) => {
-      if (e.target !== cb) cb.click();
-    });
-
-    list.appendChild(row);
-  }
-}
-
-function syncToggleAll() {
-  const cbs = [...document.querySelectorAll("#region-list input[type=checkbox]")];
-  const allChecked = cbs.every(cb => cb.checked);
-  const noneChecked = cbs.every(cb => !cb.checked);
-  const ta = document.getElementById("toggle-all");
-  ta.indeterminate = !allChecked && !noneChecked;
-  ta.checked = allChecked;
+  buildSidebarTree(tree, list, 0, []);
 }
 
 document.getElementById("toggle-all").addEventListener("change", (e) => {
   const checked = e.target.checked;
-  document.querySelectorAll("#region-list input[type=checkbox]").forEach(cb => {
-    if (cb.checked !== checked) cb.click();
-  });
+  // Cascade from every root (propagates to all descendants)
+  for (const [id, info] of _reg.entries()) {
+    if (!info.parentId && info.el) cascadeDown(id, checked);
+  }
+  // Also cascade anonymous roots' named children
+  for (const [, info] of _reg.entries()) {
+    if (!info.parentId && !info.el) {
+      for (const childId of info.directChildIds) cascadeDown(childId, checked);
+    }
+  }
+  syncToggleAll();
 });
 
 // ── data loading ───────────────────────────────────────────────────────────
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
+}
+
+function countNamed(tree) {
+  let n = 0;
+  for (const node of tree) {
+    if (node.id) n++;
+    n += countNamed(node.children || []);
+  }
+  return n;
 }
 
 async function loadMaps() {
@@ -359,10 +525,14 @@ async function loadMap(name) {
   ]);
   if (!ctxResp.ok) { setStatus("Error loading map"); return; }
   _ctx = await ctxResp.json();
-  _regions = regResp.ok ? await regResp.json() : [];
-  renderMap(_ctx, _regions);
-  buildSidebar(_regions);
-  setStatus(`${_ctx.map_name} v${_ctx.map_version || "?"} · ${_ctx.island_count} island(s) · ${_regions.length} region(s)`);
+  _regionTree = regResp.ok ? await regResp.json() : [];
+  renderMap(_ctx, _regionTree);
+  buildSidebar(_regionTree);
+  const nRegions = countNamed(_regionTree);
+  setStatus(
+    `${_ctx.map_name} v${_ctx.map_version || "?"} · ` +
+    `${_ctx.island_count} island(s) · ${nRegions} region(s)`
+  );
 }
 
 document.getElementById("map-select").addEventListener("change", (e) => {
@@ -370,7 +540,7 @@ document.getElementById("map-select").addEventListener("change", (e) => {
 });
 
 window.addEventListener("resize", () => {
-  if (_ctx) renderMap(_ctx, _regions);
+  if (_ctx) renderMap(_ctx, _regionTree);
 });
 
 loadMaps();
@@ -410,7 +580,7 @@ def create_app() -> Flask:
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
-        regions = encode_regions(data.get("regions", {}))
-        return jsonify(regions)
+        tree = encode_region_tree(data.get("regions", {}))
+        return jsonify(tree)
 
     return app
