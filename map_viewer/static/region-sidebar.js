@@ -9,10 +9,7 @@
 const TYPE_CLASS = {
   union: "type-union", negative: "type-negative", intersect: "type-intersect",
 };
-const CAT_COLORS = {
-  spawn: "#60a5fa", wool: "#f1c40f", monument: "#a78bfa",
-  build: "#34d399", other: "#94a3b8",
-};
+const CAT_COLOR = "#4a5568";  // single muted slate for all category headers
 
 export class RegionSidebar {
   #listEl;
@@ -58,14 +55,13 @@ export class RegionSidebar {
   // ── private DOM builders ────────────────────────────────────────────────
 
   #categoryHeader(group) {
-    const color = CAT_COLORS[group.name] || "#64748b";
     const el = document.createElement("div");
     el.className = "cat-header";
-    el.style.color = color;
+    el.style.color = CAT_COLOR;
 
     const line = document.createElement("div");
     line.className = "cat-header-line";
-    line.style.background = color;
+    line.style.background = CAT_COLOR;
 
     el.appendChild(document.createTextNode(group.label));
     el.appendChild(line);

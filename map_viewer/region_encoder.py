@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-_BLUE = "#3b82f6"
-_RED = "#ef4444"
-_YELLOW = "#f1c40f"
-_NEUTRAL = "#94a3b8"
+_BLUE    = "#5b8fc7"   # muted blue  — blue-team regions
+_RED     = "#c06060"   # muted red   — red-team regions
+_NEUTRAL = "#64748b"   # slate gray  — everything else
 
 # Canonical category order and display labels.
 _CATEGORY_ORDER = ["spawn", "wool", "monument", "build", "other"]
@@ -24,8 +23,6 @@ def _region_color(region_id: str) -> str:
         return _BLUE
     if "red" in lower:
         return _RED
-    if "wool" in lower or "monument" in lower:
-        return _YELLOW
     return _NEUTRAL
 
 
