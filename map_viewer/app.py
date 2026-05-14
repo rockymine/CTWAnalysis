@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, abort
 
-from map_viewer.region_encoder import encode_region_tree
+from map_viewer.region_encoder import encode_region_tree_categorized
 
 OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 
@@ -128,7 +128,7 @@ _HTML = r"""<!DOCTYPE html>
 <script>
 // ── state ──────────────────────────────────────────────────────────────────
 let _ctx = null;
-let _regionTree = [];
+let _regionGroups = [];   // [{name, label, regions: [tree node, ...]}, ...]
 
 // Registry: id → { parentId, directChildIds, el (checkbox or null) }
 const _reg = new Map();
@@ -171,11 +171,18 @@ function polyToPath(poly) {
   return d;
 }
 
-// ── flatten tree → named+bounded nodes for SVG ────────────────────────────
-function flattenNamed(nodes, out = []) {
-  for (const node of nodes) {
-    if (node.id && (node.bounds || node.is_negative)) out.push(node);
-    flattenNamed(node.children || [], out);
+// ── flatten groups/tree → named+bounded nodes for SVG ─────────────────────
+// Accepts either a groups array [{regions:[...]}, ...] or a plain node array.
+function flattenNamed(groupsOrNodes, out = []) {
+  for (const item of groupsOrNodes) {
+    if (item.regions) {
+      // it's a category group — recurse into its regions
+      flattenNamed(item.regions, out);
+    } else {
+      // it's a tree node
+      if (item.id && (item.bounds || item.is_negative)) out.push(item);
+      flattenNamed(item.children || [], out);
+    }
   }
   return out;
 }
@@ -200,7 +207,7 @@ const WOOL_COLORS = {
   green:"#22c55e", red:"#ef4444", blue:"#3b82f6",
 };
 
-function renderMap(ctx, tree) {
+function renderMap(ctx, groups) {
   const svg = document.getElementById("map-svg");
   const wrap = document.getElementById("canvas-wrap");
   const svgW = wrap.clientWidth - 24, svgH = wrap.clientHeight - 24;
@@ -265,7 +272,7 @@ function renderMap(ctx, tree) {
 
   // Layer 4: XML regions (one <g> per named+bounded node, hidden by default)
   const regionsGroup = svgEl("g", { id: "layer-regions" });
-  for (const region of flattenNamed(tree)) {
+  for (const region of flattenNamed(groups)) {
     const { id, type, color, bounds } = region;
     // bounds may be null for negative regions — compute derived coords only when present
     const p1 = bounds ? _toSvg(bounds.min_x, bounds.min_z) : null;
@@ -506,21 +513,50 @@ function buildSidebarTree(nodes, container, depth, isLast = []) {
   }
 }
 
-function buildSidebar(tree) {
+// Category section header styles
+const CAT_COLORS = {
+  spawn:    "#60a5fa",
+  wool:     "#f1c40f",
+  monument: "#a78bfa",
+  build:    "#34d399",
+  other:    "#94a3b8",
+};
+
+function buildSidebar(groups) {
   _reg.clear();
   const list = document.getElementById("region-list");
   list.innerHTML = "";
 
-  const named = flattenNamed(tree);
+  const named = flattenNamed(groups);
   if (!named.length) {
     list.innerHTML = '<div id="empty-msg">No named regions found</div>';
     return;
   }
 
   // Build registry first (needs full tree traversal before DOM creation)
-  for (const root of tree) buildRegistryEntry(root, null);
+  for (const group of groups) {
+    for (const root of group.regions) buildRegistryEntry(root, null);
+  }
 
-  buildSidebarTree(tree, list, 0, []);
+  for (const group of groups) {
+    // Section header
+    const header = document.createElement("div");
+    const accentColor = CAT_COLORS[group.name] || "#64748b";
+    header.style.cssText = `
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px 4px 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .07em;
+      color: ${accentColor}; text-transform: uppercase; user-select: none;
+    `;
+    // Accent line
+    const line = document.createElement("div");
+    line.style.cssText = `flex:1; height:1px; background:${accentColor}; opacity:0.25;`;
+    header.appendChild(document.createTextNode(group.label));
+    header.appendChild(line);
+    list.appendChild(header);
+
+    buildSidebarTree(group.regions, list, 0, []);
+  }
 }
 
 document.getElementById("toggle-all").addEventListener("change", (e) => {
@@ -543,11 +579,15 @@ function setStatus(msg) {
   document.getElementById("status").textContent = msg;
 }
 
-function countNamed(tree) {
+function countNamed(groupsOrNodes) {
   let n = 0;
-  for (const node of tree) {
-    if (node.id) n++;
-    n += countNamed(node.children || []);
+  for (const item of groupsOrNodes) {
+    if (item.regions) {
+      n += countNamed(item.regions);
+    } else {
+      if (item.id) n++;
+      n += countNamed(item.children || []);
+    }
   }
   return n;
 }
@@ -572,10 +612,10 @@ async function loadMap(name) {
   ]);
   if (!ctxResp.ok) { setStatus("Error loading map"); return; }
   _ctx = await ctxResp.json();
-  _regionTree = regResp.ok ? await regResp.json() : [];
-  renderMap(_ctx, _regionTree);
-  buildSidebar(_regionTree);
-  const nRegions = countNamed(_regionTree);
+  _regionGroups = regResp.ok ? await regResp.json() : [];
+  renderMap(_ctx, _regionGroups);
+  buildSidebar(_regionGroups);
+  const nRegions = countNamed(_regionGroups);
   setStatus(
     `${_ctx.map_name} v${_ctx.map_version || "?"} · ` +
     `${_ctx.island_count} island(s) · ${nRegions} region(s)`
@@ -587,7 +627,7 @@ document.getElementById("map-select").addEventListener("change", (e) => {
 });
 
 window.addEventListener("resize", () => {
-  if (_ctx) renderMap(_ctx, _regionTree);
+  if (_ctx) renderMap(_ctx, _regionGroups);
 });
 
 loadMaps();
@@ -627,7 +667,10 @@ def create_app() -> Flask:
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
-        tree = encode_region_tree(data.get("regions", {}))
-        return jsonify(tree)
+        groups = encode_region_tree_categorized(
+            data.get("regions", {}),
+            data.get("region_categories", {}),
+        )
+        return jsonify(groups)
 
     return app
