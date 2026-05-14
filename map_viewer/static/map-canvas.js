@@ -54,6 +54,7 @@ export class MapCanvas {
   // ── live DOM references ───────────────────────────────────────────────────
   #regionGroupMap = new Map();  // id → SVG <g> for fast setSelectedRegions
   #viewportG      = null;
+  #overlayLayer   = null;  // outside viewport — fixed-size labels at screen coords
   #highlightRect  = null;
   #anchorLayer    = null;
   #spawnLayerEl   = null;
@@ -85,19 +86,23 @@ export class MapCanvas {
     this.#repaint();
   }
 
-  /** Highlight the anchor blocks for the given region node. */
+  /** Highlight the anchor blocks and show the name/dimensions overlay for a region. */
   showAnchors(node) {
     this.#selectedNode = node;
-    if (!this.#anchorLayer) return;
-    while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
-    this.#renderAnchors();
+    if (this.#anchorLayer) {
+      while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+      this.#renderAnchors();
+    }
+    this.#updateOverlay();
   }
 
-  /** Remove anchor highlights. */
+  /** Remove anchor highlights and overlay. */
   clearAnchors() {
     this.#selectedNode = null;
-    if (!this.#anchorLayer) return;
-    while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+    if (this.#anchorLayer) {
+      while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+    }
+    this.#updateOverlay();
   }
 
   setSpawnsVisible(v) {
@@ -148,7 +153,14 @@ export class MapCanvas {
     viewport.appendChild(this.#buildAnchorLayer());
     viewport.appendChild(this.#buildBlockHighlight());
 
+    // Overlay sits outside the viewport group so its text stays fixed-size at
+    // any zoom level. Positions are computed in SVG screen coords.
+    const overlayG = svgEl("g", { id: "layer-overlay" });
+    this.#overlayLayer = overlayG;
+
     this.#svg.appendChild(viewport);
+    this.#svg.appendChild(overlayG);
+    this.#updateOverlay();
   }
 
   // ── viewport transform helpers ─────────────────────────────────────────────
@@ -157,6 +169,7 @@ export class MapCanvas {
     if (!this.#viewportG) return;
     const { x: s, panX: tx, panY: ty } = { x: this.#scale, panX: this.#panX, panY: this.#panY };
     this.#viewportG.setAttribute("transform", `matrix(${s},0,0,${s},${tx},${ty})`);
+    this.#updateOverlay();
   }
 
   /** Convert a mouse event's client position to pre-zoom SVG coordinates. */
@@ -365,6 +378,68 @@ export class MapCanvas {
     return g;
   }
 
+  #updateOverlay() {
+    if (!this.#overlayLayer) return;
+    while (this.#overlayLayer.firstChild) this.#overlayLayer.removeChild(this.#overlayLayer.firstChild);
+
+    const node = this.#selectedNode;
+    if (!node?.bounds || node.is_negative || !this.#toSvg) return;
+
+    const { min_x, min_z, max_x, max_z } = node.bounds;
+    const color = node.color || "#94a3b8";
+
+    // Convert base SVG coordinates to screen coordinates within the SVG element
+    const p1b   = this.#toSvg(min_x, min_z);
+    const p2b   = this.#toSvg(max_x, max_z);
+    const toScr = (bx, by) => ({ x: bx * this.#scale + this.#panX, y: by * this.#scale + this.#panY });
+    const s1    = toScr(p1b.x, p1b.y);
+    const s2    = toScr(p2b.x, p2b.y);
+    const left  = Math.min(s1.x, s2.x);
+    const right = Math.max(s1.x, s2.x);
+    const top   = Math.min(s1.y, s2.y);
+    const bottom = Math.max(s1.y, s2.y);
+    const mid   = (left + right) / 2;
+
+    // ── name above top-left ──────────────────────────────────────────────────
+    const maxChars  = 36;
+    const labelText = node.label.length > maxChars
+      ? node.label.slice(0, maxChars - 1) + "…"
+      : node.label;
+    const nameEl = svgEl("text", {
+      x: left, y: top - 5,
+      "text-anchor": "start", "dominant-baseline": "alphabetic",
+      "font-size": "11", "font-family": "ui-monospace, monospace",
+      fill: color, "pointer-events": "none",
+    });
+    nameEl.textContent = labelText;
+    this.#overlayLayer.appendChild(nameEl);
+
+    // ── dimensions badge below bottom-center ─────────────────────────────────
+    const fmtDim = (v) => Number.isInteger(v) ? String(v) : v.toFixed(1);
+    const dimText = `${fmtDim(max_x - min_x)} × ${fmtDim(max_z - min_z)}`;
+
+    const FONT_SZ   = 10;
+    const PAD_X     = 6;
+    const PAD_Y     = 3;
+    const pillH     = FONT_SZ + PAD_Y * 2;
+    const pillW     = dimText.length * (FONT_SZ * 0.6) + PAD_X * 2;
+    const pillX     = mid - pillW / 2;
+    const pillY     = bottom + 5;
+
+    this.#overlayLayer.appendChild(svgEl("rect", {
+      x: pillX, y: pillY, width: pillW, height: pillH, rx: 3,
+      fill: color, "fill-opacity": "0.85", "pointer-events": "none",
+    }));
+    const dimEl = svgEl("text", {
+      x: mid, y: pillY + PAD_Y + FONT_SZ - 1,
+      "text-anchor": "middle", "dominant-baseline": "auto",
+      "font-size": FONT_SZ, "font-family": "ui-monospace, monospace",
+      fill: "#0f172a", "font-weight": "600", "pointer-events": "none",
+    });
+    dimEl.textContent = dimText;
+    this.#overlayLayer.appendChild(dimEl);
+  }
+
   #renderAnchors() {
     const node = this.#selectedNode;
     if (!node?.bounds || !this.#toSvg || node.is_negative) return;
@@ -433,14 +508,12 @@ export class MapCanvas {
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
       }));
-      if (rw > 20 || rh > 20) g.appendChild(this.#label(id, { x: cx, y: cy }, color));
     } else {
       g.appendChild(svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
         stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
       }));
-      if (rw > 20 || rh > 20) g.appendChild(this.#label(id, { x: cx, y: cy }, color));
     }
     return g;
   }
