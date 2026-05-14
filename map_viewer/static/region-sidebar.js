@@ -98,6 +98,11 @@ export class RegionSidebar {
         this.#selectedRowEl.classList.remove("region-row--selected");
       this.#selectedRowEl = row;
       row.classList.add("region-row--selected");
+      // Focusing a region automatically enables its overlay.
+      if (!cb.input.checked) {
+        cb.input.checked = true;
+        cb.input.dispatchEvent(new Event("change"));
+      }
       if (this.#onSelect) this.#onSelect(node);
     });
     return row;

@@ -2,12 +2,16 @@
  * MapCanvas — owns the SVG element and all rendering.
  *
  * Public surface:
- *   render(ctx, groups)       full repaint + zoom reset
- *   setRegionVisible(id, v)   show/hide a region overlay
- *   resize()                  re-render at new dimensions (preserves zoom)
+ *   render(ctx, groups)         full repaint + zoom reset
+ *   setRegionVisible(id, v)     show/hide a region overlay
+ *   resize()                    re-render at new dimensions (preserves zoom)
+ *   showAnchors(node)           highlight anchor blocks for selected region
+ *   clearAnchors()              remove anchor highlights
+ *   setSpawnsVisible(v)         toggle spawn star markers
+ *   setWoolsVisible(v)          toggle wool diamond markers
  *
  * Callbacks injected at construction:
- *   onCoords(x, z)            block coords under mouse (null, null on leave)
+ *   onCoords(x, z)              block coords under mouse (null, null on leave)
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
@@ -48,6 +52,14 @@ export class MapCanvas {
   // ── live DOM references ───────────────────────────────────────────────────
   #viewportG      = null;
   #highlightRect  = null;
+  #anchorLayer    = null;
+  #spawnLayerEl   = null;
+  #woolLayerEl    = null;
+
+  // ── layer visibility state (persists across resize) ───────────────────────
+  #showSpawns     = true;
+  #showWools      = true;
+  #selectedNode   = null;
 
   constructor(svgEl, wrapEl, callbacks = {}) {
     this.#svg       = svgEl;
@@ -61,11 +73,37 @@ export class MapCanvas {
   render(ctx, groups) {
     this.#ctx    = ctx;
     this.#groups = groups;
+    this.#selectedNode = null;
     // Reset zoom/pan for a newly loaded map
     this.#scale = 1;
     this.#panX  = 0;
     this.#panY  = 0;
     this.#repaint();
+  }
+
+  /** Highlight the anchor blocks for the given region node. */
+  showAnchors(node) {
+    this.#selectedNode = node;
+    if (!this.#anchorLayer) return;
+    while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+    this.#renderAnchors();
+  }
+
+  /** Remove anchor highlights. */
+  clearAnchors() {
+    this.#selectedNode = null;
+    if (!this.#anchorLayer) return;
+    while (this.#anchorLayer.firstChild) this.#anchorLayer.removeChild(this.#anchorLayer.firstChild);
+  }
+
+  setSpawnsVisible(v) {
+    this.#showSpawns = v;
+    if (this.#spawnLayerEl) this.#spawnLayerEl.style.display = v ? "" : "none";
+  }
+
+  setWoolsVisible(v) {
+    this.#showWools = v;
+    if (this.#woolLayerEl) this.#woolLayerEl.style.display = v ? "" : "none";
   }
 
   setRegionVisible(id, visible) {
@@ -97,8 +135,10 @@ export class MapCanvas {
 
     viewport.appendChild(this.#buildBuildRegion());
     viewport.appendChild(this.#buildIslands());
-    viewport.appendChild(this.#buildPois());
+    viewport.appendChild(this.#buildSpawnLayer());
+    viewport.appendChild(this.#buildWoolLayer());
     viewport.appendChild(this.#buildXmlRegions());
+    viewport.appendChild(this.#buildAnchorLayer());
     viewport.appendChild(this.#buildBlockHighlight());
 
     this.#svg.appendChild(viewport);
@@ -242,8 +282,10 @@ export class MapCanvas {
     return g;
   }
 
-  #buildPois() {
-    const g = svgEl("g", { id: "layer-pois" });
+  #buildSpawnLayer() {
+    const g = svgEl("g", { id: "layer-spawns" });
+    this.#spawnLayerEl = g;
+    if (!this.#showSpawns) g.style.display = "none";
     for (const spawn of (this.#ctx.poi_assignments?.spawns || [])) {
       const p = this.#toSvg(spawn.x, spawn.z);
       const t = svgEl("text", {
@@ -253,6 +295,13 @@ export class MapCanvas {
       t.textContent = "★";
       g.appendChild(t);
     }
+    return g;
+  }
+
+  #buildWoolLayer() {
+    const g = svgEl("g", { id: "layer-wools" });
+    this.#woolLayerEl = g;
+    if (!this.#showWools) g.style.display = "none";
     for (const wool of (this.#ctx.poi_assignments?.wools || [])) {
       const p = this.#toSvg(wool.x, wool.z);
       const t = svgEl("text", {
@@ -263,6 +312,48 @@ export class MapCanvas {
       g.appendChild(t);
     }
     return g;
+  }
+
+  #buildAnchorLayer() {
+    const g = svgEl("g", { id: "layer-anchors" });
+    this.#anchorLayer = g;
+    this.#renderAnchors();
+    return g;
+  }
+
+  #renderAnchors() {
+    const node = this.#selectedNode;
+    if (!node?.bounds || !this.#toSvg || node.is_negative) return;
+
+    const { min_x, min_z, max_x, max_z } = node.bounds;
+    const color = node.color || "#ffffff";
+    const isCircular = ["cylinder", "circle", "sphere"].includes(node.type);
+
+    if (isCircular) {
+      const cx = (min_x + max_x) / 2, cz = (min_z + max_z) / 2;
+      this.#anchorLayer.appendChild(this.#anchorBlock(Math.floor(cx), Math.floor(cz), color));
+    } else {
+      const bMinX = Math.floor(min_x),      bMinZ = Math.floor(min_z);
+      const bMaxX = Math.ceil(max_x) - 1,   bMaxZ = Math.ceil(max_z) - 1;
+      this.#anchorLayer.appendChild(this.#anchorBlock(bMinX, bMinZ, color));
+      if (bMaxX !== bMinX || bMaxZ !== bMinZ) {
+        this.#anchorLayer.appendChild(this.#anchorBlock(bMaxX, bMaxZ, color));
+      }
+    }
+  }
+
+  #anchorBlock(bx, bz, color) {
+    const p1 = this.#toSvg(bx,     bz);
+    const p2 = this.#toSvg(bx + 1, bz + 1);
+    return svgEl("rect", {
+      x: Math.min(p1.x, p2.x), y: Math.min(p1.y, p2.y),
+      width:  Math.abs(p2.x - p1.x),
+      height: Math.abs(p2.y - p1.y),
+      fill: color, "fill-opacity": "0.5",
+      stroke: color, "stroke-width": "2",
+      "vector-effect": "non-scaling-stroke",
+      "pointer-events": "none",
+    });
   }
 
   #buildXmlRegions() {

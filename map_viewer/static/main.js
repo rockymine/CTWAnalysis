@@ -35,7 +35,7 @@ const detail = new RegionDetail(document.getElementById("region-detail"));
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
   registry,
-  { onSelect: (node) => detail.show(node) },
+  { onSelect: (node) => { detail.show(node); canvas.showAnchors(node); } },
 );
 
 // ── toggle-all wiring ──────────────────────────────────────────────────────
@@ -43,6 +43,11 @@ const sidebar = new RegionSidebar(
 const toggleAllEl = document.getElementById("toggle-all");
 registry.setToggleAllEl(toggleAllEl);
 toggleAllEl.addEventListener("change", (e) => registry.setAllVisible(e.target.checked));
+
+// ── POI layer toggles ─────────────────────────────────────────────────────
+
+document.getElementById("toggle-spawns").addEventListener("change", (e) => canvas.setSpawnsVisible(e.target.checked));
+document.getElementById("toggle-wools").addEventListener("change",  (e) => canvas.setWoolsVisible(e.target.checked));
 
 // ── map selection ──────────────────────────────────────────────────────────
 
@@ -57,6 +62,7 @@ async function loadMap(name) {
     canvas.render(ctx, groups);
     sidebar.build(groups);
     detail.clear();
+    canvas.clearAnchors();
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
