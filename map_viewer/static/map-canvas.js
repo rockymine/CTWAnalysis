@@ -45,7 +45,8 @@ const HANDLE_DEFS = [
   { key: "s",  pos: sb => [sb.midX,  sb.bottom], cursor: "s-resize"  },
   { key: "se", pos: sb => [sb.right, sb.bottom], cursor: "se-resize" },
 ];
-const RESIZABLE_TYPES = new Set(["rectangle", "cuboid"]);
+const COMPOSITE_TYPES  = new Set(["union", "intersect", "negative", "complement"]);
+const RESIZABLE_TYPES  = new Set(["rectangle", "cuboid"]);
 
 export class MapCanvas {
   #svg;
@@ -631,7 +632,7 @@ export class MapCanvas {
 
   #renderAnchors() {
     const node = this.#selectedNode;
-    if (!node?.bounds || !this.#toSvg || node.is_negative) return;
+    if (!node?.bounds || !this.#toSvg || node.is_negative || COMPOSITE_TYPES.has(node.type)) return;
 
     const { min_x, min_z, max_x, max_z } = node.bounds;
     const color = node.color || "#ffffff";
@@ -935,7 +936,7 @@ export class MapCanvas {
     for (const item of groupsOrNodes) {
       if (item.regions) { this.#flattenNamed(item.regions, out); }
       else {
-        if (item.id && (item.bounds || item.is_negative)) out.push(item);
+        if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) out.push(item);
         this.#flattenNamed(item.children || [], out);
       }
     }
