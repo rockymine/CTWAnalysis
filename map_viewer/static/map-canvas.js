@@ -518,7 +518,7 @@ export class MapCanvas {
     for (const island of (this.#ctx.islands || [])) {
       const poly = island.simplified_polygon;
       if (!poly?.exterior?.length) continue;
-      const color = TEAM_FILL[island.team] || TEAM_FILL_DEFAULT;
+      const color = TEAM_FILL_DEFAULT;
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
         fill: color, "fill-opacity": "0.25",
