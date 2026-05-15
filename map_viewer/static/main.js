@@ -50,8 +50,9 @@ const registry = new RegionRegistry({
   },
 });
 
-const coordsEl  = document.getElementById("cursor-coords");
-const toolRectBtn = document.getElementById("tool-rect");
+const coordsEl    = document.getElementById("cursor-coords");
+const toolSelectBtn = document.getElementById("tool-select");
+const toolRectBtn   = document.getElementById("tool-rect");
 
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
@@ -79,6 +80,7 @@ const canvas = new MapCanvas(
         registry.register(newNode, null);
         canvas.addRegion(newNode);
         sidebar.appendRow(newNode);
+        setTool(null);
         registry.select(newId);
       } catch (err) {
         setStatus(`Create region failed: ${err.message}`);
@@ -125,21 +127,23 @@ const sidebar = new RegionSidebar(
 
 // ── draw toolbar ──────────────────────────────────────────────────────────
 
+function setTool(tool) {
+  canvas.setActiveTool(tool);
+  toolSelectBtn.classList.toggle("draw-tool-btn--active", tool === null);
+  toolRectBtn.classList.toggle("draw-tool-btn--active",   tool === "rectangle");
+}
+
+toolSelectBtn.addEventListener("click", () => setTool(null));
 toolRectBtn.addEventListener("click", () => {
-  const isNowActive = toolRectBtn.classList.toggle("draw-tool-btn--active");
-  canvas.setActiveTool(isNowActive ? "rectangle" : null);
+  setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
 });
 
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
   if ((e.key === "r" || e.key === "R") && currentMap) {
-    const isNowActive = toolRectBtn.classList.toggle("draw-tool-btn--active");
-    canvas.setActiveTool(isNowActive ? "rectangle" : null);
+    setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
   }
-  if (e.key === "Escape") {
-    canvas.setActiveTool(null);
-    toolRectBtn.classList.remove("draw-tool-btn--active");
-  }
+  if (e.key === "Escape") setTool(null);
 });
 
 // ── POI layer toggles ─────────────────────────────────────────────────────
@@ -151,8 +155,7 @@ document.getElementById("toggle-wools").addEventListener("change",  (e) => canva
 
 async function loadMap(name) {
   currentMap = name;
-  canvas.setActiveTool(null);
-  toolRectBtn.classList.remove("draw-tool-btn--active");
+  setTool(null);
   exportBtn.disabled = true;
   setStatus("Loading…");
   try {
@@ -169,8 +172,10 @@ async function loadMap(name) {
     for (const group of groups) {
       for (const root of group.regions) registry.register(root, null);
     }
-    exportBtn.disabled  = false;
-    toolRectBtn.disabled = false;
+    exportBtn.disabled     = false;
+    toolSelectBtn.disabled = false;
+    toolRectBtn.disabled   = false;
+    setTool(null);
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
