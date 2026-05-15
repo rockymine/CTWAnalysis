@@ -86,10 +86,14 @@ export class MapCanvas {
   // ── resize state ──────────────────────────────────────────────────────────
   #resizeState = null;  // null | { node, xField, zField, cursor }
 
+  // ── region visibility / selection ─────────────────────────────────────────
+  #visibilityMap      = new Map();  // id → false means hidden; absent = visible
+  #currentSelectedIds = new Set();
+
   // ── layer visibility state (persists across resize) ───────────────────────
-  #showSpawns     = true;
-  #showWools      = true;
-  #selectedNode   = null;
+  #showSpawns   = true;
+  #showWools    = true;
+  #selectedNode = null;
 
   constructor(svgEl, wrapEl, callbacks = {}) {
     this.#svg       = svgEl;
@@ -106,6 +110,8 @@ export class MapCanvas {
     this.#selectedNode = null;
     this.#regionGroupMap.clear();
     this.#shapeMap.clear();
+    this.#visibilityMap.clear();
+    this.#currentSelectedIds.clear();
     // Reset zoom/pan for a newly loaded map
     this.#scale = 1;
     this.#panX  = 0;
@@ -142,12 +148,24 @@ export class MapCanvas {
     if (this.#woolLayerEl) this.#woolLayerEl.style.display = v ? "" : "none";
   }
 
-  /** Show overlays for exactly the given ids; hide everything else. */
+  /**
+   * Update selection. Selected regions get a solid thick outline; unselected
+   * regions revert to dashed. A region selected while hidden is shown temporarily
+   * (it hides again when deselected).
+   */
   setSelectedRegions(ids) {
-    const selectedSet = new Set(ids);
-    for (const [id, g] of this.#regionGroupMap) {
-      g.style.display = selectedSet.has(id) ? "" : "none";
-    }
+    this.#currentSelectedIds = new Set(ids);
+    for (const id of this.#regionGroupMap.keys()) this.#refreshRegionDisplay(id);
+  }
+
+  /**
+   * Persistently show or hide a region. Hidden regions are invisible unless
+   * currently selected.
+   */
+  setRegionVisible(id, visible) {
+    if (visible) this.#visibilityMap.delete(id);
+    else         this.#visibilityMap.set(id, false);
+    this.#refreshRegionDisplay(id);
   }
 
   /**
@@ -192,10 +210,7 @@ export class MapCanvas {
     this.#activeTool = tool;
   }
 
-  /**
-   * Add a freshly-created region to the canvas without a full repaint.
-   * The shape is hidden until setSelectedRegions includes its id.
-   */
+  /** Add a freshly-created region to the canvas without a full repaint. */
   addRegion(node) {
     if (!this.#regionsLayerEl || !this.#toSvg) return;
     const regionG = this.#regionGroup(node);
@@ -220,6 +235,15 @@ export class MapCanvas {
     if (shape) {
       this.#shapeMap.delete(oldId);
       this.#shapeMap.set(newId, shape);
+    }
+    // Migrate visibility / selection state
+    if (this.#visibilityMap.has(oldId)) {
+      this.#visibilityMap.set(newId, this.#visibilityMap.get(oldId));
+      this.#visibilityMap.delete(oldId);
+    }
+    if (this.#currentSelectedIds.has(oldId)) {
+      this.#currentSelectedIds.delete(oldId);
+      this.#currentSelectedIds.add(newId);
     }
   }
 
@@ -389,9 +413,11 @@ export class MapCanvas {
     const svgPt = this.#clientToSvg(clientX, clientY);
     const world = this.#toWorld(svgPt.x, svgPt.y);
 
-    // Collect all regions the click lands inside, pick the smallest by area
+    // Only hit-test visible regions; hidden ones can't be clicked on the canvas
     const candidates = this.#flattenNamed(this.#groups)
-      .filter(r => r.bounds && !r.is_negative && this.#pointInRegion(world, r));
+      .filter(r => r.bounds && !r.is_negative
+               && this.#visibilityMap.get(r.id) !== false
+               && this.#pointInRegion(world, r));
     candidates.sort((a, b) => this.#regionArea(a) - this.#regionArea(b));
     this.#callbacks.onCanvasClick(candidates[0] ?? null);
   }
@@ -636,7 +662,7 @@ export class MapCanvas {
     const rw = p1 ? Math.abs(p2.x - p1.x) : 0, rh = p1 ? Math.abs(p2.y - p1.y) : 0;
     const cx = p1 ? (p1.x + p2.x) / 2 : 0, cy = p1 ? (p1.y + p2.y) / 2 : 0;
 
-    const g = svgEl("g", { id: `region-${id}`, style: "display:none" });
+    const g = svgEl("g", { id: `region-${id}` });
     const title = svgEl("title");
     title.textContent = `${id} (${type})`;
     g.appendChild(title);
@@ -692,6 +718,27 @@ export class MapCanvas {
     });
     el.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
     return el;
+  }
+
+  // ── region display ────────────────────────────────────────────────────────
+
+  #refreshRegionDisplay(id) {
+    const g = this.#regionGroupMap.get(id);
+    if (!g) return;
+    const isSelected = this.#currentSelectedIds.has(id);
+    const isVisible  = this.#visibilityMap.get(id) !== false;
+    g.style.display  = (isVisible || isSelected) ? "" : "none";
+    const entry = this.#shapeMap.get(id);
+    if (!entry) return;
+    if (isSelected) {
+      entry.shape.setAttribute("stroke-width",    "2.5");
+      entry.shape.setAttribute("fill-opacity",    "0.22");
+      entry.shape.removeAttribute("stroke-dasharray");
+    } else {
+      entry.shape.setAttribute("stroke-width",    "1.5");
+      entry.shape.setAttribute("fill-opacity",    "0.20");
+      entry.shape.setAttribute("stroke-dasharray", "4,2");
+    }
   }
 
   // ── resize helpers ─────────────────────────────────────────────────────────

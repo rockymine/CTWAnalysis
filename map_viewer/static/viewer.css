@@ -133,6 +133,17 @@ body {
   border-radius: 3px; flex-shrink: 0; color: #475569;
 }
 
+/* visibility toggle button */
+.vis-btn {
+  background: none; border: none; cursor: pointer; padding: 0 3px;
+  color: #475569; flex-shrink: 0; display: flex; align-items: center;
+  opacity: 0; transition: opacity 0.12s; border-radius: 3px;
+  line-height: 0;
+}
+.region-row:hover .vis-btn   { opacity: 1; }
+.vis-btn--hidden              { opacity: 1; color: #475569; }
+.vis-btn:hover                { color: #94a3b8; }
+
 #empty-msg { padding: 20px 14px; color: #475569; font-size: 13px; }
 
 /* composite type badge colours */

@@ -11,24 +11,32 @@ const TYPE_CLASS = {
 };
 const CAT_COLOR = "#4a5568";
 
+const EYE_OPEN   = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.5C1 4.5 3 1 7 1s6 3.5 6 3.5S11 8 7 8 1 4.5 1 4.5z"/><circle cx="7" cy="4.5" r="1.5"/></svg>`;
+const EYE_CLOSED = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2.5C3 5.5 5 7 7 7s4-1.5 6-4.5"/><line x1="4" y1="6.5" x2="3.5" y2="8.5"/><line x1="7" y1="7" x2="7" y2="9"/><line x1="10" y1="6.5" x2="10.5" y2="8.5"/></svg>`;
+
 export class RegionSidebar {
   #listEl;
   #onSelect;
-  #rowMap = new Map();  // id → rowEl
+  #onVisibilityToggle;
+  #rowMap    = new Map();   // id → rowEl
+  #hiddenIds = new Set();   // ids the user has hidden
 
   /**
    * @param {HTMLElement} listEl
    * @param {object} [callbacks]
-   * @param {function} [callbacks.onSelect]  Called with the node when a row is clicked.
+   * @param {function} [callbacks.onSelect]             Called with the node when a row is clicked.
+   * @param {function} [callbacks.onVisibilityToggle]   Called with (id, hidden: boolean).
    */
-  constructor(listEl, { onSelect } = {}) {
-    this.#listEl   = listEl;
-    this.#onSelect = onSelect || null;
+  constructor(listEl, { onSelect, onVisibilityToggle } = {}) {
+    this.#listEl              = listEl;
+    this.#onSelect            = onSelect || null;
+    this.#onVisibilityToggle  = onVisibilityToggle || null;
   }
 
   /** Rebuild the sidebar for a freshly loaded map. */
   build(groups) {
     this.#rowMap.clear();
+    this.#hiddenIds.clear();
     this.#listEl.innerHTML = "";
 
     const hasRegions = groups.some(g => g.regions.length > 0);
@@ -62,6 +70,19 @@ export class RegionSidebar {
     }
   }
 
+  /** Programmatically set a region's hidden state (updates the eye icon). */
+  setHidden(id, hidden) {
+    if (hidden) this.#hiddenIds.add(id);
+    else        this.#hiddenIds.delete(id);
+    const row = this.#rowMap.get(id);
+    if (!row) return;
+    const btn = row.querySelector(".vis-btn");
+    if (btn) {
+      btn.innerHTML = hidden ? EYE_CLOSED : EYE_OPEN;
+      btn.classList.toggle("vis-btn--hidden", hidden);
+    }
+  }
+
   /** Append a single new node row at the end of the list (for freshly-created regions). */
   appendRow(node) {
     // Remove the "no regions" placeholder if present
@@ -79,6 +100,12 @@ export class RegionSidebar {
     row.dataset.regionId = newId;
     const labelEl = row.querySelector(".region-label");
     if (labelEl) { labelEl.textContent = newId; labelEl.title = newId; }
+    if (this.#hiddenIds.has(oldId)) {
+      this.#hiddenIds.delete(oldId);
+      this.#hiddenIds.add(newId);
+    }
+    const btn = row.querySelector(".vis-btn");
+    if (btn) btn.dataset.regionId = newId;
   }
 
   // ── private DOM builders ────────────────────────────────────────────────
@@ -115,6 +142,7 @@ export class RegionSidebar {
     row.appendChild(this.#dot(node.color, node.synthetic_id));
     row.appendChild(this.#label(node));
     row.appendChild(this.#typeBadge(node.type));
+    row.appendChild(this.#visBtn(node.id));
 
     row.addEventListener("click", () => {
       if (this.#onSelect) this.#onSelect(node);
@@ -122,6 +150,24 @@ export class RegionSidebar {
 
     this.#rowMap.set(node.id, row);
     return row;
+  }
+
+  #visBtn(id) {
+    const btn = document.createElement("button");
+    btn.className        = "vis-btn";
+    btn.dataset.regionId = id;
+    btn.innerHTML        = EYE_OPEN;
+    btn.title            = "Toggle visibility";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const nowHidden = !this.#hiddenIds.has(id);
+      if (nowHidden) this.#hiddenIds.add(id);
+      else           this.#hiddenIds.delete(id);
+      btn.innerHTML = nowHidden ? EYE_CLOSED : EYE_OPEN;
+      btn.classList.toggle("vis-btn--hidden", nowHidden);
+      if (this.#onVisibilityToggle) this.#onVisibilityToggle(id, nowHidden);
+    });
+    return btn;
   }
 
   #treeIndent(depth, isLast, isLastChild) {

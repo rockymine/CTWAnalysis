@@ -111,7 +111,10 @@ const detail = new RegionDetail(
 
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
-  { onSelect: (node) => registry.select(node.id) },
+  {
+    onSelect:            (node)        => registry.select(node.id),
+    onVisibilityToggle:  (id, hidden)  => canvas.setRegionVisible(id, !hidden),
+  },
 );
 
 // ── draw toolbar ──────────────────────────────────────────────────────────
