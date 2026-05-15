@@ -18,6 +18,12 @@ export async function fetchRegions(mapName) {
   return r.json();
 }
 
+export async function fetchRegionsXml(mapName) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/export/xml`);
+  if (!r.ok) throw new Error(`Export failed (${r.status})`);
+  return r.text();
+}
+
 export async function patchRegion(mapName, regionId, bounds) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,

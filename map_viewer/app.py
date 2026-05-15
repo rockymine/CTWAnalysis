@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, abort, render_template, request
 
-from map_viewer.region_encoder import encode_region_tree_categorized
+from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
 
 OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 
@@ -54,6 +54,19 @@ def create_app() -> Flask:
             data.get("region_categories", {}),
         )
         return jsonify(groups)
+
+    @app.route("/api/map/<name>/export/xml")
+    def export_xml(name: str):
+        data_path = OUTPUT_ROOT / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        xml = regions_to_xml(data.get("regions", {}))
+        filename = f"{name}_regions.xml"
+        return xml, 200, {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        }
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
     def patch_region(name: str, region_id: str) -> tuple:

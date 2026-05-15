@@ -24,6 +24,13 @@ body {
   font-size: 12px; color: #64748b; cursor: pointer; user-select: none;
 }
 .poi-toggle input { accent-color: #64748b; cursor: pointer; }
+.topbar-btn {
+  background: #1e293b; color: #94a3b8; border: 1px solid #334155;
+  border-radius: 4px; padding: 3px 10px; font-size: 12px;
+  font-family: inherit; cursor: pointer;
+}
+.topbar-btn:hover:not(:disabled) { background: #334155; color: #e2e8f0; }
+.topbar-btn:disabled { opacity: 0.35; cursor: default; }
 
 /* ── main layout ── */
 #main { display: flex; flex: 1; overflow: hidden; }

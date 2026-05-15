@@ -17,6 +17,23 @@ import { RegionRegistry } from "./region-registry.js";
 import { RegionDetail }   from "./region-detail.js";
 import * as api           from "./api.js";
 
+const exportBtn = document.getElementById("export-xml-btn");
+exportBtn.addEventListener("click", async () => {
+  if (!currentMap) return;
+  try {
+    const xml  = await api.fetchRegionsXml(currentMap);
+    const blob = new Blob([xml], { type: "application/xml" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `${currentMap}_regions.xml`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    setStatus(`Export failed: ${err.message}`);
+  }
+});
+
 // ── component instances ────────────────────────────────────────────────────
 
 const registry = new RegionRegistry({
@@ -84,6 +101,7 @@ document.getElementById("toggle-wools").addEventListener("change",  (e) => canva
 
 async function loadMap(name) {
   currentMap = name;
+  exportBtn.disabled = true;
   setStatus("Loading…");
   try {
     const [ctx, groups] = await Promise.all([
@@ -99,6 +117,7 @@ async function loadMap(name) {
     for (const group of groups) {
       for (const root of group.regions) registry.register(root, null);
     }
+    exportBtn.disabled = false;
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
