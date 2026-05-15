@@ -112,8 +112,14 @@ const detail = new RegionDetail(
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
   {
-    onSelect:            (node)        => registry.select(node.id),
-    onVisibilityToggle:  (id, hidden)  => canvas.setRegionVisible(id, !hidden),
+    onSelect: (node) => registry.select(node.id),
+    onVisibilityToggle: (id, hidden) => {
+      // Propagate to the full subtree (hiding a union hides all its children)
+      for (const affectedId of collectSubtreeIds(registry.getNode(id))) {
+        canvas.setRegionVisible(affectedId, !hidden);
+        sidebar.setHidden(affectedId, hidden);
+      }
+    },
   },
 );
 
@@ -195,6 +201,15 @@ window.addEventListener("resize", () => canvas.resize());
 
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
+}
+
+function collectSubtreeIds(node) {
+  if (!node) return [];
+  const ids = [node.id];
+  for (const child of (node.children || [])) {
+    if (child.id) ids.push(...collectSubtreeIds(child));
+  }
+  return ids;
 }
 
 function countRegions(groupsOrNodes) {
