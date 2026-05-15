@@ -289,6 +289,23 @@ export class MapCanvas {
     if (this.#ctx) this.#repaint();  // preserves current #scale / #panX / #panY
   }
 
+  /**
+   * Swap in a new set of region groups (after a create/group/delete) without
+   * resetting zoom or pan. Clears selection and re-renders only the regions layer.
+   */
+  refreshRegions(groups) {
+    this.#groups = groups;
+    this.#selectedNode = null;
+    this.#currentSelectedIds.clear();
+    this.#visibilityMap.clear();
+
+    const newLayer = this.#buildXmlRegions();
+    if (this.#regionsLayerEl?.parentNode) {
+      this.#regionsLayerEl.parentNode.replaceChild(newLayer, this.#regionsLayerEl);
+    }
+    this.#updateOverlay();
+  }
+
   // ── rendering ──────────────────────────────────────────────────────────────
 
   #repaint() {

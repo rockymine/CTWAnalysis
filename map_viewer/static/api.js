@@ -71,3 +71,19 @@ export async function patchRegion(mapName, regionId, bounds) {
   if (!r.ok) throw new Error(`Save failed (${r.status})`);
   return r.json();
 }
+
+export async function groupRegions(mapName, childIds, groupId = "") {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/regions/group`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child_ids: childIds, id: groupId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Group failed (${r.status})`);
+  }
+  return r.json();
+}

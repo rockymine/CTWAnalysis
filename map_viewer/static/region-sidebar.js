@@ -100,6 +100,14 @@ export class RegionSidebar {
     this.#parentMap.delete(id);
   }
 
+  /** Highlight rows that are part of the pending multi-select group (green tint). */
+  setMultiSelected(ids) {
+    const multiSet = new Set(ids);
+    for (const [id, rowEl] of this.#rowMap) {
+      rowEl.classList.toggle("region-row--multi", multiSet.has(id));
+    }
+  }
+
   /** Append a single new node row at the end of the list (for freshly-created regions). */
   appendRow(node) {
     // Remove the "no regions" placeholder if present
@@ -180,8 +188,8 @@ export class RegionSidebar {
       row.appendChild(this.#delBtn(node));
     }
 
-    row.addEventListener("click", () => {
-      if (this.#onSelect) this.#onSelect(node);
+    row.addEventListener("click", (e) => {
+      if (this.#onSelect) this.#onSelect(node, e.ctrlKey);
     });
 
     this.#rowMap.set(node.id, row);

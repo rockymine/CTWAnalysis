@@ -150,6 +150,61 @@ def create_app() -> Flask:
         )
         return jsonify({"ok": True, "id": region_id}), 201
 
+    @app.route("/api/map/<name>/regions/group", methods=["POST"])
+    def group_regions(name: str) -> tuple:
+        body      = request.get_json(silent=True) or {}
+        child_ids = [str(cid) for cid in body.get("child_ids", [])]
+        if len(child_ids) < 2:
+            return jsonify({"error": "at least 2 regions required"}), 400
+
+        data_path = OUTPUT_ROOT / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        regions = data.setdefault("regions", {})
+
+        missing = [cid for cid in child_ids if cid not in regions]
+        if missing:
+            return jsonify({"error": f"unknown region(s): {missing}"}), 404
+
+        union_id = (body.get("id") or "").strip()
+        if not union_id:
+            i = 1
+            while f"union_{i}" in regions:
+                i += 1
+            union_id = f"union_{i}"
+        elif union_id in regions:
+            return jsonify({"error": f"id {union_id!r} already in use"}), 409
+
+        children = [regions[cid] for cid in child_ids]
+        bounded  = [c for c in children if c.get("bounds_2d")]
+        if bounded:
+            min_x = min(c["bounds_2d"]["min"]["x"] for c in bounded)
+            min_z = min(c["bounds_2d"]["min"]["z"] for c in bounded)
+            max_x = max(c["bounds_2d"]["max"]["x"] for c in bounded)
+            max_z = max(c["bounds_2d"]["max"]["z"] for c in bounded)
+            bounds_2d = {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
+        else:
+            bounds_2d = None
+            min_x = min_z = max_x = max_z = 0
+
+        regions[union_id] = {
+            "id": union_id,
+            "type": "union",
+            "children": children,
+            **({"bounds_2d": bounds_2d} if bounds_2d else {}),
+        }
+        data.setdefault("region_categories", {}).setdefault("other", []).append(union_id)
+
+        data_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return jsonify({
+            "ok": True, "id": union_id,
+            "bounds": {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z},
+        }), 201
+
     @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
     def delete_region(name: str, region_id: str) -> tuple:
         data_path = OUTPUT_ROOT / name / "map_data.json"

@@ -38,7 +38,8 @@ exportBtn.addEventListener("click", async () => {
 
 // ── component instances ────────────────────────────────────────────────────
 
-let selectedNode = null;
+let selectedNode    = null;
+const multiSelected = new Set();  // ids currently Ctrl-clicked for grouping
 
 const registry = new RegionRegistry({
   onSelectionChange: (primaryNode, selectedIds) => {
@@ -120,7 +121,21 @@ const detail = new RegionDetail(
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
   {
-    onSelect: (node) => registry.select(node.id),
+    onSelect: (node, isCtrl) => {
+      if (isCtrl) {
+        // Seed the multi-set with the current single selection if this is the first Ctrl+click
+        if (multiSelected.size === 0 && selectedNode && selectedNode.id !== node.id) {
+          multiSelected.add(selectedNode.id);
+        }
+        if (multiSelected.has(node.id)) multiSelected.delete(node.id);
+        else                            multiSelected.add(node.id);
+        sidebar.setMultiSelected([...multiSelected]);
+      } else {
+        multiSelected.clear();
+        sidebar.setMultiSelected([]);
+        registry.select(node.id);
+      }
+    },
     onDelete: (node) => deleteNode(node),
     onVisibilityToggle: (id, hidden) => {
       // Propagate to the full subtree (hiding a union hides all its children)
@@ -154,8 +169,16 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "r" || e.key === "R") && currentMap) {
     setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? "move" : "rectangle");
   }
-  if (e.key === "Escape") setTool("move");
+  if (e.key === "Escape") {
+    setTool("move");
+    multiSelected.clear();
+    sidebar.setMultiSelected([]);
+  }
   if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);
+  if ((e.key === "g" || e.key === "G") && e.ctrlKey && currentMap) {
+    e.preventDefault();
+    groupSelected();
+  }
 });
 
 // ── layer toggles ─────────────────────────────────────────────────────────
@@ -268,6 +291,34 @@ function handleBoundsSave(node, bounds) {
   api.patchRegion(currentMap, node.id, bounds).catch((err) => {
     console.error("Region save failed:", err);
   });
+}
+
+// ── region grouping ────────────────────────────────────────────────────────
+
+async function groupSelected() {
+  if (multiSelected.size < 2) {
+    setStatus("Select 2+ regions with Ctrl+click, then press Ctrl+G to group.");
+    return;
+  }
+  const childIds = [...multiSelected];
+  multiSelected.clear();
+  sidebar.setMultiSelected([]);
+  try {
+    const { id: newId } = await api.groupRegions(currentMap, childIds);
+    const groups = await api.fetchRegions(currentMap);
+    registry.clear();
+    canvas.refreshRegions(groups);
+    sidebar.build(groups);
+    detail.clear();
+    canvas.clearAnchors();
+    for (const group of groups) {
+      for (const root of group.regions) registry.register(root, null);
+    }
+    registry.select(newId);
+    setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
+  } catch (err) {
+    setStatus(`Group failed: ${err.message}`);
+  }
 }
 
 // ── start ──────────────────────────────────────────────────────────────────
