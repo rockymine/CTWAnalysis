@@ -133,6 +133,14 @@ body {
   border-radius: 3px; flex-shrink: 0; color: #475569;
 }
 
+/* collapse/expand chevron */
+.collapse-btn {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: #475569; flex-shrink: 0; display: flex; align-items: center;
+  justify-content: center; width: 14px; height: 14px; border-radius: 3px;
+}
+.collapse-btn:hover { color: #94a3b8; background: #334155; }
+
 /* visibility toggle button */
 .vis-btn {
   background: none; border: none; cursor: pointer; padding: 0 3px;

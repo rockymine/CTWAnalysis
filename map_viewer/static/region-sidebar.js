@@ -14,12 +14,17 @@ const CAT_COLOR = "#4a5568";
 const EYE_OPEN   = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.5C1 4.5 3 1 7 1s6 3.5 6 3.5S11 8 7 8 1 4.5 1 4.5z"/><circle cx="7" cy="4.5" r="1.5"/></svg>`;
 const EYE_CLOSED = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2.5C3 5.5 5 7 7 7s4-1.5 6-4.5"/><line x1="4" y1="6.5" x2="3.5" y2="8.5"/><line x1="7" y1="7" x2="7" y2="9"/><line x1="10" y1="6.5" x2="10.5" y2="8.5"/></svg>`;
 
+const CHEVRON_DOWN  = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>`;
+const CHEVRON_RIGHT = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,2 7,5 3,8"/></svg>`;
+
 export class RegionSidebar {
   #listEl;
   #onSelect;
   #onVisibilityToggle;
-  #rowMap    = new Map();   // id → rowEl
-  #hiddenIds = new Set();   // ids the user has hidden
+  #rowMap       = new Map();   // id → rowEl
+  #hiddenIds    = new Set();   // ids the user has hidden
+  #collapsedIds = new Set();   // ids whose children are collapsed in the sidebar
+  #parentMap    = new Map();   // id → parentId (null for roots)
 
   /**
    * @param {HTMLElement} listEl
@@ -37,6 +42,8 @@ export class RegionSidebar {
   build(groups) {
     this.#rowMap.clear();
     this.#hiddenIds.clear();
+    this.#collapsedIds.clear();
+    this.#parentMap.clear();
     this.#listEl.innerHTML = "";
 
     const hasRegions = groups.some(g => g.regions.length > 0);
@@ -47,7 +54,7 @@ export class RegionSidebar {
 
     for (const group of groups) {
       this.#listEl.appendChild(this.#categoryHeader(group));
-      this.#appendTree(group.regions, this.#listEl, 0, []);
+      this.#appendTree(group.regions, this.#listEl, 0, [], null);
     }
   }
 
@@ -88,6 +95,7 @@ export class RegionSidebar {
     // Remove the "no regions" placeholder if present
     const empty = this.#listEl.querySelector("#empty-msg");
     if (empty) empty.remove();
+    this.#parentMap.set(node.id, null);
     this.#listEl.appendChild(this.#regionRow(node, 0, [], true));
   }
 
@@ -104,8 +112,21 @@ export class RegionSidebar {
       this.#hiddenIds.delete(oldId);
       this.#hiddenIds.add(newId);
     }
-    const btn = row.querySelector(".vis-btn");
-    if (btn) btn.dataset.regionId = newId;
+    if (this.#collapsedIds.has(oldId)) {
+      this.#collapsedIds.delete(oldId);
+      this.#collapsedIds.add(newId);
+    }
+    // Update parentMap: rename key and any values that reference oldId
+    const parent = this.#parentMap.get(oldId);
+    this.#parentMap.delete(oldId);
+    this.#parentMap.set(newId, parent);
+    for (const [childId, parentId] of this.#parentMap) {
+      if (parentId === oldId) this.#parentMap.set(childId, newId);
+    }
+    const visBtn = row.querySelector(".vis-btn");
+    if (visBtn) visBtn.dataset.regionId = newId;
+    const chevron = row.querySelector(".collapse-btn");
+    if (chevron) chevron.dataset.regionId = newId;
   }
 
   // ── private DOM builders ────────────────────────────────────────────────
@@ -122,13 +143,14 @@ export class RegionSidebar {
     return el;
   }
 
-  #appendTree(nodes, container, depth, isLast) {
+  #appendTree(nodes, container, depth, isLast, parentId) {
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const isLastChild = i === nodes.length - 1;
+      this.#parentMap.set(node.id, parentId);
       container.appendChild(this.#regionRow(node, depth, isLast, isLastChild));
       if ((node.children || []).length > 0) {
-        this.#appendTree(node.children, container, depth + 1, [...isLast, isLastChild]);
+        this.#appendTree(node.children, container, depth + 1, [...isLast, isLastChild], node.id);
       }
     }
   }
@@ -139,6 +161,7 @@ export class RegionSidebar {
     row.dataset.regionId = node.id;
 
     row.appendChild(this.#treeIndent(depth, isLast, isLastChild));
+    row.appendChild(this.#chevronBtn(node));
     row.appendChild(this.#dot(node.color, node.synthetic_id));
     row.appendChild(this.#label(node));
     row.appendChild(this.#typeBadge(node.type));
@@ -150,6 +173,31 @@ export class RegionSidebar {
 
     this.#rowMap.set(node.id, row);
     return row;
+  }
+
+  #chevronBtn(node) {
+    const btn = document.createElement("button");
+    btn.className = "collapse-btn";
+    btn.dataset.regionId = node.id;
+    if (!(node.children?.length > 0)) {
+      btn.style.visibility = "hidden";
+      btn.innerHTML = CHEVRON_DOWN;
+      return btn;
+    }
+    btn.innerHTML = this.#collapsedIds.has(node.id) ? CHEVRON_RIGHT : CHEVRON_DOWN;
+    btn.title = "Collapse/expand";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (this.#collapsedIds.has(node.id)) {
+        this.#collapsedIds.delete(node.id);
+        btn.innerHTML = CHEVRON_DOWN;
+      } else {
+        this.#collapsedIds.add(node.id);
+        btn.innerHTML = CHEVRON_RIGHT;
+      }
+      this.#refreshTreeVisibility();
+    });
+    return btn;
   }
 
   #visBtn(id) {
@@ -213,5 +261,24 @@ export class RegionSidebar {
     if (typeClass) el.classList.add(typeClass);
     el.textContent = type;
     return el;
+  }
+
+  // ── collapse helpers ────────────────────────────────────────────────────
+
+  /** Returns true if every ancestor of id is expanded. */
+  #isRowVisible(id) {
+    let current = this.#parentMap.get(id);
+    while (current !== undefined && current !== null) {
+      if (this.#collapsedIds.has(current)) return false;
+      current = this.#parentMap.get(current);
+    }
+    return true;
+  }
+
+  /** Sync display:none/'' on every row based on collapsed ancestor state. */
+  #refreshTreeVisibility() {
+    for (const [id, rowEl] of this.#rowMap) {
+      rowEl.style.display = this.#isRowVisible(id) ? "" : "none";
+    }
   }
 }
