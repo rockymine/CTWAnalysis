@@ -150,6 +150,24 @@ def create_app() -> Flask:
         )
         return jsonify({"ok": True, "id": region_id}), 201
 
+    @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
+    def delete_region(name: str, region_id: str) -> tuple:
+        data_path = OUTPUT_ROOT / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        regions = data.get("regions", {})
+        if region_id not in regions:
+            return jsonify({"error": f"region {region_id!r} not found"}), 404
+        del regions[region_id]
+        for cat_list in data.get("region_categories", {}).values():
+            if region_id in cat_list:
+                cat_list.remove(region_id)
+        data_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return jsonify({"ok": True})
+
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
     def patch_region(name: str, region_id: str) -> tuple:
         body   = request.get_json(silent=True) or {}

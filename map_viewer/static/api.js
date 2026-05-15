@@ -50,6 +50,15 @@ export async function createRegion(mapName, { id, min_x, min_z, max_x, max_z }) 
   return r.json();
 }
 
+export async function deleteRegion(mapName, regionId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) throw new Error(`Delete failed (${r.status})`);
+  return r.json();
+}
+
 export async function patchRegion(mapName, regionId, bounds) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,

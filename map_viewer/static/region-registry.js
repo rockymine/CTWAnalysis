@@ -141,6 +141,32 @@ export class RegionRegistry {
     return { min_x: minX, min_z: minZ, max_x: maxX, max_z: maxZ };
   }
 
+  /**
+   * Remove a node and its entire subtree from the registry.
+   * Fires deselect if the removed node or any descendant was selected.
+   */
+  unregister(id) {
+    const entry = this.#entries.get(id);
+    if (!entry) return;
+    // Detach from parent's childIds list
+    if (entry.parentId) {
+      const parentEntry = this.#entries.get(entry.parentId);
+      if (parentEntry) parentEntry.childIds = parentEntry.childIds.filter(cid => cid !== id);
+    }
+    const wasSelected = this.#selectedIds.has(id) || this.#primaryId === id;
+    this.#removeSubtree(id);
+    if (wasSelected) this.deselect();
+  }
+
+  #removeSubtree(id) {
+    const entry = this.#entries.get(id);
+    if (!entry) return;
+    for (const childId of entry.childIds) this.#removeSubtree(childId);
+    this.#entries.delete(id);
+    this.#selectedIds.delete(id);
+    if (this.#primaryId === id) this.#primaryId = null;
+  }
+
   #collectDescendants(id, out) {
     out.add(id);
     const info = this.#entries.get(id);

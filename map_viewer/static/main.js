@@ -38,8 +38,11 @@ exportBtn.addEventListener("click", async () => {
 
 // ── component instances ────────────────────────────────────────────────────
 
+let selectedNode = null;
+
 const registry = new RegionRegistry({
   onSelectionChange: (primaryNode, selectedIds) => {
+    selectedNode = primaryNode;
     canvas.setSelectedRegions(selectedIds);
     sidebar.setSelected(primaryNode?.id ?? null, selectedIds);
     if (primaryNode) {
@@ -117,6 +120,7 @@ const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
   {
     onSelect: (node) => registry.select(node.id),
+    onDelete: (node) => deleteNode(node),
     onVisibilityToggle: (id, hidden) => {
       // Propagate to the full subtree (hiding a union hides all its children)
       for (const affectedId of collectSubtreeIds(registry.getNode(id))) {
@@ -146,6 +150,7 @@ document.addEventListener("keydown", (e) => {
     setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
   }
   if (e.key === "Escape") setTool(null);
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);
 });
 
 // ── POI layer toggles ─────────────────────────────────────────────────────
@@ -208,6 +213,20 @@ window.addEventListener("resize", () => canvas.resize());
 
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
+}
+
+function deleteNode(node) {
+  if (!node || node.synthetic_id) return;
+  for (const id of collectSubtreeIds(node)) {
+    canvas.removeRegion(id);
+    sidebar.removeRow(id);
+  }
+  registry.unregister(node.id);  // fires deselect → clears detail + anchors
+  if (currentMap) {
+    api.deleteRegion(currentMap, node.id).catch((err) => {
+      console.error("Region delete failed:", err);
+    });
+  }
 }
 
 function collectSubtreeIds(node) {

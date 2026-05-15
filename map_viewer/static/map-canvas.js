@@ -221,6 +221,21 @@ export class MapCanvas {
     this.#regionsLayerEl.appendChild(regionG);
   }
 
+  /** Remove a region from the canvas entirely (called on delete). */
+  removeRegion(id) {
+    const g = this.#regionGroupMap.get(id);
+    if (g?.parentNode) g.parentNode.removeChild(g);
+    this.#regionGroupMap.delete(id);
+    this.#shapeMap.delete(id);
+    this.#nodeMap.delete(id);
+    this.#visibilityMap.delete(id);
+    this.#currentSelectedIds.delete(id);
+    if (this.#selectedNode?.id === id) {
+      this.#selectedNode = null;
+      this.#updateOverlay();
+    }
+  }
+
   /** Update canvas maps when a region is renamed (node.id already mutated). */
   renameNode(oldId, newId) {
     const g = this.#regionGroupMap.get(oldId);
