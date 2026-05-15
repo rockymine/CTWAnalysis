@@ -24,6 +24,19 @@ export async function fetchRegionsXml(mapName) {
   return r.text();
 }
 
+export async function renameRegion(mapName, oldId, newId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(oldId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: newId }),
+    },
+  );
+  if (!r.ok) throw new Error(`Rename failed (${r.status})`);
+  return r.json();
+}
+
 export async function patchRegion(mapName, regionId, bounds) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,

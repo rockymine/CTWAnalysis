@@ -181,6 +181,21 @@ body {
 .detail-child-dot  { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .detail-child-name { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-child-type { color: #475569; flex-shrink: 0; }
+.detail-id-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #94a3b8;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  padding: 1px 4px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+.detail-id-input:hover { border-color: #334155; }
+.detail-id-input:focus { border-color: #475569; color: #e2e8f0; background: #0f172a; }
+
 .detail-bounds-input {
   background: transparent;
   border: 1px solid transparent;

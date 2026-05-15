@@ -84,6 +84,16 @@ const detail = new RegionDetail(
         console.error("Region save failed:", err);
       });
     },
+    onIdChange: (node, oldId, newId) => {
+      registry.renameNode(oldId, newId);
+      sidebar.renameNode(oldId, newId);
+      canvas.renameNode(oldId, newId);
+      canvas.showAnchors(node);  // refresh overlay label
+      if (!currentMap) return;
+      api.renameRegion(currentMap, oldId, newId).catch((err) => {
+        console.error("Region rename failed:", err);
+      });
+    },
   },
 );
 

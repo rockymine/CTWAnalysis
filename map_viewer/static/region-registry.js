@@ -51,6 +51,39 @@ export class RegionRegistry {
   }
 
   /**
+   * Update all internal maps when a region is renamed from oldId to newId.
+   * node.id and node.label must already have been mutated by the caller.
+   */
+  renameNode(oldId, newId) {
+    const entry = this.#entries.get(oldId);
+    if (!entry) return;
+    this.#entries.delete(oldId);
+    this.#entries.set(newId, entry);
+
+    // Update parent's childIds list
+    if (entry.parentId) {
+      const parentEntry = this.#entries.get(entry.parentId);
+      if (parentEntry) {
+        const idx = parentEntry.childIds.indexOf(oldId);
+        if (idx !== -1) parentEntry.childIds[idx] = newId;
+      }
+    }
+
+    // Update each child's parentId reference
+    for (const childId of entry.childIds) {
+      const childEntry = this.#entries.get(childId);
+      if (childEntry) childEntry.parentId = newId;
+    }
+
+    // Update selection state
+    if (this.#primaryId === oldId) this.#primaryId = newId;
+    if (this.#selectedIds.has(oldId)) {
+      this.#selectedIds.delete(oldId);
+      this.#selectedIds.add(newId);
+    }
+  }
+
+  /**
    * Walk up the ancestor chain from startId, recompute bounds for each
    * composite ancestor whose bounds can be derived from its children:
    *   union      → bounding box union of all children

@@ -65,7 +65,8 @@ function nodeToXml(node, depth = 0) {
 export class RegionDetail {
   #el;
   #callbacks;
-  #xmlCodeEl = null;
+  #xmlCodeEl    = null;
+  #headerLabelEl = null;
 
   constructor(el, callbacks = {}) {
     this.#el        = el;
@@ -79,7 +80,8 @@ export class RegionDetail {
 
   show(node) {
     this.#el.innerHTML = "";
-    this.#xmlCodeEl = null;
+    this.#xmlCodeEl     = null;
+    this.#headerLabelEl = null;
     this.#el.appendChild(this.#buildHeader(node));
     this.#el.appendChild(this.#buildFields(node));
     const isComposite = RegionDetail.#COMPOSITE_TYPES.has(node.type);
@@ -90,7 +92,8 @@ export class RegionDetail {
 
   clear() {
     this.#el.innerHTML = "";
-    this.#xmlCodeEl = null;
+    this.#xmlCodeEl     = null;
+    this.#headerLabelEl = null;
     this.#renderEmpty();
   }
 
@@ -120,6 +123,7 @@ export class RegionDetail {
     const label = document.createElement("span");
     label.className = "detail-label";
     label.textContent = node.label;
+    this.#headerLabelEl = label;
 
     const badge = document.createElement("span");
     badge.className = "detail-type-badge";
@@ -135,15 +139,55 @@ export class RegionDetail {
     const section = document.createElement("div");
     section.className = "detail-section";
 
-    const rows = [
-      ["id",       node.id],
+    // id row: editable for named regions, static for synthetic ones
+    if (node.synthetic_id) {
+      section.appendChild(this.#fieldRow("id", node.id));
+    } else {
+      section.appendChild(this.#makeIdRow(node));
+    }
+
+    const extras = [
       ["label",    node.label !== node.id ? node.label : null],
       ["synthetic", node.synthetic_id ? "yes" : null],
       ["negative",  node.is_negative  ? "yes" : null],
     ].filter(([, v]) => v !== null);
 
-    for (const [key, val] of rows) section.appendChild(this.#fieldRow(key, val));
+    for (const [key, val] of extras) section.appendChild(this.#fieldRow(key, val));
     return section;
+  }
+
+  #makeIdRow(node) {
+    const row = document.createElement("div");
+    row.className = "detail-field-row";
+
+    const keyEl = document.createElement("span");
+    keyEl.className = "detail-field-key";
+    keyEl.textContent = "id";
+
+    const input = document.createElement("input");
+    input.type      = "text";
+    input.value     = node.id;
+    input.className = "detail-id-input";
+
+    input.addEventListener("blur", () => {
+      const newId = input.value.trim();
+      if (!newId || newId === node.id) { input.value = node.id; return; }
+      const oldId = node.id;
+      node.id    = newId;
+      node.label = newId;
+      if (this.#headerLabelEl) this.#headerLabelEl.textContent = newId;
+      this.updateXmlPreview(node);
+      if (this.#callbacks.onIdChange) this.#callbacks.onIdChange(node, oldId, newId);
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter")  { e.preventDefault(); input.blur(); }
+      if (e.key === "Escape") { e.preventDefault(); input.value = node.id; input.blur(); }
+    });
+
+    row.appendChild(keyEl);
+    row.appendChild(input);
+    return row;
   }
 
   #buildBounds(node) {

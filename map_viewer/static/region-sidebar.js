@@ -62,6 +62,17 @@ export class RegionSidebar {
     }
   }
 
+  /** Update the sidebar row when a region is renamed. */
+  renameNode(oldId, newId) {
+    const row = this.#rowMap.get(oldId);
+    if (!row) return;
+    this.#rowMap.delete(oldId);
+    this.#rowMap.set(newId, row);
+    row.dataset.regionId = newId;
+    const labelEl = row.querySelector(".region-label");
+    if (labelEl) { labelEl.textContent = newId; labelEl.title = newId; }
+  }
+
   // ── private DOM builders ────────────────────────────────────────────────
 
   #categoryHeader(group) {

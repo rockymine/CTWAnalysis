@@ -161,6 +161,26 @@ export class MapCanvas {
     }
   }
 
+  /** Update canvas maps when a region is renamed (node.id already mutated). */
+  renameNode(oldId, newId) {
+    const g = this.#regionGroupMap.get(oldId);
+    if (g) {
+      this.#regionGroupMap.delete(oldId);
+      this.#regionGroupMap.set(newId, g);
+      g.setAttribute("id", `region-${newId}`);
+      const titleEl = g.querySelector("title");
+      if (titleEl) {
+        const type = titleEl.textContent.replace(/^.*\(/, "").replace(/\)$/, "");
+        titleEl.textContent = `${newId} (${type})`;
+      }
+    }
+    const shape = this.#shapeMap.get(oldId);
+    if (shape) {
+      this.#shapeMap.delete(oldId);
+      this.#shapeMap.set(newId, shape);
+    }
+  }
+
   resize() {
     if (this.#ctx) this.#repaint();  // preserves current #scale / #panX / #panY
   }
