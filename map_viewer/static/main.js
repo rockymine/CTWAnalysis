@@ -57,6 +57,9 @@ const detail = new RegionDetail(
     onBoundsChange: (node, bounds) => {
       canvas.updateRegionBounds(node, bounds);
       detail.updateXmlPreview(node);
+      for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
+        canvas.updateRegionBounds(ancestor, ancestor.bounds);
+      }
     },
     onBoundsSave: (node, bounds) => {
       if (!currentMap) return;
