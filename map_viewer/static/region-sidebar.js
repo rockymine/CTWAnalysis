@@ -62,6 +62,14 @@ export class RegionSidebar {
     }
   }
 
+  /** Append a single new node row at the end of the list (for freshly-created regions). */
+  appendRow(node) {
+    // Remove the "no regions" placeholder if present
+    const empty = this.#listEl.querySelector("#empty-msg");
+    if (empty) empty.remove();
+    this.#listEl.appendChild(this.#regionRow(node, 0, [], true));
+  }
+
   /** Update the sidebar row when a region is renamed. */
   renameNode(oldId, newId) {
     const row = this.#rowMap.get(oldId);

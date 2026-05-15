@@ -37,6 +37,19 @@ export async function renameRegion(mapName, oldId, newId) {
   return r.json();
 }
 
+export async function createRegion(mapName, { id, min_x, min_z, max_x, max_z }) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/regions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "rectangle", id, min_x, min_z, max_x, max_z }),
+    },
+  );
+  if (!r.ok) throw new Error(`Create region failed (${r.status})`);
+  return r.json();
+}
+
 export async function patchRegion(mapName, regionId, bounds) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,

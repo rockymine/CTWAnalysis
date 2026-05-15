@@ -13,6 +13,7 @@
  * Callbacks injected at construction:
  *   onCoords(x, z)                 block coords under mouse (null, null on leave)
  *   onCanvasClick(node | null)     region hit under click, or null for empty space
+ *   onRegionDraw(bounds)           rectangle draw completed: {min_x,min_z,max_x,max_z}
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
@@ -60,6 +61,12 @@ export class MapCanvas {
   #anchorLayer    = null;
   #spawnLayerEl   = null;
   #woolLayerEl    = null;
+  #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
+  #drawLayerEl    = null;  // <g id="layer-draw"> for draw-tool preview
+
+  // ── draw tool state ───────────────────────────────────────────────────────
+  #activeTool = null;   // null | "rectangle"
+  #drawState  = null;   // null | { startBx, startBz, previewRect, anchor1, anchor2 }
 
   // ── layer visibility state (persists across resize) ───────────────────────
   #showSpawns     = true;
@@ -161,6 +168,23 @@ export class MapCanvas {
     }
   }
 
+  /** Activate or deactivate a draw tool. Cancels any in-progress draw. */
+  setActiveTool(tool) {
+    this.#cancelDraw();
+    this.#activeTool = tool;
+  }
+
+  /**
+   * Add a freshly-created region to the canvas without a full repaint.
+   * The shape is hidden until setSelectedRegions includes its id.
+   */
+  addRegion(node) {
+    if (!this.#regionsLayerEl || !this.#toSvg) return;
+    const regionG = this.#regionGroup(node);
+    this.#regionGroupMap.set(node.id, regionG);
+    this.#regionsLayerEl.appendChild(regionG);
+  }
+
   /** Update canvas maps when a region is renamed (node.id already mutated). */
   renameNode(oldId, newId) {
     const g = this.#regionGroupMap.get(oldId);
@@ -188,6 +212,7 @@ export class MapCanvas {
   // ── rendering ──────────────────────────────────────────────────────────────
 
   #repaint() {
+    this.#cancelDraw();
     const w = this.#wrap.clientWidth  - 24;
     const h = this.#wrap.clientHeight - 24;
     this.#svg.setAttribute("width",   w);
@@ -209,6 +234,7 @@ export class MapCanvas {
     viewport.appendChild(this.#buildWoolLayer());
     viewport.appendChild(this.#buildXmlRegions());
     viewport.appendChild(this.#buildAnchorLayer());
+    viewport.appendChild(this.#buildDrawLayer());
     viewport.appendChild(this.#buildBlockHighlight());
 
     // Overlay sits outside the viewport group so its text stays fixed-size at
@@ -261,6 +287,13 @@ export class MapCanvas {
     // ── pan (left-drag) / click ──────────────────────────────────────────────
     this.#svg.addEventListener("mousedown", (e) => {
       if (!this.#viewportG || e.button !== 0) return;
+      if (this.#activeTool === "rectangle") {
+        if (!this.#toWorld) return;
+        const svgPt = this.#clientToSvg(e.clientX, e.clientY);
+        const world = this.#toWorld(svgPt.x, svgPt.y);
+        this.#startDraw(Math.floor(world.x), Math.floor(world.z));
+        return;
+      }
       this.#clickWasDrag = false;  // reset for each new gesture
       this.#isDragging = true;
       this.#didDrag    = false;
@@ -287,6 +320,12 @@ export class MapCanvas {
         }
       }
 
+      if (this.#activeTool === "rectangle" && this.#drawState && this.#toWorld) {
+        const svgPt = this.#clientToSvg(e.clientX, e.clientY);
+        const world = this.#toWorld(svgPt.x, svgPt.y);
+        this.#updateDrawPreview(Math.floor(world.x), Math.floor(world.z));
+      }
+
       this.#updateCoordsAndHighlight(e.clientX, e.clientY);
     });
 
@@ -300,6 +339,10 @@ export class MapCanvas {
     // End drag on mouseup anywhere in the window; latch drag state before reset
     window.addEventListener("mouseup", (e) => {
       if (e.button !== 0) return;
+      if (this.#activeTool === "rectangle" && this.#drawState) {
+        this.#completeDraw();
+        return;
+      }
       this.#clickWasDrag = this.#didDrag;
       this.#isDragging = false;
       this.#didDrag    = false;
@@ -308,6 +351,7 @@ export class MapCanvas {
   }
 
   #handleCanvasClick(clientX, clientY) {
+    if (this.#activeTool) return;
     if (!this.#toWorld || !this.#callbacks.onCanvasClick) return;
     const svgPt = this.#clientToSvg(clientX, clientY);
     const world = this.#toWorld(svgPt.x, svgPt.y);
@@ -537,6 +581,7 @@ export class MapCanvas {
     this.#regionGroupMap.clear();
     this.#shapeMap.clear();
     const g = svgEl("g", { id: "layer-regions" });
+    this.#regionsLayerEl = g;
     for (const region of this.#flattenNamed(this.#groups)) {
       const regionG = this.#regionGroup(region);
       this.#regionGroupMap.set(region.id, regionG);
@@ -609,6 +654,88 @@ export class MapCanvas {
     });
     el.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
     return el;
+  }
+
+  #buildDrawLayer() {
+    const g = svgEl("g", { id: "layer-draw" });
+    this.#drawLayerEl = g;
+    return g;
+  }
+
+  // ── draw tool helpers ──────────────────────────────────────────────────────
+
+  /** Compute world-extent bounds from two block indices (order-independent). */
+  #boundsFromBlocks(b1x, b1z, b2x, b2z) {
+    return {
+      min_x: Math.min(b1x, b2x),
+      min_z: Math.min(b1z, b2z),
+      max_x: Math.max(b1x, b2x) + 1,
+      max_z: Math.max(b1z, b2z) + 1,
+    };
+  }
+
+  /** Reposition a previously-created anchor block element. */
+  #moveAnchorBlock(el, bx, bz) {
+    const p1 = this.#toSvg(bx,     bz);
+    const p2 = this.#toSvg(bx + 1, bz + 1);
+    el.setAttribute("x",      Math.min(p1.x, p2.x));
+    el.setAttribute("y",      Math.min(p1.y, p2.y));
+    el.setAttribute("width",  Math.abs(p2.x - p1.x));
+    el.setAttribute("height", Math.abs(p2.y - p1.y));
+  }
+
+  #startDraw(bx, bz) {
+    if (!this.#drawLayerEl || !this.#toSvg) return;
+    const color       = "#94a3b8";
+    const previewRect = svgEl("rect", {
+      x: 0, y: 0, width: 0, height: 0,
+      fill: color, "fill-opacity": "0.12",
+      stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
+      "vector-effect": "non-scaling-stroke", "pointer-events": "none",
+    });
+    const anchor1 = this.#anchorBlock(bx, bz, color);
+    const anchor2 = this.#anchorBlock(bx, bz, color);
+    this.#drawLayerEl.appendChild(previewRect);
+    this.#drawLayerEl.appendChild(anchor1);
+    this.#drawLayerEl.appendChild(anchor2);
+    this.#drawState = { startBx: bx, startBz: bz, currentBx: bx, currentBz: bz,
+                        previewRect, anchor1, anchor2 };
+    this.#updateDrawPreview(bx, bz);
+  }
+
+  #updateDrawPreview(bx, bz) {
+    if (!this.#drawState || !this.#toSvg) return;
+    this.#drawState.currentBx = bx;
+    this.#drawState.currentBz = bz;
+    const { startBx, startBz, previewRect, anchor1, anchor2 } = this.#drawState;
+    const { min_x, min_z, max_x, max_z } = this.#boundsFromBlocks(startBx, startBz, bx, bz);
+
+    const p1 = this.#toSvg(min_x, min_z);
+    const p2 = this.#toSvg(max_x, max_z);
+    previewRect.setAttribute("x",      Math.min(p1.x, p2.x));
+    previewRect.setAttribute("y",      Math.min(p1.y, p2.y));
+    previewRect.setAttribute("width",  Math.abs(p2.x - p1.x));
+    previewRect.setAttribute("height", Math.abs(p2.y - p1.y));
+
+    this.#moveAnchorBlock(anchor1, min_x,     min_z);
+    this.#moveAnchorBlock(anchor2, max_x - 1, max_z - 1);
+  }
+
+  #completeDraw() {
+    if (!this.#drawState) return;
+    const { startBx, startBz, currentBx, currentBz } = this.#drawState;
+    const bounds = this.#boundsFromBlocks(startBx, startBz, currentBx, currentBz);
+    this.#cancelDraw();
+    if (this.#callbacks.onRegionDraw) this.#callbacks.onRegionDraw(bounds);
+  }
+
+  #cancelDraw() {
+    if (!this.#drawState) return;
+    const { previewRect, anchor1, anchor2 } = this.#drawState;
+    for (const el of [previewRect, anchor1, anchor2]) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    this.#drawState = null;
   }
 
   #flattenNamed(groupsOrNodes, out = []) {

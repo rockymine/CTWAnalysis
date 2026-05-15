@@ -104,6 +104,52 @@ def create_app() -> Flask:
             "Content-Disposition": f'attachment; filename="{filename}"',
         }
 
+    @app.route("/api/map/<name>/regions", methods=["POST"])
+    def create_region(name: str) -> tuple:
+        body = request.get_json(silent=True) or {}
+        if body.get("type", "rectangle") != "rectangle":
+            return jsonify({"error": "only 'rectangle' type is supported"}), 400
+        try:
+            min_x = int(round(float(body["min_x"])))
+            min_z = int(round(float(body["min_z"])))
+            max_x = int(round(float(body["max_x"])))
+            max_z = int(round(float(body["max_z"])))
+        except (KeyError, TypeError, ValueError):
+            return jsonify({"error": "min_x, min_z, max_x, max_z are required numbers"}), 400
+
+        data_path = OUTPUT_ROOT / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        regions = data.setdefault("regions", {})
+
+        region_id = (body.get("id") or "").strip()
+        if not region_id:
+            i = 1
+            while f"region_{i}" in regions:
+                i += 1
+            region_id = f"region_{i}"
+        elif region_id in regions:
+            return jsonify({"error": f"id {region_id!r} already in use"}), 409
+
+        regions[region_id] = {
+            "id": region_id,
+            "type": "rectangle",
+            "min_x": min_x, "min_z": min_z,
+            "max_x": max_x, "max_z": max_z,
+            "bounds_2d": {
+                "min": {"x": min_x, "z": min_z},
+                "max": {"x": max_x, "z": max_z},
+            },
+        }
+        data.setdefault("region_categories", {}).setdefault("other", []).append(region_id)
+
+        data_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return jsonify({"ok": True, "id": region_id}), 201
+
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
     def patch_region(name: str, region_id: str) -> tuple:
         body   = request.get_json(silent=True) or {}

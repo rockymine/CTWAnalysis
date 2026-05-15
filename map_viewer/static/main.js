@@ -50,7 +50,8 @@ const registry = new RegionRegistry({
   },
 });
 
-const coordsEl = document.getElementById("cursor-coords");
+const coordsEl  = document.getElementById("cursor-coords");
+const toolRectBtn = document.getElementById("tool-rect");
 
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
@@ -62,6 +63,26 @@ const canvas = new MapCanvas(
     onCanvasClick: (node) => {
       if (node) registry.select(node.id);
       else registry.deselect();
+    },
+    onRegionDraw: async (bounds) => {
+      if (!currentMap) return;
+      try {
+        const { id: newId } = await api.createRegion(currentMap, bounds);
+        const newNode = {
+          id: newId, type: "rectangle", label: newId,
+          color: "#64748b",
+          bounds: { ...bounds },
+          coords: { min_x: bounds.min_x, min_z: bounds.min_z,
+                    max_x: bounds.max_x, max_z: bounds.max_z },
+          is_negative: false, synthetic_id: false, children: [],
+        };
+        registry.register(newNode, null);
+        canvas.addRegion(newNode);
+        sidebar.appendRow(newNode);
+        registry.select(newId);
+      } catch (err) {
+        setStatus(`Create region failed: ${err.message}`);
+      }
     },
   },
 );
@@ -102,6 +123,25 @@ const sidebar = new RegionSidebar(
   { onSelect: (node) => registry.select(node.id) },
 );
 
+// ── draw toolbar ──────────────────────────────────────────────────────────
+
+toolRectBtn.addEventListener("click", () => {
+  const isNowActive = toolRectBtn.classList.toggle("draw-tool-btn--active");
+  canvas.setActiveTool(isNowActive ? "rectangle" : null);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if ((e.key === "r" || e.key === "R") && currentMap) {
+    const isNowActive = toolRectBtn.classList.toggle("draw-tool-btn--active");
+    canvas.setActiveTool(isNowActive ? "rectangle" : null);
+  }
+  if (e.key === "Escape") {
+    canvas.setActiveTool(null);
+    toolRectBtn.classList.remove("draw-tool-btn--active");
+  }
+});
+
 // ── POI layer toggles ─────────────────────────────────────────────────────
 
 document.getElementById("toggle-spawns").addEventListener("change", (e) => canvas.setSpawnsVisible(e.target.checked));
@@ -111,6 +151,8 @@ document.getElementById("toggle-wools").addEventListener("change",  (e) => canva
 
 async function loadMap(name) {
   currentMap = name;
+  canvas.setActiveTool(null);
+  toolRectBtn.classList.remove("draw-tool-btn--active");
   exportBtn.disabled = true;
   setStatus("Loading…");
   try {
@@ -127,7 +169,8 @@ async function loadMap(name) {
     for (const group of groups) {
       for (const root of group.regions) registry.register(root, null);
     }
-    exportBtn.disabled = false;
+    exportBtn.disabled  = false;
+    toolRectBtn.disabled = false;
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
