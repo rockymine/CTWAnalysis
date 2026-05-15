@@ -72,6 +72,12 @@ export async function patchRegion(mapName, regionId, bounds) {
   return r.json();
 }
 
+export async function fetchTopSurface(mapName) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/layers/top-surface`);
+  if (!r.ok) throw new Error(`Failed to load top-surface layer (${r.status})`);
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,

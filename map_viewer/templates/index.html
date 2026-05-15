@@ -13,9 +13,6 @@
   <select id="map-select"><option value="">— select map —</option></select>
   <span id="status"></span>
   <span class="topbar-divider"></span>
-  <label class="poi-toggle"><input type="checkbox" id="toggle-pois"> POIs</label>
-  <label class="poi-toggle"><input type="checkbox" id="toggle-build"> build</label>
-  <span class="topbar-divider"></span>
   <button id="export-xml-btn" class="topbar-btn" disabled>Export XML</button>
 </div>
 
@@ -32,6 +29,12 @@
             fill="#334155" font-size="14">Select a map to begin</text>
     </svg>
     <div id="cursor-coords"></div>
+    <div id="layer-picker">
+      <div class="layer-picker-title">Layers</div>
+      <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
+      <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
+      <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+    </div>
     <div id="draw-toolbar">
       <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
         <i data-lucide="hand"></i>

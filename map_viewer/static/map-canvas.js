@@ -78,6 +78,8 @@ export class MapCanvas {
   #highlightRect  = null;
   #anchorLayer    = null;
   #buildLayerEl   = null;
+  #blockLayerEl   = null;  // <g id="layer-blocks"> for top-surface image
+  #islandLayerEl  = null;  // <g id="layer-islands"> — fill toggled when blocks shown
   #spawnLayerEl   = null;
   #woolLayerEl    = null;
   #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
@@ -97,6 +99,8 @@ export class MapCanvas {
   // ── layer visibility state (persists across resize) ───────────────────────
   #showPois     = false;
   #showBuild    = false;
+  #showBlocks   = false;
+  #blockData    = null;   // cached top-surface response {xs,zs,colors,min_x,...}
   #selectedNode = null;
 
   constructor(svgEl, wrapEl, callbacks = {}) {
@@ -152,6 +156,25 @@ export class MapCanvas {
   setBuildVisible(v) {
     this.#showBuild = v;
     if (this.#buildLayerEl) this.#buildLayerEl.style.display = v ? "" : "none";
+  }
+
+  setBlocksVisible(v) {
+    this.#showBlocks = v;
+    if (this.#blockLayerEl) this.#blockLayerEl.style.display = v ? "" : "none";
+    // Make island polygon fills transparent so block colors show through; keep outlines
+    if (this.#islandLayerEl) {
+      this.#islandLayerEl.setAttribute("fill-opacity", v ? "0" : "0.25");
+    }
+  }
+
+  /** Load (or reload) the top-surface block data and render it into the block layer. */
+  loadBlockLayer(data) {
+    this.#blockData = data;
+    if (this.#blockLayerEl && this.#toSvg) {
+      while (this.#blockLayerEl.firstChild)
+        this.#blockLayerEl.removeChild(this.#blockLayerEl.firstChild);
+      this.#renderBlockImage(this.#blockLayerEl);
+    }
   }
 
   /**
@@ -326,6 +349,7 @@ export class MapCanvas {
     this.#applyViewportTransform();
 
     viewport.appendChild(this.#buildBuildRegion());
+    viewport.appendChild(this.#buildBlockLayer());
     viewport.appendChild(this.#buildIslands());
     viewport.appendChild(this.#buildSpawnLayer());
     viewport.appendChild(this.#buildWoolLayer());
@@ -562,18 +586,62 @@ export class MapCanvas {
   }
 
   #buildIslands() {
-    const g = svgEl("g", { id: "layer-islands" });
+    const g = svgEl("g", { id: "layer-islands", "fill-opacity": "0.25" });
+    this.#islandLayerEl = g;
+    if (this.#showBlocks) g.setAttribute("fill-opacity", "0");
     for (const island of (this.#ctx.islands || [])) {
       const poly = island.simplified_polygon;
       if (!poly?.exterior?.length) continue;
       const color = TEAM_FILL_DEFAULT;
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
-        fill: color, "fill-opacity": "0.25",
-        stroke: color, "stroke-width": "1.2", "fill-rule": "evenodd",
+        fill: color, stroke: color, "stroke-width": "1.2", "fill-rule": "evenodd",
       }));
     }
     return g;
+  }
+
+  #buildBlockLayer() {
+    const g = svgEl("g", { id: "layer-blocks" });
+    this.#blockLayerEl = g;
+    if (!this.#showBlocks) g.style.display = "none";
+    if (this.#blockData && this.#toSvg) this.#renderBlockImage(g);
+    return g;
+  }
+
+  #renderBlockImage(g) {
+    const { xs, zs, colors, min_x, min_z, max_x, max_z } = this.#blockData;
+    const imgW = max_x - min_x + 1;
+    const imgH = max_z - min_z + 1;
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width  = imgW;
+    offscreen.height = imgH;
+    const ctx = offscreen.getContext("2d");
+    const imageData = ctx.createImageData(imgW, imgH);
+    const pixels = imageData.data;
+
+    for (let i = 0; i < xs.length; i++) {
+      const rgb = parseInt(colors[i].slice(1), 16);
+      const idx = ((zs[i] - min_z) * imgW + (xs[i] - min_x)) * 4;
+      pixels[idx]     = (rgb >> 16) & 0xff;
+      pixels[idx + 1] = (rgb >> 8)  & 0xff;
+      pixels[idx + 2] =  rgb        & 0xff;
+      pixels[idx + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const p1 = this.#toSvg(min_x,     min_z);
+    const p2 = this.#toSvg(max_x + 1, max_z + 1);
+    const img = svgEl("image");
+    img.setAttribute("href",   offscreen.toDataURL("image/png"));
+    img.setAttribute("x",      Math.min(p1.x, p2.x));
+    img.setAttribute("y",      Math.min(p1.y, p2.y));
+    img.setAttribute("width",  Math.abs(p2.x - p1.x));
+    img.setAttribute("height", Math.abs(p2.y - p1.y));
+    img.setAttribute("pointer-events", "none");
+    img.style.imageRendering = "pixelated";
+    g.appendChild(img);
   }
 
   #buildSpawnLayer() {

@@ -185,6 +185,25 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("toggle-pois").addEventListener("change",  (e) => canvas.setPoisVisible(e.target.checked));
 document.getElementById("toggle-build").addEventListener("change", (e) => canvas.setBuildVisible(e.target.checked));
 
+const blockCache = new Map();  // mapName → top-surface data
+
+document.getElementById("toggle-blocks").addEventListener("change", async (e) => {
+  if (!e.target.checked) { canvas.setBlocksVisible(false); return; }
+  if (!currentMap) { e.target.checked = false; return; }
+  try {
+    if (!blockCache.has(currentMap)) {
+      setStatus("Loading block layer…");
+      blockCache.set(currentMap, await api.fetchTopSurface(currentMap));
+    }
+    canvas.loadBlockLayer(blockCache.get(currentMap));
+    canvas.setBlocksVisible(true);
+    setStatus("");
+  } catch (err) {
+    setStatus(`Block layer failed: ${err.message}`);
+    e.target.checked = false;
+  }
+});
+
 // ── map selection ──────────────────────────────────────────────────────────
 
 async function loadMap(name) {
@@ -202,6 +221,8 @@ async function loadMap(name) {
     sidebar.build(groups);
     detail.clear();
     canvas.clearAnchors();
+    document.getElementById("toggle-blocks").checked = false;
+    canvas.setBlocksVisible(false);
     // Register all nodes so registry can resolve ids to node objects
     for (const group of groups) {
       for (const root of group.regions) registry.register(root, null);

@@ -13,9 +13,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 from flask import Flask, jsonify, abort, render_template, request
 
 from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
+from common.visualization.block_colors import block_color
 
 OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 
@@ -113,6 +115,26 @@ def create_app() -> Flask:
             "Content-Type": "application/xml; charset=utf-8",
             "Content-Disposition": f'attachment; filename="{filename}"',
         }
+
+    @app.route("/api/map/<name>/layers/top-surface")
+    def layer_top_surface(name: str):
+        parquet_path = OUTPUT_ROOT / name / "layout_top_surface.parquet"
+        if not parquet_path.exists():
+            abort(404)
+        df = pd.read_parquet(
+            parquet_path, columns=["world_x", "world_z", "block_id", "block_data"]
+        )
+        colors = [
+            "#{:02x}{:02x}{:02x}".format(*block_color(int(bid), int(bdat)))
+            for bid, bdat in zip(df["block_id"], df["block_data"])
+        ]
+        return jsonify({
+            "xs":    df["world_x"].tolist(),
+            "zs":    df["world_z"].tolist(),
+            "colors": colors,
+            "min_x": int(df["world_x"].min()), "min_z": int(df["world_z"].min()),
+            "max_x": int(df["world_x"].max()), "max_z": int(df["world_z"].max()),
+        })
 
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
