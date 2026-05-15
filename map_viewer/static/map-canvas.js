@@ -70,6 +70,7 @@ export class MapCanvas {
   // ── live DOM references ───────────────────────────────────────────────────
   #regionGroupMap = new Map();  // id → SVG <g> for fast setSelectedRegions
   #shapeMap       = new Map();  // id → { shape, type } for live bound updates
+  #nodeMap        = new Map();  // id → node object, for hit-testing (includes addRegion nodes)
   #viewportG      = null;
   #overlayLayer   = null;  // outside viewport — fixed-size labels at screen coords
   #highlightRect  = null;
@@ -110,6 +111,7 @@ export class MapCanvas {
     this.#selectedNode = null;
     this.#regionGroupMap.clear();
     this.#shapeMap.clear();
+    this.#nodeMap.clear();
     this.#visibilityMap.clear();
     this.#currentSelectedIds.clear();
     // Reset zoom/pan for a newly loaded map
@@ -215,6 +217,7 @@ export class MapCanvas {
     if (!this.#regionsLayerEl || !this.#toSvg) return;
     const regionG = this.#regionGroup(node);
     this.#regionGroupMap.set(node.id, regionG);
+    this.#nodeMap.set(node.id, node);
     this.#regionsLayerEl.appendChild(regionG);
   }
 
@@ -235,6 +238,11 @@ export class MapCanvas {
     if (shape) {
       this.#shapeMap.delete(oldId);
       this.#shapeMap.set(newId, shape);
+    }
+    const node = this.#nodeMap.get(oldId);
+    if (node) {
+      this.#nodeMap.delete(oldId);
+      this.#nodeMap.set(newId, node);
     }
     // Migrate visibility / selection state
     if (this.#visibilityMap.has(oldId)) {
@@ -414,7 +422,7 @@ export class MapCanvas {
     const world = this.#toWorld(svgPt.x, svgPt.y);
 
     // Only hit-test visible regions; hidden ones can't be clicked on the canvas
-    const candidates = this.#flattenNamed(this.#groups)
+    const candidates = [...this.#nodeMap.values()]
       .filter(r => r.bounds && !r.is_negative
                && this.#visibilityMap.get(r.id) !== false
                && this.#pointInRegion(world, r));
@@ -644,11 +652,13 @@ export class MapCanvas {
   #buildXmlRegions() {
     this.#regionGroupMap.clear();
     this.#shapeMap.clear();
+    this.#nodeMap.clear();
     const g = svgEl("g", { id: "layer-regions" });
     this.#regionsLayerEl = g;
     for (const region of this.#flattenNamed(this.#groups)) {
       const regionG = this.#regionGroup(region);
       this.#regionGroupMap.set(region.id, regionG);
+      this.#nodeMap.set(region.id, region);
       g.appendChild(regionG);
     }
     return g;
