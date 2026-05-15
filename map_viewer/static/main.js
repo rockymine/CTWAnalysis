@@ -55,7 +55,8 @@ const registry = new RegionRegistry({
   },
 });
 
-const coordsEl    = document.getElementById("cursor-coords");
+const coordsEl      = document.getElementById("cursor-coords");
+const toolMoveBtn   = document.getElementById("tool-move");
 const toolSelectBtn = document.getElementById("tool-select");
 const toolRectBtn   = document.getElementById("tool-rect");
 
@@ -135,13 +136,15 @@ const sidebar = new RegionSidebar(
 
 function setTool(tool) {
   canvas.setActiveTool(tool);
+  toolMoveBtn.classList.toggle("draw-tool-btn--active",   tool === "move");
   toolSelectBtn.classList.toggle("draw-tool-btn--active", tool === null);
   toolRectBtn.classList.toggle("draw-tool-btn--active",   tool === "rectangle");
 }
 
+toolMoveBtn.addEventListener("click", () => setTool("move"));
 toolSelectBtn.addEventListener("click", () => setTool(null));
 toolRectBtn.addEventListener("click", () => {
-  setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
+  setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? "move" : "rectangle");
 });
 
 document.addEventListener("keydown", (e) => {
@@ -149,7 +152,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "r" || e.key === "R") && currentMap) {
     setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
   }
-  if (e.key === "Escape") setTool(null);
+  if (e.key === "Escape") setTool("move");
   if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);
 });
 
@@ -162,7 +165,7 @@ document.getElementById("toggle-build").addEventListener("change", (e) => canvas
 
 async function loadMap(name) {
   currentMap = name;
-  setTool(null);
+  setTool("move");
   exportBtn.disabled = true;
   setStatus("Loading…");
   try {
@@ -180,9 +183,10 @@ async function loadMap(name) {
       for (const root of group.regions) registry.register(root, null);
     }
     exportBtn.disabled     = false;
+    toolMoveBtn.disabled   = false;
     toolSelectBtn.disabled = false;
     toolRectBtn.disabled   = false;
-    setTool(null);
+    setTool("move");
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
       `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,

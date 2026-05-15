@@ -213,6 +213,13 @@ export class MapCanvas {
   setActiveTool(tool) {
     this.#cancelDraw();
     this.#activeTool = tool;
+    this.#refreshCursor();
+  }
+
+  #refreshCursor() {
+    if (this.#activeTool === "move")           this.#svg.style.cursor = "grab";
+    else if (this.#activeTool === "rectangle") this.#svg.style.cursor = "crosshair";
+    else                                       this.#svg.style.cursor = "default";
   }
 
   /** Add a freshly-created region to the canvas without a full repaint. */
@@ -362,7 +369,12 @@ export class MapCanvas {
         this.#startDraw(Math.floor(world.x), Math.floor(world.z));
         return;
       }
-      this.#clickWasDrag = false;  // reset for each new gesture
+      if (this.#activeTool !== "move") {
+        // select mode: just reset flag so click fires cleanly
+        this.#clickWasDrag = false;
+        return;
+      }
+      this.#clickWasDrag = false;
       this.#isDragging = true;
       this.#didDrag    = false;
       this.#dragAnchor = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
@@ -399,7 +411,6 @@ export class MapCanvas {
 
     this.#svg.addEventListener("mouseleave", () => {
       this.#isDragging = false;
-      this.#svg.style.cursor = "";
       if (this.#highlightRect) this.#highlightRect.setAttribute("width", "0");
       if (this.#callbacks.onCoords) this.#callbacks.onCoords(null, null);
     });
@@ -415,7 +426,7 @@ export class MapCanvas {
         const { node } = this.#resizeState;
         this.#resizeState = null;
         this.#clickWasDrag = true;  // prevent the click event from deselecting
-        this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
+        this.#refreshCursor();
         if (this.#callbacks.onBoundsSave) this.#callbacks.onBoundsSave(node, node.bounds);
         this.#updateOverlay();
         return;
@@ -423,7 +434,7 @@ export class MapCanvas {
       this.#clickWasDrag = this.#didDrag;
       this.#isDragging = false;
       this.#didDrag    = false;
-      this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
+      this.#refreshCursor();
     });
 
     // Window-level mousemove for resize (mouse may leave the SVG mid-drag)
