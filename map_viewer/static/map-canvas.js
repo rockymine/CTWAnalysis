@@ -7,8 +7,8 @@
  *   resize()                       re-render at new dimensions (preserves zoom)
  *   showAnchors(node)              highlight anchor blocks for focused region
  *   clearAnchors()                 remove anchor highlights
- *   setSpawnsVisible(v)            toggle spawn star markers
- *   setWoolsVisible(v)             toggle wool diamond markers
+ *   setPoisVisible(v)              toggle spawn/wool POI markers
+ *   setBuildVisible(v)             toggle build region overlay
  *
  * Callbacks injected at construction:
  *   onCoords(x, z)                 block coords under mouse (null, null on leave)
@@ -76,6 +76,7 @@ export class MapCanvas {
   #overlayLayer   = null;  // outside viewport — fixed-size labels at screen coords
   #highlightRect  = null;
   #anchorLayer    = null;
+  #buildLayerEl   = null;
   #spawnLayerEl   = null;
   #woolLayerEl    = null;
   #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
@@ -93,8 +94,8 @@ export class MapCanvas {
   #currentSelectedIds = new Set();
 
   // ── layer visibility state (persists across resize) ───────────────────────
-  #showSpawns   = true;
-  #showWools    = true;
+  #showPois     = false;
+  #showBuild    = false;
   #selectedNode = null;
 
   constructor(svgEl, wrapEl, callbacks = {}) {
@@ -141,14 +142,15 @@ export class MapCanvas {
     this.#updateOverlay();
   }
 
-  setSpawnsVisible(v) {
-    this.#showSpawns = v;
+  setPoisVisible(v) {
+    this.#showPois = v;
     if (this.#spawnLayerEl) this.#spawnLayerEl.style.display = v ? "" : "none";
+    if (this.#woolLayerEl)  this.#woolLayerEl.style.display  = v ? "" : "none";
   }
 
-  setWoolsVisible(v) {
-    this.#showWools = v;
-    if (this.#woolLayerEl) this.#woolLayerEl.style.display = v ? "" : "none";
+  setBuildVisible(v) {
+    this.#showBuild = v;
+    if (this.#buildLayerEl) this.#buildLayerEl.style.display = v ? "" : "none";
   }
 
   /**
@@ -498,6 +500,8 @@ export class MapCanvas {
 
   #buildBuildRegion() {
     const g = svgEl("g", { id: "layer-build" });
+    this.#buildLayerEl = g;
+    if (!this.#showBuild) g.style.display = "none";
     for (const poly of (this.#ctx.build_region?.buildable_void || [])) {
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
@@ -527,7 +531,7 @@ export class MapCanvas {
   #buildSpawnLayer() {
     const g = svgEl("g", { id: "layer-spawns" });
     this.#spawnLayerEl = g;
-    if (!this.#showSpawns) g.style.display = "none";
+    if (!this.#showPois) g.style.display = "none";
     for (const spawn of (this.#ctx.poi_assignments?.spawns || [])) {
       const p = this.#toSvg(spawn.x, spawn.z);
       const t = svgEl("text", {
@@ -543,7 +547,7 @@ export class MapCanvas {
   #buildWoolLayer() {
     const g = svgEl("g", { id: "layer-wools" });
     this.#woolLayerEl = g;
-    if (!this.#showWools) g.style.display = "none";
+    if (!this.#showPois) g.style.display = "none";
     for (const wool of (this.#ctx.poi_assignments?.wools || [])) {
       const p = this.#toSvg(wool.x, wool.z);
       const t = svgEl("text", {

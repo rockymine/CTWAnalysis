@@ -153,10 +153,10 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);
 });
 
-// ── POI layer toggles ─────────────────────────────────────────────────────
+// ── layer toggles ─────────────────────────────────────────────────────────
 
-document.getElementById("toggle-spawns").addEventListener("change", (e) => canvas.setSpawnsVisible(e.target.checked));
-document.getElementById("toggle-wools").addEventListener("change",  (e) => canvas.setWoolsVisible(e.target.checked));
+document.getElementById("toggle-pois").addEventListener("change",  (e) => canvas.setPoisVisible(e.target.checked));
+document.getElementById("toggle-build").addEventListener("change", (e) => canvas.setBuildVisible(e.target.checked));
 
 // ── map selection ──────────────────────────────────────────────────────────
 
