@@ -149,8 +149,10 @@ toolRectBtn.addEventListener("click", () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if ((e.key === "m" || e.key === "M") && currentMap) setTool("move");
+  if ((e.key === "s" || e.key === "S") && currentMap) setTool(null);
   if ((e.key === "r" || e.key === "R") && currentMap) {
-    setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? null : "rectangle");
+    setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? "move" : "rectangle");
   }
   if (e.key === "Escape") setTool("move");
   if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);

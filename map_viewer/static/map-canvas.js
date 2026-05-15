@@ -64,6 +64,7 @@ export class MapCanvas {
 
   // ── drag / click state ───────────────────────────────────────────────────
   #isDragging   = false;
+  #midDragging  = false;  // true while middle mouse button is held for panning
   #dragAnchor   = null;   // { x, y, panX, panY }
   #didDrag      = false;  // true if mouse moved enough to count as a pan
   #clickWasDrag = false;  // latched in mouseup, consumed in click handler
@@ -361,7 +362,15 @@ export class MapCanvas {
 
     // ── pan (left-drag) / click ──────────────────────────────────────────────
     this.#svg.addEventListener("mousedown", (e) => {
-      if (!this.#viewportG || e.button !== 0) return;
+      if (!this.#viewportG) return;
+      if (e.button === 1) {
+        e.preventDefault();  // suppress browser autoscroll
+        this.#midDragging = true;
+        this.#didDrag     = false;
+        this.#dragAnchor  = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
+        return;
+      }
+      if (e.button !== 0) return;
       if (this.#activeTool === "rectangle") {
         if (!this.#toWorld) return;
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
@@ -388,7 +397,7 @@ export class MapCanvas {
 
     // ── mouse move: pan + coordinate tracking + block highlight ─────────────
     this.#svg.addEventListener("mousemove", (e) => {
-      if (this.#isDragging && this.#dragAnchor) {
+      if ((this.#isDragging || this.#midDragging) && this.#dragAnchor) {
         const dx = e.clientX - this.#dragAnchor.x;
         const dy = e.clientY - this.#dragAnchor.y;
         if (!this.#didDrag && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) this.#didDrag = true;
@@ -417,6 +426,13 @@ export class MapCanvas {
 
     // End drag on mouseup anywhere in the window; latch drag state before reset
     window.addEventListener("mouseup", (e) => {
+      if (e.button === 1) {
+        this.#midDragging = false;
+        this.#dragAnchor  = null;
+        this.#didDrag     = false;
+        this.#refreshCursor();
+        return;
+      }
       if (e.button !== 0) return;
       if (this.#activeTool === "rectangle" && this.#drawState) {
         this.#completeDraw();
