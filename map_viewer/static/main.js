@@ -136,7 +136,6 @@ const sidebar = new RegionSidebar(
         registry.select(node.id);
       }
     },
-    onDelete: (node) => deleteNode(node),
     onVisibilityToggle: (id, hidden) => {
       // Propagate to the full subtree (hiding a union hides all its children)
       for (const affectedId of collectSubtreeIds(registry.getNode(id))) {

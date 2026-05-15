@@ -48,6 +48,16 @@ def _rename_embedded_region(container: list, old_id: str, new_id: str) -> None:
             r["id"] = new_id
 
 
+def _collect_region_subtree_ids(regions: dict, region_id: str) -> list[str]:
+    """Return region_id and all descendant ids found in regions (depth-first)."""
+    result = [region_id]
+    for child in regions.get(region_id, {}).get("children", []):
+        child_id = child.get("id")
+        if child_id and child_id in regions:
+            result.extend(_collect_region_subtree_ids(regions, child_id))
+    return result
+
+
 def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
     """Recursively update id in a composite region's children array."""
     for child in region.get("children", []):
@@ -214,10 +224,11 @@ def create_app() -> Flask:
         regions = data.get("regions", {})
         if region_id not in regions:
             return jsonify({"error": f"region {region_id!r} not found"}), 404
-        del regions[region_id]
-        for cat_list in data.get("region_categories", {}).values():
-            if region_id in cat_list:
-                cat_list.remove(region_id)
+        for rid in _collect_region_subtree_ids(regions, region_id):
+            regions.pop(rid, None)
+            for cat_list in data.get("region_categories", {}).values():
+                if rid in cat_list:
+                    cat_list.remove(rid)
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )

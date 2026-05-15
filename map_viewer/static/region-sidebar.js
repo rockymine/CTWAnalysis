@@ -19,7 +19,6 @@ export class RegionSidebar {
   #listEl;
   #onSelect;
   #onVisibilityToggle;
-  #onDelete;
   #rowMap       = new Map();   // id → rowEl
   #hiddenIds    = new Set();   // ids the user has hidden
   #collapsedIds = new Set();   // ids whose children are collapsed in the sidebar
@@ -31,11 +30,10 @@ export class RegionSidebar {
    * @param {function} [callbacks.onSelect]             Called with the node when a row is clicked.
    * @param {function} [callbacks.onVisibilityToggle]   Called with (id, hidden: boolean).
    */
-  constructor(listEl, { onSelect, onVisibilityToggle, onDelete } = {}) {
+  constructor(listEl, { onSelect, onVisibilityToggle } = {}) {
     this.#listEl              = listEl;
     this.#onSelect            = onSelect || null;
     this.#onVisibilityToggle  = onVisibilityToggle || null;
-    this.#onDelete            = onDelete || null;
   }
 
   /** Rebuild the sidebar for a freshly loaded map. */
@@ -184,9 +182,6 @@ export class RegionSidebar {
     row.appendChild(this.#label(node));
     row.appendChild(this.#typeBadge(node.type));
     row.appendChild(this.#visBtn(node.id));
-    if (!node.synthetic_id && this.#parentMap.get(node.id) === null) {
-      row.appendChild(this.#delBtn(node));
-    }
 
     row.addEventListener("click", (e) => {
       if (this.#onSelect) this.#onSelect(node, e.ctrlKey);
@@ -235,18 +230,6 @@ export class RegionSidebar {
       btn.replaceChildren(icon(nowHidden ? lucide.EyeOff : lucide.Eye));
       btn.classList.toggle("vis-btn--hidden", nowHidden);
       if (this.#onVisibilityToggle) this.#onVisibilityToggle(id, nowHidden);
-    });
-    return btn;
-  }
-
-  #delBtn(node) {
-    const btn = document.createElement("button");
-    btn.className = "del-btn";
-    btn.title     = "Delete region";
-    btn.appendChild(icon(lucide.Trash2, 13));
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (this.#onDelete) this.#onDelete(node);
     });
     return btn;
   }
