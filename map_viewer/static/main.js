@@ -73,6 +73,7 @@ const canvas = new MapCanvas(
     },
     onRegionDraw: async (bounds) => {
       if (!currentMap) return;
+      setTool(null);  // switch to select immediately — don't wait for the API response
       try {
         const { id: newId } = await api.createRegion(currentMap, bounds);
         const newNode = {
@@ -86,7 +87,6 @@ const canvas = new MapCanvas(
         registry.register(newNode, null);
         canvas.addRegion(newNode);
         sidebar.appendRow(newNode);
-        setTool(null);
         registry.select(newId);
       } catch (err) {
         setStatus(`Create region failed: ${err.message}`);

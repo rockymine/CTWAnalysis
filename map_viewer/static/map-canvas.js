@@ -226,6 +226,9 @@ export class MapCanvas {
   /** Add a freshly-created region to the canvas without a full repaint. */
   addRegion(node) {
     if (!this.#regionsLayerEl || !this.#toSvg) return;
+    // Guard: remove any stale element that may have slipped in with the same id
+    const stale = this.#regionGroupMap.get(node.id);
+    if (stale?.parentNode) stale.parentNode.removeChild(stale);
     const regionG = this.#regionGroup(node);
     this.#regionGroupMap.set(node.id, regionG);
     this.#nodeMap.set(node.id, node);
@@ -234,7 +237,8 @@ export class MapCanvas {
 
   /** Remove a region from the canvas entirely (called on delete). */
   removeRegion(id) {
-    const g = this.#regionGroupMap.get(id);
+    const g = this.#regionGroupMap.get(id)
+           ?? this.#svg.querySelector(`[id="region-${id}"]`);
     if (g?.parentNode) g.parentNode.removeChild(g);
     this.#regionGroupMap.delete(id);
     this.#shapeMap.delete(id);
