@@ -84,6 +84,8 @@ const canvas = new MapCanvas(
         setStatus(`Create region failed: ${err.message}`);
       }
     },
+    onBoundsChange: (node, bounds) => handleBoundsChange(node, bounds),
+    onBoundsSave:   (node, bounds) => handleBoundsSave(node, bounds),
   },
 );
 
@@ -92,19 +94,8 @@ let currentMap = null;
 const detail = new RegionDetail(
   document.getElementById("region-detail"),
   {
-    onBoundsChange: (node, bounds) => {
-      canvas.updateRegionBounds(node, bounds);
-      detail.updateXmlPreview(node);
-      for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
-        canvas.updateRegionBounds(ancestor, ancestor.bounds);
-      }
-    },
-    onBoundsSave: (node, bounds) => {
-      if (!currentMap) return;
-      api.patchRegion(currentMap, node.id, bounds).catch((err) => {
-        console.error("Region save failed:", err);
-      });
-    },
+    onBoundsChange: (node, bounds) => handleBoundsChange(node, bounds),
+    onBoundsSave:   (node, bounds) => handleBoundsSave(node, bounds),
     onIdChange: (node, oldId, newId) => {
       registry.renameNode(oldId, newId);
       sidebar.renameNode(oldId, newId);
@@ -210,6 +201,23 @@ function countRegions(groupsOrNodes) {
     else { if (item.id) n++; n += countRegions(item.children || []); }
   }
   return n;
+}
+
+// ── shared bounds handlers (used by detail panel and canvas resize) ───────
+
+function handleBoundsChange(node, bounds) {
+  canvas.updateRegionBounds(node, bounds);
+  detail.updateXmlPreview(node);
+  for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
+    canvas.updateRegionBounds(ancestor, ancestor.bounds);
+  }
+}
+
+function handleBoundsSave(node, bounds) {
+  if (!currentMap) return;
+  api.patchRegion(currentMap, node.id, bounds).catch((err) => {
+    console.error("Region save failed:", err);
+  });
 }
 
 // ── start ──────────────────────────────────────────────────────────────────

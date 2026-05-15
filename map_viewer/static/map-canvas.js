@@ -14,6 +14,8 @@
  *   onCoords(x, z)                 block coords under mouse (null, null on leave)
  *   onCanvasClick(node | null)     region hit under click, or null for empty space
  *   onRegionDraw(bounds)           rectangle draw completed: {min_x,min_z,max_x,max_z}
+ *   onBoundsChange(node, bounds)   live update during canvas resize drag
+ *   onBoundsSave(node, bounds)     persist after canvas resize drag ends
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
@@ -31,6 +33,19 @@ const WOOL_COLORS = {
 const ZOOM_FACTOR = 1.15;
 const ZOOM_MIN    = 0.5;
 const ZOOM_MAX    = 200;
+
+const HANDLE_SIZE = 7;
+const HANDLE_DEFS = [
+  { key: "nw", pos: sb => [sb.left,  sb.top   ], cursor: "nw-resize" },
+  { key: "n",  pos: sb => [sb.midX,  sb.top   ], cursor: "n-resize"  },
+  { key: "ne", pos: sb => [sb.right, sb.top   ], cursor: "ne-resize" },
+  { key: "w",  pos: sb => [sb.left,  sb.midY  ], cursor: "w-resize"  },
+  { key: "e",  pos: sb => [sb.right, sb.midY  ], cursor: "e-resize"  },
+  { key: "sw", pos: sb => [sb.left,  sb.bottom], cursor: "sw-resize" },
+  { key: "s",  pos: sb => [sb.midX,  sb.bottom], cursor: "s-resize"  },
+  { key: "se", pos: sb => [sb.right, sb.bottom], cursor: "se-resize" },
+];
+const RESIZABLE_TYPES = new Set(["rectangle", "cuboid"]);
 
 export class MapCanvas {
   #svg;
@@ -65,8 +80,11 @@ export class MapCanvas {
   #drawLayerEl    = null;  // <g id="layer-draw"> for draw-tool preview
 
   // ── draw tool state ───────────────────────────────────────────────────────
-  #activeTool = null;   // null | "rectangle"
-  #drawState  = null;   // null | { startBx, startBz, previewRect, anchor1, anchor2 }
+  #activeTool  = null;  // null | "rectangle"
+  #drawState   = null;  // null | { startBx, startBz, currentBx, currentBz, previewRect, anchor1, anchor2 }
+
+  // ── resize state ──────────────────────────────────────────────────────────
+  #resizeState = null;  // null | { node, xField, zField, cursor }
 
   // ── layer visibility state (persists across resize) ───────────────────────
   #showSpawns     = true;
@@ -343,10 +361,25 @@ export class MapCanvas {
         this.#completeDraw();
         return;
       }
+      if (this.#resizeState) {
+        const { node } = this.#resizeState;
+        this.#resizeState = null;
+        this.#clickWasDrag = true;  // prevent the click event from deselecting
+        this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
+        if (this.#callbacks.onBoundsSave) this.#callbacks.onBoundsSave(node, node.bounds);
+        this.#updateOverlay();
+        return;
+      }
       this.#clickWasDrag = this.#didDrag;
       this.#isDragging = false;
       this.#didDrag    = false;
       this.#svg.style.cursor = this.#toWorld ? "crosshair" : "";
+    });
+
+    // Window-level mousemove for resize (mouse may leave the SVG mid-drag)
+    window.addEventListener("mousemove", (e) => {
+      if (!this.#resizeState) return;
+      this.#doResize(e.clientX, e.clientY);
     });
   }
 
@@ -540,6 +573,11 @@ export class MapCanvas {
     });
     dimEl.textContent = dimText;
     this.#overlayLayer.appendChild(dimEl);
+
+    // ── resize handles (rectangle / cuboid only, non-synthetic) ─────────────
+    if (!node.synthetic_id && RESIZABLE_TYPES.has(node.type)) {
+      this.#renderHandles(node);
+    }
   }
 
   #renderAnchors() {
@@ -654,6 +692,89 @@ export class MapCanvas {
     });
     el.textContent = id.length > 24 ? id.slice(0, 22) + "…" : id;
     return el;
+  }
+
+  // ── resize helpers ─────────────────────────────────────────────────────────
+
+  /** Compute screen-space bounding box and axis-orientation flags for a node. */
+  #screenBounds(node) {
+    if (!node?.bounds || !this.#toSvg) return null;
+    const { min_x, min_z, max_x, max_z } = node.bounds;
+    const toScr = (bx, by) => ({ x: bx * this.#scale + this.#panX, y: by * this.#scale + this.#panY });
+    const p1b = this.#toSvg(min_x, min_z);
+    const p2b = this.#toSvg(max_x, max_z);
+    const s1  = toScr(p1b.x, p1b.y);
+    const s2  = toScr(p2b.x, p2b.y);
+    return {
+      left:       Math.min(s1.x, s2.x),
+      right:      Math.max(s1.x, s2.x),
+      top:        Math.min(s1.y, s2.y),
+      bottom:     Math.max(s1.y, s2.y),
+      midX:       (s1.x + s2.x) / 2,
+      midY:       (s1.y + s2.y) / 2,
+      leftIsMinX: p1b.x <= p2b.x,
+      topIsMinZ:  p1b.y <= p2b.y,
+    };
+  }
+
+  /** Map a handle key to the bounds field(s) it controls, accounting for axis orientation. */
+  #handleFields(key, sb) {
+    const leftF  = sb.leftIsMinX ? "min_x" : "max_x";
+    const rightF = sb.leftIsMinX ? "max_x" : "min_x";
+    const topF   = sb.topIsMinZ  ? "min_z" : "max_z";
+    const botF   = sb.topIsMinZ  ? "max_z" : "min_z";
+    return {
+      nw: { xField: leftF,  zField: topF  },
+      n:  { xField: null,   zField: topF  },
+      ne: { xField: rightF, zField: topF  },
+      w:  { xField: leftF,  zField: null  },
+      e:  { xField: rightF, zField: null  },
+      sw: { xField: leftF,  zField: botF  },
+      s:  { xField: null,   zField: botF  },
+      se: { xField: rightF, zField: botF  },
+    }[key];
+  }
+
+  /** Append 8 interactive resize handles to the overlay layer for a node. */
+  #renderHandles(node) {
+    const sb = this.#screenBounds(node);
+    if (!sb) return;
+    const hs    = HANDLE_SIZE / 2;
+    const color = node.color || "#94a3b8";
+    for (const h of HANDLE_DEFS) {
+      const [cx, cy] = h.pos(sb);
+      const el = svgEl("rect", {
+        x: cx - hs, y: cy - hs, width: HANDLE_SIZE, height: HANDLE_SIZE, rx: 1,
+        fill: "#1e293b", stroke: color, "stroke-width": "1.5",
+        cursor: h.cursor,
+      });
+      el.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const fields = this.#handleFields(h.key, this.#screenBounds(node));
+        this.#resizeState = { node, ...fields, cursor: h.cursor };
+        this.#svg.style.cursor = h.cursor;
+      });
+      this.#overlayLayer.appendChild(el);
+    }
+  }
+
+  /** Update bounds during a resize drag and fire the live-update callback. */
+  #doResize(clientX, clientY) {
+    if (!this.#resizeState || !this.#toWorld) return;
+    const { node, xField, zField } = this.#resizeState;
+    const svgPt = this.#clientToSvg(clientX, clientY);
+    const world = this.#toWorld(svgPt.x, svgPt.y);
+    const nb    = { ...node.bounds };
+    if (xField) nb[xField] = Math.round(world.x);
+    if (zField) nb[zField] = Math.round(world.z);
+    // Enforce minimum 1-block size
+    if (xField && nb.max_x - nb.min_x < 1)
+      nb[xField] = xField === "max_x" ? nb.min_x + 1 : nb.max_x - 1;
+    if (zField && nb.max_z - nb.min_z < 1)
+      nb[zField] = zField === "max_z" ? nb.min_z + 1 : nb.max_z - 1;
+    if (this.#callbacks.onBoundsChange) this.#callbacks.onBoundsChange(node, nb);
   }
 
   #buildDrawLayer() {
