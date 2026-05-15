@@ -17,6 +17,8 @@ import { RegionRegistry } from "./region-registry.js";
 import { RegionDetail }   from "./region-detail.js";
 import * as api           from "./api.js";
 
+lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
+
 const exportBtn = document.getElementById("export-xml-btn");
 exportBtn.addEventListener("click", async () => {
   if (!currentMap) return;

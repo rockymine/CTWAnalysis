@@ -11,11 +11,9 @@ const TYPE_CLASS = {
 };
 const CAT_COLOR = "#4a5568";
 
-const EYE_OPEN   = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4.5C1 4.5 3 1 7 1s6 3.5 6 3.5S11 8 7 8 1 4.5 1 4.5z"/><circle cx="7" cy="4.5" r="1.5"/></svg>`;
-const EYE_CLOSED = `<svg width="14" height="9" viewBox="0 0 14 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2.5C3 5.5 5 7 7 7s4-1.5 6-4.5"/><line x1="4" y1="6.5" x2="3.5" y2="8.5"/><line x1="7" y1="7" x2="7" y2="9"/><line x1="10" y1="6.5" x2="10.5" y2="8.5"/></svg>`;
-
-const CHEVRON_DOWN  = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>`;
-const CHEVRON_RIGHT = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,2 7,5 3,8"/></svg>`;
+function icon(iconData, size = 14) {
+  return lucide.createElement(iconData, { width: size, height: size, "stroke-width": "1.5" });
+}
 
 export class RegionSidebar {
   #listEl;
@@ -85,7 +83,7 @@ export class RegionSidebar {
     if (!row) return;
     const btn = row.querySelector(".vis-btn");
     if (btn) {
-      btn.innerHTML = hidden ? EYE_CLOSED : EYE_OPEN;
+      btn.replaceChildren(icon(hidden ? lucide.EyeOff : lucide.Eye));
       btn.classList.toggle("vis-btn--hidden", hidden);
     }
   }
@@ -181,19 +179,19 @@ export class RegionSidebar {
     btn.dataset.regionId = node.id;
     if (!(node.children?.length > 0)) {
       btn.style.visibility = "hidden";
-      btn.innerHTML = CHEVRON_DOWN;
+      btn.appendChild(icon(lucide.ChevronDown, 12));
       return btn;
     }
-    btn.innerHTML = this.#collapsedIds.has(node.id) ? CHEVRON_RIGHT : CHEVRON_DOWN;
+    btn.appendChild(icon(this.#collapsedIds.has(node.id) ? lucide.ChevronRight : lucide.ChevronDown, 12));
     btn.title = "Collapse/expand";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.#collapsedIds.has(node.id)) {
         this.#collapsedIds.delete(node.id);
-        btn.innerHTML = CHEVRON_DOWN;
+        btn.replaceChildren(icon(lucide.ChevronDown, 12));
       } else {
         this.#collapsedIds.add(node.id);
-        btn.innerHTML = CHEVRON_RIGHT;
+        btn.replaceChildren(icon(lucide.ChevronRight, 12));
       }
       this.#refreshTreeVisibility();
     });
@@ -204,14 +202,14 @@ export class RegionSidebar {
     const btn = document.createElement("button");
     btn.className        = "vis-btn";
     btn.dataset.regionId = id;
-    btn.innerHTML        = EYE_OPEN;
+    btn.appendChild(icon(lucide.Eye));
     btn.title            = "Toggle visibility";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const nowHidden = !this.#hiddenIds.has(id);
       if (nowHidden) this.#hiddenIds.add(id);
       else           this.#hiddenIds.delete(id);
-      btn.innerHTML = nowHidden ? EYE_CLOSED : EYE_OPEN;
+      btn.replaceChildren(icon(nowHidden ? lucide.EyeOff : lucide.Eye));
       btn.classList.toggle("vis-btn--hidden", nowHidden);
       if (this.#onVisibilityToggle) this.#onVisibilityToggle(id, nowHidden);
     });

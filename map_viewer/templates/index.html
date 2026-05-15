@@ -34,15 +34,10 @@
     <div id="cursor-coords"></div>
     <div id="draw-toolbar">
       <button id="tool-select" class="draw-tool-btn" title="Select (Esc)" disabled>
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
-          <path d="M3 1.5 L3 12 L5.8 9.4 L7.8 14 L9.4 13.3 L7.4 8.7 L11 8.7 Z"/>
-        </svg>
+        <i data-lucide="mouse-pointer-2"></i>
       </button>
       <button id="tool-rect" class="draw-tool-btn" title="Rectangle (R)" disabled>
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none"
-             stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="1.5" y="3.5" width="12" height="8" rx="1"/>
-        </svg>
+        <i data-lucide="square"></i>
       </button>
     </div>
   </div>
@@ -51,6 +46,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
