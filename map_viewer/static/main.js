@@ -9,6 +9,10 @@
  *   - Registry fires onSelectionChange(primaryNode, selectedIds)
  *   - Canvas shows overlays for all selectedIds; inspector shows primaryNode
  *   - Clicking empty canvas → registry.deselect() → clears everything
+ *
+ * Map loading:
+ *   - Map name is read from the ?map=<name> URL query parameter on load.
+ *   - If not present, redirects back to the dashboard (/).
  */
 
 import { MapCanvas }      from "./map-canvas.js";
@@ -204,7 +208,7 @@ document.getElementById("toggle-blocks").addEventListener("change", async (e) =>
   }
 });
 
-// ── map selection ──────────────────────────────────────────────────────────
+// ── map loading ────────────────────────────────────────────────────────────
 
 async function loadMap(name) {
   currentMap = name;
@@ -240,21 +244,6 @@ async function loadMap(name) {
     setStatus(`Error: ${err.message}`);
   }
 }
-
-async function initMapList() {
-  const maps = await api.fetchMaps();
-  const sel = document.getElementById("map-select");
-  for (const m of maps) {
-    const opt = document.createElement("option");
-    opt.value = m.name;
-    opt.textContent = m.display_name;
-    sel.appendChild(opt);
-  }
-}
-
-document.getElementById("map-select").addEventListener("change", (e) => {
-  if (e.target.value) loadMap(e.target.value);
-});
 
 window.addEventListener("resize", () => canvas.resize());
 
@@ -341,5 +330,15 @@ async function groupSelected() {
   }
 }
 
-// ── start ──────────────────────────────────────────────────────────────────
-initMapList();
+// ── start: read map from URL query param ──────────────────────────────────
+
+const urlParams = new URLSearchParams(window.location.search);
+const mapParam  = urlParams.get("map");
+
+if (!mapParam) {
+  window.location.replace("/");
+} else {
+  const display = document.getElementById("map-name-display");
+  if (display) display.textContent = mapParam.replace(/_/g, " ");
+  loadMap(mapParam);
+}

@@ -1,5 +1,44 @@
 /** All server communication. */
 
+// ── Dashboard / configuration API ─────────────────────────────────────────
+
+export async function fetchConfig() {
+  const r = await fetch("/api/config");
+  if (!r.ok) throw new Error("Failed to load config");
+  return r.json();
+}
+
+export async function saveConfig(config) {
+  const r = await fetch("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!r.ok) throw new Error(`Failed to save config (${r.status})`);
+  return r.json();
+}
+
+export async function fetchSourceMaps() {
+  const r = await fetch("/api/source-maps");
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to load source maps (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function validateSourceMap(name) {
+  const r = await fetch(`/api/source-map/${encodeURIComponent(name)}/validate`);
+  if (!r.ok) throw new Error(`Validation failed (${r.status})`);
+  return r.json();
+}
+
+export async function fetchPipelineStatus(name) {
+  const r = await fetch(`/api/source-map/${encodeURIComponent(name)}/pipeline-status`);
+  if (!r.ok) throw new Error(`Failed to load pipeline status (${r.status})`);
+  return r.json();
+}
+
 export async function fetchMaps() {
   const r = await fetch("/api/maps");
   if (!r.ok) throw new Error("Failed to load map list");

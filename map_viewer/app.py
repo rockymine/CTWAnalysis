@@ -2,8 +2,15 @@
 
 Routes
 ------
-GET /                              Single-page HTML app (templates/index.html)
-GET /api/maps                      List maps that have map_context.json
+GET /                              Dashboard (templates/index.html)
+GET /editor                        Map editor (templates/editor.html)
+GET /api/config                    Load configuration
+POST /api/config                   Save configuration
+GET /api/maps                      List maps that have map_context.json (editor API)
+GET /api/source-maps               List all map folders from configured maps_folder
+GET /api/source-map/<n>/validate   Validate map folder structure
+GET /api/source-map/<n>/pipeline-status   Check which pipeline steps are complete
+GET /api/source-map/<n>/pipeline/run      SSE stream: run the analysis pipeline
 GET /api/map/<name>/context        map_context.json payload
 GET /api/map/<name>/regions        Region hierarchy grouped by thematic category
 """
@@ -11,16 +18,43 @@ GET /api/map/<name>/regions        Region hierarchy grouped by thematic category
 from __future__ import annotations
 
 import json
+import logging
+import queue
+import threading
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
-from flask import Flask, jsonify, abort, render_template, request
+from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
 from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
 from common.visualization.block_colors import block_color
 
-OUTPUT_ROOT = Path(__file__).parent.parent / "output"
+_DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent / "output"
+CONFIG_PATH = Path(__file__).parent / "config.json"
 
+logger = logging.getLogger("ctw")
+
+
+def _load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "maps_folder": "",
+        "output_folder": str(_DEFAULT_OUTPUT_ROOT),
+    }
+
+
+def _get_output_root() -> Path:
+    cfg = _load_config()
+    folder = cfg.get("output_folder", "").strip()
+    return Path(folder) if folder else _DEFAULT_OUTPUT_ROOT
+
+
+# ── Helpers shared across region endpoints ─────────────────────────────────
 
 def _walk_embedded_regions(container: list):
     """Yield each embedded region dict found in spawns/wools/observer_spawn items."""
@@ -68,32 +102,303 @@ def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
         _rename_in_children(child, old_id, new_id)
 
 
+# ── Pipeline status helpers ────────────────────────────────────────────────
+
+_PIPELINE_STEPS = [
+    {"id": "layout",   "label": "Layout",   "file": "layout_bedrock.parquet"},
+    {"id": "islands",  "label": "Islands",  "file": "islands.json"},
+    {"id": "symmetry", "label": "Symmetry", "file": "symmetry.json"},
+    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
+    {"id": "assembly", "label": "Assembly", "file": "map_context.json"},
+]
+
+
+def _check_pipeline_status(output_dir: Path) -> list[dict]:
+    return [
+        {
+            "id": step["id"],
+            "label": step["label"],
+            "file": step["file"],
+            "done": (output_dir / step["file"]).exists(),
+        }
+        for step in _PIPELINE_STEPS
+    ]
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
+
+    # ── Page routes ─────────────────────────────────────────────────────────
 
     @app.route("/")
     def index():
         return render_template("index.html")
 
+    @app.route("/editor")
+    def editor():
+        return render_template("editor.html")
+
+    # ── Configuration API ────────────────────────────────────────────────────
+
+    @app.route("/api/config")
+    def get_config():
+        return jsonify(_load_config())
+
+    @app.route("/api/config", methods=["POST"])
+    def save_config():
+        body = request.get_json(silent=True) or {}
+        config = _load_config()
+        for key in ("maps_folder", "output_folder"):
+            if key in body:
+                config[key] = str(body[key]).strip()
+        CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        return jsonify({"ok": True})
+
+    # ── Source-map discovery API ─────────────────────────────────────────────
+
+    @app.route("/api/source-maps")
+    def list_source_maps():
+        config = _load_config()
+        maps_folder = Path(config.get("maps_folder", "").strip())
+        if not maps_folder or not maps_folder.exists():
+            return jsonify({"error": "maps_folder not configured or does not exist"}), 400
+
+        output_root = _get_output_root()
+
+        maps = []
+        for path in sorted(maps_folder.iterdir()):
+            if not path.is_dir():
+                continue
+            out_dir = output_root / path.name
+            steps = _check_pipeline_status(out_dir)
+            all_done = all(s["done"] for s in steps)
+            maps.append({
+                "name": path.name,
+                "display_name": path.name.replace("_", " ").title(),
+                "preprocessed": all_done,
+            })
+        return jsonify(maps)
+
+    @app.route("/api/source-map/<name>/validate")
+    def validate_source_map(name: str):
+        config = _load_config()
+        maps_folder = Path(config.get("maps_folder", "").strip())
+        map_path = maps_folder / name
+
+        if not map_path.exists():
+            return jsonify({"valid": False, "issues": ["Map folder does not exist"]})
+
+        issues = []
+        if not (map_path / "map.xml").exists():
+            issues.append("Missing map.xml")
+        if not (map_path / "region").exists():
+            issues.append("Missing 'region' folder (Anvil world data required for layout extraction)")
+
+        return jsonify({"valid": len(issues) == 0, "issues": issues})
+
+    @app.route("/api/source-map/<name>/pipeline-status")
+    def pipeline_status(name: str):
+        output_root = _get_output_root()
+        out_dir = output_root / name
+        steps = _check_pipeline_status(out_dir)
+        return jsonify({"steps": steps, "all_done": all(s["done"] for s in steps)})
+
+    @app.route("/api/source-map/<name>/pipeline/run")
+    def run_pipeline(name: str):
+        force = request.args.get("force", "0") == "1"
+
+        config = _load_config()
+        maps_folder_str = config.get("maps_folder", "").strip()
+        if not maps_folder_str:
+            return jsonify({"error": "maps_folder not configured"}), 400
+
+        map_folder = Path(maps_folder_str) / name
+        if not map_folder.exists():
+            return jsonify({"error": f"Map folder not found: {name}"}), 404
+
+        output_root = _get_output_root()
+        map_output_dir = output_root / name
+
+        def generate():
+            event_queue: queue.Queue[Optional[str]] = queue.Queue()
+
+            def send(event_type: str, data: dict) -> None:
+                msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+                event_queue.put(msg)
+
+            def pipeline_thread() -> None:
+                try:
+                    import traceback
+                    from ctw.log import setup_map_file_logging
+                    from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
+                    from ctw.commands.layout import analyze_layout
+                    from ctw.commands.xml import analyze_xml
+                    from layout_analysis.map_layout_config import get_map_layout
+
+                    map_output_dir.mkdir(parents=True, exist_ok=True)
+                    setup_map_file_logging(map_output_dir)
+
+                    map_layout_cfg = get_map_layout(name)
+
+                    if map_layout_cfg is not None and map_layout_cfg.skip:
+                        send("skipped", {"reason": "Map is excluded in map_layouts.yaml"})
+                        return
+
+                    # Determine island layout type (mirrors run.py logic)
+                    if map_layout_cfg is not None:
+                        if map_layout_cfg.layer == "y0" and not map_layout_cfg.exclude:
+                            island_layout_type = "y0"
+                        else:
+                            island_layout_type = "decided"
+                    else:
+                        island_layout_type = "bedrock"
+
+                    # Step 1 — Layout
+                    send("step", {"step": "layout", "status": "running", "label": "Layout"})
+                    try:
+                        parquet_files = analyze_layout(
+                            map_folder,
+                            force_rerun=force,
+                            output_dir=map_output_dir,
+                            map_layout_config=map_layout_cfg,
+                        )
+                        n = len(parquet_files) if parquet_files else 0
+                        send("step", {"step": "layout", "status": "done", "label": "Layout",
+                                      "detail": f"{n} file(s) written"})
+                    except Exception as exc:
+                        send("step", {"step": "layout", "status": "error", "label": "Layout",
+                                      "detail": str(exc)})
+                        send("error", {"message": f"Layout failed: {exc}"})
+                        return
+
+                    # Step 2 — Islands
+                    send("step", {"step": "islands", "status": "running", "label": "Islands"})
+                    try:
+                        geometry = run_island_geometry(
+                            map_folder,
+                            force_rerun=force,
+                            layout_type=island_layout_type,
+                            map_output_dir=map_output_dir,
+                        )
+                        if not geometry:
+                            send("step", {"step": "islands", "status": "error", "label": "Islands",
+                                          "detail": "No islands detected — check layout"})
+                            send("error", {"message": "Island detection produced no results"})
+                            return
+                        send("step", {"step": "islands", "status": "done", "label": "Islands",
+                                      "detail": f"{len(geometry.islands)} island(s)"})
+                    except Exception as exc:
+                        send("step", {"step": "islands", "status": "error", "label": "Islands",
+                                      "detail": str(exc)})
+                        send("error", {"message": f"Islands failed: {exc}"})
+                        return
+
+                    # Step 3 — Symmetry
+                    send("step", {"step": "symmetry", "status": "running", "label": "Symmetry"})
+                    symmetry = None
+                    try:
+                        symmetry = run_symmetry(map_output_dir, geometry=geometry)
+                        desc = (symmetry.primary["description"] if symmetry and symmetry.primary
+                                else "none detected")
+                        send("step", {"step": "symmetry", "status": "done", "label": "Symmetry",
+                                      "detail": desc})
+                    except Exception as exc:
+                        send("step", {"step": "symmetry", "status": "error", "label": "Symmetry",
+                                      "detail": str(exc)})
+                        # Non-fatal: continue without symmetry
+
+                    # Step 4 — XML
+                    send("step", {"step": "xml", "status": "running", "label": "XML"})
+                    xml_context = None
+                    try:
+                        xml_context = analyze_xml(map_folder, force_rerun=force,
+                                                  output_dir=map_output_dir)
+                        if xml_context:
+                            md = xml_context.map_data
+                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
+                        else:
+                            detail_txt = "no map.xml found"
+                        send("step", {"step": "xml", "status": "done", "label": "XML",
+                                      "detail": detail_txt})
+                    except Exception as exc:
+                        send("step", {"step": "xml", "status": "error", "label": "XML",
+                                      "detail": str(exc)})
+                        # Non-fatal: assemble without XML
+
+                    # Step 5 — Assembly
+                    send("step", {"step": "assembly", "status": "running", "label": "Assembly"})
+                    try:
+                        exclude_obs = (map_layout_cfg.exclude_observer_island
+                                       if map_layout_cfg is not None else False)
+                        exclude_isl = (map_layout_cfg.exclude_islands
+                                       if map_layout_cfg is not None else [])
+                        bbox = (map_layout_cfg.playable_bbox
+                                if map_layout_cfg is not None else None)
+
+                        assemble_map(
+                            map_folder, geometry, map_output_dir,
+                            symmetry=symmetry, xml_context=xml_context,
+                            exclude_observer_island=exclude_obs,
+                            exclude_islands=exclude_isl,
+                            playable_bbox=bbox,
+                        )
+                        send("step", {"step": "assembly", "status": "done", "label": "Assembly"})
+                    except Exception as exc:
+                        send("step", {"step": "assembly", "status": "error", "label": "Assembly",
+                                      "detail": str(exc)})
+                        send("error", {"message": f"Assembly failed: {exc}"})
+                        return
+
+                    send("done", {"message": "Pipeline complete"})
+
+                except Exception as exc:
+                    import traceback as _tb
+                    send("error", {"message": f"Unexpected error: {exc}",
+                                   "detail": _tb.format_exc()})
+                finally:
+                    event_queue.put(None)  # sentinel
+
+            thread = threading.Thread(target=pipeline_thread, daemon=True)
+            thread.start()
+
+            while True:
+                item = event_queue.get()
+                if item is None:
+                    break
+                yield item
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # ── Editor map list (maps with map_context.json) ─────────────────────────
+
     @app.route("/api/maps")
     def list_maps():
+        output_root = _get_output_root()
+        if not output_root.exists():
+            return jsonify([])
         maps = [
             {"name": path.name, "display_name": path.name.replace("_", " ").title()}
-            for path in sorted(OUTPUT_ROOT.iterdir())
+            for path in sorted(output_root.iterdir())
             if (path / "map_context.json").exists()
         ]
         return jsonify(maps)
 
+    # ── Map data endpoints (used by editor) ──────────────────────────────────
+
     @app.route("/api/map/<name>/context")
     def map_context(name: str):
-        ctx_path = OUTPUT_ROOT / name / "map_context.json"
+        ctx_path = _get_output_root() / name / "map_context.json"
         if not ctx_path.exists():
             abort(404)
         return jsonify(json.loads(ctx_path.read_text(encoding="utf-8")))
 
     @app.route("/api/map/<name>/regions")
     def map_regions(name: str):
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -105,7 +410,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/export/xml")
     def export_xml(name: str):
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -118,7 +423,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/layers/top-surface")
     def layer_top_surface(name: str):
-        parquet_path = OUTPUT_ROOT / name / "layout_top_surface.parquet"
+        parquet_path = _get_output_root() / name / "layout_top_surface.parquet"
         if not parquet_path.exists():
             abort(404)
         df = pd.read_parquet(
@@ -149,7 +454,7 @@ def create_app() -> Flask:
         except (KeyError, TypeError, ValueError):
             return jsonify({"error": "min_x, min_z, max_x, max_z are required numbers"}), 400
 
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -189,7 +494,7 @@ def create_app() -> Flask:
         if len(child_ids) < 2:
             return jsonify({"error": "at least 2 regions required"}), 400
 
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -239,7 +544,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
     def delete_region(name: str, region_id: str) -> tuple:
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data    = json.loads(data_path.read_text(encoding="utf-8"))
@@ -263,7 +568,7 @@ def create_app() -> Flask:
         if not body.get("id") and bounds is None:
             return jsonify({"error": "provide 'id' or 'bounds'"}), 400
 
-        data_path = OUTPUT_ROOT / name / "map_data.json"
+        data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -278,18 +583,14 @@ def create_app() -> Flask:
         if new_id and new_id != region_id:
             if new_id in regions:
                 return jsonify({"error": f"id {new_id!r} already in use"}), 409
-            # Re-key in regions dict and update the id field inside the dict
             regions[new_id] = regions.pop(region_id)
             regions[new_id]["id"] = new_id
-            # Keep region_categories consistent
             for cat_list in data.get("region_categories", {}).values():
                 for i, rid in enumerate(cat_list):
                     if rid == region_id:
                         cat_list[i] = new_id
-            # Update id in any composite parent's children array
             for r in regions.values():
                 _rename_in_children(r, region_id, new_id)
-            # Update embedded copies in spawns / wools / observer_spawn
             for container_key in ("spawns", "wools"):
                 _rename_embedded_region(data.get(container_key, []), region_id, new_id)
             obs = data.get("observer_spawn")

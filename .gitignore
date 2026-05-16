@@ -117,6 +117,9 @@ Thumbs.db
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 
+# Map viewer local config (contains machine-specific paths)
+map_viewer/config.json
+
 # DuckDB
 match_analysis/metadata.db
 match_analysis/metadata_old.db

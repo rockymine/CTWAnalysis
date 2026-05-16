@@ -3,56 +3,83 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>CTW Map Viewer</title>
+  <title>CTW Analysis IDE</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='viewer.css') }}"/>
 </head>
-<body>
+<body class="dashboard-page">
 
 <div id="topbar">
-  <h1>CTW Map Viewer</h1>
-  <select id="map-select"><option value="">— select map —</option></select>
-  <span id="status"></span>
-  <span class="topbar-divider"></span>
-  <button id="export-xml-btn" class="topbar-btn" disabled>Export XML</button>
+  <h1>CTW Analysis IDE</h1>
+  <span id="status" class="topbar-status"></span>
 </div>
 
-<div id="main">
-  <div id="layers">
-    <div id="layers-header">Regions</div>
-    <div id="region-list">
-      <div id="empty-msg">No map loaded</div>
+<div id="dashboard">
+
+  <section id="config-section">
+    <div class="config-row">
+      <label class="config-label">Maps folder</label>
+      <input type="text" id="maps-folder-input" class="config-input" placeholder="Path to the folder containing map folders">
+      <span class="config-path-status" id="maps-folder-status"></span>
     </div>
-  </div>
-  <div id="canvas-wrap">
-    <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-            fill="#334155" font-size="14">Select a map to begin</text>
-    </svg>
-    <div id="cursor-coords"></div>
-    <div id="layer-picker">
-      <div class="layer-picker-title">Layers</div>
-      <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
-      <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
-      <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+    <div class="config-row">
+      <label class="config-label">Output folder</label>
+      <input type="text" id="output-folder-input" class="config-input" placeholder="Path to the pipeline output folder">
+      <span class="config-path-status" id="output-folder-status"></span>
     </div>
-    <div id="draw-toolbar">
-      <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
-        <i data-lucide="hand"></i>
-      </button>
-      <button id="tool-select" class="draw-tool-btn" title="Select"        disabled>
-        <i data-lucide="mouse-pointer-2"></i>
-      </button>
-      <button id="tool-rect"   class="draw-tool-btn" title="Rectangle (R)" disabled>
-        <i data-lucide="square"></i>
-      </button>
+    <div class="config-actions">
+      <button id="save-config-btn" class="action-btn">Save Configuration</button>
+      <span id="config-save-status" class="config-save-msg"></span>
     </div>
-  </div>
-  <div id="inspector">
-    <div id="region-detail"></div>
+  </section>
+
+  <div id="workspace">
+    <div id="map-list-panel">
+      <div class="panel-header">
+        <span class="panel-title">Maps</span>
+        <input type="text" id="map-filter" class="map-filter-input" placeholder="Filter…">
+      </div>
+      <div id="map-list">
+        <div class="list-placeholder">Configure paths above to load maps.</div>
+      </div>
+    </div>
+
+    <div id="map-detail-panel">
+      <div id="map-detail-empty" class="detail-placeholder">
+        Select a map from the list to view its status.
+      </div>
+      <div id="map-detail-content" hidden>
+
+        <div class="detail-map-name" id="detail-map-name"></div>
+
+        <div class="detail-block">
+          <div class="detail-block-title">Validation</div>
+          <div id="detail-validation"></div>
+        </div>
+
+        <div class="detail-block">
+          <div class="detail-block-title">Pipeline Steps</div>
+          <div id="detail-steps"></div>
+        </div>
+
+        <div class="detail-actions" id="detail-actions"></div>
+
+        <div id="pipeline-console" hidden>
+          <div class="console-header">
+            <span class="console-title">Console</span>
+            <button id="console-clear-btn" class="console-clear-btn">Clear</button>
+          </div>
+          <div id="console-output" class="console-output"></div>
+        </div>
+
+        <div id="open-editor-wrap">
+          <a id="open-editor-btn" class="open-editor-btn" hidden>Open in Editor &#8594;</a>
+        </div>
+
+      </div>
+    </div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
-<script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='dashboard.js') }}"></script>
 </body>
 </html>
