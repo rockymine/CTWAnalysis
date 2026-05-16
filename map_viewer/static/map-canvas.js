@@ -84,6 +84,7 @@ export class MapCanvas {
   #woolLayerEl    = null;
   #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
   #drawLayerEl    = null;  // <g id="layer-draw"> for draw-tool preview
+  #addedNodes     = [];    // nodes added via addRegion() not yet in #groups; re-included on repaint
 
   // ── draw tool state ───────────────────────────────────────────────────────
   #activeTool  = null;  // null | "rectangle"
@@ -115,6 +116,7 @@ export class MapCanvas {
   render(ctx, groups) {
     this.#ctx    = ctx;
     this.#groups = groups;
+    this.#addedNodes = [];
     this.#selectedNode = null;
     this.#regionGroupMap.clear();
     this.#shapeMap.clear();
@@ -256,6 +258,8 @@ export class MapCanvas {
     this.#regionGroupMap.set(node.id, regionG);
     this.#nodeMap.set(node.id, node);
     this.#regionsLayerEl.appendChild(regionG);
+    // Track so #buildXmlRegions re-includes this node on any subsequent repaint
+    if (!this.#addedNodes.some(n => n.id === node.id)) this.#addedNodes.push(node);
   }
 
   /** Remove a region from the canvas entirely (called on delete). */
@@ -268,6 +272,7 @@ export class MapCanvas {
     this.#nodeMap.delete(id);
     this.#visibilityMap.delete(id);
     this.#currentSelectedIds.delete(id);
+    this.#addedNodes = this.#addedNodes.filter(n => n.id !== id);
     if (this.#selectedNode?.id === id) {
       this.#selectedNode = null;
       this.#updateOverlay();
@@ -309,7 +314,12 @@ export class MapCanvas {
   }
 
   resize() {
-    if (this.#ctx) this.#repaint();  // preserves current #scale / #panX / #panY
+    if (!this.#ctx) return;
+    const newW = this.#wrap.clientWidth  - 24;
+    const newH = this.#wrap.clientHeight - 24;
+    if (newW === +this.#svg.getAttribute('width') &&
+        newH === +this.#svg.getAttribute('height')) return;
+    this.#repaint();
   }
 
   /**
@@ -318,6 +328,7 @@ export class MapCanvas {
    */
   refreshRegions(groups) {
     this.#groups = groups;
+    this.#addedNodes = [];
     this.#selectedNode = null;
     this.#currentSelectedIds.clear();
     this.#visibilityMap.clear();
@@ -796,6 +807,15 @@ export class MapCanvas {
       this.#regionGroupMap.set(region.id, regionG);
       this.#nodeMap.set(region.id, region);
       g.appendChild(regionG);
+    }
+    // Re-include any nodes added via addRegion() that aren't already in #groups
+    for (const node of this.#addedNodes) {
+      if (!this.#regionGroupMap.has(node.id)) {
+        const regionG = this.#regionGroup(node);
+        this.#regionGroupMap.set(node.id, regionG);
+        this.#nodeMap.set(node.id, node);
+        g.appendChild(regionG);
+      }
     }
     return g;
   }
