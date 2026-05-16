@@ -9,7 +9,6 @@
 const TYPE_CLASS = {
   union: "type-union", negative: "type-negative", intersect: "type-intersect",
 };
-const CAT_COLOR = "#4a5568";
 
 function icon(iconData, size = 14) {
   return lucide.createElement(iconData, { width: size, height: size, "stroke-width": "1.5" });
@@ -50,9 +49,16 @@ export class RegionSidebar {
       return;
     }
 
-    for (const group of groups) {
+    const visibleGroups = groups.filter(g => g.regions.length > 0);
+    for (let i = 0; i < visibleGroups.length; i++) {
+      const group = visibleGroups[i];
       this.#listEl.appendChild(this.#categoryHeader(group));
       this.#appendTree(group.regions, this.#listEl, 0, null);
+      if (i < visibleGroups.length - 1) {
+        const divider = document.createElement("div");
+        divider.className = "cat-divider";
+        this.#listEl.appendChild(divider);
+      }
     }
   }
 
@@ -150,12 +156,7 @@ export class RegionSidebar {
   #categoryHeader(group) {
     const el = document.createElement("div");
     el.className = "cat-header";
-    el.style.color = CAT_COLOR;
-    const line = document.createElement("div");
-    line.className = "cat-header-line";
-    line.style.background = CAT_COLOR;
     el.appendChild(document.createTextNode(group.label));
-    el.appendChild(line);
     return el;
   }
 
