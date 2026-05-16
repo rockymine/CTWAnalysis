@@ -57,6 +57,10 @@ function nodeToXml(node, depth = 0) {
     return `${indent}<${t}${id}>${x},${y},${z}</${t}>`;
   }
 
+  if (t === "reference") {
+    return `${indent}<region id="${c.ref_id ?? "?"}"/>`;
+  }
+
   return attr
     ? `${indent}<${t}${id}${attr}/>`
     : `${indent}<${t}${id}/>`;

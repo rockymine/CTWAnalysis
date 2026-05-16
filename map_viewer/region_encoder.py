@@ -98,6 +98,8 @@ def _encode_coords(region: dict) -> dict | None:
     if region_type in ("block", "point"):
         pos = region.get("position") or {}
         return {"x": pos.get("x"), "y": pos.get("y"), "z": pos.get("z")}
+    if region_type == "reference":
+        return {"ref_id": region.get("ref_id", "")}
     return None
 
 
@@ -117,7 +119,12 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
 
     # Assign a synthetic id for anonymous nodes so they are selectable
     region_id = xml_id if xml_id else (f"{parent_id}__{index}" if parent_id else f"__anon_{index}")
-    label = xml_id if xml_id else f"[{region_type}]"
+    if xml_id:
+        label = xml_id
+    elif region_type == "reference":
+        label = f"→ {region.get('ref_id', '?')}"
+    else:
+        label = f"[{region_type}]"
 
     children = [
         _encode_node(child, parent_id=region_id, index=i)
@@ -229,6 +236,10 @@ def _region_to_xml(region: dict, indent: int = 0) -> str:
         pos = region.get("position") or {}
         coords = _fmt(pos.get("x"), pos.get("y"), pos.get("z"))
         return f"{pad}<{region_type}{id_attr}>{coords}</{region_type}>"
+
+    if region_type == "reference":
+        ref_id = region.get("ref_id", "")
+        return f'{pad}<region id="{ref_id}"/>'
 
     return f"{pad}<!-- unknown type: {region_type} -->"
 
