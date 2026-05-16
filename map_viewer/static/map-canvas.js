@@ -755,8 +755,8 @@ export class MapCanvas {
     dimEl.textContent = dimText;
     this.#overlayLayer.appendChild(dimEl);
 
-    // ── resize handles (rectangle / cuboid only, non-synthetic) ─────────────
-    if (!node.synthetic_id && RESIZABLE_TYPES.has(node.type)) {
+    // ── resize handles (rectangle / cuboid only) ────────────────────────────
+    if (RESIZABLE_TYPES.has(node.type)) {
       this.#renderHandles(node);
     }
   }

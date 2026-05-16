@@ -197,7 +197,7 @@ export class RegionDetail {
   #buildBounds(node) {
     // Snapshot the bounds at show-time so Escape can revert correctly.
     const origBounds = { ...node.bounds };
-    const editable   = !node.synthetic_id;  // synthetic nodes have no server-side id
+    const editable   = true;
 
     const section = document.createElement("div");
     section.className = "detail-section";

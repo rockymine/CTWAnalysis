@@ -102,6 +102,33 @@ def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
         _rename_in_children(child, old_id, new_id)
 
 
+def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
+    """Find a region by synthetic id, searching recursively through children.
+
+    Synthetic ids mirror region_encoder._encode_node logic:
+      named region   → its own xml id
+      anonymous child at index i of parent with sid P → f"{P}__{i}"
+    Returns the mutable child dict so the caller can update it in-place.
+    """
+    def _walk(region: dict, region_sid: str) -> dict | None:
+        for i, child in enumerate(region.get("children", [])):
+            child_xml_id = child.get("id", "")
+            child_sid = child_xml_id if child_xml_id else f"{region_sid}__{i}"
+            if child_sid == target_sid:
+                return child
+            result = _walk(child, child_sid)
+            if result is not None:
+                return result
+        return None
+
+    for rid, region in regions_dict.items():
+        region_sid = region.get("id", "") or rid
+        result = _walk(region, region_sid)
+        if result is not None:
+            return result
+    return None
+
+
 # ── Pipeline status helpers ────────────────────────────────────────────────
 
 _PIPELINE_STEPS = [
@@ -574,30 +601,36 @@ def create_app() -> Flask:
 
         data    = json.loads(data_path.read_text(encoding="utf-8"))
         regions = data.get("regions", {})
-        region  = regions.get(region_id)
-        if region is None:
-            return jsonify({"error": f"region {region_id!r} not found"}), 404
 
-        # ── optional id rename ────────────────────────────────────────────────
-        new_id = (body.get("id") or "").strip()
-        if new_id and new_id != region_id:
-            if new_id in regions:
-                return jsonify({"error": f"id {new_id!r} already in use"}), 409
-            regions[new_id] = regions.pop(region_id)
-            regions[new_id]["id"] = new_id
-            for cat_list in data.get("region_categories", {}).values():
-                for i, rid in enumerate(cat_list):
-                    if rid == region_id:
-                        cat_list[i] = new_id
-            for r in regions.values():
-                _rename_in_children(r, region_id, new_id)
-            for container_key in ("spawns", "wools"):
-                _rename_embedded_region(data.get(container_key, []), region_id, new_id)
-            obs = data.get("observer_spawn")
-            if obs:
-                _rename_embedded_region([obs], region_id, new_id)
-            region_id = new_id
-            region = regions[region_id]
+        # Top-level lookup first; fall back to recursive child search for synthetic ids.
+        region = regions.get(region_id)
+        is_top_level = region is not None
+        if not is_top_level:
+            region = _find_child_region(regions, region_id)
+            if region is None:
+                return jsonify({"error": f"region {region_id!r} not found"}), 404
+
+        # ── optional id rename (top-level named regions only) ─────────────────
+        if is_top_level:
+            new_id = (body.get("id") or "").strip()
+            if new_id and new_id != region_id:
+                if new_id in regions:
+                    return jsonify({"error": f"id {new_id!r} already in use"}), 409
+                regions[new_id] = regions.pop(region_id)
+                regions[new_id]["id"] = new_id
+                for cat_list in data.get("region_categories", {}).values():
+                    for i, rid in enumerate(cat_list):
+                        if rid == region_id:
+                            cat_list[i] = new_id
+                for r in regions.values():
+                    _rename_in_children(r, region_id, new_id)
+                for container_key in ("spawns", "wools"):
+                    _rename_embedded_region(data.get(container_key, []), region_id, new_id)
+                obs = data.get("observer_spawn")
+                if obs:
+                    _rename_embedded_region([obs], region_id, new_id)
+                region_id = new_id
+                region = regions[region_id]
 
         # ── optional bounds update ────────────────────────────────────────────
         if bounds:
@@ -606,11 +639,12 @@ def create_app() -> Flask:
                 "max": {"x": bounds["max_x"], "z": bounds["max_z"]},
             }
             region["bounds_2d"] = new_bounds_2d
-            _patch_embedded_region(data.get("spawns", []), region_id, new_bounds_2d)
-            _patch_embedded_region(data.get("wools", []), region_id, new_bounds_2d)
-            obs = data.get("observer_spawn")
-            if obs:
-                _patch_embedded_region([obs], region_id, new_bounds_2d)
+            if is_top_level:
+                _patch_embedded_region(data.get("spawns", []), region_id, new_bounds_2d)
+                _patch_embedded_region(data.get("wools", []), region_id, new_bounds_2d)
+                obs = data.get("observer_spawn")
+                if obs:
+                    _patch_embedded_region([obs], region_id, new_bounds_2d)
 
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
