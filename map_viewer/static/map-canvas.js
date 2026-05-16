@@ -48,6 +48,14 @@ const HANDLE_DEFS = [
 const COMPOSITE_TYPES  = new Set(["union", "intersect", "negative", "complement"]);
 const RESIZABLE_TYPES  = new Set(["rectangle", "cuboid"]);
 
+/** Return a darkened version of a hex color (factor 0–1 = how much to keep). */
+function darkenHex(hex, factor = 0.55) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgb(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)})`;
+}
+
 export class MapCanvas {
   #svg;
   #wrap;
@@ -606,7 +614,7 @@ export class MapCanvas {
       const color = TEAM_FILL_DEFAULT;
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
-        fill: color, stroke: color, "stroke-width": "1.2", "fill-rule": "evenodd",
+        fill: color, stroke: darkenHex(color), "stroke-width": "1.2", "fill-rule": "evenodd",
       }));
     }
     return g;
@@ -840,7 +848,7 @@ export class MapCanvas {
       const shape = svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
         fill: color, "fill-opacity": "0.20",
-        stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
       });
       g.appendChild(shape);
@@ -849,7 +857,7 @@ export class MapCanvas {
       const shape = svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
-        stroke: color, "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
       });
       g.appendChild(shape);
@@ -866,7 +874,7 @@ export class MapCanvas {
     }
     return svgEl("path", {
       d, fill: color, "fill-opacity": "0.12",
-      stroke: color, "stroke-width": "1.5", "stroke-dasharray": "6,3",
+      stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "6,3",
       "fill-rule": "evenodd", "vector-effect": "non-scaling-stroke",
     });
   }
