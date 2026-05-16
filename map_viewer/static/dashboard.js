@@ -31,7 +31,8 @@ const mapListEl         = document.getElementById("map-list");
 const mapFilterEl       = document.getElementById("map-filter");
 const mapDetailEmpty    = document.getElementById("map-detail-empty");
 const mapDetailContent  = document.getElementById("map-detail-content");
-const detailMapThumbnail = document.getElementById("detail-map-thumbnail");
+const detailMapThumbnail    = document.getElementById("detail-map-thumbnail");
+const detailMapPlaceholder  = document.getElementById("detail-map-placeholder");
 const detailMapName     = document.getElementById("detail-map-name");
 const detailValidation  = document.getElementById("detail-validation");
 const detailSteps       = document.getElementById("detail-steps");
@@ -134,13 +135,21 @@ async function selectMap(name) {
   showDetail();
   detailMapName.textContent = name.replace(/_/g, " ");
 
-  // Load thumbnail — hide if not found
+  // Load thumbnail — show placeholder if not found
   if (detailMapThumbnail) {
     detailMapThumbnail.hidden = true;
     detailMapThumbnail.src = "";
+    if (detailMapPlaceholder) detailMapPlaceholder.hidden = true;
     const img = new Image();
-    img.onload  = () => { detailMapThumbnail.src = img.src; detailMapThumbnail.hidden = false; };
-    img.onerror = () => { detailMapThumbnail.hidden = true; };
+    img.onload  = () => {
+      detailMapThumbnail.src = img.src;
+      detailMapThumbnail.hidden = false;
+      if (detailMapPlaceholder) detailMapPlaceholder.hidden = true;
+    };
+    img.onerror = () => {
+      detailMapThumbnail.hidden = true;
+      if (detailMapPlaceholder) detailMapPlaceholder.hidden = false;
+    };
     img.src = `/api/source-map/${encodeURIComponent(name)}/thumbnail`;
   }
 
@@ -254,21 +263,25 @@ function renderActions() {
   const status = state.pipelineStatus;
   const allDone = status && status.all_done;
 
+  const wrap = document.createElement("div");
+  wrap.className = "action-btn-wrap";
+
   const runBtn = document.createElement("button");
   runBtn.className = "action-btn action-btn--primary";
-  runBtn.textContent = allDone ? "Regenerate" : "Run Pipeline";
-  runBtn.title = allDone ? "Re-run all pipeline steps (force)" : "Run missing pipeline steps";
+  runBtn.textContent = allDone ? "Regenerate" : "Run";
   runBtn.addEventListener("click", () => runPipeline(allDone));
-  detailActions.appendChild(runBtn);
+  wrap.appendChild(runBtn);
 
-  if (allDone) {
-    const regenBtn = document.createElement("button");
-    regenBtn.className = "action-btn";
-    regenBtn.textContent = "Run (force all)";
-    regenBtn.title = "Regenerate all outputs even if already present";
-    regenBtn.addEventListener("click", () => runPipeline(true));
-    detailActions.appendChild(regenBtn);
+  const sub = document.createElement("div");
+  sub.className = "action-btn-sub";
+  if (allDone && status.last_updated) {
+    const d = new Date(status.last_updated * 1000);
+    sub.textContent = `Last run ${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+  } else if (!allDone) {
+    sub.textContent = "Required before opening in the editor";
   }
+  wrap.appendChild(sub);
+  detailActions.appendChild(wrap);
 }
 
 function renderOpenEditor() {

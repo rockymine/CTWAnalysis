@@ -239,10 +239,21 @@ def create_app() -> Flask:
 
     @app.route("/api/source-map/<name>/pipeline-status")
     def pipeline_status(name: str):
+        import time
         output_root = _get_output_root()
         out_dir = output_root / name
         steps = _check_pipeline_status(out_dir)
-        return jsonify({"steps": steps, "all_done": all(s["done"] for s in steps)})
+        all_done = all(s["done"] for s in steps)
+        last_updated: Optional[float] = None
+        if all_done:
+            mtimes = [
+                (out_dir / s["file"]).stat().st_mtime
+                for s in steps
+                if (out_dir / s["file"]).exists()
+            ]
+            if mtimes:
+                last_updated = max(mtimes)
+        return jsonify({"steps": steps, "all_done": all_done, "last_updated": last_updated})
 
     @app.route("/api/source-map/<name>/pipeline/run")
     def run_pipeline(name: str):

@@ -334,6 +334,8 @@ body {
   background: #1e3a5f; border-color: #3b82f6; color: #93c5fd;
 }
 .action-btn--primary:hover { background: #1d4ed8; color: #fff; }
+.action-btn-wrap { display: inline-flex; flex-direction: column; gap: 4px; }
+.action-btn-sub { font-size: 11px; color: #475569; }
 
 /* ── Main workspace ── */
 #dashboard {
@@ -397,11 +399,22 @@ body {
   display: flex; gap: 16px; align-items: flex-start;
 }
 .detail-main-col { flex: 1; min-width: 0; }
-.detail-map-thumbnail {
+.detail-side-col {
   width: 200px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.detail-map-thumbnail {
+  width: 200px;
   border-radius: 6px; border: 1px solid #334155;
   object-fit: cover;
 }
+.detail-map-placeholder {
+  width: 200px; height: 150px;
+  border-radius: 6px; border: 1px solid #334155;
+  display: flex; align-items: center; justify-content: center;
+  color: #475569; font-size: 12px;
+}
+.detail-map-placeholder[hidden] { display: none; }
 .detail-map-name {
   font-size: 18px; font-weight: 600; color: #e2e8f0;
   margin-bottom: 20px; text-transform: capitalize;
@@ -487,3 +500,4 @@ body {
   padding: 6px 16px;
 }
 .open-editor-btn:hover { background: #1d4ed8; color: #fff; }
+.open-editor-btn[hidden] { display: none; }
