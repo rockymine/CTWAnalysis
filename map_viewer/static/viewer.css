@@ -121,11 +121,7 @@ body {
 
 /* tree indent */
 .region-indent { flex-shrink: 0; display: flex; align-items: center; padding-left: 10px; }
-.indent-pipe   { display: inline-block; width: 18px; flex-shrink: 0; border-left: 1px solid; }
-.indent-elbow  {
-  display: inline-block; width: 18px; flex-shrink: 0;
-  font-size: 12px; color: #334155; line-height: 28px;
-}
+.indent-pipe   { display: inline-block; width: 18px; flex-shrink: 0; }
 
 /* coloured region dot */
 .region-dot {

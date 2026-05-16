@@ -52,7 +52,7 @@ export class RegionSidebar {
 
     for (const group of groups) {
       this.#listEl.appendChild(this.#categoryHeader(group));
-      this.#appendTree(group.regions, this.#listEl, 0, [], null);
+      this.#appendTree(group.regions, this.#listEl, 0, null);
     }
   }
 
@@ -159,24 +159,22 @@ export class RegionSidebar {
     return el;
   }
 
-  #appendTree(nodes, container, depth, isLast, parentId) {
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      const isLastChild = i === nodes.length - 1;
+  #appendTree(nodes, container, depth, parentId) {
+    for (const node of nodes) {
       this.#parentMap.set(node.id, parentId);
-      container.appendChild(this.#regionRow(node, depth, isLast, isLastChild));
+      container.appendChild(this.#regionRow(node, depth));
       if ((node.children || []).length > 0) {
-        this.#appendTree(node.children, container, depth + 1, [...isLast, isLastChild], node.id);
+        this.#appendTree(node.children, container, depth + 1, node.id);
       }
     }
   }
 
-  #regionRow(node, depth, isLast, isLastChild) {
+  #regionRow(node, depth) {
     const row = document.createElement("div");
     row.className = "region-row";
     row.dataset.regionId = node.id;
 
-    row.appendChild(this.#treeIndent(depth, isLast, isLastChild));
+    row.appendChild(this.#treeIndent(depth));
     row.appendChild(this.#chevronBtn(node));
     row.appendChild(this.#dot(node.color, node.synthetic_id));
     row.appendChild(this.#label(node));
@@ -234,20 +232,13 @@ export class RegionSidebar {
     return btn;
   }
 
-  #treeIndent(depth, isLast, isLastChild) {
+  #treeIndent(depth) {
     const wrap = document.createElement("div");
     wrap.className = "region-indent";
     for (let d = 0; d < depth; d++) {
       const pipe = document.createElement("span");
       pipe.className = "indent-pipe";
-      pipe.style.borderColor = isLast[d] ? "transparent" : "#2d4263";
       wrap.appendChild(pipe);
-    }
-    if (depth > 0) {
-      const elbow = document.createElement("span");
-      elbow.className = "indent-elbow";
-      elbow.textContent = isLastChild ? "└" : "├";
-      wrap.appendChild(elbow);
     }
     return wrap;
   }
