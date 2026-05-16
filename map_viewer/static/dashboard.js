@@ -31,6 +31,7 @@ const mapListEl         = document.getElementById("map-list");
 const mapFilterEl       = document.getElementById("map-filter");
 const mapDetailEmpty    = document.getElementById("map-detail-empty");
 const mapDetailContent  = document.getElementById("map-detail-content");
+const detailMapThumbnail = document.getElementById("detail-map-thumbnail");
 const detailMapName     = document.getElementById("detail-map-name");
 const detailValidation  = document.getElementById("detail-validation");
 const detailSteps       = document.getElementById("detail-steps");
@@ -132,6 +133,16 @@ async function selectMap(name) {
   renderMapList();
   showDetail();
   detailMapName.textContent = name.replace(/_/g, " ");
+
+  // Load thumbnail — hide if not found
+  if (detailMapThumbnail) {
+    detailMapThumbnail.hidden = true;
+    detailMapThumbnail.src = "";
+    const img = new Image();
+    img.onload  = () => { detailMapThumbnail.src = img.src; detailMapThumbnail.hidden = false; };
+    img.onerror = () => { detailMapThumbnail.hidden = true; };
+    img.src = `/api/source-map/${encodeURIComponent(name)}/thumbnail`;
+  }
 
   // Load validation and pipeline status in parallel
   try {

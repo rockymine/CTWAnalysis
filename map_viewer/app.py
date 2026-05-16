@@ -223,6 +223,20 @@ def create_app() -> Flask:
 
         return jsonify({"valid": len(issues) == 0, "issues": issues})
 
+    @app.route("/api/source-map/<name>/thumbnail")
+    def source_map_thumbnail(name: str):
+        from flask import send_file
+        config = _load_config()
+        maps_folder = Path(config.get("maps_folder", "").strip())
+        candidates = [
+            maps_folder / name / "map.png",
+            _get_output_root() / name / "map.png",
+        ]
+        for path in candidates:
+            if path.exists():
+                return send_file(path, mimetype="image/png")
+        abort(404)
+
     @app.route("/api/source-map/<name>/pipeline-status")
     def pipeline_status(name: str):
         output_root = _get_output_root()

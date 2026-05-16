@@ -393,6 +393,15 @@ body {
 .detail-placeholder {
   color: #475569; font-size: 13px; padding: 8px 0;
 }
+.detail-main-row {
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.detail-main-col { flex: 1; min-width: 0; }
+.detail-map-thumbnail {
+  width: 200px; flex-shrink: 0;
+  border-radius: 6px; border: 1px solid #334155;
+  object-fit: cover;
+}
 .detail-map-name {
   font-size: 18px; font-weight: 600; color: #e2e8f0;
   margin-bottom: 20px; text-transform: capitalize;

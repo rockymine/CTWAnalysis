@@ -49,19 +49,29 @@
       </div>
       <div id="map-detail-content" hidden>
 
-        <div class="detail-map-name" id="detail-map-name"></div>
+        <div class="detail-main-row">
+          <div class="detail-main-col">
+            <div class="detail-map-name" id="detail-map-name"></div>
 
-        <div class="detail-block">
-          <div class="detail-block-title">Validation</div>
-          <div id="detail-validation"></div>
+            <div class="detail-block">
+              <div class="detail-block-title">Validation</div>
+              <div id="detail-validation"></div>
+            </div>
+
+            <div class="detail-block">
+              <div class="detail-block-title">Pipeline Steps</div>
+              <div id="detail-steps"></div>
+            </div>
+
+            <div class="detail-actions" id="detail-actions"></div>
+
+            <div id="open-editor-wrap">
+              <a id="open-editor-btn" class="open-editor-btn" hidden>Open in Editor &#8594;</a>
+            </div>
+          </div>
+
+          <img id="detail-map-thumbnail" class="detail-map-thumbnail" hidden alt="">
         </div>
-
-        <div class="detail-block">
-          <div class="detail-block-title">Pipeline Steps</div>
-          <div id="detail-steps"></div>
-        </div>
-
-        <div class="detail-actions" id="detail-actions"></div>
 
         <div id="pipeline-console" hidden>
           <div class="console-header">
@@ -69,10 +79,6 @@
             <button id="console-clear-btn" class="console-clear-btn">Clear</button>
           </div>
           <div id="console-output" class="console-output"></div>
-        </div>
-
-        <div id="open-editor-wrap">
-          <a id="open-editor-btn" class="open-editor-btn" hidden>Open in Editor &#8594;</a>
         </div>
 
       </div>
