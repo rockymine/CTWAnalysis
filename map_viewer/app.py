@@ -652,3 +652,26 @@ def create_app() -> Flask:
         return jsonify({"ok": True})
 
     return app
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="CTW map viewer server")
+    parser.add_argument("--port", type=int, default=7891)
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    wz_log = logging.getLogger("werkzeug")
+    wz_log.setLevel(logging.INFO)
+
+    app = create_app()
+    url = f"http://localhost:{args.port}"
+    print(f"Map viewer running at {url}", flush=True)
+
+    if not args.no_browser:
+        import webbrowser
+        webbrowser.open(url)
+
+    app.run(host="127.0.0.1", port=args.port, debug=False)
