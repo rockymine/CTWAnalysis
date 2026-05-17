@@ -12,8 +12,47 @@ class Team:
     id: str
     color: str
     max_players: int = 0
+    min_players: int = 0
     name: str = ""
     dye_color: str = ""
+
+
+@dataclass
+class Author:
+    """Author or contributor entry from <authors> block."""
+    uuid: str = ""
+    role: str = "author"          # "author" | "contributor"
+    contribution: str = ""        # optional contribution note, e.g. "xml"
+
+
+@dataclass
+class KitItem:
+    """A single inventory item slot within a kit."""
+    slot: int = 0
+    material: str = ""
+    amount: int = 1
+    item_damage: int = 0
+    unbreakable: bool = False
+    team_color: bool = False
+    enchantments: str = ""        # comma-joined "name:level" pairs, e.g. "sharpness:2,fire_aspect:1"
+
+
+@dataclass
+class KitArmor:
+    """A single armor slot within a kit."""
+    slot_name: str = ""           # helmet | chestplate | leggings | boots
+    material: str = ""
+    unbreakable: bool = False
+    team_color: bool = False
+    enchantments: str = ""
+
+
+@dataclass
+class Kit:
+    """A kit definition parsed from a <kit> element."""
+    id: str = ""
+    items: list[KitItem] = field(default_factory=list)
+    armor: list[KitArmor] = field(default_factory=list)
 
 
 @dataclass
@@ -51,7 +90,10 @@ class MapData:
     """Complete map data."""
     name: str = ""
     version: str = ""
+    game_mode: str = ""
     objective: str = ""
+    authors: list[Author] = field(default_factory=list)
+    kits: list[Kit] = field(default_factory=list)
     teams: list[Team] = field(default_factory=list)
     spawns: list[Spawn] = field(default_factory=list)
     observer_spawn: Optional[Spawn] = None

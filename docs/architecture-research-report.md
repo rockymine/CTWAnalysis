@@ -423,10 +423,10 @@ New file: `map_viewer/static/workspace-overview.js`
 ## 10. Open Questions (Unresolved)
 
 **Q1: Authors in map_data.json vs. original XML round-trip**
-Should authors be parsed into map_data.json (name-only, no Mojang lookup) or written directly to generated map.xml during export, bypassing map_data.json?
+DECIDED: Parse from `<authors>` XML into map_data.json as name + role + optional UUID. No Mojang lookup. Fits the pipeline pattern and makes authors editable via the authoring UI.
 
 **Q2: Filter parsing depth for Phase 0**
-Options: (a) only named block filters — the most common CTW case; (b) raw XML strings stored verbatim (safest, deferring structured parsing); (c) full filter AST. Option (b) is recommended to start.
+DECIDED: Defer entirely — full filter AST will be built in the Rules/Apply phase (Phase 8). Phase 0 leaves `ApplyRule.block_filter` etc. as string IDs. No filter model added to MapData yet.
 
 **Q6: Remember last opened map across sessions**
 Should config.json remember the last selected map, or keep the stateless pick-every-time approach?
