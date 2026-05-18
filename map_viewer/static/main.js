@@ -18,8 +18,9 @@
 import { MapCanvas }      from "./map-canvas.js";
 import { RegionSidebar }  from "./region-sidebar.js";
 import { RegionRegistry } from "./region-registry.js";
-import { RegionDetail }   from "./region-detail.js";
-import * as api           from "./api.js";
+import { RegionDetail }          from "./region-detail.js";
+import { deriveBoundsFromCoords } from "./region-types.js";
+import * as api                   from "./api.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
 
@@ -107,8 +108,10 @@ let currentMap = null;
 const detail = new RegionDetail(
   document.getElementById("region-detail"),
   {
-    onBoundsChange: (node, bounds) => handleBoundsChange(node, bounds),
-    onBoundsSave:   (node, bounds) => handleBoundsSave(node, bounds),
+    onBoundsChange:  (node, bounds) => handleBoundsChange(node, bounds),
+    onBoundsSave:    (node, bounds) => handleBoundsSave(node, bounds),
+    onCoordsChange:  (node, coords) => handleCoordsChange(node, coords),
+    onCoordsSave:    (node, coords) => handleCoordsSave(node, coords),
     onIdChange: (node, oldId, newId) => {
       registry.renameNode(oldId, newId);
       sidebar.renameNode(oldId, newId);
@@ -300,6 +303,30 @@ function handleBoundsSave(node, bounds) {
   api.patchRegion(currentMap, node.id, bounds).catch((err) => {
     console.error("Region save failed:", err);
   });
+}
+
+function handleCoordsChange(node, coords) {
+  const newBounds = deriveBoundsFromCoords(node.type, coords);
+  if (newBounds) {
+    node.bounds = newBounds;
+    canvas.updateRegionBounds(node, newBounds);
+    detail.updateXmlPreview(node);
+    for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
+      canvas.updateRegionBounds(ancestor, ancestor.bounds);
+    }
+  }
+}
+
+function handleCoordsSave(node, coords) {
+  if (!currentMap) return;
+  api.updateRegionCoords(currentMap, node.id, coords)
+    .then(res => {
+      if (res.bounds) {
+        node.bounds = res.bounds;
+        canvas.updateRegionBounds(node, res.bounds);
+      }
+    })
+    .catch(err => console.error("Coord save failed:", err));
 }
 
 // ── region grouping ────────────────────────────────────────────────────────

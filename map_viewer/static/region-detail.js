@@ -1,5 +1,75 @@
 import { typeIcon } from "./region-types.js";
 
+// ── geometry schema ──────────────────────────────────────────────────────────
+
+function fmt(v) {
+  if (v == null) return "?";
+  return (typeof v === "number" && !Number.isInteger(v)) ? v.toFixed(2) : String(v);
+}
+
+// Maps type → [{label, coordKey, display}, ...]
+// coordKey: key in node.coords to read/write (null = read-only derived field).
+// display: getter for the display value (used for read-only rows).
+// rectangle X/Z handled separately via #buildBounds; cuboid X/Z also via #buildBounds.
+// composite types have no geometry — only a children list.
+const Y   = { min: 0, max: 256 };
+const R   = { min: 0 };
+const H   = { min: 0 };
+
+const GEOMETRY_SCHEMA = {
+  cuboid:    [
+    { label: "Y min",    coordKey: "min_y",    display: n => fmt(n.coords?.min_y),    ...Y },
+    { label: "Y max",    coordKey: "max_y",    display: n => fmt(n.coords?.max_y),    ...Y },
+  ],
+  cylinder:  [
+    { label: "base x",   coordKey: "base_x",   display: n => fmt(n.coords?.base_x) },
+    { label: "base y",   coordKey: "base_y",   display: n => fmt(n.coords?.base_y),   ...Y },
+    { label: "base z",   coordKey: "base_z",   display: n => fmt(n.coords?.base_z) },
+    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
+    { label: "height",   coordKey: "height",   display: n => fmt(n.coords?.height),   ...H },
+  ],
+  circle:    [
+    { label: "center x", coordKey: "center_x", display: n => fmt(n.coords?.center_x) },
+    { label: "center z", coordKey: "center_z", display: n => fmt(n.coords?.center_z) },
+    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
+  ],
+  sphere:    [
+    { label: "origin x", coordKey: "origin_x", display: n => fmt(n.coords?.origin_x) },
+    { label: "origin y", coordKey: "origin_y", display: n => fmt(n.coords?.origin_y), ...Y },
+    { label: "origin z", coordKey: "origin_z", display: n => fmt(n.coords?.origin_z) },
+    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
+  ],
+  block:     [
+    { label: "x",        coordKey: "x",        display: n => fmt(n.coords?.x) },
+    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
+    { label: "z",        coordKey: "z",        display: n => fmt(n.coords?.z) },
+  ],
+  point:     [
+    { label: "x",        coordKey: "x",        display: n => fmt(n.coords?.x) },
+    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
+    { label: "z",        coordKey: "z",        display: n => fmt(n.coords?.z) },
+  ],
+  reference: [
+    { label: "ref",      coordKey: null,       display: n => n.coords?.ref_id ?? "?" },
+  ],
+  mirror:    [
+    { label: "origin x", coordKey: null,       display: n => fmt(n.coords?.origin_x) },
+    { label: "origin y", coordKey: null,       display: n => fmt(n.coords?.origin_y) },
+    { label: "origin z", coordKey: null,       display: n => fmt(n.coords?.origin_z) },
+    { label: "normal x", coordKey: null,       display: n => fmt(n.coords?.normal_x) },
+    { label: "normal y", coordKey: null,       display: n => fmt(n.coords?.normal_y) },
+    { label: "normal z", coordKey: null,       display: n => fmt(n.coords?.normal_z) },
+  ],
+  translate: [
+    { label: "offset x", coordKey: null,       display: n => fmt(n.coords?.offset_x) },
+    { label: "offset y", coordKey: null,       display: n => fmt(n.coords?.offset_y) },
+    { label: "offset z", coordKey: null,       display: n => fmt(n.coords?.offset_z) },
+  ],
+  above:     [
+    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
+  ],
+};
+
 /**
  * RegionDetail — owns the inspector panel.
  *
@@ -9,6 +79,8 @@ import { typeIcon } from "./region-types.js";
  * Callbacks injected at construction:
  *   onBoundsChange(node, bounds)  — fired on every keystroke for live canvas preview
  *   onBoundsSave(node, bounds)    — fired on blur / Enter to persist to server
+ *   onCoordsChange(node, coords)  — fired on every keystroke for geometry fields
+ *   onCoordsSave(node, coords)    — fired on blur / Enter to persist to server
  */
 
 /**
@@ -90,8 +162,18 @@ export class RegionDetail {
     this.#headerLabelEl = null;
     this.#el.appendChild(this.#buildHeader(node));
     this.#el.appendChild(this.#buildFields(node));
-    const isComposite = RegionDetail.#COMPOSITE_TYPES.has(node.type);
-    if (node.bounds && !isComposite) this.#el.appendChild(this.#buildBounds(node));
+
+    if (node.type === "rectangle" && node.bounds) {
+      this.#el.appendChild(this.#buildBounds(node));
+    } else if (node.type === "cuboid") {
+      if (node.bounds) this.#el.appendChild(this.#buildBounds(node));
+      this.#el.appendChild(this.#buildGeometry(node));
+    } else if (node.type === "everywhere") {
+      this.#el.appendChild(this.#buildNote("Matches every location — no geometry to display."));
+    } else if (GEOMETRY_SCHEMA[node.type]) {
+      this.#el.appendChild(this.#buildGeometry(node));
+    }
+
     if ((node.children || []).length > 0) this.#el.appendChild(this.#buildChildren(node.children));
     this.#el.appendChild(this.#buildXmlPreview(node));
   }
@@ -189,6 +271,97 @@ export class RegionDetail {
     row.appendChild(keyEl);
     row.appendChild(input);
     return row;
+  }
+
+  #buildGeometry(node) {
+    const schema = GEOMETRY_SCHEMA[node.type];
+    const origCoords = { ...node.coords };
+    const section = document.createElement("div");
+    section.className = "detail-section";
+
+    const hasEditable = schema.some(e => e.coordKey != null);
+    const heading = document.createElement("div");
+    heading.className = "detail-section-label";
+    heading.textContent = hasEditable ? "geometry  (enter to save · esc to revert)" : "geometry";
+    section.appendChild(heading);
+
+    for (const { label, coordKey, display, min, max } of schema) {
+      const row = document.createElement("div");
+      row.className = "detail-field-row";
+      const keyEl = document.createElement("span");
+      keyEl.className = "detail-field-key";
+      keyEl.textContent = label;
+      row.appendChild(keyEl);
+      if (coordKey != null) {
+        row.appendChild(this.#makeCoordInput(coordKey, node, origCoords, { min, max }));
+      } else {
+        const valEl = document.createElement("span");
+        valEl.className = "detail-field-val";
+        valEl.textContent = display(node);
+        row.appendChild(valEl);
+      }
+      section.appendChild(row);
+    }
+    return section;
+  }
+
+  #makeCoordInput(coordKey, node, origCoords, { min, max } = {}) {
+    const clamp = (v) => {
+      if (min != null && v < min) return min;
+      if (max != null && v > max) return max;
+      return v;
+    };
+
+    const input = document.createElement("input");
+    input.type      = "number";
+    input.step      = "any";
+    input.value     = node.coords[coordKey] ?? "";
+    input.className = "detail-bounds-input";
+    if (min != null) input.min = min;
+    if (max != null) input.max = max;
+
+    input.addEventListener("input", () => {
+      let val = parseFloat(input.value);
+      if (!isNaN(val)) {
+        val = clamp(val);
+        node.coords[coordKey] = val;
+        this.updateXmlPreview(node);
+        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
+      }
+    });
+
+    input.addEventListener("blur", () => {
+      let val = parseFloat(input.value);
+      if (isNaN(val)) {
+        input.value = node.coords[coordKey] ?? "";
+      } else {
+        val = clamp(val);
+        input.value = val;
+        node.coords[coordKey] = val;
+        if (this.#callbacks.onCoordsSave) this.#callbacks.onCoordsSave(node, node.coords);
+      }
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        node.coords[coordKey] = origCoords[coordKey];
+        input.value = origCoords[coordKey] ?? "";
+        this.updateXmlPreview(node);
+        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
+      }
+    });
+
+    return input;
+  }
+
+  #buildNote(text) {
+    const el = document.createElement("div");
+    el.className = "detail-empty";
+    el.style.marginBottom = "10px";
+    el.textContent = text;
+    return el;
   }
 
   #buildBounds(node) {

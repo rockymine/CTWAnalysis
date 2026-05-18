@@ -249,7 +249,7 @@ body {
 }
 
 .detail-field-row { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
-.detail-field-key { color: var(--text-muted); flex: 0 0 62px; }
+.detail-field-key { color: var(--text-muted); flex: 0 0 72px; }
 .detail-field-val {
   color: var(--text-secondary); flex: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

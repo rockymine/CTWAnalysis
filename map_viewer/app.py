@@ -143,6 +143,94 @@ def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
     return None
 
 
+def _apply_coord_update(region: dict, region_type: str, coords: dict) -> dict | None:
+    """Update raw geometry fields on *region* from *coords* and recompute bounds_2d.
+
+    Returns the new bounds_2d dict, or None if the type has no 2D footprint change
+    (cuboid Y-only edits, above).
+    """
+    def _bounds(min_x: float, min_z: float, max_x: float, max_z: float) -> dict:
+        return {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
+
+    if region_type == "cuboid":
+        if "min_y" in coords:
+            region["min_y"] = coords["min_y"]
+        if "max_y" in coords:
+            region["max_y"] = coords["max_y"]
+        return None  # only Y changed; 2D bounds stay the same
+
+    if region_type == "cylinder":
+        if "base_x" in coords:
+            region.setdefault("base", {})["x"] = coords["base_x"]
+        if "base_y" in coords:
+            region.setdefault("base", {})["y"] = coords["base_y"]
+        if "base_z" in coords:
+            region.setdefault("base", {})["z"] = coords["base_z"]
+        if "radius" in coords:
+            region["radius"] = coords["radius"]
+        if "height" in coords:
+            region["height"] = coords["height"]
+        base = region.get("base", {})
+        bx, bz = base.get("x", 0), base.get("z", 0)
+        r = float(region.get("radius", 0))
+        new_bounds = _bounds(bx - r, bz - r, bx + r, bz + r)
+        region["bounds_2d"] = new_bounds
+        return new_bounds
+
+    if region_type == "circle":
+        if "center_x" in coords:
+            region.setdefault("center", {})["x"] = coords["center_x"]
+        if "center_z" in coords:
+            region.setdefault("center", {})["z"] = coords["center_z"]
+        if "radius" in coords:
+            region["radius"] = coords["radius"]
+        center = region.get("center", {})
+        cx, cz = center.get("x", 0), center.get("z", 0)
+        r = float(region.get("radius", 0))
+        new_bounds = _bounds(cx - r, cz - r, cx + r, cz + r)
+        region["bounds_2d"] = new_bounds
+        return new_bounds
+
+    if region_type == "sphere":
+        if "origin_x" in coords:
+            region.setdefault("origin", {})["x"] = coords["origin_x"]
+        if "origin_y" in coords:
+            region.setdefault("origin", {})["y"] = coords["origin_y"]
+        if "origin_z" in coords:
+            region.setdefault("origin", {})["z"] = coords["origin_z"]
+        if "radius" in coords:
+            region["radius"] = coords["radius"]
+        origin = region.get("origin", {})
+        ox, oz = origin.get("x", 0), origin.get("z", 0)
+        r = float(region.get("radius", 0))
+        new_bounds = _bounds(ox - r, oz - r, ox + r, oz + r)
+        region["bounds_2d"] = new_bounds
+        return new_bounds
+
+    if region_type in ("block", "point"):
+        pos = region.setdefault("position", {})
+        if "x" in coords:
+            pos["x"] = coords["x"]
+        if "y" in coords:
+            pos["y"] = coords["y"]
+        if "z" in coords:
+            pos["z"] = coords["z"]
+        px, pz = pos.get("x", 0), pos.get("z", 0)
+        if region_type == "block":
+            new_bounds = _bounds(px, pz, px + 1, pz + 1)
+        else:
+            new_bounds = _bounds(px - 0.5, pz - 0.5, px + 0.5, pz + 0.5)
+        region["bounds_2d"] = new_bounds
+        return new_bounds
+
+    if region_type == "above":
+        if "y" in coords:
+            region["y"] = coords["y"]
+        return None  # above has no 2D footprint
+
+    return None
+
+
 # ── Pipeline status helpers ────────────────────────────────────────────────
 
 _PIPELINE_STEPS = [
@@ -689,8 +777,9 @@ def create_app() -> Flask:
     def patch_region(name: str, region_id: str) -> tuple:
         body   = request.get_json(silent=True) or {}
         bounds = body.get("bounds") if isinstance(body.get("bounds"), dict) else None
-        if not body.get("id") and bounds is None:
-            return jsonify({"error": "provide 'id' or 'bounds'"}), 400
+        coords = body.get("coords") if isinstance(body.get("coords"), dict) else None
+        if not body.get("id") and bounds is None and coords is None:
+            return jsonify({"error": "provide 'id', 'bounds', or 'coords'"}), 400
 
         data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
@@ -730,23 +819,42 @@ def create_app() -> Flask:
                 region = regions[region_id]
 
         # ── optional bounds update ────────────────────────────────────────────
+        updated_bounds_2d = None
         if bounds:
-            new_bounds_2d = {
+            updated_bounds_2d = {
                 "min": {"x": bounds["min_x"], "z": bounds["min_z"]},
                 "max": {"x": bounds["max_x"], "z": bounds["max_z"]},
             }
-            region["bounds_2d"] = new_bounds_2d
+            region["bounds_2d"] = updated_bounds_2d
             if is_top_level:
-                _patch_embedded_region(data.get("spawns", []), region_id, new_bounds_2d)
-                _patch_embedded_region(data.get("wools", []), region_id, new_bounds_2d)
+                _patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
+                _patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
                 obs = data.get("observer_spawn")
                 if obs:
-                    _patch_embedded_region([obs], region_id, new_bounds_2d)
+                    _patch_embedded_region([obs], region_id, updated_bounds_2d)
+
+        # ── optional coords update ────────────────────────────────────────────
+        if coords:
+            region_type = region.get("type", "")
+            updated_bounds_2d = _apply_coord_update(region, region_type, coords)
+            if updated_bounds_2d and is_top_level:
+                _patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
+                _patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
+                obs = data.get("observer_spawn")
+                if obs:
+                    _patch_embedded_region([obs], region_id, updated_bounds_2d)
 
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        return jsonify({"ok": True})
+        response: dict = {"ok": True}
+        if updated_bounds_2d:
+            b = updated_bounds_2d
+            response["bounds"] = {
+                "min_x": b["min"]["x"], "min_z": b["min"]["z"],
+                "max_x": b["max"]["x"], "max_z": b["max"]["z"],
+            }
+        return jsonify(response)
 
     return app
 

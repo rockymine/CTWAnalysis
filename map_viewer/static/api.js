@@ -111,6 +111,19 @@ export async function patchRegion(mapName, regionId, bounds) {
   return r.json();
 }
 
+export async function updateRegionCoords(mapName, regionId, coords) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coords }),
+    },
+  );
+  if (!r.ok) throw new Error(`Coord save failed (${r.status})`);
+  return r.json();
+}
+
 export async function fetchTopSurface(mapName) {
   const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/layers/top-surface`);
   if (!r.ok) throw new Error(`Failed to load top-surface layer (${r.status})`);
