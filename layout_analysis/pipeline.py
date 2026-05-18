@@ -18,6 +18,40 @@ from .map_layout_config import MapLayoutConfig
 logger = logging.getLogger('ctw')
 
 
+def _open_region_reader(map_folder: Path) -> Optional[RegionReader]:
+    region_folder = map_folder / 'region'
+    if not region_folder.exists():
+        logger.warning(f"  No region folder found at {region_folder}")
+        return None
+    return RegionReader(str(region_folder))
+
+
+def _extract_features(
+    reader: RegionReader,
+    parquet_files: dict,
+    force_rerun: bool,
+) -> None:
+    if 'resource_blocks' in parquet_files:
+        rb_path = parquet_files['resource_blocks']
+        if not rb_path.exists() or force_rerun:
+            logger.debug("  Extracting resource blocks...")
+            df = ResourceBlockExtractor(reader).extract()
+            df.to_parquet(rb_path)
+            logger.debug(f"    Saved {rb_path.name} ({len(df)} blocks)")
+
+    if 'chest_contents' in parquet_files:
+        cc_path = parquet_files['chest_contents']
+        if not cc_path.exists() or force_rerun:
+            logger.debug("  Extracting chest contents...")
+            df = ChestExtractor(reader).extract()
+            df.to_parquet(cc_path)
+            unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
+            logger.debug(
+                f"    Saved {cc_path.name} "
+                f"({len(unique_chests)} chests, {len(df)} item slots)"
+            )
+
+
 def analyze_layout(
     map_folder: Path,
     force_rerun: bool = False,
@@ -120,16 +154,11 @@ def analyze_layout(
             logger.debug(f"    {path.name}")
         return parquet_files
 
-    # Find region folder
-    region_folder = map_folder / 'region'
-    if not region_folder.exists():
-        logger.warning(f"  No region folder found at {region_folder}")
+    reader = _open_region_reader(map_folder)
+    if reader is None:
         return None
 
-    logger.debug(f"  Extracting layout from: {region_folder}")
-
-    # Initialize reader
-    reader = RegionReader(str(region_folder))
+    logger.debug(f"  Extracting layout from: {map_folder / 'region'}")
 
     # Extract Y=0 layer
     if 'y0_layer' in parquet_files:
@@ -179,30 +208,7 @@ def analyze_layout(
             df.to_parquet(parquet_files['lowest_solid'])
             logger.debug(f"    Saved {parquet_files['lowest_solid'].name} ({len(df)} blocks)")
 
-    # Extract resource blocks (iron, gold, diamond blocks at all Y levels)
-    if 'resource_blocks' in parquet_files:
-        if not parquet_files['resource_blocks'].exists() or force_rerun:
-            logger.debug("  Extracting resource blocks...")
-            extractor = ResourceBlockExtractor(reader)
-            df = extractor.extract()
-            df.to_parquet(parquet_files['resource_blocks'])
-            logger.debug(
-                f"    Saved {parquet_files['resource_blocks'].name} ({len(df)} blocks)"
-            )
-
-    # Extract chest contents (tile entities)
-    if 'chest_contents' in parquet_files:
-        if not parquet_files['chest_contents'].exists() or force_rerun:
-            logger.debug("  Extracting chest contents...")
-            extractor = ChestExtractor(reader)
-            df = extractor.extract()
-            df.to_parquet(parquet_files['chest_contents'])
-            unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
-            logger.debug(
-                f"    Saved {parquet_files['chest_contents'].name} "
-                f"({len(unique_chests)} chests, {len(df)} item slots)"
-            )
-
+    _extract_features(reader, parquet_files, force_rerun)
     return parquet_files
 
 
@@ -247,13 +253,11 @@ def _analyze_layout_configured(
             logger.debug(f"    {path.name}")
         return parquet_files
 
-    region_folder = map_folder / 'region'
-    if not region_folder.exists():
-        logger.warning(f"  No region folder found at {region_folder}")
+    reader = _open_region_reader(map_folder)
+    if reader is None:
         return None
 
-    logger.debug(f"  Extracting layout from: {region_folder} (layer={layer}, exclude={exclude})")
-    reader = RegionReader(str(region_folder))
+    logger.debug(f"  Extracting layout from: {map_folder / 'region'} (layer={layer}, exclude={exclude})")
 
     # --- Y=0 layer (always, unfiltered — needed for block-36 build-region detection) ---
     if not y0_path.exists() or force_rerun:
@@ -310,24 +314,5 @@ def _analyze_layout_configured(
         logger.debug(f"    Saved {top_surface_path.name} ({len(df)} blocks)")
 
     # --- Feature extractors ---
-    if 'resource_blocks' in parquet_files:
-        rb_path = parquet_files['resource_blocks']
-        if not rb_path.exists() or force_rerun:
-            logger.debug("  Extracting resource blocks...")
-            df = ResourceBlockExtractor(reader).extract()
-            df.to_parquet(rb_path)
-            logger.debug(f"    Saved {rb_path.name} ({len(df)} blocks)")
-
-    if 'chest_contents' in parquet_files:
-        cc_path = parquet_files['chest_contents']
-        if not cc_path.exists() or force_rerun:
-            logger.debug("  Extracting chest contents...")
-            df = ChestExtractor(reader).extract()
-            df.to_parquet(cc_path)
-            unique_chests = df[['world_x', 'world_z', 'y']].drop_duplicates()
-            logger.debug(
-                f"    Saved {cc_path.name} "
-                f"({len(unique_chests)} chests, {len(df)} item slots)"
-            )
-
+    _extract_features(reader, parquet_files, force_rerun)
     return parquet_files
