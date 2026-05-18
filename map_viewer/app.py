@@ -30,6 +30,20 @@ from flask import Flask, Response, jsonify, abort, render_template, request, str
 from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
 from common.visualization.block_colors import block_color
 
+
+class _QueueLogHandler(logging.Handler):
+    """Forwards ctw logger records into the SSE event queue during a pipeline run."""
+
+    def __init__(self, send_fn):
+        super().__init__()
+        self._send = send_fn
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._send("log", {"message": self.format(record), "level": record.levelname.lower()})
+        except Exception:
+            self.handleError(record)
+
 _DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -279,6 +293,7 @@ def create_app() -> Flask:
                 event_queue.put(msg)
 
             def pipeline_thread() -> None:
+                _log_handler: Optional[_QueueLogHandler] = None
                 try:
                     import traceback
                     from ctw.log import setup_map_file_logging
@@ -289,6 +304,11 @@ def create_app() -> Flask:
 
                     map_output_dir.mkdir(parents=True, exist_ok=True)
                     setup_map_file_logging(map_output_dir)
+
+                    _log_handler = _QueueLogHandler(send)
+                    _log_handler.setLevel(logging.DEBUG)
+                    _log_handler.setFormatter(logging.Formatter('%(message)s'))
+                    logging.getLogger('ctw').addHandler(_log_handler)
 
                     map_layout_cfg = get_map_layout(name)
 
@@ -410,6 +430,8 @@ def create_app() -> Flask:
                     send("error", {"message": f"Unexpected error: {exc}",
                                    "detail": _tb.format_exc()})
                 finally:
+                    if _log_handler is not None:
+                        logging.getLogger('ctw').removeHandler(_log_handler)
                     event_queue.put(None)  # sentinel
 
             thread = threading.Thread(target=pipeline_thread, daemon=True)

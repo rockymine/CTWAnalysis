@@ -349,6 +349,11 @@ async function runPipeline(force = false) {
     finalizePipeline();
   });
 
+  eventSource.addEventListener("log", (e) => {
+    const data = JSON.parse(e.data);
+    appendConsole(data.message, data.level === "warning" ? "warning" : "info");
+  });
+
   eventSource.addEventListener("skipped", (e) => {
     const data = JSON.parse(e.data);
     appendConsole(`Skipped: ${data.reason}`, "warning");
