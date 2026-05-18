@@ -1,3 +1,5 @@
+import { typeIcon } from "./region-types.js";
+
 /**
  * RegionDetail — owns the inspector panel.
  *
@@ -119,11 +121,6 @@ export class RegionDetail {
     const row = document.createElement("div");
     row.className = "detail-header";
 
-    const dot = document.createElement("div");
-    dot.className = node.synthetic_id ? "detail-dot detail-dot--synthetic" : "detail-dot";
-    if (node.synthetic_id) { dot.style.borderColor = node.color; }
-    else                   { dot.style.background  = node.color; }
-
     const label = document.createElement("span");
     label.className = "detail-label";
     label.textContent = node.label;
@@ -131,9 +128,9 @@ export class RegionDetail {
 
     const badge = document.createElement("span");
     badge.className = "detail-type-badge";
-    badge.textContent = node.type;
+    badge.textContent = node.type ? node.type.charAt(0).toUpperCase() + node.type.slice(1) : "";
 
-    row.appendChild(dot);
+    row.appendChild(typeIcon(node.type, node.synthetic_id, "detail-type-icon"));
     row.appendChild(label);
     row.appendChild(badge);
     return row;
@@ -308,18 +305,13 @@ export class RegionDetail {
       const row = document.createElement("div");
       row.className = "detail-child-row";
 
-      const dot = document.createElement("span");
-      dot.className = child.synthetic_id ? "detail-child-dot region-dot--synthetic" : "detail-child-dot";
-      if (child.synthetic_id) { dot.style.borderColor = child.color; }
-      else                    { dot.style.background  = child.color; }
-
       const nameEl = document.createElement("span");
       nameEl.className = "detail-child-name";
       nameEl.textContent = child.label;
 
       const typeEl = document.createElement("span");
       typeEl.className = "detail-child-type";
-      typeEl.textContent = child.type;
+      typeEl.textContent = child.type ? child.type.charAt(0).toUpperCase() + child.type.slice(1) : "";
 
       const boundsEl = document.createElement("span");
       boundsEl.className = "detail-child-bounds";
@@ -330,7 +322,7 @@ export class RegionDetail {
         boundsEl.textContent = "—";
       }
 
-      row.appendChild(dot);
+      row.appendChild(typeIcon(child.type, child.synthetic_id, "detail-type-icon"));
       row.appendChild(nameEl);
       row.appendChild(typeEl);
       row.appendChild(boundsEl);

@@ -86,11 +86,22 @@ body {
   background: #1e3a5f; border-color: #3b82f6; color: #60a5fa;
 }
 
+/* ── sidebar resize handles ── */
+.sidebar-handle {
+  width: 9px; flex-shrink: 0; cursor: ew-resize;
+  background: #1e293b; position: relative;
+}
+.sidebar-handle::before {
+  content: ''; position: absolute;
+  top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 1px; background: #334155; transition: background 0.15s;
+}
+.sidebar-handle:hover::before, .sidebar-handle--dragging::before { background: #3b82f6; }
+
 /* ── layers panel (left) ── */
 #layers {
   width: 280px; flex-shrink: 0; background: #1e293b;
-  border-right: 1px solid #334155; display: flex;
-  flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 #layers-header {
   padding: 10px 14px; border-bottom: 1px solid #334155;
@@ -102,14 +113,14 @@ body {
 /* ── inspector panel (right) ── */
 #inspector {
   width: 340px; flex-shrink: 0; background: #1e293b;
-  border-left: 1px solid #334155; overflow-y: auto;
+  overflow-y: auto;
   padding: 12px 14px;
 }
 
 /* ── category headers ── */
 .cat-header {
   padding: 10px 14px 6px 14px;
-  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  font-size: 11.5px; font-weight: 500; letter-spacing: .02em;
   color: #fff;
   user-select: none;
 }
@@ -117,8 +128,8 @@ body {
 
 /* ── region tree rows ── */
 .region-row {
-  display: flex; align-items: center; gap: 7px;
-  padding: 4px 12px 4px 0;
+  display: flex; align-items: center; gap: 0;
+  padding: 4px 12px 4px 14px;
   cursor: pointer; user-select: none; min-height: 28px;
 }
 .region-row:hover          { background: #1e3a5f44; }
@@ -126,15 +137,16 @@ body {
 .region-row--selected-child { background: #1e3a5f77; }
 .region-row--multi         { background: #1a3a2f; }
 
-/* tree indent */
-.region-indent { flex-shrink: 0; display: flex; align-items: center; padding-left: 10px; }
-.indent-pipe   { display: inline-block; width: 18px; flex-shrink: 0; }
+/* tree indent — no base padding; each depth level adds one pipe (14px = icon width) */
+.region-indent { flex-shrink: 0; display: flex; align-items: center; }
+.indent-pipe   { display: inline-block; width: 14px; flex-shrink: 0; }
 
-/* coloured region dot */
-.region-dot {
-  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; opacity: 0.85;
+/* region type icon */
+.region-type-icon {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  color: #64748b; line-height: 0; margin-right: 6px;
 }
-.region-dot--synthetic { background: transparent !important; opacity: 0.5; border: 1px dashed; }
+.region-type-icon--synthetic { opacity: 0.4; }
 
 /* region name label */
 .region-label {
@@ -143,40 +155,36 @@ body {
 }
 .region-label--synthetic { font-style: italic; color: #64748b; }
 
-/* type badge */
-.region-type-badge {
-  font-size: 10px; background: #0f172a; padding: 1px 5px;
-  border-radius: 3px; flex-shrink: 0; color: #475569;
-}
-
-/* collapse/expand chevron */
+/* collapse/expand chevron — negative left margin pulls it into the row's padding zone,
+   collapsing its flow width to zero so the icon always aligns with category titles */
 .collapse-btn {
   background: none; border: none; cursor: pointer; padding: 0;
   color: #475569; flex-shrink: 0; display: flex; align-items: center;
   justify-content: center; width: 14px; height: 14px; border-radius: 3px;
+  margin-left: -14px;
 }
 .collapse-btn:hover { color: #94a3b8; background: #334155; }
 
 /* visibility toggle button */
 .vis-btn {
-  background: none; border: none; cursor: pointer; padding: 0 3px;
-  color: #475569; flex-shrink: 0; display: flex; align-items: center;
-  opacity: 0; transition: opacity 0.12s; border-radius: 3px;
-  line-height: 0;
+  background: none; border: none; cursor: pointer; padding: 4px 3px;
+  color: #cbd5e1; flex-shrink: 0; display: flex; align-items: center;
+  align-self: stretch; margin-top: -4px; margin-bottom: -4px;
+  opacity: 0; transition: opacity 0.12s; line-height: 0;
 }
-.region-row:hover .vis-btn   { opacity: 1; }
-.vis-btn--hidden              { opacity: 1; color: #475569; }
-.vis-btn:hover                { color: #94a3b8; }
+.region-row:hover .vis-btn { opacity: 1; }
+.vis-btn:hover              { background: #162032; }
+.vis-btn--hidden            { opacity: 1; }
 
 
 #empty-msg { padding: 20px 14px; color: #475569; font-size: 13px; }
 
-/* composite type badge colours */
-.type-union     { color: #6b88a8; }
-.type-negative  { color: #a07070; }
-.type-intersect { color: #8878a0; }
-
 /* ── region detail (inside #inspector) ── */
+.detail-type-icon {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  color: #64748b; line-height: 0;
+}
+
 .detail-empty { color: #475569; font-size: 13px; padding: 4px 0; }
 
 .detail-header {

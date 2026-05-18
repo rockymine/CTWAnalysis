@@ -6,9 +6,7 @@
  * only data-driven colours are set inline.
  */
 
-const TYPE_CLASS = {
-  union: "type-union", negative: "type-negative", intersect: "type-intersect",
-};
+import { typeIcon } from "./region-types.js";
 
 function icon(iconData, size = 14) {
   return lucide.createElement(iconData, { width: size, height: size, "stroke-width": "1.5" });
@@ -177,9 +175,8 @@ export class RegionSidebar {
 
     row.appendChild(this.#treeIndent(depth));
     row.appendChild(this.#chevronBtn(node));
-    row.appendChild(this.#dot(node.color, node.synthetic_id));
+    row.appendChild(this.#typeIcon(node));
     row.appendChild(this.#label(node));
-    row.appendChild(this.#typeBadge(node.type));
     row.appendChild(this.#visBtn(node.id));
 
     row.addEventListener("click", (e) => {
@@ -244,12 +241,8 @@ export class RegionSidebar {
     return wrap;
   }
 
-  #dot(color, isSynthetic) {
-    const el = document.createElement("div");
-    el.className = isSynthetic ? "region-dot region-dot--synthetic" : "region-dot";
-    if (isSynthetic) { el.style.borderColor = color; }
-    else             { el.style.background  = color; }
-    return el;
+  #typeIcon(node) {
+    return typeIcon(node.type, node.synthetic_id);
   }
 
   #label(node) {
@@ -259,15 +252,6 @@ export class RegionSidebar {
       : "region-label";
     el.textContent = node.label;
     el.title = node.synthetic_id ? `${node.label}  (id: ${node.id})` : node.label;
-    return el;
-  }
-
-  #typeBadge(type) {
-    const el = document.createElement("span");
-    el.className = "region-type-badge";
-    const typeClass = TYPE_CLASS[type];
-    if (typeClass) el.classList.add(typeClass);
-    el.textContent = type;
     return el;
   }
 

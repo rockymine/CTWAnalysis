@@ -24,6 +24,7 @@
       <div id="empty-msg">No map loaded</div>
     </div>
   </div>
+  <div class="sidebar-handle" id="left-handle"></div>
   <div id="canvas-wrap">
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
       <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
@@ -48,6 +49,7 @@
       </button>
     </div>
   </div>
+  <div class="sidebar-handle" id="right-handle"></div>
   <div id="inspector">
     <div id="region-detail"></div>
   </div>
@@ -55,5 +57,36 @@
 
 <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
+<script>
+(function () {
+  function initSidebarResize(handle, sidebar, side, min, max) {
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      handle.classList.add('sidebar-handle--dragging');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'ew-resize';
+      var startX = e.clientX;
+      var startW = sidebar.offsetWidth;
+
+      function onMove(e) {
+        var delta = side === 'left' ? e.clientX - startX : startX - e.clientX;
+        sidebar.style.width = Math.max(min, Math.min(max, startW + delta)) + 'px';
+      }
+      function onUp() {
+        handle.classList.remove('sidebar-handle--dragging');
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  initSidebarResize(document.getElementById('left-handle'),  document.getElementById('layers'),    'left',  160, 480);
+  initSidebarResize(document.getElementById('right-handle'), document.getElementById('inspector'), 'right', 220, 500);
+}());
+</script>
 </body>
 </html>
