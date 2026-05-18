@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Optional
 
-from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
+from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -74,10 +74,17 @@ class MapXMLParser:
         # Parse basic info
         data.name = self._get_text('name', '')
         data.version = self._get_text('version', '')
+        data.gamemode = self._get_text('gamemode', '')
         data.objective = self._get_text('objective', '')
+
+        # Parse authors and contributors
+        data.authors = self._parse_authors()
 
         # Parse teams
         data.teams = self._parse_teams()
+
+        # Parse kits
+        data.kits = self._parse_kits()
 
         # Parse spawns (team spawns + optional observer default spawn)
         data.spawns, data.observer_spawn = self._parse_spawns()
@@ -174,12 +181,127 @@ class MapXMLParser:
                 id=team_elem.get('id', ''),
                 color=team_elem.get('color', ''),
                 max_players=int(team_elem.get('max', '0')),
+                min_players=int(team_elem.get('min', '0')),
                 name=team_elem.text or '',
                 dye_color=team_elem.get('dye-color', '')
             )
             teams.append(team)
 
         return teams
+
+    def _parse_authors(self) -> list[Author]:
+        """Parse <authors> and <contributors> blocks into Author entries.
+
+        Only uuid and contribution attributes are read — names live in XML
+        comments and are intentionally ignored here.
+        """
+        authors: list[Author] = []
+        authors_elem = self.root.find('authors')
+        if authors_elem is not None:
+            for elem in authors_elem.findall('author'):
+                uuid = elem.get('uuid', '')
+                if uuid:
+                    authors.append(Author(
+                        uuid=uuid,
+                        role='author',
+                        contribution=elem.get('contribution', ''),
+                    ))
+        contributors_elem = self.root.find('contributors')
+        if contributors_elem is not None:
+            for elem in contributors_elem.findall('contributor'):
+                uuid = elem.get('uuid', '')
+                if uuid:
+                    authors.append(Author(
+                        uuid=uuid,
+                        role='contributor',
+                        contribution=elem.get('contribution', ''),
+                    ))
+        return authors
+
+    def _parse_kits(self) -> list[Kit]:
+        """Parse <kits> block into Kit dataclasses."""
+        kits: list[Kit] = []
+        kits_elem = self.root.find('kits')
+        if kits_elem is None:
+            return kits
+
+        for kit_elem in kits_elem.findall('kit'):
+            kit_id = kit_elem.get('id', '')
+            if not kit_id:
+                continue
+
+            items: list[KitItem] = []
+            for item_elem in kit_elem.findall('item'):
+                material = item_elem.get('material', '').strip()
+                if not material:
+                    continue
+                slot_str = item_elem.get('slot', '0')
+                try:
+                    slot = int(slot_str)
+                except ValueError:
+                    continue
+                items.append(KitItem(
+                    slot=slot,
+                    material=material,
+                    amount=int(item_elem.get('amount', '1')),
+                    item_damage=int(item_elem.get('damage', '0')),
+                    unbreakable=item_elem.get('unbreakable', '').lower() in ('true', '1', 'yes'),
+                    team_color=item_elem.get('team-color', '').lower() in ('true', '1', 'yes'),
+                    enchantments=self._collect_enchantments(item_elem),
+                ))
+
+            armor: list[KitArmor] = []
+            for slot_name in ('helmet', 'chestplate', 'leggings', 'boots'):
+                armor_elem = kit_elem.find(slot_name)
+                if armor_elem is None:
+                    continue
+                material = armor_elem.get('material', '').strip()
+                if not material:
+                    continue
+                armor.append(KitArmor(
+                    slot_name=slot_name,
+                    material=material,
+                    unbreakable=armor_elem.get('unbreakable', '').lower() in ('true', '1', 'yes'),
+                    team_color=armor_elem.get('team-color', '').lower() in ('true', '1', 'yes'),
+                    enchantments=self._collect_enchantments(armor_elem),
+                ))
+
+            if items or armor:
+                kits.append(Kit(id=kit_id, items=items, armor=armor))
+
+        return kits
+
+    @staticmethod
+    def _collect_enchantments(elem: ET.Element) -> str:
+        """Return a comma-joined 'name:level' string of all enchantments on an item/armor element."""
+        parts: list[str] = []
+        attr = elem.get('enchantment', '').strip()
+        if attr:
+            for token in attr.split(';'):
+                token = token.strip()
+                if not token:
+                    continue
+                if ':' in token:
+                    raw_name, _, raw_level = token.rpartition(':')
+                    name = raw_name.strip().replace(' ', '_')
+                    try:
+                        level = int(raw_level.strip())
+                    except ValueError:
+                        level = 1
+                else:
+                    name = token.replace(' ', '_')
+                    level = 1
+                parts.append(f"{name}:{level}")
+        for child in elem:
+            if child.tag == 'enchantment':
+                name = (child.text or '').strip().replace(' ', '_')
+                try:
+                    level = int(child.get('level', '1'))
+                except ValueError:
+                    level = 1
+                if name:
+                    parts.append(f"{name}:{level}")
+        return ','.join(parts)
 
     def _parse_spawns(self) -> tuple[list[Spawn], Optional[Spawn]]:
         """Parse spawn and default (observer) elements.

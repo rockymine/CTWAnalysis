@@ -16,7 +16,7 @@ from common.json_export import save_json as _save_json
 
 logger = logging.getLogger('ctw')
 
-from .datatypes import MapData, Team, Spawn, Wool, ApplyRule
+from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -42,8 +42,11 @@ def to_dict(data: MapData, categories: Optional[dict[str, list[str]]] = None) ->
     result = {
         'name': data.name,
         'version': data.version,
+        'gamemode': data.gamemode,
         'objective': data.objective,
         'max_build_height': data.max_build_height,
+        'authors': [_encode_author(a) for a in data.authors],
+        'kits': [_encode_kit(k) for k in data.kits],
         'teams': [_encode_team(team) for team in data.teams],
         'spawns': [_encode_spawn(spawn) for spawn in data.spawns],
         'observer_spawn': _encode_spawn(data.observer_spawn) if data.observer_spawn else None,
@@ -166,6 +169,56 @@ def _encode_region(region: Region) -> dict[str, Any]:
     return base
 
 
+def _encode_author(author: Author) -> dict[str, Any]:
+    """Convert author/contributor to dictionary."""
+    result: dict[str, Any] = {'uuid': author.uuid, 'role': author.role}
+    if author.contribution:
+        result['contribution'] = author.contribution
+    return result
+
+
+def _encode_kit(kit: Kit) -> dict[str, Any]:
+    """Convert kit to dictionary."""
+    return {
+        'id': kit.id,
+        'items': [_encode_kit_item(i) for i in kit.items],
+        'armor': [_encode_kit_armor(a) for a in kit.armor],
+    }
+
+
+def _encode_kit_item(item: KitItem) -> dict[str, Any]:
+    """Convert kit item to dictionary."""
+    result: dict[str, Any] = {
+        'slot': item.slot,
+        'material': item.material,
+        'amount': item.amount,
+    }
+    if item.item_damage:
+        result['item_damage'] = item.item_damage
+    if item.unbreakable:
+        result['unbreakable'] = item.unbreakable
+    if item.team_color:
+        result['team_color'] = item.team_color
+    if item.enchantments:
+        result['enchantments'] = item.enchantments
+    return result
+
+
+def _encode_kit_armor(armor: KitArmor) -> dict[str, Any]:
+    """Convert kit armor slot to dictionary."""
+    result: dict[str, Any] = {
+        'slot_name': armor.slot_name,
+        'material': armor.material,
+    }
+    if armor.unbreakable:
+        result['unbreakable'] = armor.unbreakable
+    if armor.team_color:
+        result['team_color'] = armor.team_color
+    if armor.enchantments:
+        result['enchantments'] = armor.enchantments
+    return result
+
+
 def _encode_team(team: Team) -> dict[str, Any]:
     """Convert team to dictionary."""
     return {
@@ -174,6 +227,7 @@ def _encode_team(team: Team) -> dict[str, Any]:
         'color': team.color,
         'dye_color': team.dye_color,
         'max_players': team.max_players,
+        'min_players': team.min_players,
     }
 
 
