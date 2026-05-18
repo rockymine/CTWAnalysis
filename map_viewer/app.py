@@ -539,6 +539,32 @@ def create_app() -> Flask:
         result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
         return jsonify(result)
 
+    @app.route("/api/source-map/<name>/query/resources-in-region")
+    def api_query_resources_in_region(name: str):
+        """Return all resource blocks and wool chests within a rectangular bounding box.
+
+        Covers wool blocks (with color), iron/gold/diamond blocks, and chests
+        containing wool items.  Designed for the region-inspector UI so a single
+        call reveals everything that needs configuring in a selected area.
+
+        Query params: min_x, min_z, max_x, max_z (all required, numeric).
+        """
+        from layout_analysis.wool_query import query_resources_in_region
+        try:
+            min_x = float(request.args["min_x"])
+            min_z = float(request.args["min_z"])
+            max_x = float(request.args["max_x"])
+            max_z = float(request.args["max_z"])
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": f"Invalid or missing parameter: {exc}"}), 400
+
+        out_dir = _get_output_root() / name
+        if not out_dir.exists():
+            return jsonify({"error": "Map not found or not preprocessed"}), 404
+
+        result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
+        return jsonify(result)
+
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
         body = request.get_json(silent=True) or {}

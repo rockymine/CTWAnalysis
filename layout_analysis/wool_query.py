@@ -3,6 +3,9 @@
 Used by the CTW authoring UI to determine, given a user-drawn rectangular
 region, whether a wool objective is already configured (chest-based pickup),
 needs to be broken as a block, or requires a spawner module.
+
+Also provides a generic query for all resource block types (wool, iron, gold,
+diamond) in a region, for configuring respawn modules.
 """
 
 from pathlib import Path
@@ -53,6 +56,63 @@ def query_wool_in_region(
     }
 
 
+def query_resources_in_region(
+    output_dir: Path,
+    min_x: float,
+    min_z: float,
+    max_x: float,
+    max_z: float,
+) -> dict:
+    """Return all resource blocks and wool chests inside [min_x, max_x] × [min_z, max_z].
+
+    Covers every type tracked by ResourceBlockExtractor (wool, iron_block,
+    gold_block, diamond_block) plus chests containing wool items.  Designed
+    for the region-inspector UI: a single call tells the editor everything
+    about what needs to be configured for a selected area.
+
+    Returns:
+        {
+            'chest_wool': [{'x', 'z', 'y', 'color_id', 'color_name', 'count'}, ...],
+            'resource_blocks': [
+                {'type': str, 'x', 'z', 'y',
+                 'block_data': int,
+                 # wool only:
+                 'color_id': int, 'color_name': str},
+                ...
+            ],
+            'summary': {
+                'has_chest_wool': bool,
+                'has_block_wool': bool,
+                'types_found': [str, ...],       # sorted distinct resource_type values
+                'wool_colors_found': [str, ...], # sorted distinct wool color names
+            },
+        }
+    """
+    chest_wool = _find_chest_wool(output_dir, min_x, min_z, max_x, max_z)
+    resource_blocks = _find_all_resource_blocks(output_dir, min_x, min_z, max_x, max_z)
+
+    types_found = sorted({b['type'] for b in resource_blocks})
+    wool_blocks = [b for b in resource_blocks if b['type'] == 'wool']
+    wool_colors = sorted(
+        {r['color_name'] for r in chest_wool}
+        | {b['color_name'] for b in wool_blocks if 'color_name' in b}
+    )
+    return {
+        'chest_wool': chest_wool,
+        'resource_blocks': resource_blocks,
+        'summary': {
+            'has_chest_wool':    bool(chest_wool),
+            'has_block_wool':    bool(wool_blocks),
+            'types_found':       types_found,
+            'wool_colors_found': wool_colors,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
 def _bbox_filter(df: pd.DataFrame, min_x: float, min_z: float, max_x: float, max_z: float) -> pd.DataFrame:
     return df[
         (df['world_x'] >= min_x) & (df['world_x'] <= max_x) &
@@ -99,5 +159,29 @@ def _find_block_wool(output_dir: Path, min_x: float, min_z: float, max_x: float,
             color_id = int(row['block_data']) & 0xF
             entry['color_id']   = color_id
             entry['color_name'] = WOOL_COLORS.get(color_id, 'unknown')
+        results.append(entry)
+    return results
+
+
+def _find_all_resource_blocks(output_dir: Path, min_x: float, min_z: float, max_x: float, max_z: float) -> list[dict]:
+    path = output_dir / 'layout_resource_blocks.parquet'
+    if not path.exists():
+        return []
+    df = pd.read_parquet(path)
+    filtered = _bbox_filter(df, min_x, min_z, max_x, max_z)
+    has_block_data = 'block_data' in filtered.columns
+    results = []
+    for _, row in filtered.iterrows():
+        bd = int(row['block_data']) & 0xF if has_block_data else 0
+        entry: dict = {
+            'type':       str(row['resource_type']),
+            'x':          int(row['world_x']),
+            'z':          int(row['world_z']),
+            'y':          int(row['y']),
+            'block_data': bd,
+        }
+        if entry['type'] == 'wool':
+            entry['color_id']   = bd
+            entry['color_name'] = WOOL_COLORS.get(bd, 'unknown')
         results.append(entry)
     return results
