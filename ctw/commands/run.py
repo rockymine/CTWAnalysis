@@ -85,8 +85,8 @@ def _process_single_map(map_folder, args, output_override=None):
     import traceback
     from ctw.log import setup_map_file_logging
     from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
-    from ctw.commands.layout import analyze_layout
-    from ctw.commands.xml import analyze_xml
+    from layout_analysis.pipeline import analyze_layout
+    from xml_analysis.pipeline import analyze_xml
     from layout_analysis.map_layout_config import get_map_layout
 
     map_output_dir = resolve_output_dir(map_folder, output_override, create=True)
