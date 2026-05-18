@@ -113,8 +113,22 @@ def _process_single_map(map_folder, args, output_override=None):
         island_layout_type = args.island_layout
 
     try:
-        # [1/5] Layout
+        # [1/5] XML Analysis — runs first so max_build_height is available for layout
+        xml_context = None
+        if not args.no_xml:
+            xml_context = analyze_xml(map_folder, force_rerun=args.force,
+                                      output_dir=map_output_dir)
+            if xml_context:
+                md = xml_context.map_data
+                logger.info(f"  [1/5] XML: {len(md.teams)} teams, {len(md.wools)} wools")
+            else:
+                logger.info("  [1/5] XML: no map.xml")
+        else:
+            logger.info("  [1/5] XML: skipped")
+
+        # [2/5] Layout — receives max_build_height from XML context
         if not args.no_layout:
+            mbh = xml_context.map_data.max_build_height if xml_context else None
             parquet_files = analyze_layout(
                 map_folder,
                 force_rerun=args.force,
@@ -128,13 +142,14 @@ def _process_single_map(map_folder, args, output_override=None):
                 threshold=args.threshold,
                 density_mode=args.density_mode,
                 map_layout_config=map_layout_cfg,
+                max_build_height=mbh,
             )
             n = len(parquet_files) if parquet_files else 0
-            logger.info(f"  [1/5] Layout: {n} parquet files")
+            logger.info(f"  [2/5] Layout: {n} parquet files")
         else:
-            logger.info("  [1/5] Layout: skipped")
+            logger.info("  [2/5] Layout: skipped")
 
-        # [2/5] Islands + Skeletons (geometry only)
+        # [3/5] Islands + Skeletons (geometry only)
         geometry = None
         if not args.no_islands:
             geometry = run_island_geometry(
@@ -151,33 +166,20 @@ def _process_single_map(map_folder, args, output_override=None):
                 plots=args.plots,
             )
             if geometry:
-                logger.info(f"  [2/5] Islands: {len(geometry.islands)} islands")
+                logger.info(f"  [3/5] Islands: {len(geometry.islands)} islands")
             else:
-                logger.info("  [2/5] Islands: failed (check log)")
+                logger.info("  [3/5] Islands: failed (check log)")
         else:
-            logger.info("  [2/5] Islands: skipped")
+            logger.info("  [3/5] Islands: skipped")
 
-        # [3/5] Symmetry (geometric only — uses in-memory geometry when available)
+        # [4/5] Symmetry (geometric only — uses in-memory geometry when available)
         # Note: if assembly re-runs symmetry after excluding non-playable islands,
         # the final result is logged at step [5/5] instead.
         symmetry = None
         if not args.no_symmetry:
             symmetry = run_symmetry(map_output_dir, geometry=geometry)
         else:
-            logger.info("  [3/5] Symmetry: skipped")
-
-        # [4/5] XML Analysis
-        xml_context = None
-        if not args.no_xml:
-            xml_context = analyze_xml(map_folder, force_rerun=args.force,
-                                      output_dir=map_output_dir)
-            if xml_context:
-                md = xml_context.map_data
-                logger.info(f"  [4/5] XML: {len(md.teams)} teams, {len(md.wools)} wools")
-            else:
-                logger.info("  [4/5] XML: no map.xml")
-        else:
-            logger.info("  [4/5] XML: skipped")
+            logger.info("  [4/5] Symmetry: skipped")
 
         # [5/5] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
@@ -205,31 +207,31 @@ def _process_single_map(map_folder, args, output_override=None):
                 if not args.no_symmetry:
                     if final_symmetry and final_symmetry.primary:
                         logger.info(
-                            f"  [3/5] Symmetry: {final_symmetry.primary['description']} "
+                            f"  [4/5] Symmetry: {final_symmetry.primary['description']} "
                             f"({final_symmetry.primary['confidence']:.0%})"
                         )
                     else:
-                        logger.info("  [3/5] Symmetry: none detected")
+                        logger.info("  [4/5] Symmetry: none detected")
             else:
                 logger.info("  [5/5] Assembly: skipped (no geometry)")
                 if not args.no_symmetry:
                     if symmetry and symmetry.primary:
                         logger.info(
-                            f"  [3/5] Symmetry: {symmetry.primary['description']} "
+                            f"  [4/5] Symmetry: {symmetry.primary['description']} "
                             f"({symmetry.primary['confidence']:.0%})"
                         )
                     else:
-                        logger.info("  [3/5] Symmetry: none detected")
+                        logger.info("  [4/5] Symmetry: none detected")
         else:
             logger.info("  [5/5] Assembly: skipped")
             if not args.no_symmetry:
                 if symmetry and symmetry.primary:
                     logger.info(
-                        f"  [3/5] Symmetry: {symmetry.primary['description']} "
+                        f"  [4/5] Symmetry: {symmetry.primary['description']} "
                         f"({symmetry.primary['confidence']:.0%})"
                     )
                 else:
-                    logger.info("  [3/5] Symmetry: none detected")
+                    logger.info("  [4/5] Symmetry: none detected")
 
         return map_folder.name, True, None
 

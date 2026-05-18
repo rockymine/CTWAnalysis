@@ -132,10 +132,10 @@ def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
 # ── Pipeline status helpers ────────────────────────────────────────────────
 
 _PIPELINE_STEPS = [
+    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
     {"id": "layout",   "label": "Layout",   "file": "layout_bedrock.parquet"},
     {"id": "islands",  "label": "Islands",  "file": "islands.json"},
     {"id": "symmetry", "label": "Symmetry", "file": "symmetry.json"},
-    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
     {"id": "assembly", "label": "Assembly", "file": "map_context.json"},
 ]
 
@@ -305,14 +305,34 @@ def create_app() -> Flask:
                     else:
                         island_layout_type = "bedrock"
 
-                    # Step 1 — Layout
+                    # Step 1 — XML (runs first so max_build_height is available for layout)
+                    send("step", {"step": "xml", "status": "running", "label": "XML"})
+                    xml_context = None
+                    try:
+                        xml_context = analyze_xml(map_folder, force_rerun=force,
+                                                  output_dir=map_output_dir)
+                        if xml_context:
+                            md = xml_context.map_data
+                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
+                        else:
+                            detail_txt = "no map.xml found"
+                        send("step", {"step": "xml", "status": "done", "label": "XML",
+                                      "detail": detail_txt})
+                    except Exception as exc:
+                        send("step", {"step": "xml", "status": "error", "label": "XML",
+                                      "detail": str(exc)})
+                        # Non-fatal: continue without XML (layout will run without height cap)
+
+                    # Step 2 — Layout (receives max_build_height from XML context)
                     send("step", {"step": "layout", "status": "running", "label": "Layout"})
                     try:
+                        mbh = xml_context.map_data.max_build_height if xml_context else None
                         parquet_files = analyze_layout(
                             map_folder,
                             force_rerun=force,
                             output_dir=map_output_dir,
                             map_layout_config=map_layout_cfg,
+                            max_build_height=mbh,
                         )
                         n = len(parquet_files) if parquet_files else 0
                         send("step", {"step": "layout", "status": "done", "label": "Layout",
@@ -323,7 +343,7 @@ def create_app() -> Flask:
                         send("error", {"message": f"Layout failed: {exc}"})
                         return
 
-                    # Step 2 — Islands
+                    # Step 3 — Islands
                     send("step", {"step": "islands", "status": "running", "label": "Islands"})
                     try:
                         geometry = run_island_geometry(
@@ -345,7 +365,7 @@ def create_app() -> Flask:
                         send("error", {"message": f"Islands failed: {exc}"})
                         return
 
-                    # Step 3 — Symmetry
+                    # Step 4 — Symmetry
                     send("step", {"step": "symmetry", "status": "running", "label": "Symmetry"})
                     symmetry = None
                     try:
@@ -358,24 +378,6 @@ def create_app() -> Flask:
                         send("step", {"step": "symmetry", "status": "error", "label": "Symmetry",
                                       "detail": str(exc)})
                         # Non-fatal: continue without symmetry
-
-                    # Step 4 — XML
-                    send("step", {"step": "xml", "status": "running", "label": "XML"})
-                    xml_context = None
-                    try:
-                        xml_context = analyze_xml(map_folder, force_rerun=force,
-                                                  output_dir=map_output_dir)
-                        if xml_context:
-                            md = xml_context.map_data
-                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
-                        else:
-                            detail_txt = "no map.xml found"
-                        send("step", {"step": "xml", "status": "done", "label": "XML",
-                                      "detail": detail_txt})
-                    except Exception as exc:
-                        send("step", {"step": "xml", "status": "error", "label": "XML",
-                                      "detail": str(exc)})
-                        # Non-fatal: assemble without XML
 
                     # Step 5 — Assembly
                     send("step", {"step": "assembly", "status": "running", "label": "Assembly"})
