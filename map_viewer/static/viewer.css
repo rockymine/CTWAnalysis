@@ -163,7 +163,7 @@ body {
   justify-content: center; width: 14px; height: 14px; border-radius: 3px;
   margin-left: -14px;
 }
-.collapse-btn:hover { color: #94a3b8; background: #334155; }
+.collapse-btn:hover { color: #94a3b8; }
 
 /* visibility toggle button */
 .vis-btn {
