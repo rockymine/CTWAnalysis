@@ -219,7 +219,7 @@ def analyze_layout(
     if 'vertical_segments' in parquet_files:
         if not parquet_files['vertical_segments'].exists() or force_rerun:
             logger.debug("  Extracting vertical segments...")
-            extractor = VerticalSegmentsExtractor(reader)
+            extractor = VerticalSegmentsExtractor(reader, skip_non_solid=skip_non_solid)
             df = extractor.extract()
             df.to_parquet(parquet_files['vertical_segments'])
             logger.debug(
@@ -339,7 +339,7 @@ def _analyze_layout_configured(
         vs_path = parquet_files['vertical_segments']
         if not vs_path.exists() or force_rerun:
             logger.debug("  Extracting vertical segments...")
-            df = VerticalSegmentsExtractor(reader).extract()
+            df = VerticalSegmentsExtractor(reader, skip_non_solid=skip_non_solid).extract()
             df.to_parquet(vs_path)
             logger.debug(f"    Saved {vs_path.name} ({len(df)} runs)")
 

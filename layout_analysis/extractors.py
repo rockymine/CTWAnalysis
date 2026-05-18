@@ -218,6 +218,11 @@ NON_SOLID_BLOCK_IDS: frozenset[int] = frozenset({
     166,  # BARRIER
 })
 
+# Block IDs excluded by VerticalSegmentsExtractor (beyond NON_SOLID_BLOCK_IDS) when
+# skip_non_solid=True. Block 36 (PISTON_MOVING_PIECE) is used by many CTW maps as an
+# invisible build-region boundary marker and has no visible geometry.
+_SEGMENTS_EXTRA_EXCLUDE: frozenset[int] = frozenset({36})
+
 
 class TopSurfaceExtractor:
     """
@@ -660,19 +665,26 @@ class VerticalSegmentsExtractor:
         self,
         region_reader: RegionReader,
         exclude_ids: set[int] | None = None,
+        skip_non_solid: bool = True,
         min_run_length: int = 1,
     ) -> None:
         """
         Args:
             region_reader: RegionReader instance for the world.
-            exclude_ids: Block IDs to treat as air (ignored when searching).
-                         Air (0) is always excluded.
+            exclude_ids: Additional block IDs to treat as air on top of whatever
+                         skip_non_solid applies.  Air (0) is always excluded.
+            skip_non_solid: When True (default), also excludes NON_SOLID_BLOCK_IDS
+                            (buttons, pressure plates, redstone wire, tall grass,
+                            signs, rails, torches, vines, flowers, etc.) plus block 36
+                            (PISTON_MOVING_PIECE — invisible build-region marker).
+                            Pass False for a raw, unfiltered column profile.
             min_run_length: Skip solid runs shorter than this many blocks.
                             Default 1 includes every single-block layer.
-                            Set to e.g. 3 to suppress thin decorative slabs.
         """
         self.reader = region_reader
         self._exclude_ids: frozenset[int] = frozenset(exclude_ids) if exclude_ids else frozenset()
+        if skip_non_solid:
+            self._exclude_ids = self._exclude_ids | NON_SOLID_BLOCK_IDS | _SEGMENTS_EXTRA_EXCLUDE
         self.min_run_length = min_run_length
 
     def extract(self) -> pd.DataFrame:
