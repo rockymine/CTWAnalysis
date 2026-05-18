@@ -42,7 +42,7 @@ def to_dict(data: MapData, categories: Optional[dict[str, list[str]]] = None) ->
     result = {
         'name': data.name,
         'version': data.version,
-        'game_mode': data.game_mode,
+        'gamemode': data.gamemode,
         'objective': data.objective,
         'max_build_height': data.max_build_height,
         'authors': [_encode_author(a) for a in data.authors],

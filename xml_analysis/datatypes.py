@@ -90,7 +90,7 @@ class MapData:
     """Complete map data."""
     name: str = ""
     version: str = ""
-    game_mode: str = ""
+    gamemode: str = ""
     objective: str = ""
     authors: list[Author] = field(default_factory=list)
     kits: list[Kit] = field(default_factory=list)

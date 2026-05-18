@@ -235,7 +235,7 @@ See `docs/architecture-research-report.md` for the full research findings and de
 
 | Phase | Scope |
 |-------|-------|
-| 0 | Data model extension (authors, kits, game_mode, min_players, filter parsing) |
+| 0 | Data model extension (authors, kits, gamemode, min_players, filter parsing) |
 | 1 | App shell: vertical mode rail + workspace panel switching |
 | 2 | Read-only CTW overview workspace |
 | 3 | Region editor polish (Lucide icons, type-specific inspector) |

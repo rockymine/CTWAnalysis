@@ -74,7 +74,7 @@ class MapXMLParser:
         # Parse basic info
         data.name = self._get_text('name', '')
         data.version = self._get_text('version', '')
-        data.game_mode = self._get_text('gamemode', '')
+        data.gamemode = self._get_text('gamemode', '')
         data.objective = self._get_text('objective', '')
 
         # Parse authors and contributors
