@@ -10,6 +10,7 @@ from .extractors import (
     VerticalDensityExtractor,
     LowestBedrockExtractor,
     LowestSolidLayerExtractor,
+    VerticalSegmentsExtractor,
 )
 from .region_reader import RegionReader
 from .features import ResourceBlockExtractor, ChestExtractor
@@ -63,6 +64,7 @@ def analyze_layout(
     skip_lowest_solid: bool = False,
     skip_features: bool = False,
     skip_non_solid: bool = False,
+    skip_segments: bool = True,
     threshold: int = 10,
     density_mode: str = 'run',
     map_layout_config: Optional[MapLayoutConfig] = None,
@@ -93,6 +95,9 @@ def analyze_layout(
         skip_lowest_solid: Skip lowest-solid-layer extraction.
         skip_features: Skip feature extraction (resource blocks and chests).
         skip_non_solid: When True, pass NON_SOLID_BLOCK_IDS to TopSurfaceExtractor
+        skip_segments: When False, generate layout_vertical_segments.parquet with all
+            contiguous solid Y-ranges per column.  Default True (opt-in) because the
+            full-block scan is expensive.
             so decorative blocks (buttons, redstone wire, dead bushes, tall grass,
             flowers) are excluded from the surface scan.
         threshold: Density threshold for vertical density extractor.
@@ -119,7 +124,7 @@ def analyze_layout(
     if map_layout_config is not None:
         return _analyze_layout_configured(
             map_folder, out, force_rerun, map_layout_config, skip_features,
-            skip_non_solid, max_build_height,
+            skip_non_solid, max_build_height, skip_segments,
         )
 
     # -----------------------------------------------------------------------
@@ -141,6 +146,8 @@ def analyze_layout(
     if not skip_features:
         parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
         parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
+    if not skip_segments:
+        parquet_files['vertical_segments'] = out / 'layout_vertical_segments.parquet'
 
     if not parquet_files:
         logger.debug("  All extractors skipped.")
@@ -208,6 +215,17 @@ def analyze_layout(
             df.to_parquet(parquet_files['lowest_solid'])
             logger.debug(f"    Saved {parquet_files['lowest_solid'].name} ({len(df)} blocks)")
 
+    # Extract vertical segments (all contiguous solid Y-runs per column)
+    if 'vertical_segments' in parquet_files:
+        if not parquet_files['vertical_segments'].exists() or force_rerun:
+            logger.debug("  Extracting vertical segments...")
+            extractor = VerticalSegmentsExtractor(reader)
+            df = extractor.extract()
+            df.to_parquet(parquet_files['vertical_segments'])
+            logger.debug(
+                f"    Saved {parquet_files['vertical_segments'].name} ({len(df)} runs)"
+            )
+
     _extract_features(reader, parquet_files, force_rerun)
     return parquet_files
 
@@ -220,6 +238,7 @@ def _analyze_layout_configured(
     skip_features: bool,
     skip_non_solid: bool = False,
     max_build_height: Optional[int] = None,
+    skip_segments: bool = True,
 ) -> Optional[dict]:
     """Configured extraction path driven by map_layouts.yaml.
 
@@ -245,6 +264,8 @@ def _analyze_layout_configured(
     if not skip_features:
         parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
         parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
+    if not skip_segments:
+        parquet_files['vertical_segments'] = out / 'layout_vertical_segments.parquet'
 
     all_exist = all(p.exists() for p in parquet_files.values())
     if all_exist and not force_rerun:
@@ -312,6 +333,15 @@ def _analyze_layout_configured(
         df = extractor.extract()
         df.to_parquet(top_surface_path)
         logger.debug(f"    Saved {top_surface_path.name} ({len(df)} blocks)")
+
+    # --- Vertical segments ---
+    if 'vertical_segments' in parquet_files:
+        vs_path = parquet_files['vertical_segments']
+        if not vs_path.exists() or force_rerun:
+            logger.debug("  Extracting vertical segments...")
+            df = VerticalSegmentsExtractor(reader).extract()
+            df.to_parquet(vs_path)
+            logger.debug(f"    Saved {vs_path.name} ({len(df)} runs)")
 
     # --- Feature extractors ---
     _extract_features(reader, parquet_files, force_rerun)

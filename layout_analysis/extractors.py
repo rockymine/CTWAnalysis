@@ -1,12 +1,13 @@
 """
 Extraction modes for analyzing Minecraft world layouts.
 
-Provides five extractors:
-1. Y0LayerExtractor          - Extracts non-air blocks at world y=0
-2. TopSurfaceExtractor       - Finds highest non-excluded non-air block in each column
-3. VerticalDensityExtractor  - Filters columns by density metrics
-4. LowestBedrockExtractor    - Finds lowest bedrock (block 7) in each column
-5. LowestSolidLayerExtractor - Finds lowest non-excluded non-air block in each column
+Provides six extractors:
+1. Y0LayerExtractor            - Extracts non-air blocks at world y=0
+2. TopSurfaceExtractor         - Finds highest non-excluded non-air block in each column
+3. VerticalDensityExtractor    - Filters columns by density metrics
+4. LowestBedrockExtractor      - Finds lowest bedrock (block 7) in each column
+5. LowestSolidLayerExtractor   - Finds lowest non-excluded non-air block in each column
+6. VerticalSegmentsExtractor   - Finds all contiguous Y-ranges of solid blocks per column
 
 All extractors read Minecraft Anvil section data as NumPy arrays (one section read per
 section_y rather than one get_block call per block), giving a large speedup for
@@ -102,6 +103,16 @@ def _col_max_run(col: np.ndarray) -> int:
     starts = np.where(diff == 1)[0]
     ends = np.where(diff == -1)[0]
     return int((ends - starts).max())
+
+
+def _build_full_blocks(chunk) -> np.ndarray:
+    """Return a (256, 16, 16) uint16 block array populated from all sections in chunk."""
+    full = np.zeros((256, 16, 16), dtype=np.uint16)
+    for section_y, blocks_3d, _ in _iter_chunk_sections(chunk):
+        y_start = section_y * 16
+        if 0 <= y_start < 256:
+            full[y_start:y_start + 16] = blocks_3d
+    return full
 
 
 # ---------------------------------------------------------------------------
@@ -399,12 +410,7 @@ class VerticalDensityExtractor:
                 n = sum(len(a) for a in all_wx)
                 logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
 
-            # Build full (256, 16, 16) block array from all sections
-            full_blocks = np.zeros((256, 16, 16), dtype=np.uint16)
-            for section_y, blocks_3d, _ in _iter_chunk_sections(chunk):
-                y_start = section_y * 16
-                if 0 <= y_start < 256:
-                    full_blocks[y_start:y_start + 16] = blocks_3d
+            full_blocks = _build_full_blocks(chunk)
 
             non_air = full_blocks != 0  # (256, 16, 16)
 
@@ -628,4 +634,124 @@ class LowestSolidLayerExtractor:
             'y': np.concatenate(all_y),
             'block_id': np.concatenate(all_id),
             'block_data': np.concatenate(all_dt),
+        })
+
+
+class VerticalSegmentsExtractor:
+    """
+    Finds all contiguous Y-ranges of solid blocks in each column.
+
+    For every (x, z) column, scans the full height (y=0..255) and records every
+    unbroken run of non-excluded, non-air blocks as an interval [y_start, y_end]
+    (both inclusive).  Returns one row per run, so a column with a bedrock floor
+    and an elevated platform yields two rows.
+
+    This is the building block for side-profile / cross-section rendering: a
+    renderer can draw a filled rectangle from y_start to y_end for each row
+    without needing to know what is in the air gaps between runs.
+
+    Uses _build_full_blocks internally — same approach as VerticalDensityExtractor
+    but extracting interval boundaries rather than a density metric.
+
+    Criterion: at least one qualifying block exists anywhere in the column
+    """
+
+    def __init__(
+        self,
+        region_reader: RegionReader,
+        exclude_ids: set[int] | None = None,
+        min_run_length: int = 1,
+    ) -> None:
+        """
+        Args:
+            region_reader: RegionReader instance for the world.
+            exclude_ids: Block IDs to treat as air (ignored when searching).
+                         Air (0) is always excluded.
+            min_run_length: Skip solid runs shorter than this many blocks.
+                            Default 1 includes every single-block layer.
+                            Set to e.g. 3 to suppress thin decorative slabs.
+        """
+        self.reader = region_reader
+        self._exclude_ids: frozenset[int] = frozenset(exclude_ids) if exclude_ids else frozenset()
+        self.min_run_length = min_run_length
+
+    def extract(self) -> pd.DataFrame:
+        """
+        Extract all contiguous solid Y-ranges in each column.
+
+        Returns:
+            DataFrame with columns: world_x, world_z, y_start, y_end
+            y_start and y_end are both inclusive world Y coordinates.
+            Sorted by (world_x, world_z, y_start).
+        """
+        all_wx:  list[np.ndarray] = []
+        all_wz:  list[np.ndarray] = []
+        all_ys:  list[np.ndarray] = []
+        all_ye:  list[np.ndarray] = []
+        chunk_count = 0
+
+        logger.debug("Extracting vertical segments...")
+
+        for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
+            chunk_count += 1
+            if chunk_count % 100 == 0:
+                n = sum(len(a) for a in all_wx)
+                logger.debug(f"  Processed {chunk_count} chunks, found {n} runs...")
+
+            full_blocks = _build_full_blocks(chunk)  # (256, 16, 16) uint16
+
+            solid = full_blocks != 0                 # (256, 16, 16) bool
+            for exc in self._exclude_ids:
+                solid &= full_blocks != exc
+
+            # Flatten to (256, 256): axis-1 col index = z*16 + x (C-order)
+            flat = solid.reshape(256, 256)
+
+            # Pad False rows at both ends so np.diff captures edge transitions
+            padded = np.zeros((258, 256), dtype=bool)
+            padded[1:257] = flat
+            d = np.diff(padded.view(np.int8), axis=0)  # (257, 256)
+
+            starts = np.argwhere(d == 1)   # [y_idx, col_idx] — y_idx = y_start
+            ends   = np.argwhere(d == -1)  # [y_idx, col_idx] — y_idx = exclusive y_end
+
+            if len(starts) == 0:
+                continue
+
+            # Sort by (col, y) so that starts[i] and ends[i] correspond to the same run
+            order_s = np.lexsort((starts[:, 0], starts[:, 1]))
+            order_e = np.lexsort((ends[:, 0],   ends[:, 1]))
+            starts = starts[order_s]
+            ends   = ends[order_e]
+
+            y_start = starts[:, 0].astype(np.int16)
+            y_end   = (ends[:, 0] - 1).astype(np.int16)  # make inclusive
+            col_idx = starts[:, 1]
+
+            if self.min_run_length > 1:
+                keep = (y_end - y_start + 1) >= self.min_run_length
+                y_start = y_start[keep]
+                y_end   = y_end[keep]
+                col_idx = col_idx[keep]
+
+            if len(y_start) == 0:
+                continue
+
+            x_local = (col_idx % 16).astype(np.int32)
+            z_local = (col_idx // 16).astype(np.int32)
+            all_wx.append((chunk_x * 16 + x_local).astype(np.int32))
+            all_wz.append((chunk_z * 16 + z_local).astype(np.int32))
+            all_ys.append(y_start)
+            all_ye.append(y_end)
+
+        total = sum(len(a) for a in all_wx)
+        logger.debug(f"Completed vertical segments extraction: {chunk_count} chunks, {total} runs")
+
+        if not all_wx:
+            return pd.DataFrame(columns=['world_x', 'world_z', 'y_start', 'y_end'])
+        return pd.DataFrame({
+            'world_x': np.concatenate(all_wx),
+            'world_z': np.concatenate(all_wz),
+            'y_start': np.concatenate(all_ys),
+            'y_end':   np.concatenate(all_ye),
         })

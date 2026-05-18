@@ -12,6 +12,7 @@ from .extractors import (
     VerticalDensityExtractor,
     LowestBedrockExtractor,
     LowestSolidLayerExtractor,
+    VerticalSegmentsExtractor,
 )
 from .region_reader import RegionReader
 from .visualization import save_point_plot
@@ -27,6 +28,7 @@ __all__ = [
     "VerticalDensityExtractor",
     "LowestBedrockExtractor",
     "LowestSolidLayerExtractor",
+    "VerticalSegmentsExtractor",
     "RegionReader",
     "save_point_plot",
     # Utils
