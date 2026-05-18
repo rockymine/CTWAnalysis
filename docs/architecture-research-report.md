@@ -300,7 +300,7 @@ The dashboard already handles map discovery, pipeline status, and pipeline execu
 
 - Add `Author(name: str, role: str, uuid: str = "")` dataclass to `xml_analysis/datatypes.py`
 - Add `authors: list[Author]` to `MapData`; parse from `<authors>` XML element
-- Add `game_mode: str = "ctw"` to `MapData`; parse from `<gamemode>` or infer from wools
+- Add `gamemode: str = "ctw"` to `MapData`; parse from `<gamemode>` or infer from wools
 - Add `min_players: int = 0` to `Team` dataclass; parse from `min` XML attribute
 - Add basic filter parsing: `filters: dict[str, FilterDef]` (name → raw XML string initially)
 - Wire `kit_parser.py` into `MapData` as `kits: list[Kit]` (structured, not DataFrames)
@@ -339,7 +339,7 @@ The dashboard already handles map discovery, pipeline status, and pipeline execu
 **Critical files:** `map_viewer/static/region-sidebar.js`, `map_viewer/static/region-detail.js`
 
 ### Phase 4: Editable map info + teams + authors
-- Map Info workspace: editable name, version, objective, max_build_height, game_mode
+- Map Info workspace: editable name, version, objective, max_build_height, gamemode
 - Teams workspace: add/remove/edit teams
 - Authors workspace: add/remove authors and contributors
 - PATCH endpoints write back to map_data.json
@@ -391,7 +391,7 @@ File: `xml_analysis/datatypes.py`, `xml_analysis/builder.py`
 **Task B** — Add `Author` dataclass; add `authors: list[Author]` to `MapData`; parse `<authors>/<author>` and `<authors>/<contributor>` from XML
 Files: `xml_analysis/datatypes.py`, `xml_analysis/builder.py`, `xml_analysis/exporter.py`
 
-**Task C** — Add `game_mode: str = "ctw"` to `MapData`; parse from `<gamemode>` element or infer from wools
+**Task C** — Add `gamemode: str = "ctw"` to `MapData`; parse from `<gamemode>` element or infer from wools
 Files: `xml_analysis/datatypes.py`, `xml_analysis/builder.py`, `xml_analysis/exporter.py`
 
 **Task D** — Add filter parsing: store `<filters>` block as `filters: dict[str, str]` (name → raw XML string) for now
@@ -446,7 +446,7 @@ Should the research tool and the authoring tool eventually split into two Flask 
 
 When implementing each phase, verify:
 
-1. `python ctw.py run --map <test_map>` → map_data.json contains new fields (authors, game_mode, min_players, filters)
+1. `python ctw.py run --map <test_map>` → map_data.json contains new fields (authors, gamemode, min_players, filters)
 2. `python ctw.py viewer` → dashboard loads, pipeline runs, editor opens
 3. Mode rail switches workspace panels; existing region editor is unaffected
 4. Overview workspace renders checklist from map_data.json + symmetry.json
