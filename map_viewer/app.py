@@ -30,6 +30,20 @@ from flask import Flask, Response, jsonify, abort, render_template, request, str
 from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
 from common.visualization.block_colors import block_color
 
+
+class _QueueLogHandler(logging.Handler):
+    """Forwards ctw logger records into the SSE event queue during a pipeline run."""
+
+    def __init__(self, send_fn):
+        super().__init__()
+        self._send = send_fn
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._send("log", {"message": self.format(record), "level": record.levelname.lower()})
+        except Exception:
+            self.handleError(record)
+
 _DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent / "output"
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -132,10 +146,10 @@ def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
 # ── Pipeline status helpers ────────────────────────────────────────────────
 
 _PIPELINE_STEPS = [
+    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
     {"id": "layout",   "label": "Layout",   "file": "layout_bedrock.parquet"},
     {"id": "islands",  "label": "Islands",  "file": "islands.json"},
     {"id": "symmetry", "label": "Symmetry", "file": "symmetry.json"},
-    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
     {"id": "assembly", "label": "Assembly", "file": "map_context.json"},
 ]
 
@@ -279,16 +293,22 @@ def create_app() -> Flask:
                 event_queue.put(msg)
 
             def pipeline_thread() -> None:
+                _log_handler: Optional[_QueueLogHandler] = None
                 try:
                     import traceback
                     from ctw.log import setup_map_file_logging
                     from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
-                    from ctw.commands.layout import analyze_layout
-                    from ctw.commands.xml import analyze_xml
+                    from layout_analysis.pipeline import analyze_layout
+                    from xml_analysis.pipeline import analyze_xml
                     from layout_analysis.map_layout_config import get_map_layout
 
                     map_output_dir.mkdir(parents=True, exist_ok=True)
                     setup_map_file_logging(map_output_dir)
+
+                    _log_handler = _QueueLogHandler(send)
+                    _log_handler.setLevel(logging.DEBUG)
+                    _log_handler.setFormatter(logging.Formatter('%(message)s'))
+                    logging.getLogger('ctw').addHandler(_log_handler)
 
                     map_layout_cfg = get_map_layout(name)
 
@@ -305,14 +325,34 @@ def create_app() -> Flask:
                     else:
                         island_layout_type = "bedrock"
 
-                    # Step 1 — Layout
+                    # Step 1 — XML (runs first so max_build_height is available for layout)
+                    send("step", {"step": "xml", "status": "running", "label": "XML"})
+                    xml_context = None
+                    try:
+                        xml_context = analyze_xml(map_folder, force_rerun=force,
+                                                  output_dir=map_output_dir)
+                        if xml_context:
+                            md = xml_context.map_data
+                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
+                        else:
+                            detail_txt = "no map.xml found"
+                        send("step", {"step": "xml", "status": "done", "label": "XML",
+                                      "detail": detail_txt})
+                    except Exception as exc:
+                        send("step", {"step": "xml", "status": "error", "label": "XML",
+                                      "detail": str(exc)})
+                        # Non-fatal: continue without XML (layout will run without height cap)
+
+                    # Step 2 — Layout (receives max_build_height from XML context)
                     send("step", {"step": "layout", "status": "running", "label": "Layout"})
                     try:
+                        mbh = xml_context.map_data.max_build_height if xml_context else None
                         parquet_files = analyze_layout(
                             map_folder,
                             force_rerun=force,
                             output_dir=map_output_dir,
                             map_layout_config=map_layout_cfg,
+                            max_build_height=mbh,
                         )
                         n = len(parquet_files) if parquet_files else 0
                         send("step", {"step": "layout", "status": "done", "label": "Layout",
@@ -323,7 +363,7 @@ def create_app() -> Flask:
                         send("error", {"message": f"Layout failed: {exc}"})
                         return
 
-                    # Step 2 — Islands
+                    # Step 3 — Islands
                     send("step", {"step": "islands", "status": "running", "label": "Islands"})
                     try:
                         geometry = run_island_geometry(
@@ -345,7 +385,7 @@ def create_app() -> Flask:
                         send("error", {"message": f"Islands failed: {exc}"})
                         return
 
-                    # Step 3 — Symmetry
+                    # Step 4 — Symmetry
                     send("step", {"step": "symmetry", "status": "running", "label": "Symmetry"})
                     symmetry = None
                     try:
@@ -358,24 +398,6 @@ def create_app() -> Flask:
                         send("step", {"step": "symmetry", "status": "error", "label": "Symmetry",
                                       "detail": str(exc)})
                         # Non-fatal: continue without symmetry
-
-                    # Step 4 — XML
-                    send("step", {"step": "xml", "status": "running", "label": "XML"})
-                    xml_context = None
-                    try:
-                        xml_context = analyze_xml(map_folder, force_rerun=force,
-                                                  output_dir=map_output_dir)
-                        if xml_context:
-                            md = xml_context.map_data
-                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
-                        else:
-                            detail_txt = "no map.xml found"
-                        send("step", {"step": "xml", "status": "done", "label": "XML",
-                                      "detail": detail_txt})
-                    except Exception as exc:
-                        send("step", {"step": "xml", "status": "error", "label": "XML",
-                                      "detail": str(exc)})
-                        # Non-fatal: assemble without XML
 
                     # Step 5 — Assembly
                     send("step", {"step": "assembly", "status": "running", "label": "Assembly"})
@@ -408,6 +430,8 @@ def create_app() -> Flask:
                     send("error", {"message": f"Unexpected error: {exc}",
                                    "detail": _tb.format_exc()})
                 finally:
+                    if _log_handler is not None:
+                        logging.getLogger('ctw').removeHandler(_log_handler)
                     event_queue.put(None)  # sentinel
 
             thread = threading.Thread(target=pipeline_thread, daemon=True)
@@ -492,6 +516,54 @@ def create_app() -> Flask:
             "min_x": int(df["world_x"].min()), "min_z": int(df["world_z"].min()),
             "max_x": int(df["world_x"].max()), "max_z": int(df["world_z"].max()),
         })
+
+    @app.route("/api/source-map/<name>/query/wool-in-region")
+    def api_query_wool_in_region(name: str):
+        """Return wool chests and wool blocks within a rectangular bounding box.
+
+        Query params: min_x, min_z, max_x, max_z (all required, numeric).
+        """
+        from layout_analysis.wool_query import query_wool_in_region
+        try:
+            min_x = float(request.args["min_x"])
+            min_z = float(request.args["min_z"])
+            max_x = float(request.args["max_x"])
+            max_z = float(request.args["max_z"])
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": f"Invalid or missing parameter: {exc}"}), 400
+
+        out_dir = _get_output_root() / name
+        if not out_dir.exists():
+            return jsonify({"error": "Map not found or not preprocessed"}), 404
+
+        result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
+        return jsonify(result)
+
+    @app.route("/api/source-map/<name>/query/resources-in-region")
+    def api_query_resources_in_region(name: str):
+        """Return all resource blocks and wool chests within a rectangular bounding box.
+
+        Covers wool blocks (with color), iron/gold/diamond blocks, and chests
+        containing wool items.  Designed for the region-inspector UI so a single
+        call reveals everything that needs configuring in a selected area.
+
+        Query params: min_x, min_z, max_x, max_z (all required, numeric).
+        """
+        from layout_analysis.wool_query import query_resources_in_region
+        try:
+            min_x = float(request.args["min_x"])
+            min_z = float(request.args["min_z"])
+            max_x = float(request.args["max_x"])
+            max_z = float(request.args["max_z"])
+        except (KeyError, ValueError) as exc:
+            return jsonify({"error": f"Invalid or missing parameter: {exc}"}), 400
+
+        out_dir = _get_output_root() / name
+        if not out_dir.exists():
+            return jsonify({"error": "Map not found or not preprocessed"}), 404
+
+        result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
+        return jsonify(result)
 
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
