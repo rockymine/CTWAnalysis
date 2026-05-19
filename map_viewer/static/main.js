@@ -21,6 +21,7 @@ import { RegionRegistry } from "./region-registry.js";
 import { RegionDetail }          from "./region-detail.js";
 import { deriveBoundsFromCoords } from "./region-types.js";
 import * as api                   from "./api.js";
+import { DeletedRegionHistory }   from "./deleted-region-history.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
 
@@ -94,6 +95,7 @@ const canvas = new MapCanvas(
         canvas.addRegion(newNode);
         sidebar.appendRow(newNode);
         registry.select(newId);
+        deleteHistory.clearRedo();
       } catch (err) {
         setStatus(`Create region failed: ${err.message}`);
       }
@@ -104,6 +106,7 @@ const canvas = new MapCanvas(
 );
 
 let currentMap = null;
+const deleteHistory = new DeletedRegionHistory({ onChange: renderHistory });
 
 const detail = new RegionDetail(
   document.getElementById("region-detail"),
@@ -118,9 +121,9 @@ const detail = new RegionDetail(
       canvas.renameNode(oldId, newId);
       canvas.showAnchors(node);  // refresh overlay label
       if (!currentMap) return;
-      api.renameRegion(currentMap, oldId, newId).catch((err) => {
-        console.error("Region rename failed:", err);
-      });
+      api.renameRegion(currentMap, oldId, newId)
+        .then(() => deleteHistory.clearRedo())
+        .catch((err) => { console.error("Region rename failed:", err); });
     },
   },
 );
@@ -145,9 +148,15 @@ const sidebar = new RegionSidebar(
     },
     onVisibilityToggle: (id, hidden) => {
       // Propagate to the full subtree (hiding a union hides all its children)
-      for (const affectedId of collectSubtreeIds(registry.getNode(id))) {
+      const affectedIds = collectSubtreeIds(registry.getNode(id));
+      for (const affectedId of affectedIds) {
         canvas.setRegionVisible(affectedId, !hidden);
         sidebar.setHidden(affectedId, hidden);
+      }
+      // If the currently selected region is being hidden, deselect it so
+      // the canvas doesn't keep it visible due to its selected state.
+      if (hidden && selectedNode && affectedIds.includes(selectedNode.id)) {
+        registry.deselect();
       }
     },
   },
@@ -169,7 +178,18 @@ toolRectBtn.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" ||
+      e.target.tagName === "SELECT" || e.target.isContentEditable) return;
+  if (e.ctrlKey && e.key === "z" && currentMap) {
+    e.preventDefault();
+    deleteHistory.undo(restoreDeletedRegion, err => setStatus(`Undo failed: ${err.message}`));
+    return;
+  }
+  if (e.ctrlKey && e.key === "y" && currentMap) {
+    e.preventDefault();
+    deleteHistory.redo(redeleteRegion, err => setStatus(`Redo failed: ${err.message}`));
+    return;
+  }
   if ((e.key === "m" || e.key === "M") && currentMap) setTool("move");
   if ((e.key === "s" || e.key === "S") && currentMap) setTool(null);
   if ((e.key === "r" || e.key === "R") && currentMap) {
@@ -180,7 +200,10 @@ document.addEventListener("keydown", (e) => {
     multiSelected.clear();
     sidebar.setMultiSelected([]);
   }
-  if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) deleteNode(selectedNode);
+  if ((e.key === "Delete" || e.key === "Backspace") && selectedNode) {
+    e.preventDefault();
+    deleteNode(selectedNode);
+  }
   if ((e.key === "g" || e.key === "G") && e.ctrlKey && currentMap) {
     e.preventDefault();
     groupSelected();
@@ -224,6 +247,7 @@ async function loadMap(name) {
       api.fetchRegions(name),
     ]);
     registry.clear();
+    deleteHistory.clear();
     canvas.render(ctx, groups);
     sidebar.build(groups);
     detail.clear();
@@ -256,18 +280,82 @@ function setStatus(msg) {
   document.getElementById("status").textContent = msg;
 }
 
+function renderHistory() {
+  const listEl = document.getElementById("history-list");
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  const { undoStack, redoStack } = deleteHistory.getState();
+
+  if (undoStack.length === 0 && redoStack.length === 0) {
+    const el = document.createElement("div");
+    el.className = "history-entry history-entry--empty";
+    el.textContent = "no history";
+    listEl.appendChild(el);
+    return;
+  }
+
+  for (let i = 0; i < undoStack.length; i++) {
+    const el = document.createElement("div");
+    el.className = "history-entry history-entry--undo";
+    el.textContent = `Delete "${undoStack[i]}"`;
+    listEl.appendChild(el);
+  }
+
+  if (redoStack.length > 0) {
+    const sep = document.createElement("div");
+    sep.className = "history-entry history-entry--divider";
+    sep.textContent = "── now ──";
+    listEl.appendChild(sep);
+    for (let i = redoStack.length - 1; i >= 0; i--) {
+      const el = document.createElement("div");
+      el.className = "history-entry history-entry--redo";
+      el.textContent = `Delete "${redoStack[i]}"`;
+      listEl.appendChild(el);
+    }
+  }
+
+  // Scroll to bottom so the most recent action is visible
+  listEl.scrollTop = listEl.scrollHeight;
+}
+
 function deleteNode(node) {
-  if (!node || node.synthetic_id) return;
-  for (const id of collectSubtreeIds(node)) {
-    canvas.removeRegion(id);
-    sidebar.removeRow(id);
+  if (!node || node.synthetic_id || !currentMap) return;
+  api.deleteRegion(currentMap, node.id)
+    .then(({ snapshot }) => {
+      for (const id of collectSubtreeIds(node)) {
+        canvas.removeRegion(id);
+        sidebar.removeRow(id);
+      }
+      registry.unregister(node.id);  // fires deselect → clears detail + anchors
+      deleteHistory.pushDelete(snapshot);
+    })
+    .catch(err => setStatus(`Delete failed: ${err.message}`));
+}
+
+async function reloadRegions() {
+  const groups = await api.fetchRegions(currentMap);
+  registry.clear();
+  canvas.refreshRegions(groups);
+  sidebar.build(groups);
+  detail.clear();
+  canvas.clearAnchors();
+  for (const group of groups) {
+    for (const root of group.regions) registry.register(root, null);
   }
-  registry.unregister(node.id);  // fires deselect → clears detail + anchors
-  if (currentMap) {
-    api.deleteRegion(currentMap, node.id).catch((err) => {
-      console.error("Region delete failed:", err);
-    });
-  }
+  return groups;
+}
+
+async function restoreDeletedRegion(snapshot) {
+  await api.restoreRegion(currentMap, snapshot);
+  await reloadRegions();
+  registry.select(snapshot.root_id);
+  setStatus(`Restored "${snapshot.root_id}".`);
+}
+
+async function redeleteRegion(snapshot) {
+  await api.deleteRegion(currentMap, snapshot.root_id);
+  await reloadRegions();
+  setStatus(`Re-deleted "${snapshot.root_id}".`);
 }
 
 function collectSubtreeIds(node) {
@@ -300,9 +388,9 @@ function handleBoundsChange(node, bounds) {
 
 function handleBoundsSave(node, bounds) {
   if (!currentMap) return;
-  api.patchRegion(currentMap, node.id, bounds).catch((err) => {
-    console.error("Region save failed:", err);
-  });
+  api.patchRegion(currentMap, node.id, bounds)
+    .then(() => deleteHistory.clearRedo())
+    .catch((err) => { console.error("Region save failed:", err); });
 }
 
 function handleCoordsChange(node, coords) {
@@ -325,6 +413,7 @@ function handleCoordsSave(node, coords) {
         node.bounds = res.bounds;
         canvas.updateRegionBounds(node, res.bounds);
       }
+      deleteHistory.clearRedo();
     })
     .catch(err => console.error("Coord save failed:", err));
 }
@@ -341,15 +430,7 @@ async function groupSelected() {
   sidebar.setMultiSelected([]);
   try {
     const { id: newId } = await api.groupRegions(currentMap, childIds);
-    const groups = await api.fetchRegions(currentMap);
-    registry.clear();
-    canvas.refreshRegions(groups);
-    sidebar.build(groups);
-    detail.clear();
-    canvas.clearAnchors();
-    for (const group of groups) {
-      for (const root of group.regions) registry.register(root, null);
-    }
+    await reloadRegions();
     registry.select(newId);
     setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
   } catch (err) {
@@ -367,5 +448,6 @@ if (!mapParam) {
 } else {
   const display = document.getElementById("map-name-display");
   if (display) display.textContent = mapParam.replace(/_/g, " ");
+  renderHistory();
   loadMap(mapParam);
 }

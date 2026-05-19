@@ -52,7 +52,7 @@ export async function fetchContext(mapName) {
 }
 
 export async function fetchRegions(mapName) {
-  const r = await fetch(`/api/map/${mapName}/regions`);
+  const r = await fetch(`/api/map/${mapName}/regions`, { cache: "no-store" });
   if (!r.ok) throw new Error(`Failed to load regions for ${mapName}`);
   return r.json();
 }
@@ -95,6 +95,22 @@ export async function deleteRegion(mapName, regionId) {
     { method: "DELETE" },
   );
   if (!r.ok) throw new Error(`Delete failed (${r.status})`);
+  return r.json();  // { ok, snapshot }
+}
+
+export async function restoreRegion(mapName, snapshot) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/regions/restore`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshot }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Restore failed (${r.status})`);
+  }
   return r.json();
 }
 

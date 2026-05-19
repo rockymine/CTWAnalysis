@@ -341,9 +341,10 @@ export class MapCanvas {
     this.#currentSelectedIds.clear();
     this.#visibilityMap.clear();
 
+    const oldLayer = this.#regionsLayerEl;  // save before #buildXmlRegions overwrites the field
     const newLayer = this.#buildXmlRegions();
-    if (this.#regionsLayerEl?.parentNode) {
-      this.#regionsLayerEl.parentNode.replaceChild(newLayer, this.#regionsLayerEl);
+    if (oldLayer?.parentNode) {
+      oldLayer.parentNode.replaceChild(newLayer, oldLayer);
     }
     this.#updateOverlay();
   }
@@ -848,7 +849,7 @@ export class MapCanvas {
       const shape = svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
         fill: color, "fill-opacity": "0.20",
-        stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
       });
       g.appendChild(shape);
@@ -857,7 +858,7 @@ export class MapCanvas {
       const shape = svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
         fill: color, "fill-opacity": "0.20",
-        stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "4,2",
+        stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "4,2",
         "vector-effect": "non-scaling-stroke",
       });
       g.appendChild(shape);
@@ -874,7 +875,7 @@ export class MapCanvas {
     }
     return svgEl("path", {
       d, fill: color, "fill-opacity": "0.12",
-      stroke: "rgba(255,255,255,0.55)", "stroke-width": "1.5", "stroke-dasharray": "6,3",
+      stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "6,3",
       "fill-rule": "evenodd", "vector-effect": "non-scaling-stroke",
     });
   }
@@ -905,12 +906,14 @@ export class MapCanvas {
     const entry = this.#shapeMap.get(id);
     if (!entry) return;
     if (isSelected) {
-      entry.shape.setAttribute("stroke-width",    "2.5");
-      entry.shape.setAttribute("fill-opacity",    "0.22");
+      entry.shape.setAttribute("stroke-width",   "2.5");
+      entry.shape.setAttribute("stroke-opacity", "0.85");
+      entry.shape.setAttribute("fill-opacity",   "0.22");
       entry.shape.removeAttribute("stroke-dasharray");
     } else {
-      entry.shape.setAttribute("stroke-width",    "1.5");
-      entry.shape.setAttribute("fill-opacity",    "0.20");
+      entry.shape.setAttribute("stroke-width",   "1.5");
+      entry.shape.setAttribute("stroke-opacity", "0.55");
+      entry.shape.setAttribute("fill-opacity",   "0.20");
       entry.shape.setAttribute("stroke-dasharray", "4,2");
     }
   }

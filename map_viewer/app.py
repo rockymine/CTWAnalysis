@@ -108,6 +108,14 @@ def _collect_region_subtree_ids(regions: dict, region_id: str) -> list[str]:
     return result
 
 
+def _remove_inline_children(regions: dict, ids_to_remove: set[str]) -> None:
+    """Remove inline child entries matching ids_to_remove from all regions' children arrays."""
+    for region in regions.values():
+        children = region.get("children")
+        if isinstance(children, list):
+            region["children"] = [c for c in children if c.get("id") not in ids_to_remove]
+
+
 def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
     """Recursively update id in a composite region's children array."""
     for child in region.get("children", []):
@@ -763,15 +771,67 @@ def create_app() -> Flask:
         regions = data.get("regions", {})
         if region_id not in regions:
             return jsonify({"error": f"region {region_id!r} not found"}), 404
-        for rid in _collect_region_subtree_ids(regions, region_id):
+
+        subtree_ids = _collect_region_subtree_ids(regions, region_id)
+
+        category = "other"
+        for cat_name, cat_list in data.get("region_categories", {}).items():
+            if region_id in cat_list:
+                category = cat_name
+                break
+
+        region_entries = {rid: regions[rid] for rid in subtree_ids if rid in regions}
+
+        for rid in subtree_ids:
             regions.pop(rid, None)
             for cat_list in data.get("region_categories", {}).values():
                 if rid in cat_list:
                     cat_list.remove(rid)
+        _remove_inline_children(regions, set(subtree_ids))
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        return jsonify({"ok": True})
+        return jsonify({
+            "ok": True,
+            "snapshot": {
+                "root_id":        region_id,
+                "category":       category,
+                "region_entries": region_entries,
+            },
+        })
+
+    @app.route("/api/map/<name>/regions/restore", methods=["POST"])
+    def restore_region(name: str) -> tuple:
+        body     = request.get_json(silent=True) or {}
+        snapshot = body.get("snapshot")
+        if not snapshot:
+            return jsonify({"error": "snapshot required"}), 400
+
+        root_id        = snapshot.get("root_id", "")
+        category       = snapshot.get("category", "other")
+        region_entries = snapshot.get("region_entries", {})
+
+        if not root_id or not region_entries:
+            return jsonify({"error": "invalid snapshot"}), 400
+
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        regions = data.setdefault("regions", {})
+
+        conflicts = [rid for rid in region_entries if rid in regions]
+        if conflicts:
+            return jsonify({"error": f"id(s) already in use: {conflicts}"}), 409
+
+        regions.update(region_entries)
+        data.setdefault("region_categories", {}).setdefault(category, []).append(root_id)
+
+        data_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return jsonify({"ok": True, "id": root_id})
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
     def patch_region(name: str, region_id: str) -> tuple:
