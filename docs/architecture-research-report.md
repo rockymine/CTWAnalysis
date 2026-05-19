@@ -166,6 +166,9 @@ The editor does not read or display any of this.
 - ✅ Zoom / pan canvas
 - ✅ Export `<regions>` XML block
 - ✅ Lucide icons for tool buttons
+- ✅ Region type icons in sidebar (left-aligned Lucide icons replacing text badges)
+- ✅ Type-specific inspector fields (editable geometry for all region types: radius, height, base, coords, etc.)
+- ✅ Editable geometry fields for all region types via the inspector panel
 
 ### What Is Missing for Authoring Vision
 
@@ -183,8 +186,7 @@ The editor does not read or display any of this.
 - ❌ CTW validation framework
 - ❌ Guided authoring flow / concept-first UX
 - ❌ App-level navigation (workspace switcher / section nav)
-- ❌ Region type icons (only text badges currently)
-- ❌ Type-specific inspector fields (inspector shows same bounds for all types)
+- ❌ Draw tools for non-rectangle region types (only rectangle currently; need circle, cylinder, sphere, cuboid, point)
 - ❌ Vertical / height slice view for cuboid Y editing
 - ❌ Placing point/cylinder regions by clicking canvas
 
