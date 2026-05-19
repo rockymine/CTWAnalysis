@@ -80,7 +80,8 @@ GET  /api/map/<name>/regions           → Region tree grouped by category
 POST /api/map/<name>/regions           → Create rectangle region
 POST /api/map/<name>/regions/group     → Group regions into union
 PATCH /api/map/<name>/region/<id>      → Update region bounds or id
-DELETE /api/map/<name>/region/<id>     → Delete region (cascading)
+DELETE /api/map/<name>/region/<id>     → Delete region (cascading); returns snapshot for undo
+POST /api/map/<name>/regions/restore  → Restore a deleted region from snapshot
 GET  /api/map/<name>/export/xml        → Export <regions> block only
 GET  /api/map/<name>/layers/top-surface → PNG-encoded top surface layer
 ```
@@ -160,6 +161,7 @@ The editor does not read or display any of this.
 - ✅ Create new rectangle regions (draw tool)
 - ✅ Group regions into union
 - ✅ Delete regions (with cascading children)
+- ✅ Undo / redo region deletion (Ctrl+Z / Ctrl+Y, 20-entry history per map session)
 - ✅ Layer toggles (blocks, POIs, build region)
 - ✅ Zoom / pan canvas
 - ✅ Export `<regions>` XML block

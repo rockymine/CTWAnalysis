@@ -128,7 +128,9 @@ Ancestor bounds (union containers) are recomputed automatically when a child is 
 Select a region, then press **Del** or **Backspace**.
 
 - Composite regions (union, intersect, negative) are deleted together with **all their descendants**.
-- Deletion is immediate and cannot be undone.
+- Deletion can be undone with **Ctrl+Z** and redone with **Ctrl+Y** (up to 20 deletions per map session).
+- The undo/redo history is shown in the **History** panel at the bottom of the inspector. Entries above the divider can be undone; entries below it can be redone.
+- Any non-delete mutation (rename, bounds edit, create, group) clears the redo stack.
 
 ---
 
@@ -195,6 +197,8 @@ Click **Export XML** in the top bar to download the full region tree as an XML f
 | R | Rectangle tool (press again to return to Move) |
 | Esc | Move tool + cancel pending multi-select |
 | Del / Backspace | Delete selected region and all descendants |
+| Ctrl+Z | Undo last deletion |
+| Ctrl+Y | Redo last undone deletion |
 | Ctrl+click (sidebar) | Add/remove from pending group |
 | Ctrl+G | Create union from pending group |
 
