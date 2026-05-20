@@ -561,6 +561,28 @@ def create_app() -> Flask:
 
     # ── Map data endpoints (used by editor) ──────────────────────────────────
 
+    @app.route("/api/map/<name>/map-data")
+    def map_data_raw(name: str):
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+        return jsonify(json.loads(data_path.read_text(encoding="utf-8")))
+
+    _METADATA_FIELDS = {"name", "version", "objective", "max_build_height", "gamemode", "phase", "authors"}
+
+    @app.route("/api/map/<name>/metadata", methods=["PATCH"])
+    def patch_map_metadata(name: str):
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        payload = request.get_json(force=True)
+        for key, value in payload.items():
+            if key in _METADATA_FIELDS:
+                data[key] = value
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
     @app.route("/api/map/<name>/context")
     def map_context(name: str):
         ctx_path = _get_output_root() / name / "map_context.json"

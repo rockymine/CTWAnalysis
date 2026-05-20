@@ -1,0 +1,17 @@
+import { OverviewPanel } from "./overview.js";
+
+export class OverviewActivity {
+  constructor() {
+    this._el    = document.getElementById("overview-workspace");
+    this._panel = new OverviewPanel(this._el);
+  }
+
+  activate({ mapName } = {}) {
+    this._el.hidden = false;
+    if (mapName) this._panel.load(mapName);
+  }
+
+  deactivate() {
+    this._el.hidden = true;
+  }
+}

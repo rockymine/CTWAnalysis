@@ -45,6 +45,22 @@ export async function fetchMaps() {
   return r.json();
 }
 
+export async function fetchMapData(mapName) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/map-data`);
+  if (!r.ok) throw new Error(`Failed to load map data for ${mapName}`);
+  return r.json();
+}
+
+export async function saveMetadata(mapName, metadata) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/metadata`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(metadata),
+  });
+  if (!r.ok) throw new Error(`Failed to save metadata (${r.status})`);
+  return r.json();
+}
+
 export async function fetchContext(mapName) {
   const r = await fetch(`/api/map/${mapName}/context`);
   if (!r.ok) throw new Error(`Failed to load context for ${mapName}`);

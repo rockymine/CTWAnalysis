@@ -19,7 +19,7 @@
 
 <div id="main">
   <nav id="activity-rail">
-    <button class="activity-btn" disabled title="Overview">
+    <button class="activity-btn" id="activity-overview" title="Overview" disabled>
       <i data-lucide="book-open-text"></i>
     </button>
     <button class="activity-btn" disabled title="Players &amp; Teams">
@@ -41,46 +41,114 @@
       <i data-lucide="archive"></i>
     </button>
   </nav>
-  <div id="layers">
-    <div id="layers-header">REGIONS</div>
-    <div id="region-list">
-      <div id="empty-msg">No map loaded</div>
+
+  <div id="activity-viewport">
+
+    <!-- Overview workspace -->
+    <div id="overview-workspace" hidden>
+      <div id="overview-content">
+        <section class="ov-section">
+          <h2 class="ov-section-title">Map Identity</h2>
+          <div class="ov-field">
+            <label class="ov-label" for="ov-name">Map Name <span class="ov-required">*</span></label>
+            <input id="ov-name" class="ov-input" type="text" placeholder="My CTW Map"/>
+          </div>
+          <div class="ov-field-row">
+            <div class="ov-field">
+              <label class="ov-label" for="ov-version">Version <span class="ov-required">*</span></label>
+              <input id="ov-version" class="ov-input" type="text" placeholder="1.0.0"/>
+            </div>
+            <div class="ov-field">
+              <label class="ov-label" for="ov-gamemode">Gamemode</label>
+              <input id="ov-gamemode" class="ov-input" type="text" placeholder="ctw"/>
+            </div>
+          </div>
+          <div class="ov-field">
+            <label class="ov-label" for="ov-objective">Objective <span class="ov-required">*</span></label>
+            <input id="ov-objective" class="ov-input" type="text" placeholder="Capture all enemy wools!"/>
+          </div>
+        </section>
+
+        <section class="ov-section">
+          <h2 class="ov-section-title">Authors</h2>
+          <div id="ov-authors-list"></div>
+          <button id="ov-add-author" class="action-btn">+ Add author</button>
+        </section>
+
+        <section class="ov-section">
+          <h2 class="ov-section-title ov-section-title--toggle" id="ov-advanced-toggle">
+            Settings <span id="ov-advanced-caret">▸</span>
+          </h2>
+          <div id="ov-advanced" hidden>
+            <div class="ov-field-row">
+              <div class="ov-field">
+                <label class="ov-label" for="ov-mbh">Max Build Height</label>
+                <input id="ov-mbh" class="ov-input" type="number" placeholder="e.g. 32"/>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label" for="ov-phase">Phase</label>
+                <select id="ov-phase" class="ov-input">
+                  <option value="">production (default)</option>
+                  <option value="staging">staging</option>
+                  <option value="development">development</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="ov-actions">
+          <button id="ov-save-btn" class="action-btn action-btn--primary" disabled>Save changes</button>
+          <span id="ov-save-status"></span>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="sidebar-handle" id="left-handle"></div>
-  <div id="canvas-wrap">
-    <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-            fill="#334155" font-size="14">Loading map…</text>
-    </svg>
-    <div id="cursor-coords"></div>
-    <div id="layer-picker">
-      <div class="layer-picker-title">Layers</div>
-      <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
-      <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
-      <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+
+    <!-- Regions workspace -->
+    <div id="regions-workspace">
+      <div id="layers">
+        <div id="layers-header">REGIONS</div>
+        <div id="region-list">
+          <div id="empty-msg">No map loaded</div>
+        </div>
+      </div>
+      <div class="sidebar-handle" id="left-handle"></div>
+      <div id="canvas-wrap">
+        <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
+          <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                fill="#334155" font-size="14">Loading map…</text>
+        </svg>
+        <div id="cursor-coords"></div>
+        <div id="layer-picker">
+          <div class="layer-picker-title">Layers</div>
+          <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
+          <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
+          <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+        </div>
+        <div id="draw-toolbar">
+          <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
+            <i data-lucide="hand"></i>
+          </button>
+          <button id="tool-select" class="draw-tool-btn" title="Select"        disabled>
+            <i data-lucide="mouse-pointer-2"></i>
+          </button>
+          <button id="tool-rect"   class="draw-tool-btn" title="Rectangle (R)" disabled>
+            <i data-lucide="square"></i>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-handle" id="right-handle"></div>
+      <div id="inspector">
+        <div id="region-detail-wrap">
+          <div id="region-detail"></div>
+        </div>
+        <div id="history-panel">
+          <div class="history-panel-title">History</div>
+          <div id="history-list"></div>
+        </div>
+      </div>
     </div>
-    <div id="draw-toolbar">
-      <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
-        <i data-lucide="hand"></i>
-      </button>
-      <button id="tool-select" class="draw-tool-btn" title="Select"        disabled>
-        <i data-lucide="mouse-pointer-2"></i>
-      </button>
-      <button id="tool-rect"   class="draw-tool-btn" title="Rectangle (R)" disabled>
-        <i data-lucide="square"></i>
-      </button>
-    </div>
-  </div>
-  <div class="sidebar-handle" id="right-handle"></div>
-  <div id="inspector">
-    <div id="region-detail-wrap">
-      <div id="region-detail"></div>
-    </div>
-    <div id="history-panel">
-      <div class="history-panel-title">History</div>
-      <div id="history-list"></div>
-    </div>
+
   </div>
 </div>
 

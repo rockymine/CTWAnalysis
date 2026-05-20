@@ -78,6 +78,9 @@ body {
 
 /* ── main layout ── */
 #main { display: flex; flex: 1; overflow: hidden; }
+#activity-viewport { display: flex; flex: 1; overflow: hidden; }
+#activity-viewport > div[hidden] { display: none; }
+#regions-workspace { display: flex; flex: 1; overflow: hidden; }
 
 /* ── svg canvas ── */
 #canvas-wrap {
@@ -543,3 +546,49 @@ body {
   width: 2px; background: var(--text-white); border-radius: 0 2px 2px 0;
 }
 .activity-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Overview workspace ── */
+#overview-workspace {
+  flex: 1; overflow-y: auto;
+  background: var(--bg-deep);
+  display: flex; justify-content: center;
+  padding: 32px 24px;
+}
+#overview-content {
+  width: 100%; max-width: 560px;
+  display: flex; flex-direction: column; gap: 28px;
+}
+.ov-section { display: flex; flex-direction: column; gap: 12px; }
+.ov-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+.ov-section-title--toggle { cursor: pointer; user-select: none; }
+.ov-section-title--toggle:hover { color: var(--text-secondary); }
+.ov-field { display: flex; flex-direction: column; gap: 5px; }
+.ov-field-row { display: flex; gap: 14px; }
+.ov-field-row .ov-field { flex: 1; }
+.ov-label { font-size: 11px; color: var(--text-secondary); user-select: none; }
+.ov-required { color: var(--color-error); }
+.ov-input {
+  background: var(--bg-panel); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 10px; font-size: 13px; font-family: inherit;
+  outline: none; width: 100%; box-sizing: border-box;
+}
+.ov-input:focus { border-color: var(--accent); }
+.ov-author-row {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+}
+.ov-author-row .ov-author-uuid         { flex: 2; min-width: 0; }
+.ov-author-row .ov-author-role         { flex: 0 0 108px; }
+.ov-author-row .ov-author-contribution { flex: 2; min-width: 0; }
+.ov-author-remove {
+  flex-shrink: 0; background: none; border: none;
+  color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 4px 6px;
+}
+.ov-author-remove:hover { color: var(--color-error); }
+.ov-actions { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
+#ov-save-status { font-size: 12px; color: var(--text-secondary); }

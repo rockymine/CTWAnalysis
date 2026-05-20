@@ -22,8 +22,33 @@ import { RegionDetail }          from "./region-detail.js";
 import { deriveBoundsFromCoords } from "./region-types.js";
 import * as api                   from "./api.js";
 import { DeletedRegionHistory }   from "./deleted-region-history.js";
+import { OverviewActivity }       from "./overview-activity.js";
+import { RegionsActivity }        from "./regions-activity.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
+
+// ── Activity switching ─────────────────────────────────────────────────────
+
+const activityBtns = document.querySelectorAll(".activity-btn");
+const overviewBtn  = document.getElementById("activity-overview");
+const regionsBtn   = document.getElementById("activity-regions");
+
+const ACTIVITIES = {
+  "activity-overview": new OverviewActivity(),
+  "activity-regions":  new RegionsActivity(),
+};
+
+let currentActivityId = "activity-regions";
+
+function switchActivity(id) {
+  ACTIVITIES[currentActivityId].deactivate();
+  currentActivityId = id;
+  activityBtns.forEach(btn => btn.classList.toggle("active", btn.id === id));
+  ACTIVITIES[id].activate({ mapName: currentMap });
+}
+
+overviewBtn.addEventListener("click", () => { if (!overviewBtn.disabled) switchActivity("activity-overview"); });
+regionsBtn.addEventListener("click",  () => switchActivity("activity-regions"));
 
 const exportBtn = document.getElementById("export-xml-btn");
 exportBtn.addEventListener("click", async () => {
@@ -259,6 +284,7 @@ async function loadMap(name) {
       for (const root of group.regions) registry.register(root, null);
     }
     exportBtn.disabled     = false;
+    overviewBtn.disabled   = false;
     toolMoveBtn.disabled   = false;
     toolSelectBtn.disabled = false;
     toolRectBtn.disabled   = false;
