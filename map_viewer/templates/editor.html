@@ -19,7 +19,7 @@
 
 <div id="main">
   <nav id="activity-rail">
-    <button class="activity-btn" id="activity-overview" title="Overview" disabled>
+    <button class="activity-btn" id="activity-overview" title="Overview" disabled data-status="">
       <i data-lucide="book-open-text"></i>
     </button>
     <button class="activity-btn" disabled title="Players &amp; Teams">
@@ -46,62 +46,64 @@
 
     <!-- Overview workspace -->
     <div id="overview-workspace" hidden>
-      <div id="overview-content">
-        <section class="ov-section">
-          <h2 class="ov-section-title">Map Identity</h2>
-          <div class="ov-field">
-            <label class="ov-label" for="ov-name">Map Name <span class="ov-required">*</span></label>
-            <input id="ov-name" class="ov-input" type="text" placeholder="My CTW Map"/>
-          </div>
-          <div class="ov-field-row">
-            <div class="ov-field">
-              <label class="ov-label" for="ov-version">Version <span class="ov-required">*</span></label>
-              <input id="ov-version" class="ov-input" type="text" placeholder="1.0.0"/>
-            </div>
-            <div class="ov-field">
-              <label class="ov-label" for="ov-gamemode">Gamemode</label>
-              <input id="ov-gamemode" class="ov-input" type="text" placeholder="ctw"/>
-            </div>
-          </div>
-          <div class="ov-field">
-            <label class="ov-label" for="ov-objective">Objective <span class="ov-required">*</span></label>
-            <input id="ov-objective" class="ov-input" type="text" placeholder="Capture all enemy wools!"/>
-          </div>
-        </section>
 
-        <section class="ov-section">
-          <h2 class="ov-section-title">Authors</h2>
-          <div id="ov-authors-list"></div>
-          <button id="ov-add-author" class="action-btn">+ Add author</button>
-        </section>
-
-        <section class="ov-section">
-          <h2 class="ov-section-title ov-section-title--toggle" id="ov-advanced-toggle">
-            Settings <span id="ov-advanced-caret">▸</span>
-          </h2>
-          <div id="ov-advanced" hidden>
+      <!-- Left panel: map identity + authors -->
+      <div id="ov-left">
+        <div id="ov-left-scroll">
+          <section class="ov-section">
+            <h2 class="ov-section-title">Map Identity</h2>
+            <div class="ov-field">
+              <label class="ov-label" for="ov-name">Map Name <span class="ov-required">*</span></label>
+              <input id="ov-name" class="ov-input" type="text" placeholder="My CTW Map"/>
+            </div>
             <div class="ov-field-row">
               <div class="ov-field">
-                <label class="ov-label" for="ov-mbh">Max Build Height</label>
-                <input id="ov-mbh" class="ov-input" type="number" placeholder="e.g. 32"/>
+                <label class="ov-label" for="ov-version">Version <span class="ov-required">*</span></label>
+                <input id="ov-version" class="ov-input" type="text" placeholder="1.0.0"/>
               </div>
               <div class="ov-field">
-                <label class="ov-label" for="ov-phase">Phase</label>
-                <select id="ov-phase" class="ov-input">
-                  <option value="">production (default)</option>
-                  <option value="staging">staging</option>
-                  <option value="development">development</option>
-                </select>
+                <label class="ov-label" for="ov-gamemode">Gamemode <span class="ov-required">*</span></label>
+                <input id="ov-gamemode" class="ov-input" type="text" placeholder="ctw"/>
               </div>
             </div>
-          </div>
-        </section>
+            <div class="ov-field">
+              <label class="ov-label" for="ov-objective">Objective</label>
+              <input id="ov-objective" class="ov-input" type="text" placeholder="Capture all enemy wools!"/>
+            </div>
+          </section>
 
-        <div class="ov-actions">
-          <button id="ov-save-btn" class="action-btn action-btn--primary" disabled>Save changes</button>
-          <span id="ov-save-status"></span>
+          <section class="ov-section">
+            <h2 class="ov-section-title">Authors</h2>
+            <div id="ov-authors-list"></div>
+            <button id="ov-add-author" class="action-btn">+ Add author</button>
+          </section>
+
+          <div class="ov-actions">
+            <button id="ov-save-btn" class="action-btn action-btn--primary" disabled>Save changes</button>
+            <span id="ov-save-status"></span>
+          </div>
         </div>
       </div>
+
+      <div class="sidebar-handle" id="ov-left-handle"></div>
+
+      <!-- Canvas: blocks layer + symmetry axis overlay -->
+      <div id="ov-canvas-wrap">
+        <svg id="ov-map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <div class="sidebar-handle" id="ov-right-handle"></div>
+
+      <!-- Right panel: symmetry configuration -->
+      <div id="ov-right">
+        <div id="ov-symmetry-panel">
+          <h2 class="ov-section-title">Symmetry Axis</h2>
+          <div id="ov-sym-body">
+            <p class="ov-sym-loading">Loading…</p>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Regions workspace -->
@@ -183,6 +185,8 @@
 
   initSidebarResize(document.getElementById('left-handle'),  document.getElementById('layers'),    'left',  160, 480);
   initSidebarResize(document.getElementById('right-handle'), document.getElementById('inspector'), 'right', 220, 500);
+  initSidebarResize(document.getElementById('ov-left-handle'),  document.getElementById('ov-left'),  'left',  200, 480);
+  initSidebarResize(document.getElementById('ov-right-handle'), document.getElementById('ov-right'), 'right', 180, 420);
 }());
 </script>
 </body>

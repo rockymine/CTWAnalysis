@@ -1,9 +1,9 @@
 import { OverviewPanel } from "./overview.js";
 
 export class OverviewActivity {
-  constructor() {
+  constructor({ onStatusChange } = {}) {
     this._el    = document.getElementById("overview-workspace");
-    this._panel = new OverviewPanel(this._el);
+    this._panel = new OverviewPanel(this._el, { onStatusChange });
   }
 
   activate({ mapName } = {}) {

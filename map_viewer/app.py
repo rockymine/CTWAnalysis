@@ -568,7 +568,10 @@ def create_app() -> Flask:
             abort(404)
         return jsonify(json.loads(data_path.read_text(encoding="utf-8")))
 
-    _METADATA_FIELDS = {"name", "version", "objective", "max_build_height", "gamemode", "phase", "authors"}
+    _METADATA_FIELDS = {
+        "name", "version", "objective", "max_build_height", "gamemode",
+        "phase", "authors", "symmetry_status",
+    }
 
     @app.route("/api/map/<name>/metadata", methods=["PATCH"])
     def patch_map_metadata(name: str):
@@ -582,6 +585,13 @@ def create_app() -> Flask:
                 data[key] = value
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True})
+
+    @app.route("/api/map/<name>/symmetry")
+    def map_symmetry(name: str):
+        sym_path = _get_output_root() / name / "symmetry.json"
+        if not sym_path.exists():
+            abort(404)
+        return jsonify(json.loads(sym_path.read_text(encoding="utf-8")))
 
     @app.route("/api/map/<name>/context")
     def map_context(name: str):

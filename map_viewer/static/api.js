@@ -61,6 +61,13 @@ export async function saveMetadata(mapName, metadata) {
   return r.json();
 }
 
+export async function fetchSymmetry(mapName) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/symmetry`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`Failed to load symmetry for ${mapName}`);
+  return r.json();
+}
+
 export async function fetchContext(mapName) {
   const r = await fetch(`/api/map/${mapName}/context`);
   if (!r.ok) throw new Error(`Failed to load context for ${mapName}`);

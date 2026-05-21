@@ -34,7 +34,9 @@ const overviewBtn  = document.getElementById("activity-overview");
 const regionsBtn   = document.getElementById("activity-regions");
 
 const ACTIVITIES = {
-  "activity-overview": new OverviewActivity(),
+  "activity-overview": new OverviewActivity({
+    onStatusChange: (dotStatus) => { overviewBtn.dataset.status = dotStatus ?? ""; },
+  }),
   "activity-regions":  new RegionsActivity(),
 };
 
@@ -298,7 +300,10 @@ async function loadMap(name) {
   }
 }
 
-window.addEventListener("resize", () => canvas.resize());
+window.addEventListener("resize", () => {
+  canvas.resize();
+  ACTIVITIES["activity-overview"]._panel._canvas.resize();
+});
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
