@@ -95,8 +95,9 @@ export class MapCanvas {
   #addedNodes     = [];    // nodes added via addRegion() not yet in #groups; re-included on repaint
 
   // ── draw tool state ───────────────────────────────────────────────────────
-  #activeTool  = null;  // null | "rectangle"
-  #drawState   = null;  // null | { startBx, startBz, currentBx, currentBz, previewRect, anchor1, anchor2 }
+  #activeTool  = null;  // null | "rectangle" | "cuboid" | "point" | "block" | "cylinder"
+  #drawState   = null;  // null | rectangle/cuboid: { toolType, startBx, startBz, currentBx, currentBz, previewRect, anchor1, anchor2 }
+                        //        cylinder: { toolType:"cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius }
 
   // ── resize state ──────────────────────────────────────────────────────────
   #resizeState = null;  // null | { node, xField, zField, cursor }
@@ -251,9 +252,9 @@ export class MapCanvas {
   }
 
   #refreshCursor() {
-    if (this.#activeTool === "move")           this.#svg.style.cursor = "grab";
-    else if (this.#activeTool === "rectangle") this.#svg.style.cursor = "crosshair";
-    else                                       this.#svg.style.cursor = "default";
+    if (this.#activeTool === "move")       this.#svg.style.cursor = "grab";
+    else if (this.#activeTool !== null)    this.#svg.style.cursor = "crosshair";
+    else                                   this.#svg.style.cursor = "default";
   }
 
   /** Add a freshly-created region to the canvas without a full repaint. */
@@ -436,11 +437,34 @@ export class MapCanvas {
         return;
       }
       if (e.button !== 0) return;
-      if (this.#activeTool === "rectangle") {
+      if (this.#activeTool === "rectangle" || this.#activeTool === "cuboid") {
         if (!this.#toWorld) return;
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
         this.#startDraw(Math.floor(world.x), Math.floor(world.z));
+        return;
+      }
+      if (this.#activeTool === "point" || this.#activeTool === "block") {
+        if (!this.#toWorld) return;
+        const svgPt = this.#clientToSvg(e.clientX, e.clientY);
+        const world = this.#toWorld(svgPt.x, svgPt.y);
+        if (this.#callbacks.onRegionDraw) {
+          this.#callbacks.onRegionDraw({ type: this.#activeTool, x: Math.floor(world.x), z: Math.floor(world.z) });
+        }
+        this.#clickWasDrag = true;  // suppress the following click event
+        return;
+      }
+      if (this.#activeTool === "cylinder") {
+        if (!this.#toWorld) return;
+        const svgPt = this.#clientToSvg(e.clientX, e.clientY);
+        const world = this.#toWorld(svgPt.x, svgPt.y);
+        const bx = Math.floor(world.x), bz = Math.floor(world.z);
+        if (!this.#drawState) {
+          this.#startCylinderDraw(bx, bz);
+        } else {
+          this.#completeCylinderDraw(bx, bz);
+        }
+        this.#clickWasDrag = true;  // suppress the following click event
         return;
       }
       if (this.#activeTool !== "move") {
@@ -474,10 +498,15 @@ export class MapCanvas {
         }
       }
 
-      if (this.#activeTool === "rectangle" && this.#drawState && this.#toWorld) {
+      if ((this.#activeTool === "rectangle" || this.#activeTool === "cuboid") && this.#drawState && this.#toWorld) {
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
         this.#updateDrawPreview(Math.floor(world.x), Math.floor(world.z));
+      }
+      if (this.#activeTool === "cylinder" && this.#drawState && this.#toWorld) {
+        const svgPt = this.#clientToSvg(e.clientX, e.clientY);
+        const world = this.#toWorld(svgPt.x, svgPt.y);
+        this.#updateCylinderPreview(Math.floor(world.x), Math.floor(world.z));
       }
 
       this.#updateCoordsAndHighlight(e.clientX, e.clientY);
@@ -499,7 +528,7 @@ export class MapCanvas {
         return;
       }
       if (e.button !== 0) return;
-      if (this.#activeTool === "rectangle" && this.#drawState) {
+      if ((this.#activeTool === "rectangle" || this.#activeTool === "cuboid") && this.#drawState) {
         this.#completeDraw();
         return;
       }
@@ -1043,7 +1072,7 @@ export class MapCanvas {
     this.#drawLayerEl.appendChild(previewRect);
     this.#drawLayerEl.appendChild(anchor1);
     this.#drawLayerEl.appendChild(anchor2);
-    this.#drawState = { startBx: bx, startBz: bz, currentBx: bx, currentBz: bz,
+    this.#drawState = { toolType: this.#activeTool, startBx: bx, startBz: bz, currentBx: bx, currentBz: bz,
                         previewRect, anchor1, anchor2 };
     this.#updateDrawPreview(bx, bz);
   }
@@ -1068,19 +1097,87 @@ export class MapCanvas {
 
   #completeDraw() {
     if (!this.#drawState) return;
-    const { startBx, startBz, currentBx, currentBz } = this.#drawState;
+    const { toolType, startBx, startBz, currentBx, currentBz } = this.#drawState;
     const bounds = this.#boundsFromBlocks(startBx, startBz, currentBx, currentBz);
     this.#cancelDraw();
-    if (this.#callbacks.onRegionDraw) this.#callbacks.onRegionDraw(bounds);
+    if (this.#callbacks.onRegionDraw) this.#callbacks.onRegionDraw({ type: toolType, ...bounds });
   }
 
   #cancelDraw() {
     if (!this.#drawState) return;
-    const { previewRect, anchor1, anchor2 } = this.#drawState;
-    for (const el of [previewRect, anchor1, anchor2]) {
-      if (el.parentNode) el.parentNode.removeChild(el);
+    if (this.#drawLayerEl) {
+      while (this.#drawLayerEl.firstChild)
+        this.#drawLayerEl.removeChild(this.#drawLayerEl.firstChild);
     }
     this.#drawState = null;
+  }
+
+  #startCylinderDraw(bx, bz) {
+    if (!this.#drawLayerEl || !this.#toSvg) return;
+    const centerX = bx + 0.5, centerZ = bz + 0.5;
+    const pt = this.#toSvg(centerX, centerZ);
+
+    const dot = svgEl("circle", {
+      cx: pt.x, cy: pt.y, r: 5,
+      fill: "#a78bfa", stroke: "#fff", "stroke-width": "1.5", "pointer-events": "none",
+    });
+    const line = svgEl("line", {
+      x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y,
+      stroke: "#a78bfa", "stroke-width": "1.5", "stroke-dasharray": "4 2",
+      "vector-effect": "non-scaling-stroke", "pointer-events": "none",
+    });
+    const previewCircle = svgEl("ellipse", {
+      cx: pt.x, cy: pt.y, rx: 0, ry: 0,
+      fill: "none", stroke: "#a78bfa", "stroke-width": "1.5", "stroke-dasharray": "6 3",
+      "vector-effect": "non-scaling-stroke", "pointer-events": "none",
+    });
+    const label = svgEl("text", {
+      x: pt.x, y: pt.y, fill: "#a78bfa", "font-size": "11",
+      "text-anchor": "start", "pointer-events": "none",
+    });
+
+    this.#drawLayerEl.append(previewCircle, line, dot, label);
+    this.#drawState = { toolType: "cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius: 1 };
+  }
+
+  #updateCylinderPreview(bx, bz) {
+    if (!this.#drawState || !this.#toSvg) return;
+    const { centerX, centerZ, line, previewCircle, label } = this.#drawState;
+
+    const cursorX = bx + 0.5, cursorZ = bz + 0.5;
+    const dx = cursorX - centerX, dz = cursorZ - centerZ;
+    const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dz * dz)));
+    this.#drawState.currentRadius = radius;
+
+    const cPt  = this.#toSvg(centerX, centerZ);
+    const rxPt = this.#toSvg(centerX + radius, centerZ);
+    const rzPt = this.#toSvg(centerX, centerZ + radius);
+    const endPt = this.#toSvg(cursorX, cursorZ);
+
+    line.setAttribute("x2", endPt.x);
+    line.setAttribute("y2", endPt.y);
+    previewCircle.setAttribute("rx", Math.abs(rxPt.x - cPt.x));
+    previewCircle.setAttribute("ry", Math.abs(rzPt.y - cPt.y));
+    label.setAttribute("x", endPt.x + 6);
+    label.setAttribute("y", endPt.y - 4);
+    label.textContent = `r=${radius}`;
+  }
+
+  #completeCylinderDraw(bx, bz) {
+    if (!this.#drawState) return;
+    const { centerX, centerZ } = this.#drawState;
+    // Update preview one last time so radius reflects click position
+    this.#updateCylinderPreview(bx, bz);
+    const r = this.#drawState.currentRadius;
+    this.#cancelDraw();
+    if (this.#callbacks.onRegionDraw) {
+      this.#callbacks.onRegionDraw({
+        type: "cylinder",
+        base_x: centerX - 0.5,
+        base_z: centerZ - 0.5,
+        radius: r,
+      });
+    }
   }
 
   #flattenNamed(groupsOrNodes, out = []) {

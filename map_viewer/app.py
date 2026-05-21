@@ -693,18 +693,14 @@ def create_app() -> Flask:
         result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
         return jsonify(result)
 
+    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder"}
+
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
         body = request.get_json(silent=True) or {}
-        if body.get("type", "rectangle") != "rectangle":
-            return jsonify({"error": "only 'rectangle' type is supported"}), 400
-        try:
-            min_x = int(round(float(body["min_x"])))
-            min_z = int(round(float(body["min_z"])))
-            max_x = int(round(float(body["max_x"])))
-            max_z = int(round(float(body["max_z"])))
-        except (KeyError, TypeError, ValueError):
-            return jsonify({"error": "min_x, min_z, max_x, max_z are required numbers"}), 400
+        region_type = body.get("type", "rectangle")
+        if region_type not in _SUPPORTED_CREATE_TYPES:
+            return jsonify({"error": f"unsupported type '{region_type}'"}), 400
 
         data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
@@ -715,23 +711,62 @@ def create_app() -> Flask:
 
         region_id = (body.get("id") or "").strip()
         if not region_id:
+            prefix = region_type if region_type != "rectangle" else "region"
             i = 1
-            while f"region_{i}" in regions:
+            while f"{prefix}_{i}" in regions:
                 i += 1
-            region_id = f"region_{i}"
+            region_id = f"{prefix}_{i}"
         elif region_id in regions:
             return jsonify({"error": f"id {region_id!r} already in use"}), 409
 
-        regions[region_id] = {
-            "id": region_id,
-            "type": "rectangle",
-            "min_x": min_x, "min_z": min_z,
-            "max_x": max_x, "max_z": max_z,
-            "bounds_2d": {
-                "min": {"x": min_x, "z": min_z},
-                "max": {"x": max_x, "z": max_z},
-            },
-        }
+        try:
+            if region_type in ("rectangle", "cuboid"):
+                min_x = int(round(float(body["min_x"])))
+                min_z = int(round(float(body["min_z"])))
+                max_x = int(round(float(body["max_x"])))
+                max_z = int(round(float(body["max_z"])))
+                new_region: dict = {
+                    "id": region_id, "type": region_type,
+                    "min_x": min_x, "min_z": min_z,
+                    "max_x": max_x, "max_z": max_z,
+                    "bounds_2d": {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}},
+                }
+                if region_type == "cuboid":
+                    new_region["min_y"] = int(round(float(body.get("min_y", 0))))
+                    new_region["max_y"] = int(round(float(body.get("max_y", 256))))
+
+            elif region_type in ("point", "block"):
+                px = int(round(float(body["x"])))
+                pz = int(round(float(body["z"])))
+                py = int(round(float(body.get("y", 64))))
+                if region_type == "block":
+                    bounds_2d = {"min": {"x": px, "z": pz}, "max": {"x": px + 1, "z": pz + 1}}
+                else:
+                    bounds_2d = {"min": {"x": px - 0.5, "z": pz - 0.5},
+                                 "max": {"x": px + 0.5, "z": pz + 0.5}}
+                new_region = {
+                    "id": region_id, "type": region_type,
+                    "position": {"x": px, "y": py, "z": pz},
+                    "bounds_2d": bounds_2d,
+                }
+
+            else:  # cylinder
+                bx = float(body["base_x"])
+                bz = float(body["base_z"])
+                by = float(body.get("base_y", 64))
+                r  = float(body["radius"])
+                h  = float(body.get("height", 10))
+                new_region = {
+                    "id": region_id, "type": "cylinder",
+                    "base": {"x": bx, "y": by, "z": bz},
+                    "radius": r, "height": h,
+                    "bounds_2d": {"min": {"x": bx - r, "z": bz - r},
+                                  "max": {"x": bx + r, "z": bz + r}},
+                }
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
+
+        regions[region_id] = new_region
         data.setdefault("region_categories", {}).setdefault("other", []).append(region_id)
 
         data_path.write_text(

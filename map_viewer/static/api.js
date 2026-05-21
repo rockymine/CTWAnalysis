@@ -99,13 +99,13 @@ export async function renameRegion(mapName, oldId, newId) {
   return r.json();
 }
 
-export async function createRegion(mapName, { id, min_x, min_z, max_x, max_z }) {
+export async function createRegion(mapName, payload) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "rectangle", id, min_x, min_z, max_x, max_z }),
+      body: JSON.stringify(payload),
     },
   );
   if (!r.ok) throw new Error(`Create region failed (${r.status})`);

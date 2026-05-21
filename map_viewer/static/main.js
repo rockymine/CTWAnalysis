@@ -89,10 +89,14 @@ const registry = new RegionRegistry({
   },
 });
 
-const coordsEl      = document.getElementById("cursor-coords");
-const toolMoveBtn   = document.getElementById("tool-move");
-const toolSelectBtn = document.getElementById("tool-select");
-const toolRectBtn   = document.getElementById("tool-rect");
+const coordsEl        = document.getElementById("cursor-coords");
+const toolMoveBtn     = document.getElementById("tool-move");
+const toolSelectBtn   = document.getElementById("tool-select");
+const toolRectBtn     = document.getElementById("tool-rect");
+const toolCuboidBtn   = document.getElementById("tool-cuboid");
+const toolCylinderBtn = document.getElementById("tool-cylinder");
+const toolPointBtn    = document.getElementById("tool-point");
+const toolBlockBtn    = document.getElementById("tool-block");
 
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
@@ -105,19 +109,13 @@ const canvas = new MapCanvas(
       if (node) registry.select(node.id);
       else registry.deselect();
     },
-    onRegionDraw: async (bounds) => {
+    onRegionDraw: async (drawResult) => {
       if (!currentMap) return;
       setTool(null);  // switch to select immediately — don't wait for the API response
       try {
-        const { id: newId } = await api.createRegion(currentMap, bounds);
-        const newNode = {
-          id: newId, type: "rectangle", label: newId,
-          color: "#64748b",
-          bounds: { ...bounds },
-          coords: { min_x: bounds.min_x, min_z: bounds.min_z,
-                    max_x: bounds.max_x, max_z: bounds.max_z },
-          is_negative: false, synthetic_id: false, children: [],
-        };
+        const payload  = _buildCreatePayload(drawResult);
+        const { id: newId } = await api.createRegion(currentMap, payload);
+        const newNode  = _buildNewNode(newId, drawResult);
         registry.register(newNode, null);
         canvas.addRegion(newNode);
         sidebar.appendRow(newNode);
@@ -193,15 +191,31 @@ const sidebar = new RegionSidebar(
 
 function setTool(tool) {
   canvas.setActiveTool(tool);
-  toolMoveBtn.classList.toggle("draw-tool-btn--active",   tool === "move");
-  toolSelectBtn.classList.toggle("draw-tool-btn--active", tool === null);
-  toolRectBtn.classList.toggle("draw-tool-btn--active",   tool === "rectangle");
+  toolMoveBtn.classList.toggle("draw-tool-btn--active",     tool === "move");
+  toolSelectBtn.classList.toggle("draw-tool-btn--active",   tool === null);
+  toolRectBtn.classList.toggle("draw-tool-btn--active",     tool === "rectangle");
+  toolCuboidBtn.classList.toggle("draw-tool-btn--active",   tool === "cuboid");
+  toolCylinderBtn.classList.toggle("draw-tool-btn--active", tool === "cylinder");
+  toolPointBtn.classList.toggle("draw-tool-btn--active",    tool === "point");
+  toolBlockBtn.classList.toggle("draw-tool-btn--active",    tool === "block");
 }
 
 toolMoveBtn.addEventListener("click", () => setTool("move"));
 toolSelectBtn.addEventListener("click", () => setTool(null));
 toolRectBtn.addEventListener("click", () => {
   setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? "move" : "rectangle");
+});
+toolCuboidBtn.addEventListener("click", () => {
+  setTool(toolCuboidBtn.classList.contains("draw-tool-btn--active") ? "move" : "cuboid");
+});
+toolCylinderBtn.addEventListener("click", () => {
+  setTool(toolCylinderBtn.classList.contains("draw-tool-btn--active") ? "move" : "cylinder");
+});
+toolPointBtn.addEventListener("click", () => {
+  setTool(toolPointBtn.classList.contains("draw-tool-btn--active") ? "move" : "point");
+});
+toolBlockBtn.addEventListener("click", () => {
+  setTool(toolBlockBtn.classList.contains("draw-tool-btn--active") ? "move" : "block");
 });
 
 document.addEventListener("keydown", (e) => {
@@ -222,6 +236,10 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "r" || e.key === "R") && currentMap) {
     setTool(toolRectBtn.classList.contains("draw-tool-btn--active") ? "move" : "rectangle");
   }
+  if ((e.key === "c" || e.key === "C") && !e.ctrlKey && currentMap) setTool("cuboid");
+  if ((e.key === "y" || e.key === "Y") && currentMap) setTool("cylinder");
+  if ((e.key === "p" || e.key === "P") && currentMap) setTool("point");
+  if ((e.key === "b" || e.key === "B") && currentMap) setTool("block");
   if (e.key === "Escape") {
     setTool("move");
     multiSelected.clear();
@@ -285,11 +303,15 @@ async function loadMap(name) {
     for (const group of groups) {
       for (const root of group.regions) registry.register(root, null);
     }
-    exportBtn.disabled     = false;
-    overviewBtn.disabled   = false;
-    toolMoveBtn.disabled   = false;
-    toolSelectBtn.disabled = false;
-    toolRectBtn.disabled   = false;
+    exportBtn.disabled        = false;
+    overviewBtn.disabled      = false;
+    toolMoveBtn.disabled      = false;
+    toolSelectBtn.disabled    = false;
+    toolRectBtn.disabled      = false;
+    toolCuboidBtn.disabled    = false;
+    toolCylinderBtn.disabled  = false;
+    toolPointBtn.disabled     = false;
+    toolBlockBtn.disabled     = false;
     setTool("move");
     setStatus(
       `${ctx.map_name} v${ctx.map_version || "?"} · ` +
@@ -466,6 +488,50 @@ async function groupSelected() {
     setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
   } catch (err) {
     setStatus(`Group failed: ${err.message}`);
+  }
+}
+
+// ── draw result → API payload / client node ───────────────────────────────
+
+function _buildCreatePayload(d) {
+  switch (d.type) {
+    case "rectangle":
+    case "cuboid":
+      return { type: d.type, min_x: d.min_x, min_z: d.min_z, max_x: d.max_x, max_z: d.max_z };
+    case "point":
+    case "block":
+      return { type: d.type, x: d.x, z: d.z };
+    case "cylinder":
+      return { type: "cylinder", base_x: d.base_x, base_z: d.base_z, radius: d.radius };
+    default:
+      throw new Error(`Unknown draw type: ${d.type}`);
+  }
+}
+
+function _buildNewNode(id, d) {
+  const base = { id, label: id, color: "#64748b", is_negative: false, synthetic_id: false, children: [] };
+  switch (d.type) {
+    case "rectangle":
+      return { ...base, type: "rectangle",
+        bounds: { min_x: d.min_x, min_z: d.min_z, max_x: d.max_x, max_z: d.max_z },
+        coords: { min_x: d.min_x, min_z: d.min_z, max_x: d.max_x, max_z: d.max_z } };
+    case "cuboid":
+      return { ...base, type: "cuboid",
+        bounds: { min_x: d.min_x, min_z: d.min_z, max_x: d.max_x, max_z: d.max_z },
+        coords: { min_x: d.min_x, min_z: d.min_z, max_x: d.max_x, max_z: d.max_z, min_y: 0, max_y: 256 } };
+    case "point":
+    case "block": {
+      const bounds = deriveBoundsFromCoords(d.type, { x: d.x, z: d.z });
+      return { ...base, type: d.type, bounds, coords: { x: d.x, y: 64, z: d.z } };
+    }
+    case "cylinder": {
+      const r = d.radius;
+      return { ...base, type: "cylinder",
+        bounds: { min_x: d.base_x - r, max_x: d.base_x + r, min_z: d.base_z - r, max_z: d.base_z + r },
+        coords: { base_x: d.base_x, base_y: 64, base_z: d.base_z, radius: r, height: 10 } };
+    }
+    default:
+      throw new Error(`Unknown draw type: ${d.type}`);
   }
 }
 
