@@ -621,7 +621,6 @@ body {
   display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
 }
 .ov-author-row .ov-author-uuid         { flex: 2; min-width: 0; }
-.ov-author-row .ov-author-role         { flex: 0 0 108px; }
 .ov-author-row .ov-author-contribution { flex: 2; min-width: 0; }
 .ov-author-remove {
   flex-shrink: 0; background: none; border: none;

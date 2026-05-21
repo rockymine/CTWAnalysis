@@ -22,10 +22,11 @@ export class OverviewPanel {
     this._versionEl   = el.querySelector("#ov-version");
     this._objectiveEl = el.querySelector("#ov-objective");
     this._gamemodeEl  = el.querySelector("#ov-gamemode");
-    this._authorsEl   = el.querySelector("#ov-authors-list");
-    this._saveBtn     = el.querySelector("#ov-save-btn");
-    this._statusEl    = el.querySelector("#ov-save-status");
-    this._symBodyEl   = el.querySelector("#ov-sym-body");
+    this._authorsEl      = el.querySelector("#ov-authors-list");
+    this._contributorsEl = el.querySelector("#ov-contributors-list");
+    this._saveBtn        = el.querySelector("#ov-save-btn");
+    this._statusEl       = el.querySelector("#ov-save-status");
+    this._symBodyEl      = el.querySelector("#ov-sym-body");
 
     this._canvas = new OverviewCanvas(
       el.querySelector("#ov-map-svg"),
@@ -38,7 +39,11 @@ export class OverviewPanel {
 
     this._saveBtn.addEventListener("click", () => this._save());
     el.querySelector("#ov-add-author").addEventListener("click", () => {
-      this._addAuthorRow({});
+      this._addPersonRow(this._authorsEl, {});
+      this._setDirty(true);
+    });
+    el.querySelector("#ov-add-contributor").addEventListener("click", () => {
+      this._addPersonRow(this._contributorsEl, {});
       this._setDirty(true);
     });
   }
@@ -83,22 +88,20 @@ export class OverviewPanel {
     this._versionEl.value   = mapData.version   ?? "";
     this._objectiveEl.value = mapData.objective ?? "";
     this._gamemodeEl.value  = mapData.gamemode  ?? "";
-    this._authorsEl.innerHTML = "";
-    for (const author of (mapData.authors ?? [])) {
-      this._addAuthorRow(author);
+    this._authorsEl.innerHTML      = "";
+    this._contributorsEl.innerHTML = "";
+    for (const person of (mapData.authors ?? [])) {
+      const listEl = person.role === "contributor" ? this._contributorsEl : this._authorsEl;
+      this._addPersonRow(listEl, person);
     }
     this._setDirty(false);
   }
 
-  _addAuthorRow({ uuid = "", role = "author", contribution = "" } = {}) {
+  _addPersonRow(listEl, { uuid = "", contribution = "" } = {}) {
     const row = document.createElement("div");
     row.className = "ov-author-row";
     row.innerHTML = `
       <input class="ov-input ov-author-uuid" type="text" placeholder="Player UUID" value="${_esc(uuid)}"/>
-      <select class="ov-input ov-author-role">
-        <option value="author"      ${role === "author"      ? "selected" : ""}>Author</option>
-        <option value="contributor" ${role === "contributor" ? "selected" : ""}>Contributor</option>
-      </select>
       <input class="ov-input ov-author-contribution" type="text" placeholder="Contribution (optional)" value="${_esc(contribution ?? "")}"/>
       <button class="ov-author-remove" title="Remove">✕</button>
     `;
@@ -106,20 +109,25 @@ export class OverviewPanel {
       row.remove();
       this._setDirty(true);
     });
-    for (const field of row.querySelectorAll("input, select")) {
+    for (const field of row.querySelectorAll("input")) {
       field.addEventListener("input", () => this._setDirty(true));
     }
-    this._authorsEl.appendChild(row);
+    listEl.appendChild(row);
   }
 
   _collectAuthors() {
-    return [...this._authorsEl.querySelectorAll(".ov-author-row")]
-      .map(row => ({
-        uuid:         row.querySelector(".ov-author-uuid").value.trim(),
-        role:         row.querySelector(".ov-author-role").value,
-        contribution: row.querySelector(".ov-author-contribution").value.trim() || null,
-      }))
-      .filter(authorEntry => authorEntry.uuid);
+    const fromList = (listEl, role) =>
+      [...listEl.querySelectorAll(".ov-author-row")]
+        .map(row => ({
+          uuid:         row.querySelector(".ov-author-uuid").value.trim(),
+          role,
+          contribution: row.querySelector(".ov-author-contribution").value.trim() || null,
+        }))
+        .filter(entry => entry.uuid);
+    return [
+      ...fromList(this._authorsEl,      "author"),
+      ...fromList(this._contributorsEl, "contributor"),
+    ];
   }
 
   async _save() {
