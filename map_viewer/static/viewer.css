@@ -715,28 +715,46 @@ body {
 #ov-save-status { font-size: 12px; color: var(--text-secondary); }
 
 /* ── Symmetry panel ── */
-#ov-symmetry-panel { display: flex; flex-direction: column; gap: 14px; }
+#ov-symmetry-panel { padding: 14px; }
+#ov-sym-body { display: flex; flex-direction: column; gap: 12px; }
 .ov-sym-loading { font-size: 12px; color: var(--text-muted); }
 .ov-sym-error   { font-size: 12px; color: var(--color-error); }
-.ov-sym-none    { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .ov-sym-hint    { font-size: 11px; color: var(--text-muted); }
 
-.ov-sym-status-row { margin-bottom: 2px; }
+/* Header row: title + status badge */
+.ov-sym-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.ov-sym-title {
+  font-size: 11px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* Status badges */
 .ov-sym-badge {
-  display: inline-block; font-size: 11px; padding: 2px 8px;
-  border-radius: 3px; font-weight: 600;
+  display: inline-block; font-size: 10px; padding: 2px 7px;
+  border-radius: 3px; font-weight: 600; flex-shrink: 0;
 }
 .ov-sym-badge--confirmed { color: var(--color-success); background: var(--color-success-bg); }
 .ov-sym-badge--skipped   { color: var(--text-dim);      background: var(--bg-base); }
 .ov-sym-badge--none      { color: var(--text-muted);    background: var(--bg-base); }
 .ov-sym-badge--pending   { color: var(--color-warning); background: #451a0344; }
 
-.ov-sym-info { display: flex; flex-direction: column; gap: 6px; }
-.ov-sym-row  { display: flex; gap: 8px; font-size: 12px; }
-.ov-sym-key  { color: var(--text-muted); flex: 0 0 52px; }
-.ov-sym-val  { color: var(--text-secondary); flex: 1; }
+/* Coord section: two-row layout with label header */
+.ov-sym-coord-section { display: flex; flex-direction: column; gap: 5px; }
+.ov-sym-coord-header  { display: flex; align-items: center; justify-content: space-between; }
 
-.ov-sym-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-.ov-sym-adjust  { display: flex; flex-direction: column; gap: 10px; margin-top: 4px;
-                   padding-top: 10px; border-top: 1px solid var(--border); }
-.ov-sym-adjust[hidden] { display: none; }
+/* Preview section */
+.ov-sym-preview-section { display: flex; flex-direction: column; gap: 6px; }
+.ov-sym-preview-header  { display: flex; align-items: center; gap: 6px; }
+.ov-sym-preview-line    { flex: 1; height: 1px; background: var(--border); }
+.ov-sym-preview-svg {
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 8px;
+}
+.ov-sym-preview-svg svg { width: 100%; height: auto; display: block; }
+
+/* Action buttons: column layout, confirm full-width */
+.ov-sym-actions { display: flex; flex-direction: column; gap: 6px; }
+.ov-sym-confirm-btn { width: 100%; justify-content: center; }
+.ov-sym-none-btn { align-self: flex-start; font-size: 11px; }

@@ -8,6 +8,50 @@ const SYM_LABELS = {
   rot_90:   "Rotational — 90°",
 };
 
+// ── symmetry preview SVG diagrams ─────────────────────────────────────────────
+
+function _symPreviewSvg(type) {
+  const p  = "#a855f7";
+  const r1 = { fill: "#f9a8d4", stroke: "#f472b6" };
+  const r2 = { fill: "#fde68a", stroke: "#fbbf24" };
+  const r3 = { fill: "#93c5fd", stroke: "#60a5fa" };
+  const r4 = { fill: "#bbf7d0", stroke: "#4ade80" };
+  const rect = (x, y, w, h, c) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${c.fill}" fill-opacity="0.45" stroke="${c.stroke}" stroke-width="1.5"/>`;
+  const dot = (cx, cy) =>
+    `<circle cx="${cx}" cy="${cy}" r="3.5" fill="none" stroke="${p}" stroke-width="1.5"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="1.5" fill="${p}"/>`;
+  const lbl = (t, x, y) =>
+    `<text x="${x}" y="${y}" text-anchor="end" font-size="9.5" fill="${p}" font-family="ui-monospace,monospace" opacity="0.85">${t}</text>`;
+  const axis = `stroke="${p}" stroke-width="1.5" stroke-dasharray="5,3"`;
+
+  if (type === "mirror_x") return `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+    ${rect(14, 22, 72, 46, r1)} ${rect(114, 22, 72, 46, r2)}
+    <line x1="100" y1="4" x2="100" y2="96" ${axis}/>
+    ${dot(100, 50)} ${lbl("X · mirror", 196, 16)}</svg>`;
+
+  if (type === "mirror_z") return `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+    ${rect(35, 5, 130, 36, r1)} ${rect(35, 59, 130, 36, r2)}
+    <line x1="4" y1="50" x2="196" y2="50" ${axis}/>
+    ${dot(100, 50)} ${lbl("Z · mirror", 196, 16)}</svg>`;
+
+  if (type === "rot_180") return `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+    ${rect(10, 8, 70, 36, r1)} ${rect(120, 56, 70, 36, r2)}
+    <path d="M 80,20 C 118,4 158,30 152,58" ${axis} fill="none"/>
+    <polygon points="152,58 144,51 157,50" fill="${p}" opacity="0.85"/>
+    ${dot(100, 50)} ${lbl("180° · n=2", 196, 16)}</svg>`;
+
+  if (type === "rot_90") return `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+    ${rect(67, 4, 66, 30, r1)} ${rect(122, 35, 66, 30, r3)}
+    ${rect(67, 66, 66, 30, r2)} ${rect(12, 35, 66, 30, r4)}
+    <path d="M 138,42 A 40,40 0 0 1 100,90" ${axis} fill="none"/>
+    <polygon points="100,90 107,81 94,80" fill="${p}" opacity="0.85"/>
+    ${dot(100, 50)} ${lbl("90° · n=4", 196, 16)}</svg>`;
+
+  return `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+    <text x="100" y="55" text-anchor="middle" font-size="11" fill="${p}" font-family="ui-monospace,monospace" opacity="0.5">—</text></svg>`;
+}
+
 export class OverviewPanel {
   constructor(el, { onStatusChange } = {}) {
     this._el             = el;
@@ -208,103 +252,88 @@ export class OverviewPanel {
     const symData = this._symmetryData;
     const status  = this._symmetryStatus;
 
+    const badgeHtml = {
+      confirmed: '<span class="ov-sym-badge ov-sym-badge--confirmed">Confirmed</span>',
+      skipped:   '<span class="ov-sym-badge ov-sym-badge--skipped">Skipped</span>',
+      none:      '<span class="ov-sym-badge ov-sym-badge--none">No symmetry</span>',
+    }[status] ?? '<span class="ov-sym-badge ov-sym-badge--pending">Not confirmed</span>';
+
+    const header = `<div class="ov-sym-header">
+      <span class="ov-sym-title">Symmetry Axis</span>${badgeHtml}</div>`;
+
     if (!symData) {
-      this._symBodyEl.innerHTML = `
-        <p class="ov-sym-none">No symmetry data found for this map.</p>
-        <p class="ov-sym-hint">Run the pipeline first to detect the symmetry axis.</p>
+      this._symBodyEl.innerHTML = `${header}
+        <p class="ov-sym-hint">No symmetry data found. Run the pipeline first.</p>
         <div class="ov-sym-actions">
-          <button id="ov-sym-mark-none" class="action-btn ${status === "none" ? "action-btn--primary" : ""}">
-            Mark as asymmetric
-          </button>
-        </div>
-      `;
+          <button id="ov-sym-mark-none" class="action-btn">No symmetry</button>
+        </div>`;
       this._symBodyEl.querySelector("#ov-sym-mark-none")
         .addEventListener("click", () => this._setSymmetryStatus("none"));
       return;
     }
 
     const { center, global_symmetry } = symData;
-    const detectedEntries = global_symmetry.filter(entry => entry.detected);
+    const detectedEntries = global_symmetry.filter(e => e.detected);
     const primaryEntry = [...detectedEntries].sort((a, b) => b.confidence - a.confidence)[0];
+    const coordLabel = primaryEntry?.type?.startsWith("mirror") ? "CENTER" : "PIVOT";
 
-    const statusLabel = {
-      confirmed: '<span class="ov-sym-badge ov-sym-badge--confirmed">Confirmed</span>',
-      skipped:   '<span class="ov-sym-badge ov-sym-badge--skipped">Skipped</span>',
-      none:      '<span class="ov-sym-badge ov-sym-badge--none">Asymmetric</span>',
-    }[status] ?? '<span class="ov-sym-badge ov-sym-badge--pending">Not confirmed</span>';
+    const options = detectedEntries.length
+      ? detectedEntries.map(e =>
+          `<option value="${e.type}" ${e === primaryEntry ? "selected" : ""}>` +
+          `${SYM_LABELS[e.type] ?? e.type}</option>`).join("")
+      : `<option value="">None detected</option>`;
 
-    const primaryLabel = primaryEntry
-      ? `${SYM_LABELS[primaryEntry.type] ?? primaryEntry.type} (${Math.round(primaryEntry.confidence * 100)}%)`
-      : "None detected";
-
-    const detectedList = detectedEntries.length
-      ? detectedEntries.map(entry =>
-          `<option value="${entry.type}" ${entry === primaryEntry ? "selected" : ""}>` +
-          `${SYM_LABELS[entry.type] ?? entry.type} — ${Math.round(entry.confidence * 100)}%` +
-          `</option>`
-        ).join("")
-      : `<option value="">None</option>`;
-
-    this._symBodyEl.innerHTML = `
-      <div class="ov-sym-status-row">${statusLabel}</div>
-      <div class="ov-sym-info">
-        <div class="ov-sym-row">
-          <span class="ov-sym-key">Primary</span>
-          <span class="ov-sym-val">${primaryLabel}</span>
+    this._symBodyEl.innerHTML = `${header}
+      <div class="ov-field">
+        <label class="ov-label">PRIMARY TYPE</label>
+        <select id="ov-sym-axis-select" class="ov-input">${options}</select>
+      </div>
+      <div class="ov-sym-coord-section">
+        <div class="ov-sym-coord-header">
+          <span class="ov-label" id="ov-sym-coord-label">${coordLabel}</span>
+          <span class="ov-label">blocks</span>
         </div>
-        <div class="ov-sym-row">
-          <span class="ov-sym-key">Center</span>
-          <span class="ov-sym-val">X ${center.center_x.toFixed(1)}, Z ${center.center_z.toFixed(1)}</span>
+        <div class="detail-group-row">
+          <div class="detail-prefixed-field">
+            <span class="detail-prefix">X</span>
+            <input id="ov-sym-cx" class="detail-bounds-input" type="number" step="0.5" value="${center.center_x}"/>
+          </div>
+          <div class="detail-prefixed-field">
+            <span class="detail-prefix">Z</span>
+            <input id="ov-sym-cz" class="detail-bounds-input" type="number" step="0.5" value="${center.center_z}"/>
+          </div>
         </div>
-        <div class="ov-sym-row">
-          <span class="ov-sym-key">Type</span>
-          <span class="ov-sym-val">${center.type ?? "—"}</span>
+      </div>
+      <div class="ov-sym-preview-section">
+        <div class="ov-sym-preview-header">
+          <span class="ov-label">PREVIEW</span>
+          <span class="ov-sym-preview-line"></span>
         </div>
+        <div id="ov-sym-preview-svg" class="ov-sym-preview-svg">${_symPreviewSvg(primaryEntry?.type ?? "mirror_x")}</div>
       </div>
       <div class="ov-sym-actions">
-        <button id="ov-sym-confirm" class="action-btn ${status === "confirmed" ? "action-btn--primary" : ""}">
-          Confirm
-        </button>
-        <button id="ov-sym-skip" class="action-btn ${status === "skipped" ? "action-btn--primary" : ""}">
-          Skip
-        </button>
-        <button id="ov-sym-adjust-toggle" class="action-btn">Adjust…</button>
-      </div>
-      <div id="ov-sym-adjust-form" class="ov-sym-adjust" hidden>
-        <div class="ov-field">
-          <label class="ov-label">Axis type</label>
-          <select id="ov-sym-axis-select" class="ov-input">${detectedList}</select>
-        </div>
-        <div class="ov-field-row">
-          <div class="ov-field">
-            <label class="ov-label">Center X</label>
-            <input id="ov-sym-cx" class="ov-input" type="number" step="0.5" value="${center.center_x}"/>
-          </div>
-          <div class="ov-field">
-            <label class="ov-label">Center Z</label>
-            <input id="ov-sym-cz" class="ov-input" type="number" step="0.5" value="${center.center_z}"/>
-          </div>
-        </div>
-        <div class="ov-sym-actions">
-          <button id="ov-sym-apply-adjust" class="action-btn action-btn--primary">Apply</button>
-          <button id="ov-sym-mark-none" class="action-btn">No symmetry</button>
-        </div>
-      </div>
-    `;
+        <button id="ov-sym-confirm" class="action-btn action-btn--primary ov-sym-confirm-btn">Confirm</button>
+        <button id="ov-sym-mark-none" class="action-btn ov-sym-none-btn">No symmetry</button>
+      </div>`;
 
-    const adjustForm   = this._symBodyEl.querySelector("#ov-sym-adjust-form");
-    const adjustToggle = this._symBodyEl.querySelector("#ov-sym-adjust-toggle");
+    const axisSelect   = this._symBodyEl.querySelector("#ov-sym-axis-select");
+    const cxInput      = this._symBodyEl.querySelector("#ov-sym-cx");
+    const czInput      = this._symBodyEl.querySelector("#ov-sym-cz");
+    const previewSvgEl = this._symBodyEl.querySelector("#ov-sym-preview-svg");
 
-    this._symBodyEl.querySelector("#ov-sym-confirm")
-      .addEventListener("click", () => this._setSymmetryStatus("confirmed"));
-    this._symBodyEl.querySelector("#ov-sym-skip")
-      .addEventListener("click", () => this._setSymmetryStatus("skipped"));
-    adjustToggle.addEventListener("click", () => {
-      adjustForm.hidden = !adjustForm.hidden;
-      adjustToggle.textContent = adjustForm.hidden ? "Adjust…" : "Adjust ▾";
+    axisSelect.addEventListener("change", () => {
+      const lbl = this._symBodyEl.querySelector("#ov-sym-coord-label");
+      if (lbl) lbl.textContent = axisSelect.value.startsWith("mirror") ? "CENTER" : "PIVOT";
+      if (previewSvgEl) previewSvgEl.innerHTML = _symPreviewSvg(axisSelect.value);
+      this._applyAdjust({ rerender: false });
     });
-    this._symBodyEl.querySelector("#ov-sym-apply-adjust")
-      .addEventListener("click", () => this._applyAdjust());
+    cxInput.addEventListener("input", () => this._applyAdjust({ rerender: false }));
+    czInput.addEventListener("input", () => this._applyAdjust({ rerender: false }));
+
+    this._symBodyEl.querySelector("#ov-sym-confirm").addEventListener("click", () => {
+      this._applyAdjust({ rerender: false });
+      this._setSymmetryStatus("confirmed");
+    });
     this._symBodyEl.querySelector("#ov-sym-mark-none")
       .addEventListener("click", () => this._setSymmetryStatus("none"));
   }
@@ -322,7 +351,7 @@ export class OverviewPanel {
     this._renderSymmetryPanel();
   }
 
-  _applyAdjust() {
+  _applyAdjust({ rerender = true } = {}) {
     if (!this._symmetryData) return;
     const axisType = this._symBodyEl.querySelector("#ov-sym-axis-select")?.value;
     const newCX    = parseFloat(this._symBodyEl.querySelector("#ov-sym-cx")?.value);
@@ -340,7 +369,7 @@ export class OverviewPanel {
       })),
     };
     this._canvas.setSymmetryOverlay(this._symmetryData, this._symmetryStatus);
-    this._renderSymmetryPanel();
+    if (rerender) this._renderSymmetryPanel();
   }
 
   // ── status dot ────────────────────────────────────────────────────────────
