@@ -273,37 +273,86 @@ body {
   border-radius: 3px; color: var(--text-muted); flex-shrink: 0;
 }
 
-.detail-section { margin-bottom: 10px; }
+.detail-section { margin-bottom: 14px; }
 .detail-section-label {
   font-size: 10px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px;
+  text-transform: uppercase; color: var(--text-muted);
+  user-select: none;
 }
 
-.detail-field-row { display: flex; gap: 8px; font-size: 13px; padding: 2px 0; }
-.detail-field-key { color: var(--text-muted); flex: 0 0 72px; }
+.detail-field-row { display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; }
+.detail-field-key {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted); user-select: none;
+}
 .detail-field-val {
-  color: var(--text-secondary); flex: 1;
+  font-size: 13px; color: var(--text-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ── section header: label left, hint right ── */
+.detail-section-header {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;
+}
+.detail-section-hint {
+  font-size: 10px; color: var(--text-muted); margin-left: auto; user-select: none;
+}
+
+/* ── bounds table ── */
 .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .detail-table th {
   text-align: right; color: var(--text-muted); font-weight: 400;
-  padding: 2px 10px 4px 0; font-size: 11px;
+  padding: 2px 6px 5px 0; font-size: 10px; letter-spacing: .04em;
+  text-transform: uppercase;
 }
 .detail-table th:first-child { text-align: left; }
 .detail-axis {
   color: var(--text-dim); font-size: 11px; font-weight: 700;
-  letter-spacing: .06em; padding-right: 8px;
+  letter-spacing: .06em; padding-right: 8px; user-select: none;
 }
 .detail-val  {
-  text-align: right; color: var(--text-secondary); padding: 3px 10px 3px 0;
+  text-align: right; color: var(--text-secondary); padding: 3px 6px 3px 0;
   font-variant-numeric: tabular-nums;
 }
 .detail-size {
   text-align: right; color: var(--text-muted); font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; user-select: none;
 }
+
+/* ── global save hint (below region header) ── */
+.detail-save-hint {
+  font-size: 10px; color: var(--text-muted); padding: 2px 0 10px;
+  user-select: none;
+}
+
+/* ── geometry group field (inline XYZ row) ── */
+.detail-geo-group { margin-bottom: 12px; }
+.detail-group-row { display: flex; gap: 6px; }
+/* Each cell: [input flex-1] [axis-label fixed] in a row */
+.detail-group-cell {
+  flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 5px;
+}
+/* Override fixed width from .detail-bounds-input so input stretches */
+.detail-group-cell .detail-bounds-input { flex: 1; min-width: 0; width: auto; text-align: right; }
+.detail-group-axis {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted); flex-shrink: 0; user-select: none;
+}
+.detail-group-static {
+  flex: 1; font-size: 13px; color: var(--text-secondary); text-align: right;
+  font-variant-numeric: tabular-nums; padding: 3px 0;
+}
+
+/* ── geometry scalar field (stacked label + full-width input) ── */
+.detail-geo-scalar { margin-bottom: 12px; }
+/* Override the fixed width from .detail-bounds-input */
+.detail-geo-scalar .detail-bounds-input { width: 100%; }
+
+/* ── scalar-pair: two scalars side by side ── */
+.detail-geo-scalar-pair {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.detail-geo-scalar-pair .detail-geo-scalar { flex: 1; min-width: 0; margin-bottom: 0; }
 
 .detail-child-row {
   display: grid;
@@ -315,23 +364,23 @@ body {
 .detail-child-name { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-child-type { color: var(--text-muted); flex-shrink: 0; }
 .detail-id-input {
-  background: transparent; border: 1px solid transparent;
+  background: var(--bg-base); border: 1px solid var(--border);
   border-radius: 3px; color: var(--text-secondary);
-  font-family: ui-monospace, monospace; font-size: 12px;
-  padding: 1px 4px; outline: none; flex: 1; min-width: 0;
+  font-family: ui-monospace, monospace; font-size: 13px;
+  padding: 5px 8px; outline: none; width: 100%;
 }
-.detail-id-input:hover { border-color: var(--border); }
-.detail-id-input:focus { border-color: var(--text-muted); color: var(--text-bright); background: var(--bg-base); }
+.detail-id-input:hover { border-color: var(--text-muted); }
+.detail-id-input:focus { border-color: var(--accent); color: var(--text-bright); }
 
 .detail-bounds-input {
-  background: transparent; border: 1px solid transparent;
+  background: var(--bg-base); border: 1px solid var(--border);
   border-radius: 3px; color: var(--text-secondary);
   font-family: ui-monospace, monospace; font-size: 12px;
-  font-variant-numeric: tabular-nums; padding: 1px 4px;
+  font-variant-numeric: tabular-nums; padding: 3px 6px;
   text-align: right; width: 68px; outline: none;
 }
-.detail-bounds-input:hover { border-color: var(--border); }
-.detail-bounds-input:focus { border-color: var(--text-muted); color: var(--text-bright); background: var(--bg-base); }
+.detail-bounds-input:hover { border-color: var(--text-muted); }
+.detail-bounds-input:focus { border-color: var(--accent); color: var(--text-bright); }
 
 .detail-child-bounds {
   color: var(--border); font-size: 10px; font-variant-numeric: tabular-nums;

@@ -1,93 +1,93 @@
 import { typeIcon } from "./region-types.js";
 
-// ── geometry schema ──────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(v) {
   if (v == null) return "?";
   return (typeof v === "number" && !Number.isInteger(v)) ? v.toFixed(2) : String(v);
 }
 
-// Maps type → [{label, coordKey, display}, ...]
-// coordKey: key in node.coords to read/write (null = read-only derived field).
-// display: getter for the display value (used for read-only rows).
-// rectangle X/Z handled separately via #buildBounds; cuboid X/Z also via #buildBounds.
-// composite types have no geometry — only a children list.
-const Y   = { min: 0, max: 256 };
-const R   = { min: 0 };
-const H   = { min: 0 };
+// ── geometry schema ───────────────────────────────────────────────────────────
 
+const Y = { min: 0, max: 256 };
+const R = { min: 0 };
+const H = { min: 0 };
+
+// Each entry is either:
+//   { type: "group",  label, note?, axes: [{ axis, key, display?, min?, max? }] }
+//   { type: "scalar", label, key, display?, unit?, min?, max? }
+// key=null → read-only; display(node) required for that axis/field.
+// rectangle and cuboid are NOT in this schema — their coords are in #buildBounds.
 const GEOMETRY_SCHEMA = {
-  cuboid:    [
-    { label: "Y min",    coordKey: "min_y",    display: n => fmt(n.coords?.min_y),    ...Y },
-    { label: "Y max",    coordKey: "max_y",    display: n => fmt(n.coords?.max_y),    ...Y },
+  cylinder: [
+    { type: "group",  label: "BASE POINT", axes: [
+      { axis: "X", key: "base_x" },
+      { axis: "Y", key: "base_y", ...Y },
+      { axis: "Z", key: "base_z" },
+    ]},
+    { type: "scalar-pair", entries: [
+      { label: "RADIUS", key: "radius", unit: "blocks", ...R },
+      { label: "HEIGHT", key: "height", unit: "blocks", ...H },
+    ]},
   ],
-  cylinder:  [
-    { label: "base x",   coordKey: "base_x",   display: n => fmt(n.coords?.base_x) },
-    { label: "base y",   coordKey: "base_y",   display: n => fmt(n.coords?.base_y),   ...Y },
-    { label: "base z",   coordKey: "base_z",   display: n => fmt(n.coords?.base_z) },
-    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
-    { label: "height",   coordKey: "height",   display: n => fmt(n.coords?.height),   ...H },
+  circle: [
+    { type: "group",  label: "CENTER", axes: [
+      { axis: "X", key: "center_x" },
+      { axis: "Z", key: "center_z" },
+    ]},
+    { type: "scalar", label: "RADIUS", key: "radius", unit: "blocks", ...R },
   ],
-  circle:    [
-    { label: "center x", coordKey: "center_x", display: n => fmt(n.coords?.center_x) },
-    { label: "center z", coordKey: "center_z", display: n => fmt(n.coords?.center_z) },
-    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
+  sphere: [
+    { type: "group",  label: "ORIGIN", axes: [
+      { axis: "X", key: "origin_x" },
+      { axis: "Y", key: "origin_y", ...Y },
+      { axis: "Z", key: "origin_z" },
+    ]},
+    { type: "scalar", label: "RADIUS", key: "radius", unit: "blocks", ...R },
   ],
-  sphere:    [
-    { label: "origin x", coordKey: "origin_x", display: n => fmt(n.coords?.origin_x) },
-    { label: "origin y", coordKey: "origin_y", display: n => fmt(n.coords?.origin_y), ...Y },
-    { label: "origin z", coordKey: "origin_z", display: n => fmt(n.coords?.origin_z) },
-    { label: "radius",   coordKey: "radius",   display: n => fmt(n.coords?.radius),   ...R },
+  block: [
+    { type: "group", label: "POSITION", note: "single block", axes: [
+      { axis: "X", key: "x" },
+      { axis: "Y", key: "y", ...Y },
+      { axis: "Z", key: "z" },
+    ]},
   ],
-  block:     [
-    { label: "x",        coordKey: "x",        display: n => fmt(n.coords?.x) },
-    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
-    { label: "z",        coordKey: "z",        display: n => fmt(n.coords?.z) },
-  ],
-  point:     [
-    { label: "x",        coordKey: "x",        display: n => fmt(n.coords?.x) },
-    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
-    { label: "z",        coordKey: "z",        display: n => fmt(n.coords?.z) },
+  point: [
+    { type: "group", label: "POSITION", axes: [
+      { axis: "X", key: "x" },
+      { axis: "Y", key: "y", ...Y },
+      { axis: "Z", key: "z" },
+    ]},
   ],
   reference: [
-    { label: "ref",      coordKey: null,       display: n => n.coords?.ref_id ?? "?" },
+    { type: "scalar", label: "REF", key: null, display: n => n.coords?.ref_id ?? "?" },
   ],
-  mirror:    [
-    { label: "origin x", coordKey: null,       display: n => fmt(n.coords?.origin_x) },
-    { label: "origin y", coordKey: null,       display: n => fmt(n.coords?.origin_y) },
-    { label: "origin z", coordKey: null,       display: n => fmt(n.coords?.origin_z) },
-    { label: "normal x", coordKey: null,       display: n => fmt(n.coords?.normal_x) },
-    { label: "normal y", coordKey: null,       display: n => fmt(n.coords?.normal_y) },
-    { label: "normal z", coordKey: null,       display: n => fmt(n.coords?.normal_z) },
+  mirror: [
+    { type: "group", label: "ORIGIN", axes: [
+      { axis: "X", key: null, display: n => fmt(n.coords?.origin_x) },
+      { axis: "Y", key: null, display: n => fmt(n.coords?.origin_y) },
+      { axis: "Z", key: null, display: n => fmt(n.coords?.origin_z) },
+    ]},
+    { type: "group", label: "NORMAL", axes: [
+      { axis: "X", key: null, display: n => fmt(n.coords?.normal_x) },
+      { axis: "Y", key: null, display: n => fmt(n.coords?.normal_y) },
+      { axis: "Z", key: null, display: n => fmt(n.coords?.normal_z) },
+    ]},
   ],
   translate: [
-    { label: "offset x", coordKey: null,       display: n => fmt(n.coords?.offset_x) },
-    { label: "offset y", coordKey: null,       display: n => fmt(n.coords?.offset_y) },
-    { label: "offset z", coordKey: null,       display: n => fmt(n.coords?.offset_z) },
+    { type: "group", label: "OFFSET", axes: [
+      { axis: "X", key: null, display: n => fmt(n.coords?.offset_x) },
+      { axis: "Y", key: null, display: n => fmt(n.coords?.offset_y) },
+      { axis: "Z", key: null, display: n => fmt(n.coords?.offset_z) },
+    ]},
   ],
-  above:     [
-    { label: "y",        coordKey: "y",        display: n => fmt(n.coords?.y),         ...Y },
+  above: [
+    { type: "scalar", label: "Y", key: "y", ...Y },
   ],
 };
 
-/**
- * RegionDetail — owns the inspector panel.
- *
- * Shows all fields of the selected region node. Bound values are editable
- * inputs for named regions; synthetic regions are read-only.
- *
- * Callbacks injected at construction:
- *   onBoundsChange(node, bounds)  — fired on every keystroke for live canvas preview
- *   onBoundsSave(node, bounds)    — fired on blur / Enter to persist to server
- *   onCoordsChange(node, coords)  — fired on every keystroke for geometry fields
- *   onCoordsSave(node, coords)    — fired on blur / Enter to persist to server
- */
+// ── XML reconstruction ────────────────────────────────────────────────────────
 
-/**
- * Reconstruct the XML element for a region node.
- * 2D coordinate fields come from node.bounds (kept in sync with edits).
- * Type-specific non-2D fields (y, radius, height) come from node.coords.
- */
 function nodeToXml(node, depth = 0) {
   const indent = "  ".repeat(depth);
   const id     = node.synthetic_id ? "" : ` id="${node.label}"`;
@@ -140,10 +140,12 @@ function nodeToXml(node, depth = 0) {
     : `${indent}<${t}${id}/>`;
 }
 
+// ── RegionDetail ──────────────────────────────────────────────────────────────
+
 export class RegionDetail {
   #el;
   #callbacks;
-  #xmlCodeEl    = null;
+  #xmlCodeEl     = null;
   #headerLabelEl = null;
 
   constructor(el, callbacks = {}) {
@@ -152,8 +154,6 @@ export class RegionDetail {
     this.#renderEmpty();
   }
 
-  // Composite region types carry no own coordinates — their bounds are
-  // purely derived from children and have no XML representation.
   static #COMPOSITE_TYPES = new Set(["union", "negative", "intersect", "complement"]);
 
   show(node) {
@@ -161,13 +161,19 @@ export class RegionDetail {
     this.#xmlCodeEl     = null;
     this.#headerLabelEl = null;
     this.#el.appendChild(this.#buildHeader(node));
+
+    const hint = document.createElement("div");
+    hint.className = "detail-save-hint";
+    hint.textContent = "enter or click outside to save · esc to revert";
+    this.#el.appendChild(hint);
+
     this.#el.appendChild(this.#buildFields(node));
 
     if (node.type === "rectangle" && node.bounds) {
-      this.#el.appendChild(this.#buildBounds(node));
+      this.#el.appendChild(this.#buildBounds(node, false));
     } else if (node.type === "cuboid") {
-      if (node.bounds) this.#el.appendChild(this.#buildBounds(node));
-      this.#el.appendChild(this.#buildGeometry(node));
+      // Y is integrated into the bounds table — no separate geometry section needed
+      if (node.bounds) this.#el.appendChild(this.#buildBounds(node, true));
     } else if (node.type === "everywhere") {
       this.#el.appendChild(this.#buildNote("Matches every location — no geometry to display."));
     } else if (GEOMETRY_SCHEMA[node.type]) {
@@ -185,12 +191,11 @@ export class RegionDetail {
     this.#renderEmpty();
   }
 
-  /** Refresh XML preview after bounds have been edited live. */
   updateXmlPreview(node) {
     if (this.#xmlCodeEl) this.#xmlCodeEl.textContent = nodeToXml(node);
   }
 
-  // ── private ─────────────────────────────────────────────────────────────
+  // ── private ─────────────────────────────────────────────────────────────────
 
   #renderEmpty() {
     const el = document.createElement("div");
@@ -222,7 +227,6 @@ export class RegionDetail {
     const section = document.createElement("div");
     section.className = "detail-section";
 
-    // id row: editable for named regions, static for synthetic ones
     if (node.synthetic_id) {
       section.appendChild(this.#fieldRow("id", node.id));
     } else {
@@ -239,13 +243,14 @@ export class RegionDetail {
     return section;
   }
 
+  // Vertical: label div above input
   #makeIdRow(node) {
-    const row = document.createElement("div");
-    row.className = "detail-field-row";
+    const wrap = document.createElement("div");
+    wrap.className = "detail-field-row";
 
-    const keyEl = document.createElement("span");
+    const keyEl = document.createElement("div");
     keyEl.className = "detail-field-key";
-    keyEl.textContent = "id";
+    keyEl.textContent = "ID";
 
     const input = document.createElement("input");
     input.type      = "text";
@@ -268,114 +273,20 @@ export class RegionDetail {
       if (e.key === "Escape") { e.preventDefault(); input.value = node.id; input.blur(); }
     });
 
-    row.appendChild(keyEl);
-    row.appendChild(input);
-    return row;
+    wrap.appendChild(keyEl);
+    wrap.appendChild(input);
+    return wrap;
   }
 
-  #buildGeometry(node) {
-    const schema = GEOMETRY_SCHEMA[node.type];
-    const origCoords = { ...node.coords };
-    const section = document.createElement("div");
-    section.className = "detail-section";
+  // ── bounds table (rectangle: X/Z; cuboid: X/Y/Z) ─────────────────────────
 
-    const hasEditable = schema.some(e => e.coordKey != null);
-    const heading = document.createElement("div");
-    heading.className = "detail-section-label";
-    heading.textContent = hasEditable ? "geometry  (enter to save · esc to revert)" : "geometry";
-    section.appendChild(heading);
-
-    for (const { label, coordKey, display, min, max } of schema) {
-      const row = document.createElement("div");
-      row.className = "detail-field-row";
-      const keyEl = document.createElement("span");
-      keyEl.className = "detail-field-key";
-      keyEl.textContent = label;
-      row.appendChild(keyEl);
-      if (coordKey != null) {
-        row.appendChild(this.#makeCoordInput(coordKey, node, origCoords, { min, max }));
-      } else {
-        const valEl = document.createElement("span");
-        valEl.className = "detail-field-val";
-        valEl.textContent = display(node);
-        row.appendChild(valEl);
-      }
-      section.appendChild(row);
-    }
-    return section;
-  }
-
-  #makeCoordInput(coordKey, node, origCoords, { min, max } = {}) {
-    const clamp = (v) => {
-      if (min != null && v < min) return min;
-      if (max != null && v > max) return max;
-      return v;
-    };
-
-    const input = document.createElement("input");
-    input.type      = "number";
-    input.step      = "any";
-    input.value     = node.coords[coordKey] ?? "";
-    input.className = "detail-bounds-input";
-    if (min != null) input.min = min;
-    if (max != null) input.max = max;
-
-    input.addEventListener("input", () => {
-      let val = parseFloat(input.value);
-      if (!isNaN(val)) {
-        val = clamp(val);
-        node.coords[coordKey] = val;
-        this.updateXmlPreview(node);
-        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
-      }
-    });
-
-    input.addEventListener("blur", () => {
-      let val = parseFloat(input.value);
-      if (isNaN(val)) {
-        input.value = node.coords[coordKey] ?? "";
-      } else {
-        val = clamp(val);
-        input.value = val;
-        node.coords[coordKey] = val;
-        if (this.#callbacks.onCoordsSave) this.#callbacks.onCoordsSave(node, node.coords);
-      }
-    });
-
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        node.coords[coordKey] = origCoords[coordKey];
-        input.value = origCoords[coordKey] ?? "";
-        this.updateXmlPreview(node);
-        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
-      }
-    });
-
-    return input;
-  }
-
-  #buildNote(text) {
-    const el = document.createElement("div");
-    el.className = "detail-empty";
-    el.style.marginBottom = "10px";
-    el.textContent = text;
-    return el;
-  }
-
-  #buildBounds(node) {
-    // Snapshot the bounds at show-time so Escape can revert correctly.
+  #buildBounds(node, includeY) {
     const origBounds = { ...node.bounds };
-    const editable   = true;
+    const origCoords = includeY ? { ...node.coords } : null;
 
     const section = document.createElement("div");
     section.className = "detail-section";
-
-    const heading = document.createElement("div");
-    heading.className = "detail-section-label";
-    heading.textContent = editable ? "bounds  (enter to save · esc to revert)" : "bounds";
-    section.appendChild(heading);
+    section.appendChild(this.#sectionHeader("BOUNDS"));
 
     const table = document.createElement("table");
     table.className = "detail-table";
@@ -383,7 +294,7 @@ export class RegionDetail {
 
     const thead = table.createTHead();
     const hrow  = thead.insertRow();
-    for (const col of ["", "min", "max", "size"]) {
+    for (const col of ["", "MIN", "MAX", "SIZE"]) {
       const th = document.createElement("th");
       th.textContent = col;
       hrow.appendChild(th);
@@ -392,26 +303,34 @@ export class RegionDetail {
     const tbody        = table.createTBody();
     const sizeUpdaters = [];
 
-    for (const [axis, minF, maxF] of [["X", "min_x", "max_x"], ["Z", "min_z", "max_z"]]) {
+    const axes = includeY
+      ? [["X", "min_x", "max_x", "bounds"], ["Y", "min_y", "max_y", "coords"], ["Z", "min_z", "max_z", "bounds"]]
+      : [["X", "min_x", "max_x", "bounds"], ["Z", "min_z", "max_z", "bounds"]];
+
+    for (const [axis, minF, maxF, source] of axes) {
       const row   = tbody.insertRow();
       const axisC = row.insertCell(); axisC.className = "detail-axis"; axisC.textContent = axis;
       const minC  = row.insertCell(); minC.className  = "detail-val";
       const maxC  = row.insertCell(); maxC.className  = "detail-val";
       const sizeC = row.insertCell(); sizeC.className = "detail-size";
 
+      const getVal = (key) => source === "bounds" ? node.bounds[key] : (node.coords?.[key] ?? 0);
+
       const refreshSize = () => {
-        const sz = node.bounds[maxF] - node.bounds[minF];
+        const sz = getVal(maxF) - getVal(minF);
         sizeC.textContent = Number.isInteger(sz) ? String(sz) : sz.toFixed(1);
       };
       refreshSize();
       sizeUpdaters.push(refreshSize);
 
-      if (editable) {
+      if (source === "bounds") {
         minC.appendChild(this.#makeBoundInput(minF, node, origBounds, sizeUpdaters));
         maxC.appendChild(this.#makeBoundInput(maxF, node, origBounds, sizeUpdaters));
       } else {
-        minC.appendChild(this.#staticVal(node.bounds[minF]));
-        maxC.appendChild(this.#staticVal(node.bounds[maxF]));
+        // Y row for cuboid uses coord inputs (onCoordsChange/Save callbacks)
+        const opts = { min: 0, max: 256, sizeUpdaters };
+        minC.appendChild(this.#makeCoordInput(minF, node, origCoords, opts));
+        maxC.appendChild(this.#makeCoordInput(maxF, node, origCoords, opts));
       }
     }
 
@@ -438,7 +357,6 @@ export class RegionDetail {
     input.addEventListener("blur", () => {
       const val = parseFloat(input.value);
       if (isNaN(val)) {
-        // Revert invalid text to last valid bound value
         input.value = node.bounds[field];
       } else {
         if (this.#callbacks.onBoundsSave) this.#callbacks.onBoundsSave(node, node.bounds);
@@ -458,10 +376,204 @@ export class RegionDetail {
     return input;
   }
 
-  #staticVal(value) {
-    const el = document.createElement("span");
-    el.className = "detail-val";
-    el.textContent = value;
+  // ── geometry sections (non-rectangle/cuboid types) ────────────────────────
+
+  #buildGeometry(node) {
+    const schema     = GEOMETRY_SCHEMA[node.type];
+    const origCoords = { ...node.coords };
+
+    const section = document.createElement("div");
+    section.className = "detail-section";
+
+    for (const entry of schema) {
+      if (entry.type === "group") {
+        section.appendChild(this.#buildGroupEntry(entry, node, origCoords));
+      } else if (entry.type === "scalar-pair") {
+        section.appendChild(this.#buildScalarPairEntry(entry, node, origCoords));
+      } else {
+        section.appendChild(this.#buildScalarEntry(entry, node, origCoords));
+      }
+    }
+
+    return section;
+  }
+
+  // Inline XYZ (or XZ) row: each cell is [input][axis-label] in a row
+  #buildGroupEntry(entry, node, origCoords) {
+    const wrap = document.createElement("div");
+    wrap.className = "detail-geo-group";
+
+    const header = document.createElement("div");
+    header.className = "detail-section-header";
+    const labelEl = document.createElement("span");
+    labelEl.className = "detail-section-label";
+    labelEl.textContent = entry.label;
+    header.appendChild(labelEl);
+    if (entry.note) {
+      const noteEl = document.createElement("span");
+      noteEl.className = "detail-section-hint";
+      noteEl.textContent = entry.note;
+      header.appendChild(noteEl);
+    }
+    wrap.appendChild(header);
+
+    const row = document.createElement("div");
+    row.className = "detail-group-row";
+
+    for (const axisEntry of entry.axes) {
+      const cell = document.createElement("div");
+      cell.className = "detail-group-cell";
+
+      if (axisEntry.key != null) {
+        const input = this.#makeCoordInput(axisEntry.key, node, origCoords, {
+          min: axisEntry.min, max: axisEntry.max,
+        });
+        input.classList.add("detail-group-input");
+        cell.appendChild(input);
+      } else {
+        const valEl = document.createElement("span");
+        valEl.className = "detail-group-static";
+        valEl.textContent = axisEntry.display(node);
+        cell.appendChild(valEl);
+      }
+
+      // Axis label sits to the right of the value in the same row
+      const axisLabel = document.createElement("span");
+      axisLabel.className = "detail-group-axis";
+      axisLabel.textContent = axisEntry.axis;
+      cell.appendChild(axisLabel);
+
+      row.appendChild(cell);
+    }
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  // Two scalar fields side by side in one row
+  #buildScalarPairEntry(entry, node, origCoords) {
+    const wrap = document.createElement("div");
+    wrap.className = "detail-geo-scalar-pair";
+    for (const scalar of entry.entries) {
+      wrap.appendChild(this.#buildScalarEntry(scalar, node, origCoords));
+    }
+    return wrap;
+  }
+
+  // Stacked: label above, full-width input below
+  #buildScalarEntry(entry, node, origCoords) {
+    const wrap = document.createElement("div");
+    wrap.className = "detail-geo-scalar";
+
+    const header = document.createElement("div");
+    header.className = "detail-section-header";
+    const labelEl = document.createElement("span");
+    labelEl.className = "detail-section-label";
+    labelEl.textContent = entry.label;
+    header.appendChild(labelEl);
+    if (entry.unit) {
+      const unitEl = document.createElement("span");
+      unitEl.className = "detail-section-hint";
+      unitEl.textContent = entry.unit;
+      header.appendChild(unitEl);
+    }
+    wrap.appendChild(header);
+
+    if (entry.key != null) {
+      const input = this.#makeCoordInput(entry.key, node, origCoords, {
+        min: entry.min, max: entry.max,
+      });
+      input.classList.add("detail-scalar-input");
+      wrap.appendChild(input);
+    } else {
+      const valEl = document.createElement("span");
+      valEl.className = "detail-field-val";
+      valEl.textContent = entry.display(node);
+      wrap.appendChild(valEl);
+    }
+
+    return wrap;
+  }
+
+  // Shared coord input — handles both geometry-section fields and the Y row in the bounds table.
+  // sizeUpdaters (optional): array of refresh fns to call when value changes (for table size column).
+  #makeCoordInput(coordKey, node, origCoords, { min, max, sizeUpdaters } = {}) {
+    const clamp = (v) => {
+      if (min != null && v < min) return min;
+      if (max != null && v > max) return max;
+      return v;
+    };
+
+    const input = document.createElement("input");
+    input.type      = "number";
+    input.step      = "any";
+    input.value     = node.coords[coordKey] ?? "";
+    input.className = "detail-bounds-input";
+    if (min != null) input.min = min;
+    if (max != null) input.max = max;
+
+    input.addEventListener("input", () => {
+      let val = parseFloat(input.value);
+      if (!isNaN(val)) {
+        val = clamp(val);
+        node.coords[coordKey] = val;
+        sizeUpdaters?.forEach(fn => fn());
+        this.updateXmlPreview(node);
+        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
+      }
+    });
+
+    input.addEventListener("blur", () => {
+      let val = parseFloat(input.value);
+      if (isNaN(val)) {
+        input.value = node.coords[coordKey] ?? "";
+      } else {
+        val = clamp(val);
+        input.value = val;
+        node.coords[coordKey] = val;
+        if (this.#callbacks.onCoordsSave) this.#callbacks.onCoordsSave(node, node.coords);
+      }
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        node.coords[coordKey] = origCoords[coordKey];
+        input.value = origCoords[coordKey] ?? "";
+        sizeUpdaters?.forEach(fn => fn());
+        this.updateXmlPreview(node);
+        if (this.#callbacks.onCoordsChange) this.#callbacks.onCoordsChange(node, node.coords);
+      }
+    });
+
+    return input;
+  }
+
+  // ── section header with optional right-side hint ──────────────────────────
+
+  #sectionHeader(label, hint = null) {
+    const header = document.createElement("div");
+    header.className = "detail-section-header";
+    const labelEl = document.createElement("span");
+    labelEl.className = "detail-section-label";
+    labelEl.textContent = label;
+    header.appendChild(labelEl);
+    if (hint) {
+      const hintEl = document.createElement("span");
+      hintEl.className = "detail-section-hint";
+      hintEl.textContent = hint;
+      header.appendChild(hintEl);
+    }
+    return header;
+  }
+
+  // ── misc ──────────────────────────────────────────────────────────────────
+
+  #buildNote(text) {
+    const el = document.createElement("div");
+    el.className = "detail-empty";
+    el.style.marginBottom = "10px";
+    el.textContent = text;
     return el;
   }
 
@@ -510,7 +622,7 @@ export class RegionDetail {
 
     const heading = document.createElement("div");
     heading.className = "detail-section-label";
-    heading.textContent = "xml";
+    heading.textContent = "XML";
     section.appendChild(heading);
 
     const pre = document.createElement("pre");
@@ -522,12 +634,13 @@ export class RegionDetail {
     return section;
   }
 
+  // Vertical field: label div above static value span
   #fieldRow(key, value) {
     const row = document.createElement("div");
     row.className = "detail-field-row";
-    const keyEl = document.createElement("span");
+    const keyEl = document.createElement("div");
     keyEl.className = "detail-field-key";
-    keyEl.textContent = key;
+    keyEl.textContent = key.toUpperCase();
     const valEl = document.createElement("span");
     valEl.className = "detail-field-val";
     valEl.textContent = value;
