@@ -137,6 +137,7 @@ export class MapCanvas {
     this.#panX  = 0;
     this.#panY  = 0;
     this.#repaint();
+    this.#callbacks.onZoom?.(this.#scale);
   }
 
   /** Highlight the anchor blocks and show the name/dimensions overlay for a region. */
@@ -424,6 +425,7 @@ export class MapCanvas {
       this.#panY = my - (my - this.#panY) * (newScale / this.#scale);
       this.#scale = newScale;
       this.#applyViewportTransform();
+      this.#callbacks.onZoom?.(this.#scale);
     }, { passive: false });
 
     // ── pan (left-drag) / click ──────────────────────────────────────────────

@@ -90,6 +90,7 @@ const registry = new RegionRegistry({
 });
 
 const coordsEl        = document.getElementById("cursor-coords");
+const zoomEl          = document.getElementById("zoom-level");
 const toolMoveBtn     = document.getElementById("tool-move");
 const toolSelectBtn   = document.getElementById("tool-select");
 const toolRectBtn     = document.getElementById("tool-rect");
@@ -100,10 +101,13 @@ const toolBlockBtn    = document.getElementById("tool-block");
 
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
-  document.getElementById("canvas-wrap"),
+  document.getElementById("svg-area"),
   {
     onCoords: (x, z) => {
       coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
+    },
+    onZoom: (scale) => {
+      zoomEl.textContent = `${Math.round(scale * 100)}%`;
     },
     onCanvasClick: (node) => {
       if (node) registry.select(node.id);

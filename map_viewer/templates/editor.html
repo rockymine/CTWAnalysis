@@ -122,39 +122,44 @@
       </div>
       <div class="sidebar-handle" id="left-handle"></div>
       <div id="canvas-wrap">
-        <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-          <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-                fill="#334155" font-size="14">Loading map…</text>
-        </svg>
-        <div id="cursor-coords"></div>
-        <div id="layer-picker">
-          <div class="layer-picker-title">Layers</div>
-          <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
-          <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
-          <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+        <div id="canvas-subbar">
+          <div id="draw-toolbar">
+            <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
+              <i data-lucide="hand"></i>
+            </button>
+            <button id="tool-select" class="draw-tool-btn" title="Select"        disabled>
+              <i data-lucide="mouse-pointer-2"></i>
+            </button>
+            <button id="tool-rect"   class="draw-tool-btn" title="Rectangle (R)" disabled>
+              <i data-lucide="rectangle-horizontal"></i>
+            </button>
+            <button id="tool-cuboid"   class="draw-tool-btn" title="Cuboid (C)"    disabled>
+              <i data-lucide="box"></i>
+            </button>
+            <button id="tool-cylinder" class="draw-tool-btn" title="Cylinder (Y)"  disabled>
+              <i data-lucide="cylinder"></i>
+            </button>
+            <button id="tool-point"    class="draw-tool-btn" title="Point (P)"     disabled>
+              <i data-lucide="dot"></i>
+            </button>
+            <button id="tool-block"    class="draw-tool-btn" title="Block (B)"     disabled>
+              <i data-lucide="square"></i>
+            </button>
+          </div>
+          <div id="cursor-coords"></div>
+          <div id="canvas-subbar-right">
+            <span id="zoom-level">—</span>
+            <div class="subbar-sep"></div>
+            <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
+            <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>
+            <label class="layer-item"><input type="checkbox" id="toggle-build"><span>Build</span></label>
+          </div>
         </div>
-        <div id="draw-toolbar">
-          <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
-            <i data-lucide="hand"></i>
-          </button>
-          <button id="tool-select" class="draw-tool-btn" title="Select"        disabled>
-            <i data-lucide="mouse-pointer-2"></i>
-          </button>
-          <button id="tool-rect"   class="draw-tool-btn" title="Rectangle (R)" disabled>
-            <i data-lucide="square"></i>
-          </button>
-          <button id="tool-cuboid"   class="draw-tool-btn" title="Cuboid (C)"    disabled>
-            <i data-lucide="box"></i>
-          </button>
-          <button id="tool-cylinder" class="draw-tool-btn" title="Cylinder (Y)"  disabled>
-            <i data-lucide="cylinder"></i>
-          </button>
-          <button id="tool-point"    class="draw-tool-btn" title="Point (P)"     disabled>
-            <i data-lucide="dot"></i>
-          </button>
-          <button id="tool-block"    class="draw-tool-btn" title="Block (B)"     disabled>
-            <i data-lucide="square"></i>
-          </button>
+        <div id="svg-area">
+          <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                  fill="#334155" font-size="14">Loading map…</text>
+          </svg>
         </div>
       </div>
       <div class="sidebar-handle" id="right-handle"></div>

@@ -82,47 +82,46 @@ body {
 #activity-viewport > div[hidden] { display: none; }
 #regions-workspace { display: flex; flex: 1; overflow: hidden; }
 
-/* ── svg canvas ── */
+/* ── canvas column (subbar + svg area) ── */
 #canvas-wrap {
-  flex: 1; display: flex; align-items: center;
-  justify-content: center; overflow: hidden; padding: 12px;
-  position: relative;
-}
-#map-svg { max-width: 100%; max-height: 100%; cursor: default; }
-#cursor-coords {
-  position: absolute; bottom: 18px; left: 18px;
-  font-size: 12px; color: var(--text-dim);
-  background: var(--bg-base-glass); padding: 3px 8px; border-radius: 4px;
-  pointer-events: none; min-width: 120px;
-  font-variant-numeric: tabular-nums;
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
 }
 
-/* ── floating layer picker (top-right) ── */
-#layer-picker {
-  position: absolute; top: 14px; right: 14px;
-  background: var(--bg-panel-glass); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 10px; pointer-events: auto; z-index: 10;
+/* ── canvas sub-toolbar ── */
+#canvas-subbar {
+  display: flex; align-items: center; gap: 4px;
+  height: 36px; flex-shrink: 0; padding: 0 8px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
 }
-.layer-picker-title {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;
+#canvas-subbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+}
+#zoom-level {
+  font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; min-width: 38px; text-align: right;
+  user-select: none;
+}
+.subbar-sep {
+  width: 1px; height: 16px; background: var(--border); flex-shrink: 0;
+}
+#cursor-coords {
+  flex: 1; text-align: center;
+  font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; pointer-events: none;
   user-select: none;
 }
 .layer-item {
-  display: flex; align-items: center; gap: 7px; padding: 2px 0;
+  display: flex; align-items: center; gap: 5px;
   font-size: 12px; color: var(--text-dim); cursor: pointer; user-select: none;
 }
 .layer-item input { accent-color: var(--text-dim); cursor: pointer; }
 
 #draw-toolbar {
-  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 4px;
-  background: var(--bg-panel-glass); border: 1px solid var(--border); border-radius: 8px;
-  padding: 5px 6px; pointer-events: auto;
+  display: flex; gap: 1px; flex-shrink: 0;
 }
 .draw-tool-btn {
   background: transparent; border: 1px solid transparent;
-  border-radius: 5px; padding: 5px; cursor: pointer;
+  border-radius: 5px; padding: 4px 5px; cursor: pointer;
   color: var(--text-dim); display: flex; align-items: center; justify-content: center;
   transition: color 0.1s, background 0.1s, border-color 0.1s;
 }
@@ -131,6 +130,13 @@ body {
 .draw-tool-btn--active {
   background: var(--bg-selected); border-color: var(--accent); color: var(--accent-light);
 }
+
+/* ── svg area (fills space below subbar) ── */
+#svg-area {
+  flex: 1; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 12px;
+}
+#map-svg { max-width: 100%; max-height: 100%; cursor: default; }
 
 /* ── sidebar resize handles ── */
 .sidebar-handle {
