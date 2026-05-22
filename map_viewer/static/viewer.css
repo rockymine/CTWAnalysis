@@ -325,22 +325,30 @@ body {
   user-select: none;
 }
 
-/* ── geometry group field (inline XYZ row) ── */
+/* ── geometry group field (inline XYZ row with prefixed inputs) ── */
 .detail-geo-group { margin-bottom: 12px; }
 .detail-group-row { display: flex; gap: 6px; }
-/* Each cell: [input flex-1] [axis-label fixed] in a row */
-.detail-group-cell {
-  flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 5px;
+
+/* ── prefixed input field: bordered box with axis label before the value ── */
+.detail-prefixed-field {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px;
 }
-/* Override fixed width from .detail-bounds-input so input stretches */
-.detail-group-cell .detail-bounds-input { flex: 1; min-width: 0; width: auto; text-align: right; }
-.detail-group-axis {
+.detail-prefixed-field:focus-within { border-color: var(--accent); }
+.detail-prefix {
   font-size: 10px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--text-muted); flex-shrink: 0; user-select: none;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 0 4px 0 8px; user-select: none; flex-shrink: 0;
 }
+.detail-prefixed-field .detail-bounds-input {
+  background: transparent; border: none; border-radius: 0;
+  flex: 1; min-width: 0; width: auto; padding: 3px 8px 3px 2px; text-align: right;
+}
+.detail-prefixed-field .detail-bounds-input:focus { border-color: transparent; }
 .detail-group-static {
   flex: 1; font-size: 13px; color: var(--text-secondary); text-align: right;
-  font-variant-numeric: tabular-nums; padding: 3px 0;
+  font-variant-numeric: tabular-nums; padding: 3px 8px 3px 2px;
 }
 
 /* ── geometry scalar field (stacked label + full-width input) ── */
@@ -348,11 +356,9 @@ body {
 /* Override the fixed width from .detail-bounds-input */
 .detail-geo-scalar .detail-bounds-input { width: 100%; }
 
-/* ── scalar-pair: two scalars side by side ── */
-.detail-geo-scalar-pair {
-  display: flex; gap: 8px; margin-bottom: 12px;
-}
-.detail-geo-scalar-pair .detail-geo-scalar { flex: 1; min-width: 0; margin-bottom: 0; }
+/* ── scalar-pair: DIMENSIONS header + prefixed R/H row ── */
+.detail-geo-scalar-pair { margin-bottom: 12px; }
+.detail-pair-row { display: flex; gap: 6px; }
 
 .detail-child-row {
   display: grid;
@@ -364,23 +370,21 @@ body {
 .detail-child-name { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-child-type { color: var(--text-muted); flex-shrink: 0; }
 .detail-id-input {
-  background: var(--bg-base); border: 1px solid var(--border);
-  border-radius: 3px; color: var(--text-secondary);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-primary);
   font-family: ui-monospace, monospace; font-size: 13px;
-  padding: 5px 8px; outline: none; width: 100%;
+  padding: 6px 10px; outline: none; width: 100%; box-sizing: border-box;
 }
-.detail-id-input:hover { border-color: var(--text-muted); }
-.detail-id-input:focus { border-color: var(--accent); color: var(--text-bright); }
+.detail-id-input:focus { border-color: var(--accent); }
 
 .detail-bounds-input {
-  background: var(--bg-base); border: 1px solid var(--border);
-  border-radius: 3px; color: var(--text-secondary);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-primary);
   font-family: ui-monospace, monospace; font-size: 12px;
   font-variant-numeric: tabular-nums; padding: 3px 6px;
   text-align: right; width: 68px; outline: none;
 }
-.detail-bounds-input:hover { border-color: var(--text-muted); }
-.detail-bounds-input:focus { border-color: var(--accent); color: var(--text-bright); }
+.detail-bounds-input:focus { border-color: var(--accent); }
 
 .detail-child-bounds {
   color: var(--border); font-size: 10px; font-variant-numeric: tabular-nums;

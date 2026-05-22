@@ -398,7 +398,7 @@ export class RegionDetail {
     return section;
   }
 
-  // Inline XYZ (or XZ) row: each cell is [input][axis-label] in a row
+  // Inline XYZ (or XZ) row: each field is a bordered box with axis prefix inside
   #buildGroupEntry(entry, node, origCoords) {
     const wrap = document.createElement("div");
     wrap.className = "detail-geo-group";
@@ -421,41 +421,67 @@ export class RegionDetail {
     row.className = "detail-group-row";
 
     for (const axisEntry of entry.axes) {
-      const cell = document.createElement("div");
-      cell.className = "detail-group-cell";
+      const field = document.createElement("div");
+      field.className = "detail-prefixed-field";
+
+      const prefix = document.createElement("span");
+      prefix.className = "detail-prefix";
+      prefix.textContent = axisEntry.axis;
+      field.appendChild(prefix);
 
       if (axisEntry.key != null) {
         const input = this.#makeCoordInput(axisEntry.key, node, origCoords, {
           min: axisEntry.min, max: axisEntry.max,
         });
-        input.classList.add("detail-group-input");
-        cell.appendChild(input);
+        field.appendChild(input);
       } else {
         const valEl = document.createElement("span");
         valEl.className = "detail-group-static";
         valEl.textContent = axisEntry.display(node);
-        cell.appendChild(valEl);
+        field.appendChild(valEl);
       }
 
-      // Axis label sits to the right of the value in the same row
-      const axisLabel = document.createElement("span");
-      axisLabel.className = "detail-group-axis";
-      axisLabel.textContent = axisEntry.axis;
-      cell.appendChild(axisLabel);
-
-      row.appendChild(cell);
+      row.appendChild(field);
     }
     wrap.appendChild(row);
     return wrap;
   }
 
-  // Two scalar fields side by side in one row
+  // DIMENSIONS header + two prefixed fields (R/H) side by side
   #buildScalarPairEntry(entry, node, origCoords) {
     const wrap = document.createElement("div");
     wrap.className = "detail-geo-scalar-pair";
+
+    wrap.appendChild(this.#sectionHeader("DIMENSIONS"));
+
+    const row = document.createElement("div");
+    row.className = "detail-pair-row";
+
     for (const scalar of entry.entries) {
-      wrap.appendChild(this.#buildScalarEntry(scalar, node, origCoords));
+      const field = document.createElement("div");
+      field.className = "detail-prefixed-field";
+
+      const prefix = document.createElement("span");
+      prefix.className = "detail-prefix";
+      prefix.textContent = scalar.label[0];
+      field.appendChild(prefix);
+
+      if (scalar.key != null) {
+        const input = this.#makeCoordInput(scalar.key, node, origCoords, {
+          min: scalar.min, max: scalar.max,
+        });
+        field.appendChild(input);
+      } else {
+        const valEl = document.createElement("span");
+        valEl.className = "detail-group-static";
+        valEl.textContent = scalar.display(node);
+        field.appendChild(valEl);
+      }
+
+      row.appendChild(field);
     }
+
+    wrap.appendChild(row);
     return wrap;
   }
 
