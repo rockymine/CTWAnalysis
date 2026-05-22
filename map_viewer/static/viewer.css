@@ -758,3 +758,194 @@ body {
 .ov-sym-actions { display: flex; flex-direction: column; gap: 6px; }
 .ov-sym-confirm-btn { width: 100%; justify-content: center; }
 .ov-sym-none-btn { align-self: flex-start; font-size: 11px; }
+
+/* ── Teams workspace (3-column layout) ── */
+#pt-workspace {
+  display: flex; flex-direction: row;
+  flex: 1; overflow: hidden;
+}
+
+/* Left panel */
+#pt-left {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#pt-teams-section {
+  flex-shrink: 0;
+  max-height: 55%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#pt-teams-list {
+  flex: 1; overflow-y: auto;
+  padding: 4px 0;
+}
+.pt-left-divider {
+  height: 1px; flex-shrink: 0;
+  background: var(--border);
+}
+#pt-spawns-section {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#pt-spawn-list {
+  flex: 1; overflow-y: auto;
+}
+.pt-section-header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+.pt-section-header .ov-section-title { border-bottom: none; padding-bottom: 0; }
+.pt-section-header .action-btn { padding: 2px 10px; font-size: 12px; }
+
+/* Team rows */
+.pt-team-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px; min-height: 34px;
+  cursor: pointer; user-select: none;
+  border-bottom: 1px solid transparent;
+}
+.pt-team-row:hover { background: var(--bg-selected); }
+.pt-team-row--selected { background: var(--bg-selected); }
+.pt-team-swatch {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.12);
+  display: inline-block;
+}
+.pt-team-label {
+  flex: 1; min-width: 0;
+  font-size: 13px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pt-team-delete-btn {
+  flex-shrink: 0; background: none; border: none;
+  color: var(--text-muted); cursor: pointer;
+  font-size: 13px; padding: 3px 5px; line-height: 1;
+  opacity: 0; transition: opacity .1s, color .1s;
+}
+.pt-team-row:hover .pt-team-delete-btn { opacity: 1; }
+.pt-team-delete-btn:hover { color: var(--color-error); }
+
+/* Spawn rows — reuse region-row look */
+.pt-spawn-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; min-height: 28px;
+  cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--text-primary);
+}
+.pt-spawn-row:hover { background: var(--bg-selected); }
+.pt-spawn-row--selected { background: var(--bg-selected); }
+.pt-spawn-team-dot {
+  width: 8px; height: 8px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--border);
+  display: inline-block;
+}
+.pt-spawn-label {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pt-spawn-team-tag {
+  font-size: 11px; color: var(--text-muted);
+  flex-shrink: 0;
+}
+.pt-spawn-empty {
+  padding: 10px 12px;
+  font-size: 12px; color: var(--text-muted); font-style: italic;
+}
+
+/* Canvas */
+#pt-canvas-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg-deep);
+}
+#pt-canvas-subbar {
+  display: flex; align-items: center; gap: 0;
+  height: 36px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+}
+#pt-draw-toolbar {
+  display: flex; gap: 2px; margin-right: 8px;
+}
+#pt-cursor-coords {
+  flex: 1; text-align: center;
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+}
+#pt-canvas-subbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: 8px;
+}
+#pt-zoom-level {
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  min-width: 40px; text-align: right;
+}
+#pt-svg-area {
+  flex: 1; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 12px;
+}
+#pt-map-svg { max-width: 100%; max-height: 100%; cursor: default; }
+
+/* Right panel */
+#pt-right {
+  width: 280px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#pt-right-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* Color pick row in team inspector */
+.pt-color-pick-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.pt-color-swatch-lg {
+  width: 20px; height: 20px; flex-shrink: 0;
+  border-radius: 4px; display: inline-block;
+  border: 1px solid rgba(255,255,255,.15);
+}
+.pt-color-pick-row .ov-input { flex: 1; }
+
+/* Inspector empty state */
+#pt-inspector-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+}
+.pt-empty-msg {
+  font-size: 12px; color: var(--text-muted);
+  text-align: center; padding: 16px;
+}
+
+/* Danger action button */
+.pt-action-btn--danger {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+.pt-action-btn--danger:hover {
+  background: rgba(239,68,68,.1);
+  color: var(--color-error);
+}
+
+/* RegionDetail host inside spawn inspector — no extra padding (detail handles its own) */
+#pt-spawn-region-detail {
+  padding: 0;
+}
+/* Visual separator between geometry detail and spawn assignment section */
+#pt-spawn-assignment {
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}

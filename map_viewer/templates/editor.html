@@ -33,7 +33,7 @@
     <button class="activity-btn" id="activity-overview" title="Overview" disabled data-status="">
       <i data-lucide="book-open-text"></i>
     </button>
-    <button class="activity-btn" disabled title="Players &amp; Teams">
+    <button class="activity-btn" id="activity-teams" title="Teams" disabled data-status="">
       <i data-lucide="users"></i>
     </button>
     <button class="activity-btn" disabled title="Objective">
@@ -117,6 +117,132 @@
           <div id="ov-sym-body">
             <p class="ov-sym-loading">Loading…</p>
           </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Teams workspace -->
+    <div id="pt-workspace" hidden>
+
+      <!-- Left panel: teams list (top) + spawn region list (bottom) -->
+      <div id="pt-left">
+        <div id="pt-teams-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Teams</h2>
+            <button id="pt-add-team-btn" class="action-btn">+ Add team</button>
+          </div>
+          <div id="pt-teams-list"></div>
+        </div>
+        <div class="pt-left-divider"></div>
+        <div id="pt-spawns-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Spawn Regions</h2>
+          </div>
+          <div id="pt-spawn-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-handle" id="pt-left-handle"></div>
+
+      <!-- Canvas: map overview with spawn regions highlighted -->
+      <div id="pt-canvas-wrap">
+        <div id="pt-canvas-subbar">
+          <div id="pt-draw-toolbar">
+            <button id="pt-tool-move"     class="draw-tool-btn" title="Move (M)"     disabled>
+              <i data-lucide="hand"></i>
+            </button>
+            <button id="pt-tool-select"   class="draw-tool-btn" title="Select"       disabled>
+              <i data-lucide="mouse-pointer-2"></i>
+            </button>
+            <button id="pt-tool-cylinder" class="draw-tool-btn" title="Cylinder (Y)" disabled>
+              <i data-lucide="cylinder"></i>
+            </button>
+            <button id="pt-tool-point"    class="draw-tool-btn" title="Point (P)"    disabled>
+              <i data-lucide="dot"></i>
+            </button>
+          </div>
+          <div id="pt-cursor-coords"></div>
+          <div id="pt-canvas-subbar-right">
+            <span id="pt-zoom-level">—</span>
+          </div>
+        </div>
+        <div id="pt-svg-area">
+          <svg id="pt-map-svg" xmlns="http://www.w3.org/2000/svg">
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                  fill="#334155" font-size="14">Loading map…</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="sidebar-handle" id="pt-right-handle"></div>
+
+      <!-- Right panel: team or spawn inspector -->
+      <div id="pt-right">
+        <div id="pt-right-scroll">
+
+          <!-- Team inspector (shown when a team row is selected) -->
+          <div id="pt-team-inspector" hidden>
+            <section class="ov-section">
+              <h2 class="ov-section-title">Team</h2>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-team-id">ID <span class="ov-required">*</span></label>
+                <input id="pt-team-id" class="ov-input" type="text" placeholder="e.g. blue-team" spellcheck="false"/>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-team-name">Display Name</label>
+                <input id="pt-team-name" class="ov-input" type="text" placeholder="e.g. Blue"/>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-team-color">Color <span class="ov-required">*</span></label>
+                <div class="pt-color-pick-row">
+                  <span id="pt-team-color-swatch" class="pt-color-swatch-lg"></span>
+                  <select id="pt-team-color" class="ov-input"></select>
+                </div>
+              </div>
+              <div class="ov-field-row">
+                <div class="ov-field">
+                  <label class="ov-label" for="pt-team-max">Max Players</label>
+                  <input id="pt-team-max" class="ov-input" type="number" min="1" max="500" value="20"/>
+                </div>
+                <div class="ov-field">
+                  <label class="ov-label" for="pt-team-min">Min Players</label>
+                  <input id="pt-team-min" class="ov-input" type="number" min="0" max="500" value="0"/>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Spawn inspector (shown when a spawn region is selected) -->
+          <div id="pt-spawn-inspector" hidden>
+            <!-- RegionDetail renders here: region name, type, geometry, XML preview -->
+            <div id="pt-spawn-region-detail"></div>
+            <!-- Spawn-specific configuration -->
+            <section class="ov-section" id="pt-spawn-assignment">
+              <h2 class="ov-section-title">Spawn Assignment</h2>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-spawn-team">Team</label>
+                <select id="pt-spawn-team" class="ov-input"></select>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-spawn-yaw">Yaw (°)</label>
+                <input id="pt-spawn-yaw" class="ov-input" type="number" step="1" min="-180" max="180" placeholder="0"/>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label" for="pt-spawn-kit">Kit</label>
+                <input id="pt-spawn-kit" class="ov-input" type="text" placeholder="e.g. spawn-kit" spellcheck="false"/>
+              </div>
+              <div class="ov-actions">
+                <button id="pt-spawn-unlink-btn" class="action-btn pt-action-btn--danger">Remove spawn link</button>
+              </div>
+            </section>
+          </div>
+
+          <!-- Empty state -->
+          <div id="pt-inspector-empty">
+            <p class="pt-empty-msg">Select a team or spawn region to inspect.</p>
+          </div>
+
         </div>
       </div>
 
@@ -220,6 +346,8 @@
   initSidebarResize(document.getElementById('right-handle'), document.getElementById('inspector'), 'right', 260, 500);
   initSidebarResize(document.getElementById('ov-left-handle'),  document.getElementById('ov-left'),  'left',  200, 480);
   initSidebarResize(document.getElementById('ov-right-handle'), document.getElementById('ov-right'), 'right', 180, 420);
+  initSidebarResize(document.getElementById('pt-left-handle'),  document.getElementById('pt-left'),  'left',  180, 420);
+  initSidebarResize(document.getElementById('pt-right-handle'), document.getElementById('pt-right'), 'right', 240, 480);
 }());
 </script>
 </body>

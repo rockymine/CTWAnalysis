@@ -262,6 +262,16 @@ def _check_pipeline_status(output_dir: Path) -> list[dict]:
     ]
 
 
+def _spawn_region_id(spawn: dict) -> str:
+    """Return the region id for a spawn entry (handles both embedded and ref forms)."""
+    region = spawn.get("region")
+    if isinstance(region, dict):
+        return region.get("id", "")
+    if isinstance(region, str):
+        return region
+    return ""
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
@@ -855,7 +865,8 @@ def create_app() -> Flask:
             return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
 
         regions[region_id] = new_region
-        data.setdefault("region_categories", {}).setdefault("other", []).append(region_id)
+        category = body.get("category", "other")
+        data.setdefault("region_categories", {}).setdefault(category, []).append(region_id)
 
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -1070,6 +1081,173 @@ def create_app() -> Flask:
                 "max_x": b["max"]["x"], "max_z": b["max"]["z"],
             }
         return jsonify(response)
+
+    # ── Team CRUD endpoints ───────────────────────────────────────────────────
+
+    @app.route("/api/map/<name>/teams", methods=["POST"])
+    def add_team(name: str) -> tuple:
+        body = request.get_json(silent=True) or {}
+        team_id = (body.get("id") or "").strip()
+        if not team_id:
+            return jsonify({"error": "id is required"}), 400
+
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        teams: list = data.setdefault("teams", [])
+
+        if any(t.get("id") == team_id for t in teams):
+            return jsonify({"error": f"team id {team_id!r} already in use"}), 409
+
+        new_team = {
+            "id":          team_id,
+            "name":        body.get("name", team_id),
+            "color":       body.get("color", "red"),
+            "max_players": int(body.get("max_players", 20)),
+            "min_players": int(body.get("min_players", 0)),
+        }
+        if body.get("dye_color"):
+            new_team["dye_color"] = str(body["dye_color"])
+
+        teams.append(new_team)
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "team": new_team}), 201
+
+    @app.route("/api/map/<name>/teams/<team_id>", methods=["PATCH"])
+    def update_team(name: str, team_id: str) -> tuple:
+        body = request.get_json(silent=True) or {}
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        teams: list = data.setdefault("teams", [])
+
+        team = next((t for t in teams if t.get("id") == team_id), None)
+        if team is None:
+            return jsonify({"error": f"team {team_id!r} not found"}), 404
+
+        # Handle optional id rename
+        new_id = (body.get("id") or "").strip()
+        if new_id and new_id != team_id:
+            if any(t.get("id") == new_id for t in teams if t is not team):
+                return jsonify({"error": f"team id {new_id!r} already in use"}), 409
+            # Update references in spawns
+            for spawn in data.get("spawns", []):
+                if spawn.get("team") == team_id:
+                    spawn["team"] = new_id
+            obs = data.get("observer_spawn")
+            if obs and obs.get("team") == team_id:
+                obs["team"] = new_id
+            team["id"] = new_id
+
+        for field in ("name", "color", "dye_color"):
+            if field in body:
+                team[field] = str(body[field])
+        for field in ("max_players", "min_players"):
+            if field in body:
+                team[field] = int(body[field])
+
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "team": team})
+
+    @app.route("/api/map/<name>/teams/<team_id>", methods=["DELETE"])
+    def delete_team(name: str, team_id: str) -> tuple:
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        teams: list = data.setdefault("teams", [])
+
+        if not any(t.get("id") == team_id for t in teams):
+            return jsonify({"error": f"team {team_id!r} not found"}), 404
+
+        data["teams"] = [t for t in teams if t.get("id") != team_id]
+        # Remove spawns referencing this team
+        data["spawns"] = [s for s in data.get("spawns", []) if s.get("team") != team_id]
+
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
+    # ── Spawn link endpoints ──────────────────────────────────────────────────
+
+    @app.route("/api/map/<name>/spawns", methods=["POST"])
+    def add_spawn_link(name: str) -> tuple:
+        """Create a spawn link connecting a region to a team + metadata."""
+        body = request.get_json(silent=True) or {}
+        region_id = (body.get("region_id") or "").strip()
+        if not region_id:
+            return jsonify({"error": "region_id is required"}), 400
+
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        spawns: list = data.setdefault("spawns", [])
+        regions: dict = data.get("regions", {})
+
+        if region_id not in regions:
+            return jsonify({"error": f"region {region_id!r} not found"}), 404
+
+        if any(_spawn_region_id(s) == region_id for s in spawns):
+            return jsonify({"error": f"spawn for region {region_id!r} already exists"}), 409
+
+        region_obj = regions[region_id]
+        new_spawn: dict = {
+            "team":   str(body.get("team", "")),
+            "kit":    str(body.get("kit", "")),
+            "yaw":    float(body.get("yaw", 0.0)),
+            "region": region_obj,
+        }
+        spawns.append(new_spawn)
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True}), 201
+
+    @app.route("/api/map/<name>/spawn/<region_id>", methods=["PATCH"])
+    def update_spawn_link(name: str, region_id: str) -> tuple:
+        """Update team, yaw, and kit for the spawn linked to *region_id*."""
+        body = request.get_json(silent=True) or {}
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        spawns: list = data.setdefault("spawns", [])
+
+        spawn = next((s for s in spawns if _spawn_region_id(s) == region_id), None)
+        if spawn is None:
+            return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
+
+        if "team" in body:
+            spawn["team"] = str(body["team"])
+        if "yaw" in body:
+            spawn["yaw"] = float(body["yaw"])
+        if "kit" in body:
+            spawn["kit"] = str(body["kit"])
+
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
+    @app.route("/api/map/<name>/spawn/<region_id>", methods=["DELETE"])
+    def delete_spawn_link(name: str, region_id: str) -> tuple:
+        """Remove the spawn link for *region_id*."""
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        spawns: list = data.setdefault("spawns", [])
+
+        if not any(_spawn_region_id(s) == region_id for s in spawns):
+            return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
+
+        data["spawns"] = [s for s in spawns if _spawn_region_id(s) != region_id]
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
 
     return app
 

@@ -24,18 +24,23 @@ import * as api                   from "./api.js";
 import { DeletedRegionHistory }   from "./deleted-region-history.js";
 import { OverviewActivity }       from "./overview-activity.js";
 import { RegionsActivity }        from "./regions-activity.js";
+import { TeamsActivity }          from "./teams-activity.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
 
 // ── Activity switching ─────────────────────────────────────────────────────
 
-const activityBtns = document.querySelectorAll(".activity-btn");
-const overviewBtn  = document.getElementById("activity-overview");
-const regionsBtn   = document.getElementById("activity-regions");
+const activityBtns  = document.querySelectorAll(".activity-btn");
+const overviewBtn   = document.getElementById("activity-overview");
+const teamsBtn      = document.getElementById("activity-teams");
+const regionsBtn    = document.getElementById("activity-regions");
 
 const ACTIVITIES = {
   "activity-overview": new OverviewActivity({
     onStatusChange: (dotStatus) => { overviewBtn.dataset.status = dotStatus ?? ""; },
+  }),
+  "activity-teams": new TeamsActivity({
+    onStatusChange: (dotStatus) => { teamsBtn.dataset.status = dotStatus ?? ""; },
   }),
   "activity-regions":  new RegionsActivity(),
 };
@@ -48,12 +53,19 @@ function switchActivity(id) {
   activityBtns.forEach(btn => btn.classList.toggle("active", btn.id === id));
   ACTIVITIES[id].activate({ mapName: currentMap });
   requestAnimationFrame(() => {
-    if (id === "activity-regions") canvas.resize();
+    if (id === "activity-regions") {
+      canvas.resize();
+      // Reload regions from the server so any mutations made in other activities
+      // (deletions, renames, bounds edits from Teams) are reflected here.
+      if (currentMap) reloadRegions();
+    }
     if (id === "activity-overview") ACTIVITIES["activity-overview"]._panel._canvas.resize();
+    if (id === "activity-teams")    ACTIVITIES["activity-teams"]._canvas?.resize();
   });
 }
 
 overviewBtn.addEventListener("click", () => { if (!overviewBtn.disabled) switchActivity("activity-overview"); });
+teamsBtn.addEventListener("click",    () => { if (!teamsBtn.disabled)    switchActivity("activity-teams"); });
 regionsBtn.addEventListener("click",  () => switchActivity("activity-regions"));
 
 const exportBtn = document.getElementById("export-xml-btn");
@@ -313,6 +325,7 @@ async function loadMap(name) {
     }
     exportBtn.disabled        = false;
     overviewBtn.disabled      = false;
+    teamsBtn.disabled         = false;
     toolMoveBtn.disabled      = false;
     toolSelectBtn.disabled    = false;
     toolRectBtn.disabled      = false;
@@ -331,6 +344,7 @@ async function loadMap(name) {
 window.addEventListener("resize", () => {
   canvas.resize();
   ACTIVITIES["activity-overview"]._panel._canvas.resize();
+  ACTIVITIES["activity-teams"]._canvas?.resize();
 });
 
 // ── helpers ────────────────────────────────────────────────────────────────

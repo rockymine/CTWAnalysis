@@ -179,6 +179,92 @@ export async function fetchTopSurface(mapName) {
   return r.json();
 }
 
+// ── Team CRUD ──────────────────────────────────────────────────────────────
+
+export async function addTeam(mapName, team) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/teams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(team),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Add team failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function updateTeam(mapName, teamId, fields) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/teams/${encodeURIComponent(teamId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Update team failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function deleteTeam(mapName, teamId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/teams/${encodeURIComponent(teamId)}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Delete team failed (${r.status})`);
+  }
+  return r.json();
+}
+
+// ── Spawn link CRUD ────────────────────────────────────────────────────────
+
+export async function addSpawn(mapName, spawn) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/spawns`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(spawn),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Add spawn failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function updateSpawn(mapName, regionId, fields) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/spawn/${encodeURIComponent(regionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Update spawn failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function deleteSpawn(mapName, regionId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/spawn/${encodeURIComponent(regionId)}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Delete spawn failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,
