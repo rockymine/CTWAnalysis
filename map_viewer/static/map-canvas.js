@@ -327,6 +327,7 @@ export class MapCanvas {
     if (!this.#ctx) return;
     const newW = this.#wrap.clientWidth  - 24;
     const newH = this.#wrap.clientHeight - 24;
+    if (newW <= 0 || newH <= 0) return;  // workspace is hidden
     if (newW === +this.#svg.getAttribute('width') &&
         newH === +this.#svg.getAttribute('height')) return;
     this.#repaint();

@@ -47,6 +47,10 @@ function switchActivity(id) {
   currentActivityId = id;
   activityBtns.forEach(btn => btn.classList.toggle("active", btn.id === id));
   ACTIVITIES[id].activate({ mapName: currentMap });
+  requestAnimationFrame(() => {
+    if (id === "activity-regions") canvas.resize();
+    if (id === "activity-overview") ACTIVITIES["activity-overview"]._panel._canvas.resize();
+  });
 }
 
 overviewBtn.addEventListener("click", () => { if (!overviewBtn.disabled) switchActivity("activity-overview"); });

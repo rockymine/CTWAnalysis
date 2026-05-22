@@ -51,12 +51,14 @@ export class OverviewCanvas {
   }
 
   resize() {
-    if (this.#ctx) this.#build();
+    if (!this.#ctx || !this.#wrap.clientWidth) return;
+    this.#build();
   }
 
   // ── private ──────────────────────────────────────────────────────────────
 
   #build() {
+    while (this.#svg.firstChild) this.#svg.removeChild(this.#svg.firstChild);
     const svgW = this.#wrap.clientWidth  || 400;
     const svgH = this.#wrap.clientHeight || 400;
     this.#svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
