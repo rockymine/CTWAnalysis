@@ -545,6 +545,94 @@ def create_app() -> Flask:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    # ── Minecraft player lookup (username ↔ UUID via Mojang API) ─────────────
+
+    @app.route("/api/minecraft/player")
+    def minecraft_player():
+        """Resolve a Minecraft username → UUID or UUID → name via Mojang APIs.
+
+        Query params (exactly one required):
+          name=<username>  — calls api.mojang.com to get UUID
+          uuid=<uuid>      — calls sessionserver to get canonical name
+                             (checks uuid_name_cache first)
+        Returns: { uuid, name }
+        """
+        import urllib.request
+        import urllib.error
+        from datetime import datetime as _dt
+
+        username = request.args.get("name", "").strip()
+        uuid_arg  = request.args.get("uuid", "").strip()
+
+        if username:
+            url = f"https://api.mojang.com/users/profiles/minecraft/{username}"
+            try:
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    data = json.loads(resp.read())
+            except urllib.error.HTTPError as exc:
+                return jsonify({"error": "not_found"}), (404 if exc.code == 404 else 502)
+            except Exception:
+                return jsonify({"error": "upstream_error"}), 502
+
+            raw_id = data.get("id", "")
+            if len(raw_id) == 32:
+                uuid = (f"{raw_id[:8]}-{raw_id[8:12]}-{raw_id[12:16]}-"
+                        f"{raw_id[16:20]}-{raw_id[20:]}")
+            else:
+                uuid = raw_id
+            name = data.get("name", username)
+
+        elif uuid_arg:
+            # Check cache first
+            try:
+                import duckdb as _duckdb
+                _db = Path("match_analysis/metadata.db")
+                if _db.exists():
+                    _c = _duckdb.connect(str(_db), read_only=True)
+                    cached = _c.execute(
+                        "SELECT name FROM uuid_name_cache WHERE uuid = ?",
+                        [uuid_arg.lower()],
+                    ).fetchone()
+                    _c.close()
+                    if cached and cached[0]:
+                        return jsonify({"uuid": uuid_arg, "name": cached[0]})
+            except Exception:
+                pass
+
+            uuid_nodashes = uuid_arg.replace("-", "")
+            url = f"https://sessionserver.mojang.com/session/minecraft/profile/{uuid_nodashes}"
+            try:
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    data = json.loads(resp.read())
+            except urllib.error.HTTPError as exc:
+                return jsonify({"error": "not_found"}), (404 if exc.code == 404 else 502)
+            except Exception:
+                return jsonify({"error": "upstream_error"}), 502
+
+            name = data.get("name", "")
+            uuid = uuid_arg
+
+        else:
+            abort(400)
+
+        # Cache result
+        try:
+            import duckdb as _duckdb
+            _db = Path("match_analysis/metadata.db")
+            if _db.exists():
+                _c = _duckdb.connect(str(_db))
+                _c.execute(
+                    """INSERT INTO uuid_name_cache (uuid, name, fetched_at) VALUES (?, ?, ?)
+                       ON CONFLICT (uuid) DO UPDATE
+                       SET name = excluded.name, fetched_at = excluded.fetched_at""",
+                    [uuid.lower(), name, _dt.now()],
+                )
+                _c.close()
+        except Exception:
+            pass
+
+        return jsonify({"uuid": uuid, "name": name})
+
     # ── Editor map list (maps with map_context.json) ─────────────────────────
 
     @app.route("/api/maps")

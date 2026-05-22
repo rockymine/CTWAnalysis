@@ -675,7 +675,13 @@ body {
 .ov-author-row {
   display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
 }
-.ov-author-row .ov-author-uuid         { flex: 2; min-width: 0; }
+.ov-author-avatar {
+  width: 16px; height: 16px; flex-shrink: 0;
+  border-radius: 2px; image-rendering: pixelated;
+  background: var(--border);
+}
+.ov-author-row .ov-author-name         { flex: 2; min-width: 0; }
+.ov-author-row .ov-author-name--error  { border-color: var(--color-error) !important; }
 .ov-author-row .ov-author-contribution { flex: 2; min-width: 0; }
 .ov-author-remove {
   flex-shrink: 0; background: none; border: none;

@@ -97,14 +97,56 @@ export class OverviewPanel {
     this._setDirty(false);
   }
 
-  _addPersonRow(listEl, { uuid = "", contribution = "" } = {}) {
+  _addPersonRow(listEl, { uuid = "", name = "", contribution = "" } = {}) {
     const row = document.createElement("div");
     row.className = "ov-author-row";
+    row.dataset.uuid = uuid;
+
+    const avatarSrc = uuid ? _avatarUrl(uuid) : _AVATAR_EMPTY;
+    const displayName = name || uuid;  // show UUID as fallback until resolved
+
     row.innerHTML = `
-      <input class="ov-input ov-author-uuid" type="text" placeholder="Player UUID" value="${_esc(uuid)}"/>
+      <img class="ov-author-avatar" src="${_esc(avatarSrc)}" width="16" height="16" alt=""/>
+      <input class="ov-input ov-author-name" type="text" placeholder="Minecraft username" value="${_esc(displayName)}"/>
       <input class="ov-input ov-author-contribution" type="text" placeholder="Contribution (optional)" value="${_esc(contribution ?? "")}"/>
       <button class="ov-author-remove" title="Remove">✕</button>
     `;
+
+    const avatarImg = row.querySelector(".ov-author-avatar");
+    const nameInput = row.querySelector(".ov-author-name");
+
+    // Resolve username or UUID → canonical name + UUID on blur
+    nameInput.addEventListener("blur", async () => {
+      const val = nameInput.value.trim();
+      if (!val || val === row.dataset.uuid || val === name) return;
+      nameInput.dataset.resolving = "1";
+      try {
+        const player = await api.fetchMinecraftPlayer(val);
+        row.dataset.uuid = player.uuid;
+        nameInput.value  = player.name;
+        nameInput.title  = player.uuid;
+        avatarImg.src    = _avatarUrl(player.uuid);
+        nameInput.classList.remove("ov-author-name--error");
+      } catch {
+        row.dataset.uuid = "";
+        avatarImg.src    = _AVATAR_EMPTY;
+        nameInput.classList.add("ov-author-name--error");
+        nameInput.title  = "Player not found";
+      } finally {
+        delete nameInput.dataset.resolving;
+      }
+      this._setDirty(true);
+    });
+
+    // Auto-resolve UUID → name for legacy entries that have no name yet
+    if (uuid && !name) {
+      api.fetchMinecraftPlayer(uuid).then(player => {
+        nameInput.value = player.name;
+        nameInput.title = player.uuid;
+        avatarImg.src   = _avatarUrl(player.uuid);
+      }).catch(() => { /* leave UUID in field */ });
+    }
+
     row.querySelector(".ov-author-remove").addEventListener("click", () => {
       row.remove();
       this._setDirty(true);
@@ -119,7 +161,8 @@ export class OverviewPanel {
     const fromList = (listEl, role) =>
       [...listEl.querySelectorAll(".ov-author-row")]
         .map(row => ({
-          uuid:         row.querySelector(".ov-author-uuid").value.trim(),
+          uuid:         row.dataset.uuid || "",
+          name:         row.querySelector(".ov-author-name").value.trim() || null,
           role,
           contribution: row.querySelector(".ov-author-contribution").value.trim() || null,
         }))
@@ -314,4 +357,9 @@ export class OverviewPanel {
 
 function _esc(str) {
   return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+const _AVATAR_EMPTY = "data:image/gif;base64,R0lGODlhEAAQAAAAACwAAAAAEAAQAAABEIQBADs=";
+function _avatarUrl(uuid) {
+  return `https://mc-heads.net/avatar/${encodeURIComponent(uuid)}/16`;
 }
