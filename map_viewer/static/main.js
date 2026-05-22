@@ -317,10 +317,8 @@ async function loadMap(name) {
     toolPointBtn.disabled     = false;
     toolBlockBtn.disabled     = false;
     setTool("move");
-    setStatus(
-      `${ctx.map_name} v${ctx.map_version || "?"} · ` +
-      `${ctx.island_count} island(s) · ${countRegions(groups)} region(s)`,
-    );
+    setBreadcrumb(ctx.map_name, ctx.map_version);
+    setStatus("");
   } catch (err) {
     setStatus(`Error: ${err.message}`);
   }
@@ -335,6 +333,13 @@ window.addEventListener("resize", () => {
 
 function setStatus(msg) {
   document.getElementById("status").textContent = msg;
+}
+
+function setBreadcrumb(name, version) {
+  const nameEl = document.getElementById("topbar-map-name");
+  const verEl  = document.getElementById("topbar-version");
+  if (nameEl) nameEl.textContent = name ?? "";
+  if (verEl)  verEl.textContent  = version ? `v${version}` : "";
 }
 
 function renderHistory() {
@@ -547,8 +552,7 @@ const mapParam  = urlParams.get("map");
 if (!mapParam) {
   window.location.replace("/");
 } else {
-  const display = document.getElementById("map-name-display");
-  if (display) display.textContent = mapParam.replace(/_/g, " ");
+  setBreadcrumb(mapParam.replace(/_/g, " "), null);
   renderHistory();
   loadMap(mapParam);
 }

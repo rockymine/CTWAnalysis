@@ -9,9 +9,14 @@
 <body>
 
 <div id="topbar">
-  <a href="/" id="back-link" class="topbar-back">&#8592; Dashboard</a>
-  <h1>CTW Map Editor</h1>
-  <span id="map-name-display" class="topbar-map-name"></span>
+  <a href="/" class="topbar-breadcrumb-home" title="Back to dashboard">
+    <i data-lucide="folder"></i>
+    <span>Maps</span>
+  </a>
+  <span class="topbar-sep">›</span>
+  <span id="topbar-map-name" class="topbar-crumb"></span>
+  <span class="topbar-sep">›</span>
+  <span id="topbar-version" class="topbar-crumb topbar-crumb--dim"></span>
   <span id="status"></span>
   <span class="topbar-divider"></span>
   <button id="export-xml-btn" class="topbar-btn" disabled>Export XML</button>
@@ -19,6 +24,12 @@
 
 <div id="main">
   <nav id="activity-rail">
+    <div class="activity-logo">
+      <div class="activity-logo-box">
+        <span class="activity-logo-ctw">ctw</span>
+        <span class="activity-logo-sub">Editor</span>
+      </div>
+    </div>
     <button class="activity-btn" id="activity-overview" title="Overview" disabled data-status="">
       <i data-lucide="book-open-text"></i>
     </button>
