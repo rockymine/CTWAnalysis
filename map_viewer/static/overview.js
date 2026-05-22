@@ -275,7 +275,7 @@ export class OverviewPanel {
     const { center, global_symmetry } = symData;
     const detectedEntries = global_symmetry.filter(e => e.detected);
     const primaryEntry = [...detectedEntries].sort((a, b) => b.confidence - a.confidence)[0];
-    const coordLabel = primaryEntry?.type?.startsWith("mirror") ? "CENTER" : "PIVOT";
+    const coordLabel = primaryEntry?.type?.startsWith("mirror") ? "Center" : "Pivot";
 
     const options = detectedEntries.length
       ? detectedEntries.map(e =>
@@ -285,7 +285,7 @@ export class OverviewPanel {
 
     this._symBodyEl.innerHTML = `${header}
       <div class="ov-field">
-        <label class="ov-label">PRIMARY TYPE</label>
+        <label class="ov-label">Primary type</label>
         <select id="ov-sym-axis-select" class="ov-input">${options}</select>
       </div>
       <div class="ov-sym-coord-section">
@@ -305,10 +305,7 @@ export class OverviewPanel {
         </div>
       </div>
       <div class="ov-sym-preview-section">
-        <div class="ov-sym-preview-header">
-          <span class="ov-label">PREVIEW</span>
-          <span class="ov-sym-preview-line"></span>
-        </div>
+        <div class="ov-section-title">Preview</div>
         <div id="ov-sym-preview-svg" class="ov-sym-preview-svg">${_symPreviewSvg(primaryEntry?.type ?? "mirror_x")}</div>
       </div>
       <div class="ov-sym-actions">
@@ -323,7 +320,7 @@ export class OverviewPanel {
 
     axisSelect.addEventListener("change", () => {
       const lbl = this._symBodyEl.querySelector("#ov-sym-coord-label");
-      if (lbl) lbl.textContent = axisSelect.value.startsWith("mirror") ? "CENTER" : "PIVOT";
+      if (lbl) lbl.textContent = axisSelect.value.startsWith("mirror") ? "Center" : "Pivot";
       if (previewSvgEl) previewSvgEl.innerHTML = _symPreviewSvg(axisSelect.value);
       this._applyAdjust({ rerender: false });
     });
