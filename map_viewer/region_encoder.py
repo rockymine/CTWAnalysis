@@ -274,10 +274,16 @@ def _inject_anonymous_spawn_regions(data: dict) -> None:
 
     This function assigns each anonymous spawn region a deterministic synthetic
     id of the form ``__spawn_<team>`` (or ``__observer_spawn`` for the default
-    spawn) and inserts it into ``data["regions"]`` so downstream code can treat
-    it like any named region.  The mutation is intentional: the caller (the
-    ``/api/map/<name>/regions`` endpoint) operates on a freshly-loaded in-memory
-    copy of map_data.json, so no file is modified.
+    spawn) and performs two mutations on the in-memory data dict:
+
+    1. Inserts the region into ``data["regions"]`` so the canvas can render it.
+    2. Updates the ``id`` field on the embedded region object inside
+       ``data["spawns"]`` / ``data["observer_spawn"]`` so that the
+       ``/api/map/<name>/map-data`` endpoint returns matching ids, allowing
+       the Teams panel to resolve team assignments via ``_spawnForRegion``.
+
+    Both mutations are intentional and safe: callers operate on a
+    freshly-loaded in-memory copy of map_data.json; no file is modified.
 
     Synthetic ids use the ``__`` prefix to distinguish them from XML-defined ids
     (consistent with the anonymous-child naming in ``_encode_node``).
@@ -285,24 +291,27 @@ def _inject_anonymous_spawn_regions(data: dict) -> None:
     regions: dict = data.setdefault("regions", {})
 
     for spawn_entry in data.get("spawns", []):
-        region = spawn_entry.get("region") or {}
+        region = spawn_entry.get("region")
+        if not isinstance(region, dict):
+            continue
         if region.get("id") or not region.get("type"):
-            continue  # named or empty — nothing to inject
+            continue  # already named, or has no geometry — nothing to inject
         team = spawn_entry.get("team") or "unknown"
         synthetic_id = f"__spawn_{team}"
+        # Mutate the embedded region so map-data endpoint returns the synthetic id
+        region["id"] = synthetic_id
+        # Insert into the regions dict so the canvas can render it
         if synthetic_id not in regions:
-            injected = dict(region)
-            injected["id"] = synthetic_id
-            regions[synthetic_id] = injected
+            regions[synthetic_id] = region
 
-    obs = data.get("observer_spawn") or {}
-    obs_region = obs.get("region") or {}
-    if not obs_region.get("id") and obs_region.get("type"):
-        synthetic_id = "__observer_spawn"
-        if synthetic_id not in regions:
-            injected = dict(obs_region)
-            injected["id"] = synthetic_id
-            regions[synthetic_id] = injected
+    obs = data.get("observer_spawn")
+    if isinstance(obs, dict):
+        obs_region = obs.get("region")
+        if isinstance(obs_region, dict) and not obs_region.get("id") and obs_region.get("type"):
+            synthetic_id = "__observer_spawn"
+            obs_region["id"] = synthetic_id
+            if synthetic_id not in regions:
+                regions[synthetic_id] = obs_region
 
 
 def build_semantic_categories(data: dict) -> dict[str, list[str]]:

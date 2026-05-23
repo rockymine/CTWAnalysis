@@ -669,7 +669,11 @@ def create_app() -> Flask:
         data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
-        return jsonify(json.loads(data_path.read_text(encoding="utf-8")))
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        # Assign synthetic ids to anonymous inline spawn regions so that the
+        # Teams panel can resolve team assignments via region id matching.
+        _inject_anonymous_spawn_regions(data)
+        return jsonify(data)
 
     _METADATA_FIELDS = {
         "name", "version", "objective", "max_build_height", "gamemode",
