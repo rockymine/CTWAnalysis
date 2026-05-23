@@ -27,7 +27,10 @@ from typing import Optional
 import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
-from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
+from map_viewer.region_encoder import (
+    encode_region_tree_categorized,
+    regions_to_xml,
+)
 from common.visualization.block_colors import block_color
 
 
@@ -122,6 +125,32 @@ def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
         if child.get("id") == old_id:
             child["id"] = new_id
         _rename_in_children(child, old_id, new_id)
+
+
+def _find_parent_of_child(
+    regions: dict,
+    target_id: str,
+) -> tuple[dict, dict, int] | None:
+    """Search all regions recursively for a child with *target_id*.
+
+    Returns ``(parent_dict, child_dict, child_index)`` so the caller can splice
+    the child back in (restore) or build an undo snapshot.  Returns ``None`` if
+    the id is not found as a nested child.
+    """
+    def _walk(region: dict) -> tuple[dict, dict, int] | None:
+        for i, child in enumerate(region.get("children", [])):
+            if child.get("id") == target_id:
+                return region, child, i
+            result = _walk(child)
+            if result is not None:
+                return result
+        return None
+
+    for region in regions.values():
+        result = _walk(region)
+        if result is not None:
+            return result
+    return None
 
 
 def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
@@ -664,7 +693,8 @@ def create_app() -> Flask:
         data_path = _get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
-        return jsonify(json.loads(data_path.read_text(encoding="utf-8")))
+        data = json.loads(data_path.read_text(encoding="utf-8"))
+        return jsonify(data)
 
     _METADATA_FIELDS = {
         "name", "version", "objective", "max_build_height", "gamemode",
@@ -935,25 +965,46 @@ def create_app() -> Flask:
             abort(404)
         data    = json.loads(data_path.read_text(encoding="utf-8"))
         regions = data.get("regions", {})
-        if region_id not in regions:
+
+        if region_id in regions:
+            # ── Top-level region ─────────────────────────────────────────────
+            subtree_ids = _collect_region_subtree_ids(regions, region_id)
+
+            category = "other"
+            for cat_name, cat_list in data.get("region_categories", {}).items():
+                if region_id in cat_list:
+                    category = cat_name
+                    break
+
+            region_entries = {rid: regions[rid] for rid in subtree_ids if rid in regions}
+
+            for rid in subtree_ids:
+                regions.pop(rid, None)
+                for cat_list in data.get("region_categories", {}).values():
+                    if rid in cat_list:
+                        cat_list.remove(rid)
+            _remove_inline_children(regions, set(subtree_ids))
+            data_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return jsonify({
+                "ok": True,
+                "snapshot": {
+                    "root_id":        region_id,
+                    "category":       category,
+                    "region_entries": region_entries,
+                },
+            })
+
+        # ── Inline-only child (synthetic baked id, not a top-level region) ──
+        # Named children (e.g. orange-wool-room) are always top-level; only
+        # pipeline-assigned synthetic ids (parent__n) land here.
+        found = _find_parent_of_child(regions, region_id)
+        if found is None:
             return jsonify({"error": f"region {region_id!r} not found"}), 404
 
-        subtree_ids = _collect_region_subtree_ids(regions, region_id)
-
-        category = "other"
-        for cat_name, cat_list in data.get("region_categories", {}).items():
-            if region_id in cat_list:
-                category = cat_name
-                break
-
-        region_entries = {rid: regions[rid] for rid in subtree_ids if rid in regions}
-
-        for rid in subtree_ids:
-            regions.pop(rid, None)
-            for cat_list in data.get("region_categories", {}).values():
-                if rid in cat_list:
-                    cat_list.remove(rid)
-        _remove_inline_children(regions, set(subtree_ids))
+        parent_dict, child_dict, child_index = found
+        _remove_inline_children(regions, {region_id})
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
@@ -961,8 +1012,10 @@ def create_app() -> Flask:
             "ok": True,
             "snapshot": {
                 "root_id":        region_id,
-                "category":       category,
-                "region_entries": region_entries,
+                "category":       None,
+                "parent_id":      parent_dict.get("id"),
+                "child_index":    child_index,
+                "region_entries": {region_id: child_dict},
             },
         })
 
@@ -987,6 +1040,22 @@ def create_app() -> Flask:
         data    = json.loads(data_path.read_text(encoding="utf-8"))
         regions = data.setdefault("regions", {})
 
+        parent_id = snapshot.get("parent_id")
+        if parent_id is not None:
+            # ── Restore inline child ─────────────────────────────────────────
+            parent_dict = regions.get(parent_id)
+            if parent_dict is None:
+                return jsonify({"error": f"parent region {parent_id!r} not found"}), 404
+            child_dict  = region_entries.get(root_id)
+            child_index = snapshot.get("child_index", 0)
+            children = parent_dict.setdefault("children", [])
+            children.insert(child_index, child_dict)
+            data_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return jsonify({"ok": True, "id": root_id})
+
+        # ── Restore top-level region ─────────────────────────────────────────
         conflicts = [rid for rid in region_entries if rid in regions]
         if conflicts:
             return jsonify({"error": f"id(s) already in use: {conflicts}"}), 409

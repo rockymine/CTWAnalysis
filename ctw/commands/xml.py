@@ -40,6 +40,7 @@ def handler(args):
         output_dir = resolve_output_dir(map_folder, create=True)
         parser = MapXMLParser(str(xml_path))
         map_data = parser.parse()
+        parser.inject_anonymous_region_ids(map_data)
         categories = parser.identify_region_categories(map_data)
 
         visualizer = MapVisualizer(map_data)

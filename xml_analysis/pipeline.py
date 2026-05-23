@@ -47,6 +47,7 @@ def analyze_xml(
     try:
         parser = MapXMLParser(str(xml_file))
         map_data = parser.parse()
+        parser.inject_anonymous_region_ids(map_data)
         categories = parser.identify_region_categories(map_data)
     except Exception as e:
         logger.warning(f"  Failed to parse XML: {e}")

@@ -106,10 +106,11 @@ def _encode_coords(region: dict) -> dict | None:
 def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     """Recursively encode a region dict (with optional children) into a tree node.
 
-    Anonymous children (those with no ``id`` in the XML) receive a synthetic
-    deterministic id of the form ``{parent_id}__{index}`` so the browser can
-    create a uniquely addressable SVG group and checkbox for each one.  The
-    displayed ``label`` is kept as ``[type]`` to make clear it has no XML name.
+    All regions and their composite children have ids baked into map_data.json by
+    the pipeline (``inject_anonymous_region_ids``), so ``xml_id`` is always
+    non-empty for up-to-date JSON.  Reference-type nodes override their label to
+    show ``→ target`` regardless, since that is more informative than the
+    synthetic id string.
 
     ``is_negative`` is set for complement regions so the frontend renders them
     as map-bbox-minus-children rather than drawing the bounds directly.
@@ -117,14 +118,10 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     xml_id = region.get("id") or ""
     region_type = region.get("type", "unknown")
 
-    # Assign a synthetic id for anonymous nodes so they are selectable
-    region_id = xml_id if xml_id else (f"{parent_id}__{index}" if parent_id else f"__anon_{index}")
-    if xml_id:
-        label = xml_id
-    elif region_type == "reference":
+    region_id = xml_id
+    label = xml_id
+    if region_type == "reference":
         label = f"→ {region.get('ref_id', '?')}"
-    else:
-        label = f"[{region_type}]"
 
     children = [
         _encode_node(child, parent_id=region_id, index=i)
@@ -253,6 +250,7 @@ def regions_to_xml(regions_dict: dict) -> str:
     roots = [r for rid, r in regions_dict.items() if rid not in named_child_ids]
     lines = ["<regions>"] + [_region_to_xml(r, indent=1) for r in roots] + ["</regions>"]
     return "\n".join(lines)
+
 
 
 def encode_region_tree_categorized(
