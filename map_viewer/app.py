@@ -27,7 +27,12 @@ from typing import Optional
 import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
-from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml, build_semantic_categories
+from map_viewer.region_encoder import (
+    encode_region_tree_categorized,
+    regions_to_xml,
+    build_semantic_categories,
+    _inject_anonymous_spawn_regions,
+)
 from common.visualization.block_colors import block_color
 
 
@@ -704,6 +709,7 @@ def create_app() -> Flask:
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
+        _inject_anonymous_spawn_regions(data)
         groups = encode_region_tree_categorized(
             data.get("regions", {}),
             build_semantic_categories(data),

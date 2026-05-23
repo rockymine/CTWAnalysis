@@ -255,6 +255,56 @@ def regions_to_xml(regions_dict: dict) -> str:
     return "\n".join(lines)
 
 
+def _inject_anonymous_spawn_regions(data: dict) -> None:
+    """Inject anonymous (id-less) inline spawn regions into data["regions"].
+
+    Some maps define spawn locations as inline child elements inside ``<spawn>``
+    and ``<default>`` without giving the region an id attribute, e.g.::
+
+        <spawn team="red" kit="spawn-kit">
+          <regions>
+            <point>-118.5,6,-79.5</point>
+          </regions>
+        </spawn>
+
+    The parser captures the full region geometry in ``data["spawns"][*]["region"]``
+    and ``data["observer_spawn"]["region"]``, but the region has ``id: ""``.
+    Because ``data["regions"]`` is keyed by id, these anonymous regions are
+    invisible to the categorisation and canvas rendering pipeline.
+
+    This function assigns each anonymous spawn region a deterministic synthetic
+    id of the form ``__spawn_<team>`` (or ``__observer_spawn`` for the default
+    spawn) and inserts it into ``data["regions"]`` so downstream code can treat
+    it like any named region.  The mutation is intentional: the caller (the
+    ``/api/map/<name>/regions`` endpoint) operates on a freshly-loaded in-memory
+    copy of map_data.json, so no file is modified.
+
+    Synthetic ids use the ``__`` prefix to distinguish them from XML-defined ids
+    (consistent with the anonymous-child naming in ``_encode_node``).
+    """
+    regions: dict = data.setdefault("regions", {})
+
+    for spawn_entry in data.get("spawns", []):
+        region = spawn_entry.get("region") or {}
+        if region.get("id") or not region.get("type"):
+            continue  # named or empty — nothing to inject
+        team = spawn_entry.get("team") or "unknown"
+        synthetic_id = f"__spawn_{team}"
+        if synthetic_id not in regions:
+            injected = dict(region)
+            injected["id"] = synthetic_id
+            regions[synthetic_id] = injected
+
+    obs = data.get("observer_spawn") or {}
+    obs_region = obs.get("region") or {}
+    if not obs_region.get("id") and obs_region.get("type"):
+        synthetic_id = "__observer_spawn"
+        if synthetic_id not in regions:
+            injected = dict(obs_region)
+            injected["id"] = synthetic_id
+            regions[synthetic_id] = injected
+
+
 def build_semantic_categories(data: dict) -> dict[str, list[str]]:
     """Return corrected region categories derived from structured map_data.json.
 
@@ -274,6 +324,11 @@ def build_semantic_categories(data: dict) -> dict[str, list[str]]:
     map_data.json — no pipeline re-run required.  Once the v2 pipeline is
     promoted, the corrections will already be baked into map_data.json and
     this function becomes a safe no-op.
+
+    Anonymous spawn regions (those with ``id: ""``) are handled by
+    ``_inject_anonymous_spawn_regions``, which must be called first to ensure
+    they appear in ``data["regions"]``.  The ``/api/map/<name>/regions``
+    endpoint calls both in sequence.
     """
     categories: dict[str, list[str]] = {
         k: list(v) for k, v in data.get("region_categories", {}).items()
@@ -297,17 +352,25 @@ def build_semantic_categories(data: dict) -> dict[str, list[str]]:
 
     # Guarantee that explicitly-linked team / observer spawn regions are present
     # in the spawn bucket even if they were absent from or mis-categorised in the
-    # raw region_categories (handles maps with unconventionally named regions).
+    # raw region_categories (handles maps with unconventionally named regions,
+    # and synthetic ids injected by _inject_anonymous_spawn_regions).
     all_categorized: set[str] = {
         rid for ids in categories.values() for rid in ids
     }
+    all_categorized.update(new_spawn)  # include moves already made above
+
     for spawn_entry in data.get("spawns", []):
-        rid = (spawn_entry.get("region") or {}).get("id")
-        if rid and rid not in all_categorized:
+        team = spawn_entry.get("team") or "unknown"
+        region = spawn_entry.get("region") or {}
+        rid = region.get("id") or f"__spawn_{team}"
+        if rid and rid not in all_categorized and rid in regions:
             new_spawn.append(rid)
-    obs_region = (data.get("observer_spawn") or {}).get("region") or {}
-    obs_rid = obs_region.get("id")
-    if obs_rid and obs_rid not in all_categorized:
+            all_categorized.add(rid)
+
+    obs = data.get("observer_spawn") or {}
+    obs_region = obs.get("region") or {}
+    obs_rid = obs_region.get("id") or "__observer_spawn"
+    if obs_rid and obs_rid not in all_categorized and obs_rid in regions:
         new_spawn.append(obs_rid)
 
     categories["spawn"] = new_spawn
