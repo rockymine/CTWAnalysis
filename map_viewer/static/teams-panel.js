@@ -14,29 +14,64 @@
 import { RegionDetail } from "./region-detail.js";
 import * as api         from "./api.js";
 
-/** Minecraft wool / team colors with approximate hex values. */
-export const MINECRAFT_TEAM_COLORS = [
-  { value: "red",        label: "Red",        hex: "#B02E26" },
-  { value: "blue",       label: "Blue",       hex: "#3C44AA" },
-  { value: "yellow",     label: "Yellow",     hex: "#FED83D" },
-  { value: "green",      label: "Green",      hex: "#5E7C16" },
-  { value: "orange",     label: "Orange",     hex: "#F9801D" },
-  { value: "pink",       label: "Pink",       hex: "#F38BAA" },
-  { value: "lime",       label: "Lime",       hex: "#80C71F" },
-  { value: "cyan",       label: "Cyan",       hex: "#169C9C" },
-  { value: "purple",     label: "Purple",     hex: "#8932B8" },
-  { value: "magenta",    label: "Magenta",    hex: "#C74EBD" },
-  { value: "white",      label: "White",      hex: "#F9FFFE" },
-  { value: "gray",       label: "Gray",       hex: "#474F52" },
-  { value: "light-gray", label: "Light Gray", hex: "#9D9D97" },
-  { value: "light-blue", label: "Light Blue", hex: "#3AB3DA" },
-  { value: "brown",      label: "Brown",      hex: "#835432" },
-  { value: "black",      label: "Black",      hex: "#1D1D21" },
+/**
+ * PGM chat colors — the `color` field on a team element.
+ * Hex values are the standard Minecraft chat-color palette.
+ * Values use spaces (matching PGM XML / map_data.json output).
+ */
+export const PGM_CHAT_COLORS = [
+  { value: "black",        label: "Black",        hex: "#000000" },
+  { value: "dark blue",    label: "Dark Blue",    hex: "#0000AA" },
+  { value: "dark green",   label: "Dark Green",   hex: "#00AA00" },
+  { value: "dark aqua",    label: "Dark Aqua",    hex: "#00AAAA" },
+  { value: "dark red",     label: "Dark Red",     hex: "#AA0000" },
+  { value: "dark purple",  label: "Dark Purple",  hex: "#AA00AA" },
+  { value: "gold",         label: "Gold",         hex: "#FFAA00" },
+  { value: "gray",         label: "Gray",         hex: "#AAAAAA" },
+  { value: "dark gray",    label: "Dark Gray",    hex: "#555555" },
+  { value: "blue",         label: "Blue",         hex: "#5555FF" },
+  { value: "green",        label: "Green",        hex: "#55FF55" },
+  { value: "aqua",         label: "Aqua",         hex: "#55FFFF" },
+  { value: "red",          label: "Red",          hex: "#FF5555" },
+  { value: "light purple", label: "Light Purple", hex: "#FF55FF" },
+  { value: "yellow",       label: "Yellow",       hex: "#FFFF55" },
+  { value: "white",        label: "White",        hex: "#FFFFFF" },
 ];
 
-/** Resolve a Minecraft color name → hex, falling back to a neutral gray. */
+/**
+ * Minecraft dye colors — the `dye_color` field on a team element.
+ * Hex values are the armor-dye palette from pgm.dev/docs/reference/misc/colors.
+ */
+export const MINECRAFT_DYE_COLORS = [
+  { value: "white",      label: "White",      hex: "#FFFFFF" },
+  { value: "orange",     label: "Orange",     hex: "#D87F33" },
+  { value: "magenta",    label: "Magenta",    hex: "#B24CD8" },
+  { value: "light blue", label: "Light Blue", hex: "#6699D8" },
+  { value: "yellow",     label: "Yellow",     hex: "#E5E533" },
+  { value: "lime",       label: "Lime",       hex: "#7FCC19" },
+  { value: "pink",       label: "Pink",       hex: "#F27FA5" },
+  { value: "gray",       label: "Gray",       hex: "#4C4C4C" },
+  { value: "silver",     label: "Silver",     hex: "#999999" },
+  { value: "cyan",       label: "Cyan",       hex: "#4C7F99" },
+  { value: "purple",     label: "Purple",     hex: "#7F3FB2" },
+  { value: "blue",       label: "Blue",       hex: "#334CB2" },
+  { value: "brown",      label: "Brown",      hex: "#664C33" },
+  { value: "green",      label: "Green",      hex: "#667F33" },
+  { value: "red",        label: "Red",        hex: "#993333" },
+  { value: "black",      label: "Black",      hex: "#191919" },
+];
+
+/** Resolve a PGM chat color name → hex, falling back to a neutral gray. */
 function colorHex(colorName) {
-  return MINECRAFT_TEAM_COLORS.find(c => c.value === colorName)?.hex ?? "#475569";
+  // Normalise underscore variants (e.g. "dark_purple" → "dark purple")
+  const normalised = (colorName ?? "").replace(/_/g, " ").toLowerCase();
+  return PGM_CHAT_COLORS.find(c => c.value === normalised)?.hex ?? "#475569";
+}
+
+/** Resolve a Minecraft dye color name → hex, falling back to a neutral gray. */
+function dyeColorHex(colorName) {
+  const normalised = (colorName ?? "").replace(/_/g, " ").toLowerCase();
+  return MINECRAFT_DYE_COLORS.find(c => c.value === normalised)?.hex ?? "#475569";
 }
 
 export class TeamsPanel {
@@ -75,12 +110,14 @@ export class TeamsPanel {
     this._emptyEl          = document.getElementById("pt-inspector-empty");
 
     // Team inspector inputs
-    this._teamIdInput     = document.getElementById("pt-team-id");
-    this._teamNameInput   = document.getElementById("pt-team-name");
-    this._teamColorSel    = document.getElementById("pt-team-color");
-    this._teamColorSwatch = document.getElementById("pt-team-color-swatch");
-    this._teamMaxInput    = document.getElementById("pt-team-max");
-    this._teamMinInput    = document.getElementById("pt-team-min");
+    this._teamIdInput        = document.getElementById("pt-team-id");
+    this._teamNameInput      = document.getElementById("pt-team-name");
+    this._teamColorSel       = document.getElementById("pt-team-color");
+    this._teamColorSwatch    = document.getElementById("pt-team-color-swatch");
+    this._teamDyeColorSel    = document.getElementById("pt-team-dye-color");
+    this._teamDyeColorSwatch = document.getElementById("pt-team-dye-color-swatch");
+    this._teamMaxInput       = document.getElementById("pt-team-max");
+    this._teamMinInput       = document.getElementById("pt-team-min");
 
     // Spawn assignment inputs (inside #pt-spawn-assignment)
     this._spawnTeamSel    = document.getElementById("pt-spawn-team");
@@ -410,31 +447,46 @@ export class TeamsPanel {
     this._teamNameInput  = document.getElementById("pt-team-name");
     this._teamColorSel.replaceWith(this._teamColorSel.cloneNode(false));
     this._teamColorSel   = document.getElementById("pt-team-color");
+    this._teamDyeColorSel.replaceWith(this._teamDyeColorSel.cloneNode(false));
+    this._teamDyeColorSel = document.getElementById("pt-team-dye-color");
     this._teamMaxInput.replaceWith(this._teamMaxInput.cloneNode(true));
     this._teamMaxInput   = document.getElementById("pt-team-max");
     this._teamMinInput.replaceWith(this._teamMinInput.cloneNode(true));
     this._teamMinInput   = document.getElementById("pt-team-min");
-    this._teamColorSwatch = document.getElementById("pt-team-color-swatch");
+    this._teamColorSwatch    = document.getElementById("pt-team-color-swatch");
+    this._teamDyeColorSwatch = document.getElementById("pt-team-dye-color-swatch");
 
-    this._teamIdInput.value   = team.id;
-    this._teamNameInput.value = team.name ?? "";
-    this._teamColorSel.value  = team.color ?? "red";
-    this._teamMaxInput.value  = team.max_players ?? 20;
-    this._teamMinInput.value  = team.min_players ?? 0;
-    this._teamColorSwatch.style.background = colorHex(team.color);
+    // Normalise underscore variants that may appear in older map_data.json files
+    const chatColor = (team.color ?? "dark red").replace(/_/g, " ");
+    const dyeColor  = (team.dye_color ?? "").replace(/_/g, " ");
 
     this._buildColorDropdown();
-    this._teamColorSel.value = team.color ?? "red";
+    this._buildDyeColorDropdown();
 
-    const saveOnBlur   = () => this._saveTeam(team.id);
-    const saveOnChange = () => {
+    this._teamIdInput.value      = team.id;
+    this._teamNameInput.value    = team.name ?? "";
+    this._teamColorSel.value     = chatColor;
+    this._teamDyeColorSel.value  = dyeColor;
+    this._teamMaxInput.value     = team.max_players ?? 20;
+    this._teamMinInput.value     = team.min_players ?? 0;
+    this._teamColorSwatch.style.background    = colorHex(chatColor);
+    this._teamDyeColorSwatch.style.background = dyeColor ? dyeColorHex(dyeColor) : "transparent";
+
+    const saveOnBlur = () => this._saveTeam(team.id);
+    const saveOnChatColorChange = () => {
       this._teamColorSwatch.style.background = colorHex(this._teamColorSel.value);
+      this._saveTeam(team.id);
+    };
+    const saveOnDyeColorChange = () => {
+      const dye = this._teamDyeColorSel.value;
+      this._teamDyeColorSwatch.style.background = dye ? dyeColorHex(dye) : "transparent";
       this._saveTeam(team.id);
     };
 
     this._teamIdInput.addEventListener("blur", saveOnBlur);
     this._teamNameInput.addEventListener("blur", saveOnBlur);
-    this._teamColorSel.addEventListener("change", saveOnChange);
+    this._teamColorSel.addEventListener("change", saveOnChatColorChange);
+    this._teamDyeColorSel.addEventListener("change", saveOnDyeColorChange);
     this._teamMaxInput.addEventListener("blur", saveOnBlur);
     this._teamMinInput.addEventListener("blur", saveOnBlur);
   }
@@ -537,12 +589,13 @@ export class TeamsPanel {
     let counter = this._teams.length + 1;
     let newId = `team_${counter}`;
     while (this._teams.some(t => t.id === newId)) { counter++; newId = `team_${counter}`; }
-    const defaultColor = MINECRAFT_TEAM_COLORS[this._teams.length % MINECRAFT_TEAM_COLORS.length].value;
+    const defaultColor = PGM_CHAT_COLORS[this._teams.length % PGM_CHAT_COLORS.length].value;
     try {
       const { team: created } = await api.addTeam(this._mapName, {
         id:          newId,
         name:        `Team ${counter}`,
         color:       defaultColor,
+        dye_color:   "",
         max_players: 20,
         min_players: 0,
       });
@@ -562,6 +615,7 @@ export class TeamsPanel {
       id:          newId || originalId,
       name:        this._teamNameInput.value.trim(),
       color:       this._teamColorSel.value,
+      dye_color:   this._teamDyeColorSel.value,  // empty string = no dye color
       max_players: parseInt(this._teamMaxInput.value, 10) || 20,
       min_players: parseInt(this._teamMinInput.value, 10) || 0,
     };
@@ -654,7 +708,24 @@ export class TeamsPanel {
     const sel = document.getElementById("pt-team-color");
     if (!sel) return;
     sel.innerHTML = "";
-    for (const color of MINECRAFT_TEAM_COLORS) {
+    for (const color of PGM_CHAT_COLORS) {
+      const opt = document.createElement("option");
+      opt.value = color.value;
+      opt.textContent = color.label;
+      sel.appendChild(opt);
+    }
+  }
+
+  _buildDyeColorDropdown() {
+    const sel = document.getElementById("pt-team-dye-color");
+    if (!sel) return;
+    sel.innerHTML = "";
+    // Add an empty "none" option — dye_color is optional
+    const noneOpt = document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = "— none —";
+    sel.appendChild(noneOpt);
+    for (const color of MINECRAFT_DYE_COLORS) {
       const opt = document.createElement("option");
       opt.value = color.value;
       opt.textContent = color.label;
