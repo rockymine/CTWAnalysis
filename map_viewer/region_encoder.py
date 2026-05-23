@@ -255,6 +255,67 @@ def regions_to_xml(regions_dict: dict) -> str:
     return "\n".join(lines)
 
 
+def build_semantic_categories(data: dict) -> dict[str, list[str]]:
+    """Return corrected region categories derived from structured map_data.json.
+
+    The raw ``region_categories`` stored in map_data.json are computed by a
+    simple regex pass over region IDs (v1 pipeline).  That approach has two
+    known errors:
+
+    1. Wool item-spawner drop regions (e.g. ``cyan-wool-spawn``) match the
+       "spawn" pattern before the "wool" pattern and land in the spawn bucket,
+       causing them to appear on the Teams canvas.
+
+    2. Complement utility regions (e.g. ``not-spawns``) whose IDs match
+       "spawn" also land in the spawn bucket, cluttering the Teams view.
+
+    This function corrects both issues at serve-time using the structured
+    ``spawns``, ``observer_spawn``, and region-type data already present in
+    map_data.json — no pipeline re-run required.  Once the v2 pipeline is
+    promoted, the corrections will already be baked into map_data.json and
+    this function becomes a safe no-op.
+    """
+    categories: dict[str, list[str]] = {
+        k: list(v) for k, v in data.get("region_categories", {}).items()
+    }
+    regions: dict = data.get("regions", {})
+
+    new_spawn: list[str] = []
+    new_wool:  list[str] = list(categories.get("wool", []))
+    new_other: list[str] = list(categories.get("other", []))
+
+    for region_id in categories.get("spawn", []):
+        region_type = regions.get(region_id, {}).get("type", "")
+        if "wool" in region_id.lower():
+            # Wool item-spawner drop point — belongs in the wool bucket
+            new_wool.append(region_id)
+        elif region_type in ("negative", "complement"):
+            # Complement utility region — not a team-spawn configuration item
+            new_other.append(region_id)
+        else:
+            new_spawn.append(region_id)
+
+    # Guarantee that explicitly-linked team / observer spawn regions are present
+    # in the spawn bucket even if they were absent from or mis-categorised in the
+    # raw region_categories (handles maps with unconventionally named regions).
+    all_categorized: set[str] = {
+        rid for ids in categories.values() for rid in ids
+    }
+    for spawn_entry in data.get("spawns", []):
+        rid = (spawn_entry.get("region") or {}).get("id")
+        if rid and rid not in all_categorized:
+            new_spawn.append(rid)
+    obs_region = (data.get("observer_spawn") or {}).get("region") or {}
+    obs_rid = obs_region.get("id")
+    if obs_rid and obs_rid not in all_categorized:
+        new_spawn.append(obs_rid)
+
+    categories["spawn"] = new_spawn
+    categories["wool"]  = new_wool
+    categories["other"] = new_other
+    return categories
+
+
 def encode_region_tree_categorized(
     regions_dict: dict,
     categories_dict: dict,

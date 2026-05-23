@@ -796,3 +796,69 @@ class MapXMLParser:
                 categories['other'].append(region_id)
 
         return categories
+
+    def identify_region_categories_v2(self, data: MapData) -> dict[str, list[str]]:
+        """Identify region categories using structured XML data and regex patterns.
+
+        Improvements over v1 (identify_region_categories):
+
+        1. Ground-truth anchoring: region IDs explicitly referenced by ``<spawn>``
+           and ``<default>`` elements are always placed in the ``spawn`` bucket,
+           regardless of how they are named.
+
+        2. Wool-before-spawn priority: the ``wool`` pattern is tested *before* the
+           ``spawn`` pattern so that item-spawner drop regions whose IDs contain
+           both keywords (e.g. ``cyan-wool-spawn``) land in ``wool`` rather than
+           ``spawn``.
+
+        3. Structural filtering: ``negative``/``complement`` regions whose IDs
+           match the spawn pattern are placed in ``other`` rather than ``spawn``,
+           since they represent the *complement* of spawn areas (e.g. ``not-spawns``
+           used for kit-reset rules) and are not meaningful team-spawn configuration
+           items.
+
+        Returns:
+            Dictionary mapping category names to lists of region IDs.
+        """
+        # Collect definitive player / observer spawn region IDs from structured data
+        team_spawn_ids: set[str] = set()
+        for spawn in data.spawns:
+            if spawn.region and spawn.region.id:
+                team_spawn_ids.add(spawn.region.id)
+        if (data.observer_spawn
+                and data.observer_spawn.region
+                and data.observer_spawn.region.id):
+            team_spawn_ids.add(data.observer_spawn.region.id)
+
+        spawn_pattern = re.compile(r'spawn', re.IGNORECASE)
+        wool_pattern  = re.compile(r'wool',  re.IGNORECASE)
+        build_pattern = re.compile(r'build|height|limit', re.IGNORECASE)
+
+        categories: dict[str, list[str]] = {
+            'spawn': [],
+            'wool':  [],
+            'build': [],
+            'other': [],
+        }
+
+        for region_id, region in data.regions.items():
+            if region_id in team_spawn_ids:
+                # Definitive player / observer spawn — always in spawn regardless of name
+                categories['spawn'].append(region_id)
+            elif wool_pattern.search(region_id):
+                # Wool checked BEFORE spawn: catches *-wool-spawn naming patterns
+                categories['wool'].append(region_id)
+            elif spawn_pattern.search(region_id):
+                if region.region_type in ('negative', 'complement'):
+                    # Complement utility regions (e.g. not-spawns) are not team-spawn
+                    # configuration items; exclude them from the spawn bucket
+                    categories['other'].append(region_id)
+                else:
+                    # Protection rectangles, unions, etc. → shown in Teams
+                    categories['spawn'].append(region_id)
+            elif build_pattern.search(region_id):
+                categories['build'].append(region_id)
+            else:
+                categories['other'].append(region_id)
+
+        return categories

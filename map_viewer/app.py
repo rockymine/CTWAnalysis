@@ -27,7 +27,7 @@ from typing import Optional
 import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
-from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml
+from map_viewer.region_encoder import encode_region_tree_categorized, regions_to_xml, build_semantic_categories
 from common.visualization.block_colors import block_color
 
 
@@ -706,7 +706,7 @@ def create_app() -> Flask:
         data = json.loads(data_path.read_text(encoding="utf-8"))
         groups = encode_region_tree_categorized(
             data.get("regions", {}),
-            data.get("region_categories", {}),
+            build_semantic_categories(data),
         )
         return jsonify(groups)
 
