@@ -45,7 +45,7 @@ const ACTIVITIES = {
   "activity-regions":  new RegionsActivity(),
 };
 
-let currentActivityId = "activity-regions";
+let currentActivityId = "activity-overview";
 
 function switchActivity(id) {
   ACTIVITIES[currentActivityId].deactivate();
@@ -336,6 +336,14 @@ async function loadMap(name) {
     setTool("move");
     setBreadcrumb(ctx.map_name, ctx.map_version);
     setStatus("");
+    // Activate the current activity now that map data is available.
+    // switchActivity() handles this when the user manually switches tabs, but
+    // on initial load the activity is never explicitly activated.
+    ACTIVITIES[currentActivityId].activate({ mapName: name });
+    requestAnimationFrame(() => {
+      if (currentActivityId === "activity-overview") ACTIVITIES["activity-overview"]._panel._canvas.resize();
+      if (currentActivityId === "activity-teams")    ACTIVITIES["activity-teams"]._canvas?.resize();
+    });
   } catch (err) {
     setStatus(`Error: ${err.message}`);
   }

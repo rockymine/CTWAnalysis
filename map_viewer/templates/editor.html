@@ -30,7 +30,7 @@
         <span class="activity-logo-sub">Editor</span>
       </div>
     </div>
-    <button class="activity-btn" id="activity-overview" title="Overview" disabled data-status="">
+    <button class="activity-btn active" id="activity-overview" title="Overview" disabled data-status="">
       <i data-lucide="book-open-text"></i>
     </button>
     <button class="activity-btn" id="activity-teams" title="Teams" disabled data-status="">
@@ -39,7 +39,7 @@
     <button class="activity-btn" disabled title="Objective">
       <i data-lucide="goal"></i>
     </button>
-    <button class="activity-btn active" id="activity-regions" title="Regions">
+    <button class="activity-btn" id="activity-regions" title="Regions">
       <i data-lucide="layout-dashboard"></i>
     </button>
     <button class="activity-btn" disabled title="Rules &amp; Filters">
@@ -56,7 +56,7 @@
   <div id="activity-viewport">
 
     <!-- Overview workspace -->
-    <div id="overview-workspace" hidden>
+    <div id="overview-workspace">
 
       <!-- Left panel: map identity + authors -->
       <div id="ov-left">
@@ -249,7 +249,7 @@
     </div>
 
     <!-- Regions workspace -->
-    <div id="regions-workspace">
+    <div id="regions-workspace" hidden>
       <div id="layers">
         <div id="layers-header">REGIONS</div>
         <div id="region-list">
