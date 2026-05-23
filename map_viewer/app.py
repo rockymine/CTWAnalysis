@@ -30,8 +30,6 @@ from flask import Flask, Response, jsonify, abort, render_template, request, str
 from map_viewer.region_encoder import (
     encode_region_tree_categorized,
     regions_to_xml,
-    build_semantic_categories,
-    _inject_anonymous_spawn_regions,
 )
 from common.visualization.block_colors import block_color
 
@@ -670,9 +668,6 @@ def create_app() -> Flask:
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
-        # Assign synthetic ids to anonymous inline spawn regions so that the
-        # Teams panel can resolve team assignments via region id matching.
-        _inject_anonymous_spawn_regions(data)
         return jsonify(data)
 
     _METADATA_FIELDS = {
@@ -713,10 +708,9 @@ def create_app() -> Flask:
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
-        _inject_anonymous_spawn_regions(data)
         groups = encode_region_tree_categorized(
             data.get("regions", {}),
-            build_semantic_categories(data),
+            data.get("region_categories", {}),
         )
         return jsonify(groups)
 

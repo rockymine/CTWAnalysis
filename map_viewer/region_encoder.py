@@ -106,10 +106,11 @@ def _encode_coords(region: dict) -> dict | None:
 def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     """Recursively encode a region dict (with optional children) into a tree node.
 
-    Anonymous children (those with no ``id`` in the XML) receive a synthetic
-    deterministic id of the form ``{parent_id}__{index}`` so the browser can
-    create a uniquely addressable SVG group and checkbox for each one.  The
-    displayed ``label`` is kept as ``[type]`` to make clear it has no XML name.
+    All regions and their composite children have ids baked into map_data.json by
+    the pipeline (``inject_anonymous_region_ids``), so ``xml_id`` is always
+    non-empty for up-to-date JSON.  Reference-type nodes override their label to
+    show ``→ target`` regardless, since that is more informative than the
+    synthetic id string.
 
     ``is_negative`` is set for complement regions so the frontend renders them
     as map-bbox-minus-children rather than drawing the bounds directly.
@@ -117,14 +118,10 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     xml_id = region.get("id") or ""
     region_type = region.get("type", "unknown")
 
-    # Assign a synthetic id for anonymous nodes so they are selectable
-    region_id = xml_id if xml_id else (f"{parent_id}__{index}" if parent_id else f"__anon_{index}")
-    if xml_id:
-        label = xml_id
-    elif region_type == "reference":
+    region_id = xml_id
+    label = xml_id
+    if region_type == "reference":
         label = f"→ {region.get('ref_id', '?')}"
-    else:
-        label = f"[{region_type}]"
 
     children = [
         _encode_node(child, parent_id=region_id, index=i)
@@ -254,138 +251,6 @@ def regions_to_xml(regions_dict: dict) -> str:
     lines = ["<regions>"] + [_region_to_xml(r, indent=1) for r in roots] + ["</regions>"]
     return "\n".join(lines)
 
-
-def _inject_anonymous_spawn_regions(data: dict) -> None:
-    """Inject anonymous (id-less) inline spawn regions into data["regions"].
-
-    Some maps define spawn locations as inline child elements inside ``<spawn>``
-    and ``<default>`` without giving the region an id attribute, e.g.::
-
-        <spawn team="red" kit="spawn-kit">
-          <regions>
-            <point>-118.5,6,-79.5</point>
-          </regions>
-        </spawn>
-
-    The parser captures the full region geometry in ``data["spawns"][*]["region"]``
-    and ``data["observer_spawn"]["region"]``, but the region has ``id: ""``.
-    Because ``data["regions"]`` is keyed by id, these anonymous regions are
-    invisible to the categorisation and canvas rendering pipeline.
-
-    This function assigns each anonymous spawn region a deterministic synthetic
-    id of the form ``__spawn_<team>`` (or ``__observer_spawn`` for the default
-    spawn) and performs two mutations on the in-memory data dict:
-
-    1. Inserts the region into ``data["regions"]`` so the canvas can render it.
-    2. Updates the ``id`` field on the embedded region object inside
-       ``data["spawns"]`` / ``data["observer_spawn"]`` so that the
-       ``/api/map/<name>/map-data`` endpoint returns matching ids, allowing
-       the Teams panel to resolve team assignments via ``_spawnForRegion``.
-
-    Both mutations are intentional and safe: callers operate on a
-    freshly-loaded in-memory copy of map_data.json; no file is modified.
-
-    Synthetic ids use the ``__`` prefix to distinguish them from XML-defined ids
-    (consistent with the anonymous-child naming in ``_encode_node``).
-    """
-    regions: dict = data.setdefault("regions", {})
-
-    for spawn_entry in data.get("spawns", []):
-        region = spawn_entry.get("region")
-        if not isinstance(region, dict):
-            continue
-        if region.get("id") or not region.get("type"):
-            continue  # already named, or has no geometry — nothing to inject
-        team = spawn_entry.get("team") or "unknown"
-        synthetic_id = f"__spawn_{team}"
-        # Mutate the embedded region so map-data endpoint returns the synthetic id
-        region["id"] = synthetic_id
-        # Insert into the regions dict so the canvas can render it
-        if synthetic_id not in regions:
-            regions[synthetic_id] = region
-
-    obs = data.get("observer_spawn")
-    if isinstance(obs, dict):
-        obs_region = obs.get("region")
-        if isinstance(obs_region, dict) and not obs_region.get("id") and obs_region.get("type"):
-            synthetic_id = "__observer_spawn"
-            obs_region["id"] = synthetic_id
-            if synthetic_id not in regions:
-                regions[synthetic_id] = obs_region
-
-
-def build_semantic_categories(data: dict) -> dict[str, list[str]]:
-    """Return corrected region categories derived from structured map_data.json.
-
-    The raw ``region_categories`` stored in map_data.json are computed by a
-    simple regex pass over region IDs (v1 pipeline).  That approach has two
-    known errors:
-
-    1. Wool item-spawner drop regions (e.g. ``cyan-wool-spawn``) match the
-       "spawn" pattern before the "wool" pattern and land in the spawn bucket,
-       causing them to appear on the Teams canvas.
-
-    2. Complement utility regions (e.g. ``not-spawns``) whose IDs match
-       "spawn" also land in the spawn bucket, cluttering the Teams view.
-
-    This function corrects both issues at serve-time using the structured
-    ``spawns``, ``observer_spawn``, and region-type data already present in
-    map_data.json — no pipeline re-run required.  Once the v2 pipeline is
-    promoted, the corrections will already be baked into map_data.json and
-    this function becomes a safe no-op.
-
-    Anonymous spawn regions (those with ``id: ""``) are handled by
-    ``_inject_anonymous_spawn_regions``, which must be called first to ensure
-    they appear in ``data["regions"]``.  The ``/api/map/<name>/regions``
-    endpoint calls both in sequence.
-    """
-    categories: dict[str, list[str]] = {
-        k: list(v) for k, v in data.get("region_categories", {}).items()
-    }
-    regions: dict = data.get("regions", {})
-
-    new_spawn: list[str] = []
-    new_wool:  list[str] = list(categories.get("wool", []))
-    new_other: list[str] = list(categories.get("other", []))
-
-    for region_id in categories.get("spawn", []):
-        region_type = regions.get(region_id, {}).get("type", "")
-        if "wool" in region_id.lower():
-            # Wool item-spawner drop point — belongs in the wool bucket
-            new_wool.append(region_id)
-        elif region_type in ("negative", "complement"):
-            # Complement utility region — not a team-spawn configuration item
-            new_other.append(region_id)
-        else:
-            new_spawn.append(region_id)
-
-    # Guarantee that explicitly-linked team / observer spawn regions are present
-    # in the spawn bucket even if they were absent from or mis-categorised in the
-    # raw region_categories (handles maps with unconventionally named regions,
-    # and synthetic ids injected by _inject_anonymous_spawn_regions).
-    all_categorized: set[str] = {
-        rid for ids in categories.values() for rid in ids
-    }
-    all_categorized.update(new_spawn)  # include moves already made above
-
-    for spawn_entry in data.get("spawns", []):
-        team = spawn_entry.get("team") or "unknown"
-        region = spawn_entry.get("region") or {}
-        rid = region.get("id") or f"__spawn_{team}"
-        if rid and rid not in all_categorized and rid in regions:
-            new_spawn.append(rid)
-            all_categorized.add(rid)
-
-    obs = data.get("observer_spawn") or {}
-    obs_region = obs.get("region") or {}
-    obs_rid = obs_region.get("id") or "__observer_spawn"
-    if obs_rid and obs_rid not in all_categorized and obs_rid in regions:
-        new_spawn.append(obs_rid)
-
-    categories["spawn"] = new_spawn
-    categories["wool"]  = new_wool
-    categories["other"] = new_other
-    return categories
 
 
 def encode_region_tree_categorized(

@@ -40,6 +40,33 @@ def _safe_int(value: str, default: Optional[int] = None) -> Optional[int]:
         return default
 
 
+def _inject_anonymous_child_ids(region: Region, parent_id: str) -> None:
+    """Recursively assign synthetic ``{parent_id}__{index}`` ids to anonymous children.
+
+    Composite regions (union, negative, complement, intersect) may contain inline
+    child regions that have no ``id`` attribute in the XML.  Without an id these
+    children are invisible to the editor: ``_encode_node`` marks them
+    ``synthetic_id: true`` and the browser disables editing for them.
+
+    Assigning ids here — at pipeline time — ensures the children receive real ids
+    in ``map_data.json``, so ``_encode_node`` sees a non-empty id, sets
+    ``synthetic_id: false``, and the browser permits editing.
+
+    The naming scheme ``parent__0``, ``parent__1``, … is identical to what
+    ``_encode_node`` would generate ephemerally at serve time, keeping the ids
+    stable and predictable.  Underscores are valid in PGM region ids, so the
+    generated ids can also be round-tripped through the XML export endpoint.
+
+    Children that already have an XML-defined id are left untouched.  Recursion
+    uses the child's final id (assigned or pre-existing) as the ``parent_id`` for
+    the next level.
+    """
+    for index, child in enumerate(getattr(region, 'children', [])):
+        if not child.id:
+            child.id = f"{parent_id}__{index}"
+        _inject_anonymous_child_ids(child, child.id)
+
+
 class MapXMLParser:
     """Parser for Minecraft map XML files."""
 
@@ -766,59 +793,79 @@ class MapXMLParser:
                 break
         return rule
 
+    def inject_anonymous_region_ids(self, data: MapData) -> None:
+        """Assign synthetic IDs to all anonymous regions and register them in data.regions.
+
+        Handles two categories of anonymous region:
+
+        **Objective-level anonymous regions** — Some objectives (most commonly ``<spawn>``
+        elements) define their region inline rather than referencing a named top-level
+        region.  These have no ``id`` attribute and are absent from ``data.regions``,
+        making them invisible to the categoriser and to JSON consumers of
+        ``map_data.json``.  Each such region is assigned a ``__spawn_<team>`` /
+        ``__observer_spawn`` id and inserted into ``data.regions``.
+
+        **Anonymous children of composite regions** — Composite regions (union, negative,
+        complement, intersect) may contain inline child regions without ids.  Without an
+        id the browser editor marks them as non-editable (``synthetic_id: true``).  Each
+        is assigned a ``{parent_id}__{index}`` id in place so the editor can address and
+        edit them.
+
+        Both mutations happen in place on *data*.  Call this *before*
+        ``identify_region_categories`` so that all injected regions are present in
+        ``data.regions`` and objective-level spawn regions land in ``team_spawn_ids``.
+
+        Extension point: if future objective types (e.g. monuments) also embed anonymous
+        inline regions at the objective level, add analogous handling in the first block.
+        """
+        # ── Objective-level anonymous spawn regions ───────────────────────────
+        for spawn in data.spawns:
+            if spawn.region and not spawn.region.id:
+                synthetic_id = f"__spawn_{spawn.team}"
+                spawn.region.id = synthetic_id
+                if synthetic_id not in data.regions:
+                    data.regions[synthetic_id] = spawn.region
+
+        if (data.observer_spawn
+                and data.observer_spawn.region
+                and not data.observer_spawn.region.id):
+            synthetic_id = "__observer_spawn"
+            data.observer_spawn.region.id = synthetic_id
+            if synthetic_id not in data.regions:
+                data.regions[synthetic_id] = data.observer_spawn.region
+
+        # ── Anonymous children of composite regions ───────────────────────────
+        for region_id, region in data.regions.items():
+            _inject_anonymous_child_ids(region, region_id)
+
     def identify_region_categories(self, data: MapData) -> dict[str, list[str]]:
-        """
-        Identify region categories using regex patterns on region IDs.
-
-        Returns:
-            Dictionary mapping category names to lists of region IDs
-        """
-        categories = {
-            'spawn': [],
-            'wool': [],
-            'build': [],
-            'other': []
-        }
-
-        # Regex patterns for categorization
-        spawn_pattern = re.compile(r'spawn', re.IGNORECASE)
-        wool_pattern = re.compile(r'wool', re.IGNORECASE)
-        build_pattern = re.compile(r'build|height|limit', re.IGNORECASE)
-
-        for region_id in data.regions.keys():
-            if spawn_pattern.search(region_id):
-                categories['spawn'].append(region_id)
-            elif wool_pattern.search(region_id):
-                categories['wool'].append(region_id)
-            elif build_pattern.search(region_id):
-                categories['build'].append(region_id)
-            else:
-                categories['other'].append(region_id)
-
-        return categories
-
-    def identify_region_categories_v2(self, data: MapData) -> dict[str, list[str]]:
         """Identify region categories using structured XML data and regex patterns.
 
-        Improvements over v1 (identify_region_categories):
+        Uses ground-truth anchoring, wool-before-spawn priority, and structural
+        filtering to correctly classify all named regions in ``data.regions``.
+
+        Call ``inject_anonymous_region_ids`` first to ensure that anonymous inline
+        spawn regions are present in ``data.regions`` and included in the output.
+
+        Categorisation rules (applied in priority order):
 
         1. Ground-truth anchoring: region IDs explicitly referenced by ``<spawn>``
-           and ``<default>`` elements are always placed in the ``spawn`` bucket,
+           and ``<default>`` elements (including synthetic ids assigned by
+           ``inject_anonymous_region_ids``) are always placed in the ``spawn`` bucket,
            regardless of how they are named.
 
         2. Wool-before-spawn priority: the ``wool`` pattern is tested *before* the
-           ``spawn`` pattern so that item-spawner drop regions whose IDs contain
-           both keywords (e.g. ``cyan-wool-spawn``) land in ``wool`` rather than
-           ``spawn``.
+           ``spawn`` pattern so that item-spawner drop regions whose IDs contain both
+           keywords (e.g. ``cyan-wool-spawn``) land in ``wool`` rather than ``spawn``.
 
-        3. Structural filtering: ``negative``/``complement`` regions whose IDs
-           match the spawn pattern are placed in ``other`` rather than ``spawn``,
-           since they represent the *complement* of spawn areas (e.g. ``not-spawns``
-           used for kit-reset rules) and are not meaningful team-spawn configuration
-           items.
+        3. Structural filtering: ``negative``/``complement`` regions whose IDs match
+           the spawn pattern are placed in ``other`` rather than ``spawn``, since they
+           represent the *complement* of spawn areas (e.g. ``not-spawns`` used for
+           kit-reset rules) and are not meaningful team-spawn configuration items.
 
         Returns:
-            Dictionary mapping category names to lists of region IDs.
+            Dictionary mapping category names (``spawn``, ``wool``, ``build``,
+            ``other``) to lists of region IDs.
         """
         # Collect definitive player / observer spawn region IDs from structured data
         team_spawn_ids: set[str] = set()
