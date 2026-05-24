@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Optional
 
-from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule
+from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule, WoolSpawner, SpawnerItem
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -122,6 +122,9 @@ class MapXMLParser:
 
         # Parse wools, resolving monument region references against the regions dict.
         data.wools = self._parse_wools(data.regions)
+
+        # Parse wool spawners (used for wool room detection downstream).
+        data.spawners = self._parse_spawners()
 
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
@@ -479,6 +482,45 @@ class MapXMLParser:
                 return (region.x, region.y, region.z), monument_ref
 
         return (0, 0, 0), None
+
+    def _parse_spawners(self) -> list[WoolSpawner]:
+        """Parse all <spawner> elements from any <spawners> block.
+
+        Only spawners that have both a ``spawn-region`` and a ``player-region``
+        attribute are included — both are required to identify the wool room.
+        """
+        spawners: list[WoolSpawner] = []
+        for spawner_elem in self.root.findall('.//spawners/spawner'):
+            spawn_region = spawner_elem.get('spawn-region', '').strip()
+            player_region = spawner_elem.get('player-region', '').strip()
+            if not spawn_region or not player_region:
+                continue
+
+            delay = spawner_elem.get('delay', '')
+            max_entities_str = spawner_elem.get('max-entities', '')
+            max_entities: Optional[int] = int(max_entities_str) if max_entities_str.isdigit() else None
+
+            items: list[SpawnerItem] = []
+            for item_elem in spawner_elem.findall('item'):
+                material = item_elem.get('material', '').strip()
+                damage_str = item_elem.get('damage', '0')
+                amount_str = item_elem.get('amount', '1')
+                try:
+                    damage = int(damage_str)
+                    amount = int(amount_str)
+                except ValueError:
+                    damage, amount = 0, 1
+                items.append(SpawnerItem(material=material, damage=damage, amount=amount))
+
+            spawners.append(WoolSpawner(
+                spawn_region=spawn_region,
+                player_region=player_region,
+                delay=delay,
+                max_entities=max_entities,
+                items=items,
+            ))
+
+        return spawners
 
     def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""

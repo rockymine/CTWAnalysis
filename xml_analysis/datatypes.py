@@ -72,6 +72,31 @@ class Wool:
     location: tuple[float, float, float]
     monument: tuple[float, float, float]
     monument_region_id: Optional[str] = None  # set when monument="region-id" attribute form is used
+    wool_room_region: Optional[str] = None    # detected from spawners / chests / spatial search
+
+
+@dataclass
+class SpawnerItem:
+    """A single item dropped by a <spawner> element."""
+    material: str
+    damage: int = 0
+    amount: int = 1
+
+
+@dataclass
+class WoolSpawner:
+    """A <spawner> element that periodically drops items into a region.
+
+    In CTW maps these are used exclusively to respawn wool blocks after
+    they are picked up.  ``player_region`` is the wool room (players
+    must be present to activate the spawner); ``spawn_region`` is where
+    the wool item appears.
+    """
+    spawn_region: str
+    player_region: str
+    delay: str = ""
+    max_entities: Optional[int] = None
+    items: list[SpawnerItem] = field(default_factory=list)
 
 
 @dataclass
@@ -99,6 +124,7 @@ class MapData:
     spawns: list[Spawn] = field(default_factory=list)
     observer_spawn: Optional[Spawn] = None
     wools: list[Wool] = field(default_factory=list)
+    spawners: list[WoolSpawner] = field(default_factory=list)
     regions: dict[str, Region] = field(default_factory=dict)
     apply_rules: list[ApplyRule] = field(default_factory=list)
     max_build_height: Optional[int] = None

@@ -21,6 +21,7 @@ Reads from the ``regions`` and ``apply_rules`` keys in ``map_data.json``.
 
 import logging
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 from shapely.geometry import Point, box
@@ -47,6 +48,37 @@ _SPAWN_EXCLUDE = re.compile(r'wool.spawn|spawn.point|spawn.kit', re.IGNORECASE)
 # Radius (blocks) used when building a zone from objective location points rather
 # than named regions (last-resort fallback for maps with no usable regions).
 _LOCATION_FALLBACK_RADIUS = 20.0
+
+# Minecraft 1.8.9 wool damage value → wool color name (normalised to lower-case with spaces).
+# Used to match <spawner> item damage values to wool objective colors.
+_WOOL_DAMAGE_TO_COLOR: dict[int, str] = {
+    0:  'white',
+    1:  'orange',
+    2:  'magenta',
+    3:  'light blue',
+    4:  'yellow',
+    5:  'lime',
+    6:  'pink',
+    7:  'gray',
+    8:  'silver',      # "light gray" in modern naming; stored as "silver" in older PGM maps
+    9:  'cyan',
+    10: 'purple',
+    11: 'blue',
+    12: 'brown',
+    13: 'green',
+    14: 'red',
+    15: 'black',
+}
+
+# Reverse mapping: normalised color name → damage value.
+# Handles both "light blue" (space) and "light_blue" (underscore) variants.
+_WOOL_COLOR_TO_DAMAGE: dict[str, int] = {}
+for _dmg, _name in _WOOL_DAMAGE_TO_COLOR.items():
+    _WOOL_COLOR_TO_DAMAGE[_name] = _dmg
+    _WOOL_COLOR_TO_DAMAGE[_name.replace(' ', '_')] = _dmg
+# Extra aliases seen in the wild
+_WOOL_COLOR_TO_DAMAGE['light gray'] = 8
+_WOOL_COLOR_TO_DAMAGE['light_gray'] = 8
 
 
 def _nbt_or_val(v: Any) -> Any:
@@ -171,6 +203,176 @@ def _geom_from_positions(
         ]
 
     return unary_union(result_geoms) if result_geoms else None
+
+
+def detect_wool_room_region_id(
+    wool_x: float,
+    wool_z: float,
+    regions: dict,
+) -> Optional[str]:
+    """Return the ID of the smallest named region that spatially contains
+    (wool_x, wool_z), or None if no qualifying region is found.
+
+    Algorithm mirrors ``_geom_from_positions`` but tracks the winning region
+    ID instead of unioning geometries.  Point/zero-area regions are skipped —
+    they are spawn markers or item-frame anchors, not room boundaries.
+
+    Args:
+        wool_x:   World-space X coordinate of the wool block.
+        wool_z:   World-space Z coordinate of the wool block.
+        regions:  The top-level ``regions`` dict from ``map_data.json``.
+
+    Returns:
+        The region ID (str) with the smallest area that contains the wool
+        location, or ``None`` when no named region qualifies.
+    """
+    pt = Point(wool_x, wool_z)
+    best_id: Optional[str] = None
+    best_area: float = float('inf')
+
+    for region_id, region in regions.items():
+        # Point and block regions are single-block spawn markers, not room boundaries.
+        region_type = region.get('type', '')
+        if region_type in ('point', 'block'):
+            continue
+        try:
+            geom = _region_to_geometry(region)
+        except (ValueError, TypeError):
+            # Regions with infinite bounds (e.g. '-oo') or invalid coordinates
+            # cannot be used for containment testing; skip them.
+            continue
+        if geom is None or geom.is_empty or geom.area == 0:
+            continue
+        if geom.contains(pt) and geom.area < best_area:
+            best_id = region_id
+            best_area = geom.area
+
+    return best_id
+
+
+def assign_wool_room_regions(
+    wools: list[dict],
+    regions: dict,
+    spawners: list[dict],
+    output_dir: Optional[Path] = None,
+) -> None:
+    """Assign ``wool_room_region`` to each wool dict in-place.
+
+    Detection runs in three passes, stopping as soon as a region is found:
+
+    1. **Spawner player_region** — each ``<spawner>`` whose items include a
+       wool item whose damage value matches the wool's color is the most
+       authoritative source.  The spawner's ``player_region`` is the room.
+
+    2. **Chest spatial search** — if ``output_dir`` is given and
+       ``layout_chest_contents.parquet`` exists there, find chests that
+       contain wool of the matching color and run a spatial search from
+       those chest coordinates.  Chests are physically inside the wool room,
+       so their location reliably identifies it.
+
+    3. **Wool location spatial search** — fall back to the wool's own
+       ``location`` field.  This is the current default approach and works
+       well for maps without spawners or chest data.
+
+    Args:
+        wools:      The ``wools`` list from ``map_data.json`` (dicts).
+        regions:    The top-level ``regions`` dict from ``map_data.json``.
+        spawners:   The ``spawners`` list from ``map_data.json`` (dicts).
+        output_dir: Directory containing ``layout_chest_contents.parquet``.
+                    If ``None`` or the file is absent, pass 2 is skipped.
+    """
+    # ── Pass 1: build spawner colour → player_region mapping ──────────────────
+    # A spawner is matched to a wool when its items contain a wool item whose
+    # damage value corresponds to the wool's colour.
+    spawner_color_to_region: dict[str, str] = {}
+    wool_materials = {'wool', 'minecraft:wool', '35'}
+
+    for spawner in spawners:
+        player_region = spawner.get('player_region', '')
+        if not player_region:
+            continue
+        for item in spawner.get('items', []):
+            material = (item.get('material') or '').lower().strip()
+            if material not in wool_materials:
+                continue
+            damage = int(item.get('damage', 0))
+            color_name = _WOOL_DAMAGE_TO_COLOR.get(damage)
+            if color_name and color_name not in spawner_color_to_region:
+                spawner_color_to_region[color_name] = player_region
+                # Also register underscore variant
+                spawner_color_to_region[color_name.replace(' ', '_')] = player_region
+
+    # ── Pass 2: build colour → chest coordinates mapping ──────────────────────
+    # Keyed by wool damage value; value is list of (x, z) chest positions.
+    chest_coords_by_damage: dict[int, list[tuple[float, float]]] = {}
+
+    if output_dir is not None:
+        chest_parquet = Path(output_dir) / 'layout_chest_contents.parquet'
+        if chest_parquet.exists():
+            try:
+                import pandas as pd
+                chest_df = pd.read_parquet(
+                    str(chest_parquet),
+                    columns=['world_x', 'world_z', 'item_id', 'item_damage'],
+                )
+                wool_rows = chest_df[chest_df['item_id'].isin({'minecraft:wool', '35', 'wool'})]
+                for damage_val, group in wool_rows.groupby('item_damage'):
+                    coords = list(zip(
+                        group['world_x'].astype(float),
+                        group['world_z'].astype(float),
+                    ))
+                    chest_coords_by_damage[int(damage_val)] = coords
+            except Exception:
+                # Non-fatal: layout parquet may be absent or malformed
+                pass
+
+    # ── Main loop: assign each wool room in location-dedup order ──────────────
+    seen_locations: set[str] = set()
+
+    for wool in wools:
+        color_raw = (wool.get('color') or '').lower().strip()
+        loc = wool.get('location', {})
+        wool_x = float(loc.get('x', 0))
+        wool_z = float(loc.get('z', 0))
+        loc_key = f"{wool_x:.1f},{wool_z:.1f}"
+
+        # If a previous wool at this same location was already resolved, reuse
+        # its result (multiple teams may share one wool room).
+        if loc_key in seen_locations:
+            continue
+        seen_locations.add(loc_key)
+
+        # Pass 1: spawner
+        region_id = spawner_color_to_region.get(color_raw)
+
+        # Pass 2: chest coordinates
+        if region_id is None:
+            damage_val = _WOOL_COLOR_TO_DAMAGE.get(color_raw)
+            if damage_val is not None:
+                chest_coords = chest_coords_by_damage.get(damage_val, [])
+                for chest_x, chest_z in chest_coords:
+                    candidate = detect_wool_room_region_id(chest_x, chest_z, regions)
+                    if candidate is not None:
+                        region_id = candidate
+                        break
+
+        # Pass 3: wool location spatial search
+        if region_id is None:
+            region_id = detect_wool_room_region_id(wool_x, wool_z, regions)
+
+        wool['wool_room_region'] = region_id
+
+    # Fill all remaining wools at the same location (multi-team shared rooms)
+    location_to_region: dict[str, Optional[str]] = {
+        w.get('wool_room_region') and f"{float(w['location']['x']):.1f},{float(w['location']['z']):.1f}": w.get('wool_room_region')
+        for w in wools
+        if w.get('location') and w.get('wool_room_region') is not None
+    }
+    for wool in wools:
+        if wool.get('wool_room_region') is None:
+            loc = wool.get('location', {})
+            loc_key = f"{float(loc.get('x', 0)):.1f},{float(loc.get('z', 0)):.1f}"
+            wool['wool_room_region'] = location_to_region.get(loc_key)
 
 
 def _extract_deny_team(use_str: str) -> Optional[str]:
