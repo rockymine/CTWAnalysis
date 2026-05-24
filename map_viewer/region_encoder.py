@@ -87,8 +87,7 @@ def _encode_coords(region: dict) -> dict | None:
         }
     if region_type == "circle":
         center = region.get("center") or {}
-        return {"center_x": center.get("x"), "center_z": center.get("z"),
-                "radius": region.get("radius")}
+        return {"center_x": center.get("x"), "center_z": center.get("z"), "radius": region.get("radius")}
     if region_type == "sphere":
         origin = region.get("origin") or {}
         return {
@@ -155,6 +154,8 @@ _COMPOSITE_TYPES = {"union", "negative", "complement", "intersect"}
 def _fmt_num(n: object) -> str:
     if n is None:
         return "?"
+    if n == "oo" or n == "-oo":
+        return str(n)
     if isinstance(n, float) and n.is_integer():
         return str(int(n))
     return str(n)

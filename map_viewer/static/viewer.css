@@ -386,6 +386,10 @@ body {
   text-align: right; width: 68px; outline: none;
 }
 .detail-bounds-input:focus { border-color: var(--accent); }
+.detail-bounds-input--unbounded {
+  color: var(--text-muted); font-style: italic;
+  cursor: default; text-align: center;
+}
 
 .detail-child-bounds {
   color: var(--border); font-size: 10px; font-variant-numeric: tabular-nums;

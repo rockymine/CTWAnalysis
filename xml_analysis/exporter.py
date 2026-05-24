@@ -10,6 +10,7 @@ Public API:
 
 import json
 import logging
+import math
 from typing import Any, Optional
 
 from common.json_export import save_json as _save_json
@@ -91,6 +92,27 @@ def save(data: MapData, output_path: str, categories: Optional[dict[str, list[st
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _coord(v: Any) -> Any:
+    """Convert a coordinate value to a JSON-safe representation.
+
+    JSON (RFC 8259) does not permit non-finite floats.  PGM regions use
+    ``oo`` / ``-oo`` to express unbounded axes; the XML parser converts these
+    to ``float('inf')`` / ``float('-inf')`` for in-memory use.  At serialisation
+    time we convert them back to the original string form so the output file is
+    valid JSON and round-trips cleanly through the viewer and XML exporter.
+    """
+    if isinstance(v, float):
+        if v == math.inf:
+            return "oo"
+        if v == -math.inf:
+            return "-oo"
+    return v
+
+
+# ---------------------------------------------------------------------------
 # Internal encoders
 # ---------------------------------------------------------------------------
 
@@ -105,39 +127,39 @@ def _encode_region(region: Region) -> dict[str, Any]:
     if bounds is not None:
         (min_x, min_z), (max_x, max_z) = bounds
         base['bounds_2d'] = {
-            'min': {'x': min_x, 'z': min_z},
-            'max': {'x': max_x, 'z': max_z}
+            'min': {'x': _coord(min_x), 'z': _coord(min_z)},
+            'max': {'x': _coord(max_x), 'z': _coord(max_z)},
         }
 
     if isinstance(region, RectangleRegion):
-        base['min_x'] = region.min_x
-        base['min_z'] = region.min_z
-        base['max_x'] = region.max_x
-        base['max_z'] = region.max_z
+        base['min_x'] = _coord(region.min_x)
+        base['min_z'] = _coord(region.min_z)
+        base['max_x'] = _coord(region.max_x)
+        base['max_z'] = _coord(region.max_z)
 
     elif isinstance(region, CuboidRegion):
-        base['min_x'] = region.min_x
-        base['min_y'] = region.min_y
-        base['min_z'] = region.min_z
-        base['max_x'] = region.max_x
-        base['max_y'] = region.max_y
-        base['max_z'] = region.max_z
+        base['min_x'] = _coord(region.min_x)
+        base['min_y'] = _coord(region.min_y)
+        base['min_z'] = _coord(region.min_z)
+        base['max_x'] = _coord(region.max_x)
+        base['max_y'] = _coord(region.max_y)
+        base['max_z'] = _coord(region.max_z)
 
     elif isinstance(region, CylinderRegion):
-        base['base'] = {'x': region.base_x, 'y': region.base_y, 'z': region.base_z}
-        base['radius'] = region.radius
-        base['height'] = region.height
+        base['base'] = {'x': _coord(region.base_x), 'y': _coord(region.base_y), 'z': _coord(region.base_z)}
+        base['radius'] = _coord(region.radius)
+        base['height'] = _coord(region.height)
 
     elif isinstance(region, CircleRegion):
-        base['center'] = {'x': region.center_x, 'z': region.center_z}
-        base['radius'] = region.radius
+        base['center'] = {'x': _coord(region.center_x), 'z': _coord(region.center_z)}
+        base['radius'] = _coord(region.radius)
 
     elif isinstance(region, SphereRegion):
-        base['origin'] = {'x': region.origin_x, 'y': region.origin_y, 'z': region.origin_z}
-        base['radius'] = region.radius
+        base['origin'] = {'x': _coord(region.origin_x), 'y': _coord(region.origin_y), 'z': _coord(region.origin_z)}
+        base['radius'] = _coord(region.radius)
 
     elif isinstance(region, (BlockRegion, PointRegion)):
-        base['position'] = {'x': region.x, 'y': region.y, 'z': region.z}
+        base['position'] = {'x': _coord(region.x), 'y': _coord(region.y), 'z': _coord(region.z)}
 
     elif isinstance(region, (UnionRegion, NegativeRegion, ComplementRegion, IntersectRegion)):
         base['children'] = [_encode_region(child) for child in region.children]
@@ -147,15 +169,15 @@ def _encode_region(region: Region) -> dict[str, Any]:
             base['source'] = _encode_region(region.source)
         if region.ref_region_id:
             base['ref_region_id'] = region.ref_region_id
-        base['origin'] = {'x': region.origin_x, 'y': region.origin_y, 'z': region.origin_z}
-        base['normal'] = {'x': region.normal_x, 'y': region.normal_y, 'z': region.normal_z}
+        base['origin'] = {'x': _coord(region.origin_x), 'y': _coord(region.origin_y), 'z': _coord(region.origin_z)}
+        base['normal'] = {'x': _coord(region.normal_x), 'y': _coord(region.normal_y), 'z': _coord(region.normal_z)}
 
     elif isinstance(region, TranslateRegion):
         if region.source:
             base['source'] = _encode_region(region.source)
         if region.ref_region_id:
             base['ref_region_id'] = region.ref_region_id
-        base['offset'] = {'x': region.offset_x, 'y': region.offset_y, 'z': region.offset_z}
+        base['offset'] = {'x': _coord(region.offset_x), 'y': _coord(region.offset_y), 'z': _coord(region.offset_z)}
 
     elif isinstance(region, RegionReference):
         base['ref_id'] = region.ref_id
@@ -164,7 +186,7 @@ def _encode_region(region: Region) -> dict[str, Any]:
         pass
 
     elif isinstance(region, AboveRegion):
-        base['y'] = region.y
+        base['y'] = _coord(region.y)
 
     return base
 

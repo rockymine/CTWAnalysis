@@ -522,7 +522,24 @@ export class RegionDetail {
 
   // Shared coord input — handles both geometry-section fields and the Y row in the bounds table.
   // sizeUpdaters (optional): array of refresh fns to call when value changes (for table size column).
+  //
+  // If the current value is the sentinel string "oo" or "-oo" (from PGM's unbounded region
+  // notation), a read-only text input is returned instead of a number input.  The value is
+  // preserved as-is so the XML exporter can round-trip it back to the original "oo" attribute.
   #makeCoordInput(coordKey, node, origCoords, { min, max, sizeUpdaters } = {}) {
+    const currentVal = node.coords[coordKey];
+
+    // Unbounded sentinel: show read-only, preserve "oo"/"-oo" for XML round-trip.
+    if (currentVal === "oo" || currentVal === "-oo") {
+      const input = document.createElement("input");
+      input.type      = "text";
+      input.value     = currentVal;
+      input.className = "detail-bounds-input detail-bounds-input--unbounded";
+      input.readOnly  = true;
+      input.title     = "Unbounded (oo) — edit the XML source to set a finite value";
+      return input;
+    }
+
     const clamp = (v) => {
       if (min != null && v < min) return min;
       if (max != null && v > max) return max;
@@ -532,7 +549,7 @@ export class RegionDetail {
     const input = document.createElement("input");
     input.type      = "number";
     input.step      = "any";
-    input.value     = node.coords[coordKey] ?? "";
+    input.value     = currentVal ?? "";
     input.className = "detail-bounds-input";
     if (min != null) input.min = min;
     if (max != null) input.max = max;
