@@ -892,7 +892,7 @@ def create_app() -> Flask:
                                   "max": {"x": bx + r, "z": bz + r}},
                 }
 
-        else:  # circle
+            else:  # circle
                 cx = float(body["center_x"])
                 cz = float(body["center_z"])
                 r  = float(body["radius"])
@@ -903,6 +903,7 @@ def create_app() -> Flask:
                     "bounds_2d": {"min": {"x": cx - r, "z": cz - r},
                                   "max": {"x": cx + r, "z": cz + r}},
                 }
+
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
 
