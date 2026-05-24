@@ -281,6 +281,7 @@ def _encode_wool(wool: Wool) -> dict[str, Any]:
             'x': wool.monument[0],
             'y': wool.monument[1],
             'z': wool.monument[2],
+            **({"region_id": wool.monument_region_id} if wool.monument_region_id else {}),
         },
     }
 

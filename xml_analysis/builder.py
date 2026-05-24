@@ -438,13 +438,14 @@ class MapXMLParser:
                 wools_elem, outer_team
             ):
                 location = self._parse_coords(wool_elem.get('location', '0,0,0'))
-                monument = self._resolve_monument(wool_elem, regions)
+                monument, monument_region_id = self._resolve_monument(wool_elem, regions)
 
                 wool = Wool(
                     team=wool_elem.get('team', '') or inherited_team,
                     color=wool_elem.get('color', ''),
                     location=location,
                     monument=monument,
+                    monument_region_id=monument_region_id,
                 )
                 wools.append(wool)
 
@@ -452,8 +453,8 @@ class MapXMLParser:
 
     def _resolve_monument(
         self, wool_elem: ET.Element, regions: dict[str, Region]
-    ) -> tuple[float, float, float]:
-        """Return the monument block coordinates for a <wool> element.
+    ) -> tuple[tuple[float, float, float], Optional[str]]:
+        """Return (coords, region_id) for the monument on a <wool> element.
 
         Checks (in order):
           1. Inline <monument><block>x,y,z</block></monument> child.
@@ -461,22 +462,23 @@ class MapXMLParser:
           3. monument="region-id" attribute — looks up the region and reads its
              x/y/z fields (BlockRegion or PointRegion).
 
-        Returns (0, 0, 0) if none of the above can be resolved.
+        Returns ((0, 0, 0), None) if none of the above can be resolved.
+        region_id is non-None only for form 3.
         """
-        # Form 1 & 2: inline child element
+        # Form 1 & 2: inline child element — no region reference to preserve
         for tag in ('monument/block', 'monument/point'):
             child = wool_elem.find(tag)
             if child is not None and child.text:
-                return self._parse_coords(child.text)
+                return self._parse_coords(child.text), None
 
         # Form 3: region-id attribute
         monument_ref = wool_elem.get('monument')
         if monument_ref:
             region = regions.get(monument_ref)
             if region is not None and isinstance(region, (BlockRegion, PointRegion)):
-                return (region.x, region.y, region.z)
+                return (region.x, region.y, region.z), monument_ref
 
-        return (0, 0, 0)
+        return (0, 0, 0), None
 
     def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""

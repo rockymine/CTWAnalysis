@@ -71,6 +71,7 @@ class Wool:
     color: str
     location: tuple[float, float, float]
     monument: tuple[float, float, float]
+    monument_region_id: Optional[str] = None  # set when monument="region-id" attribute form is used
 
 
 @dataclass
