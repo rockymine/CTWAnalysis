@@ -272,6 +272,14 @@
       <!-- Canvas: map overview with wool / monument POI markers -->
       <div id="obj-canvas-wrap">
         <div id="obj-canvas-subbar">
+          <div id="obj-draw-toolbar">
+            <button id="obj-tool-move"   class="draw-tool-btn" title="Move (M)"  disabled>
+              <i data-lucide="hand"></i>
+            </button>
+            <button id="obj-tool-select" class="draw-tool-btn" title="Select"    disabled>
+              <i data-lucide="mouse-pointer-2"></i>
+            </button>
+          </div>
           <div id="obj-cursor-coords"></div>
           <div id="obj-canvas-subbar-right">
             <span id="obj-zoom-level">—</span>
@@ -312,6 +320,13 @@
                 <div class="pt-color-pick-row">
                   <span id="obj-defender-swatch" class="pt-color-swatch-lg"></span>
                   <select id="obj-defender-sel" class="ov-input"></select>
+                </div>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label">Room Region</label>
+                <div class="pt-color-pick-row">
+                  <select id="obj-wool-room-sel" class="ov-input"></select>
+                  <button id="obj-wool-room-clear-btn" class="action-btn" title="Clear room region">✕</button>
                 </div>
               </div>
               <div class="ov-field">

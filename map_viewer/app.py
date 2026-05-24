@@ -1427,6 +1427,15 @@ def create_app() -> Flask:
                 return jsonify({"error": f"wool ({wool['team']!r}, {new_color!r}) already exists"}), 409
             wool["color"] = new_color
 
+        # ── wool_room_region update: apply to all entries sharing the same location ──
+        # Explicit None in the body means "clear the assignment"; absent key means "no change".
+        if "wool_room_region" in body:
+            new_region_id = body["wool_room_region"]   # str | None
+            current_loc = wool["location"]
+            for entry in wools:
+                if entry.get("location") == current_loc:
+                    entry["wool_room_region"] = new_region_id
+
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True, "wool": wool})
 

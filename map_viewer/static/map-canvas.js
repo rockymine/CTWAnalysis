@@ -369,9 +369,11 @@ export class MapCanvas {
     viewport.appendChild(this.#buildBlockLayer());
     viewport.appendChild(this.#buildIslands());
     viewport.appendChild(this.#buildSpawnLayer());
+    viewport.appendChild(this.#buildXmlRegions());
+    // Wool/monument markers rendered after regions so they stay on top and
+    // receive pointer events even when a region fill overlaps their position.
     viewport.appendChild(this.#buildWoolLayer());
     viewport.appendChild(this.#buildMonumentLayer());
-    viewport.appendChild(this.#buildXmlRegions());
     viewport.appendChild(this.#buildAnchorLayer());
     viewport.appendChild(this.#buildDrawLayer());
     viewport.appendChild(this.#buildBlockHighlight());
@@ -717,8 +719,17 @@ export class MapCanvas {
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
         "font-size": "11", fill: dyeColorHex(wool.wool_color),
+        style: "cursor:pointer",
       });
       t.textContent = "◆";
+      if (this.#callbacks.onPoiClick) {
+        const woolData = { color: wool.wool_color, x: wool.x, z: wool.z };
+        t.addEventListener("click", (e) => {
+          if (this.#activeTool !== null || this.#clickWasDrag) return;
+          e.stopPropagation();
+          this.#callbacks.onPoiClick("wool", woolData);
+        });
+      }
       g.appendChild(t);
     }
     return g;
@@ -733,8 +744,17 @@ export class MapCanvas {
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
         "font-size": "13", fill: dyeColorHex(mon.wool_color),
+        style: "cursor:pointer",
       });
       t.textContent = "⊕";
+      if (this.#callbacks.onPoiClick) {
+        const monData = { wool_color: mon.wool_color, team: mon.team, x: mon.x, z: mon.z };
+        t.addEventListener("click", (e) => {
+          if (this.#activeTool !== null || this.#clickWasDrag) return;
+          e.stopPropagation();
+          this.#callbacks.onPoiClick("monument", monData);
+        });
+      }
       g.appendChild(t);
     }
     return g;

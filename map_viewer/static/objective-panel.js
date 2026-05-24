@@ -31,15 +31,19 @@ export class ObjectivePanel {
     this._woolColorSwatchEl = document.getElementById("obj-wool-color-swatch");
     this._defenderSelEl     = document.getElementById("obj-defender-sel");
     this._defenderSwatchEl  = document.getElementById("obj-defender-swatch");
+    this._woolRoomSelEl     = document.getElementById("obj-wool-room-sel");
+    this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
     this._locationEl        = document.getElementById("obj-inspector-location");
     this._capturesEl        = document.getElementById("obj-inspector-captures");
     this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
 
-    this._onWoolSelect = onWoolSelect ?? (() => {});
-    this._onWoolSave   = opts.onWoolSave   ?? (() => {});
-    this._mapName      = null;
-    this._teams        = [];
-    this._woolRooms    = [];   // derived, one entry per distinct wool room
+    this._onWoolSelect    = onWoolSelect ?? (() => {});
+    this._onWoolSave      = opts.onWoolSave   ?? (() => {});
+    this._mapName         = null;
+    this._teams           = [];
+    this._woolRooms       = [];   // derived, one entry per distinct wool room
+    this._woolRoomOptions = [];   // region IDs eligible as wool room candidates
+    this._selectedRoom    = null; // currently selected wool room (for click-to-assign)
 
     this._addWoolBtn?.addEventListener("click", () => this._addWool());
   }
@@ -47,11 +51,76 @@ export class ObjectivePanel {
   // ── Public API ──────────────────────────────────────────────────────────────
 
   load(mapName, mapData) {
-    this._mapName   = mapName;
-    this._teams     = mapData.teams ?? [];
-    this._woolRooms = this._deriveWoolRooms(mapData.wools ?? []);
+    this._mapName         = mapName;
+    this._teams           = mapData.teams ?? [];
+    this._woolRooms       = this._deriveWoolRooms(mapData.wools ?? []);
+    this._woolRoomOptions = this._deriveWoolRoomOptions(mapData);
+    this._selectedRoom    = null;
     this._renderList();
     this._showEmpty();
+  }
+
+  // ── Public helpers for canvas interaction ───────────────────────────────────
+
+  /** Returns true when a wool room is currently selected in the inspector. */
+  hasSelectedWool() {
+    return this._selectedRoom !== null;
+  }
+
+  /** Returns the wool_room_region ID of the currently selected wool, or null. */
+  selectedWoolRoomRegion() {
+    return this._selectedRoom?.woolRoomRegion ?? null;
+  }
+
+  /**
+   * Assign regionId as the wool_room_region for the currently selected wool.
+   * Called by ObjectiveActivity when the user clicks a region on the canvas
+   * that does not belong to any existing wool room.
+   */
+  async assignWoolRoom(regionId) {
+    if (!this._selectedRoom) return;
+    this._woolRoomSelEl.value = regionId ?? "";
+    await this._saveWoolRoom(this._selectedRoom, regionId);
+  }
+
+  /**
+   * Select the wool room whose wool_room_region matches regionId.
+   * Returns true if a match was found and selected, false otherwise.
+   */
+  selectRoomByRegion(regionId) {
+    if (!regionId) return false;
+    const room = this._woolRooms.find(r => r.woolRoomRegion === regionId);
+    return room ? (this._selectRoomObject(room), true) : false;
+  }
+
+  /**
+   * Select the wool room whose wool chest location matches (x, z).
+   * Returns true if a match was found and selected, false otherwise.
+   */
+  selectRoomByLocation(x, z) {
+    const room = this._woolRooms.find(
+      r => Math.abs(r.location.x - x) < 1 && Math.abs(r.location.z - z) < 1,
+    );
+    return room ? (this._selectRoomObject(room), true) : false;
+  }
+
+  /**
+   * Select the wool room that has a monument capture at (x, z).
+   * Returns true if a match was found and selected, false otherwise.
+   */
+  selectRoomByMonument(x, z) {
+    const room = this._woolRooms.find(r =>
+      r.captures.some(c => Math.abs(c.monument.x - x) < 1 && Math.abs(c.monument.z - z) < 1),
+    );
+    return room ? (this._selectRoomObject(room), true) : false;
+  }
+
+  /** Internal: select a room object by finding its list row and calling _selectRoom. */
+  _selectRoomObject(room) {
+    const rowEl = this._woolListEl.querySelector(
+      `[data-room-key="${CSS.escape(_roomKey(room))}"]`,
+    );
+    if (rowEl) this._selectRoom(room, rowEl);
   }
 
   // ── Data preparation ────────────────────────────────────────────────────────
@@ -70,10 +139,14 @@ export class ObjectivePanel {
       const key = `${wool.color}:${wool.location.x},${wool.location.y},${wool.location.z}`;
       if (!roomMap.has(key)) {
         roomMap.set(key, {
-          color:    wool.color,
-          location: { ...wool.location },
-          captures: [],
+          color:          wool.color,
+          location:       { ...wool.location },
+          captures:       [],
+          woolRoomRegion: wool.wool_room_region ?? null,
         });
+      } else if (roomMap.get(key).woolRoomRegion === null && wool.wool_room_region) {
+        // Take the first non-null region ID found for this location
+        roomMap.get(key).woolRoomRegion = wool.wool_room_region;
       }
       roomMap.get(key).captures.push({ team: wool.team, monument: wool.monument });
     }
@@ -88,6 +161,20 @@ export class ObjectivePanel {
     }
 
     return rooms;
+  }
+
+  /**
+   * Build the list of region IDs eligible to appear in the Room Region dropdown.
+   * Includes all regions except those in the "spawn" and "build" categories.
+   */
+  _deriveWoolRoomOptions(mapData) {
+    const cats = mapData.region_categories ?? {};
+    const excluded = new Set([
+      ...(cats.spawn ?? []),
+      ...(cats.build ?? []),
+    ]);
+    const allIds = Object.keys(mapData.regions ?? {});
+    return allIds.filter(id => !excluded.has(id)).sort();
   }
 
   // ── List rendering ──────────────────────────────────────────────────────────
@@ -124,6 +211,7 @@ export class ObjectivePanel {
     this._woolListEl.querySelectorAll(".obj-wool-row--selected")
       .forEach(el => el.classList.remove("obj-wool-row--selected"));
     rowEl.classList.add("obj-wool-row--selected");
+    this._selectedRoom = room;
     this._showInspector(room);
     this._onWoolSelect(room);
   }
@@ -178,17 +266,22 @@ export class ObjectivePanel {
   _showEmpty() {
     this._inspectorEl.hidden = true;
     this._emptyEl.hidden     = false;
+    this._selectedRoom       = null;
   }
 
   _showInspector(room) {
     this._emptyEl.hidden     = true;
     this._inspectorEl.hidden = false;
 
-    // Clone selects and delete button to clear stale listeners
+    // Clone interactive elements to clear stale listeners
     this._woolColorSelEl.replaceWith(this._woolColorSelEl.cloneNode(false));
     this._woolColorSelEl    = document.getElementById("obj-wool-color-sel");
     this._defenderSelEl.replaceWith(this._defenderSelEl.cloneNode(false));
     this._defenderSelEl     = document.getElementById("obj-defender-sel");
+    this._woolRoomSelEl.replaceWith(this._woolRoomSelEl.cloneNode(false));
+    this._woolRoomSelEl     = document.getElementById("obj-wool-room-sel");
+    this._woolRoomClearBtn.replaceWith(this._woolRoomClearBtn.cloneNode(true));
+    this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
     this._deleteWoolBtn.replaceWith(this._deleteWoolBtn.cloneNode(true));
     this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
 
@@ -213,6 +306,17 @@ export class ObjectivePanel {
       const team     = this._teams.find(t => t.id === selected);
       this._defenderSwatchEl.style.background = team ? chatColorHex(team.color) : "transparent";
       this._saveWoolDefender(room);
+    });
+
+    // ── Room region dropdown ────────────────────────────────────────────────
+    this._buildWoolRoomDropdown(room.woolRoomRegion);
+    this._woolRoomSelEl.addEventListener("change", () => {
+      const selected = this._woolRoomSelEl.value || null;
+      this._saveWoolRoom(room, selected);
+    });
+    this._woolRoomClearBtn.addEventListener("click", () => {
+      this._woolRoomSelEl.value = "";
+      this._saveWoolRoom(room, null);
     });
 
     // ── Location inputs ─────────────────────────────────────────────────────
@@ -245,6 +349,21 @@ export class ObjectivePanel {
       opt.disabled    = usedColors.has(color.value);
       this._woolColorSelEl.appendChild(opt);
     }
+  }
+
+  _buildWoolRoomDropdown(currentRegionId) {
+    this._woolRoomSelEl.innerHTML = "";
+    const noneOpt = document.createElement("option");
+    noneOpt.value       = "";
+    noneOpt.textContent = "— none —";
+    this._woolRoomSelEl.appendChild(noneOpt);
+    for (const regionId of this._woolRoomOptions) {
+      const opt = document.createElement("option");
+      opt.value       = regionId;
+      opt.textContent = regionId;
+      this._woolRoomSelEl.appendChild(opt);
+    }
+    this._woolRoomSelEl.value = currentRegionId ?? "";
   }
 
   _buildDefenderDropdown() {
@@ -361,6 +480,20 @@ export class ObjectivePanel {
       this._onWoolSave();
     } catch (err) {
       console.error("ObjectivePanel: failed to save wool defender:", err);
+    }
+  }
+
+  async _saveWoolRoom(room, regionId) {
+    if (!this._mapName || !room.captures.length) return;
+    try {
+      const capture = room.captures[0];
+      await api.updateWool(this._mapName, capture.team, room.color, {
+        wool_room_region: regionId,
+      });
+      room.woolRoomRegion = regionId;
+      this._onWoolSave();
+    } catch (err) {
+      console.error("ObjectivePanel: failed to save wool room region:", err);
     }
   }
 
