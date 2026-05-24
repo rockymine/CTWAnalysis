@@ -1524,15 +1524,16 @@ def create_app() -> Flask:
         chest_wool_count = 0
         block_wool_count = 0
         mob_spawners: list[dict] = []
+        layout_result: dict = {}
 
         room_bounds = _resolve_region_bounds(data, wool_room_region)
         if room_bounds is not None:
             min_x, min_z, max_x, max_z = room_bounds
             try:
-                result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
-                chest_wool_count = len(result.get("chest_wool",   []))
-                block_wool_count = len(result.get("block_wool",   []))
-                mob_spawners     = result.get("mob_spawners", [])
+                layout_result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
+                chest_wool_count = len(layout_result.get("chest_wool",   []))
+                block_wool_count = len(layout_result.get("block_wool",   []))
+                mob_spawners     = layout_result.get("mob_spawners", [])
             except Exception:
                 pass  # layout files may not exist; leave counts at zero
 
@@ -1565,13 +1566,55 @@ def create_app() -> Flask:
         else:
             respawn_type = "unknown"
 
+        # ── Renewables matching the wool room region ──────────────────────────
+        # Return any renewable rules whose region_id matches the wool room, plus
+        # any whose bounds_2d spatially contains a block_wool position.
+        all_renewables: list[dict] = data.get("renewables", [])
+        regions_dict: dict = data.get("regions", {})
+        relevant_renewables: list[dict] = []
+        seen_region_ids: set[str] = set()
+        for ren in all_renewables:
+            rid = ren.get("region_id", "")
+            if rid in seen_region_ids:
+                continue
+            matched = rid == wool_room_region
+            if not matched:
+                # Check whether any block_wool falls inside this region
+                region_bounds = regions_dict.get(rid, {}).get("bounds_2d")
+                if region_bounds:
+                    mn = region_bounds["min"]
+                    mx_ = region_bounds["max"]
+                    for bw in layout_result.get("block_wool", []):
+                        if mn["x"] <= bw["x"] <= mx_["x"] and mn["z"] <= bw["z"] <= mx_["z"]:
+                            matched = True
+                            break
+            if matched:
+                relevant_renewables.append(ren)
+                seen_region_ids.add(rid)
+
+        # ── Block-drop rules matching the wool room region ────────────────────
+        relevant_drop_rules: list[dict] = [
+            rule for rule in data.get("block_drop_rules", [])
+            if wool_room_region and rule.get("region_id") == wool_room_region
+        ]
+
+        # ── XML snippets ───────────────────────────────────────────────────────
+        wool_xml = _build_wool_xml(wool)
+        pgm_spawner_xml = _build_spawner_xml(matched_spawner) if matched_spawner else None
+
         return jsonify({
             "respawn_type":      respawn_type,
             "pgm_spawner":       matched_spawner,
+            "pgm_spawner_xml":   pgm_spawner_xml,
+            "chest_wool":        layout_result.get("chest_wool", []),
             "chest_wool_count":  chest_wool_count,
             "block_wool_count":  block_wool_count,
+            "mob_spawners":      mob_spawners,
             "mob_spawner_count": mob_spawner_count,
             "mob_entity_types":  mob_entity_types,
+            "renewables":        relevant_renewables,
+            "block_drop_rules":  relevant_drop_rules,
+            "wool_xml":          wool_xml,
         })
 
     return app
@@ -1596,6 +1639,66 @@ def _wool_color_to_damage(color: str) -> Optional[int]:
     # Handle names with spaces or underscores (e.g. 'light blue' → 'light_blue')
     normalized = color.lower().replace(' ', '_')
     return _WOOL_COLOR_DAMAGE.get(normalized)
+
+
+def _build_wool_xml(wool: dict) -> str:
+    """Return a reconstructed XML snippet for a wool entry."""
+    team  = wool.get("team", "")
+    color = wool.get("color", "").replace("_", " ")
+    wool_room_region = wool.get("wool_room_region")
+    location  = wool.get("location") or {}
+    monument  = wool.get("monument") or {}
+
+    lines: list[str] = [f'<wool team="{team}" color="{color}">']
+
+    if wool_room_region:
+        lines.append(f'  <block region="{wool_room_region}"/>')
+    elif location:
+        x, y, z = location.get("x", 0), location.get("y", 0), location.get("z", 0)
+        lines.append(f'  <!-- wool block at {x:.1f}, {y:.1f}, {z:.1f} -->')
+
+    if monument:
+        lines.append("  <monument>")
+        region_id = monument.get("region_id")
+        if region_id:
+            lines.append(f'    <block region="{region_id}"/>')
+        else:
+            mx = monument.get("x", 0)
+            my = monument.get("y", 0)
+            mz = monument.get("z", 0)
+            lines.append(f'    <block>{mx:.0f} {my:.0f} {mz:.0f}</block>')
+        lines.append("  </monument>")
+
+    lines.append("</wool>")
+    return "\n".join(lines)
+
+
+def _build_spawner_xml(spawner: dict) -> str:
+    """Return a reconstructed XML snippet for a PGM spawner entry."""
+    parts: list[str] = []
+    if spawn_region := spawner.get("spawn_region"):
+        parts.append(f'spawn-region="{spawn_region}"')
+    if player_region := spawner.get("player_region"):
+        parts.append(f'player-region="{player_region}"')
+    if (max_ent := spawner.get("max_entities")) is not None:
+        parts.append(f'max-entities="{max_ent}"')
+
+    items = spawner.get("items", [])
+    attr_str = " ".join(parts)
+
+    if not items:
+        return f"<spawner {attr_str}/>" if attr_str else "<spawner/>"
+
+    lines: list[str] = [f"<spawner {attr_str}>"]
+    for item in items:
+        iparts: list[str] = [f'material="{item.get("material", "")}"']
+        if (dmg := item.get("damage")) is not None:
+            iparts.append(f'damage="{dmg}"')
+        if (amt := item.get("amount")) is not None and amt != 1:
+            iparts.append(f'amount="{amt}"')
+        lines.append(f'  <item {" ".join(iparts)}/>')
+    lines.append("</spawner>")
+    return "\n".join(lines)
 
 
 def _resolve_region_bounds(

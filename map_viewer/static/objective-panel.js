@@ -15,6 +15,7 @@
 import { chatColorHex, dyeColorHex, MINECRAFT_DYE_COLORS } from "./game-colors.js";
 import * as api from "./api.js";
 
+
 export class ObjectivePanel {
   constructor(opts = {}) {
     const { onWoolSelect } = opts;
@@ -34,6 +35,9 @@ export class ObjectivePanel {
     this._woolRoomSelEl     = document.getElementById("obj-wool-room-sel");
     this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
     this._respawnBadgeEl    = document.getElementById("obj-respawn-badge");
+    this._respawnDetailEl   = document.getElementById("obj-respawn-detail");
+    this._woolXmlWrapEl     = document.getElementById("obj-wool-xml-wrap");
+    this._woolXmlEl         = document.getElementById("obj-wool-xml");
     this._locationEl        = document.getElementById("obj-inspector-location");
     this._capturesEl        = document.getElementById("obj-inspector-captures");
     this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
@@ -322,6 +326,9 @@ export class ObjectivePanel {
 
     // ── Respawn type (async — fetched from server) ──────────────────────────
     this._updateRespawnBadge("unknown");
+    this._respawnDetailEl.hidden = true;
+    this._respawnDetailEl.innerHTML = "";
+
     if (this._mapName && room.captures.length) {
       const { team, color } = { team: room.captures[0].team, color: room.color };
       api.fetchWoolRoomStatus(this._mapName, team, color)
@@ -331,10 +338,15 @@ export class ObjectivePanel {
               status.respawn_type ?? "unknown",
               status.mob_entity_types ?? [],
             );
+            this._buildRespawnDetail(status);
+            this._updateWoolXml?.(status.wool_xml);
           }
         })
         .catch(() => {});
     }
+
+    // ── Wool XML preview (built synchronously from room data + server XML) ──
+    this._buildWoolXmlPreview(room);
 
     // ── Location inputs ─────────────────────────────────────────────────────
     this._buildLocationInputs(room);
@@ -568,6 +580,159 @@ export class ObjectivePanel {
       label += ` (${mobEntityTypes.join(", ")})`;
     }
     el.textContent = label;
+  }
+
+  // ── Respawn detail card ──────────────────────────────────────────────────────
+
+  _buildRespawnDetail(status) {
+    const el = this._respawnDetailEl;
+    const type = status?.respawn_type ?? "unknown";
+
+    if (type === "unknown") {
+      el.hidden = true;
+      return;
+    }
+
+    el.hidden = false;
+    el.innerHTML = "";
+    el.className = `obj-respawn-detail obj-respawn-detail--${type}`;
+
+    const kv = (key, val) => {
+      if (val == null || val === "") return;
+      const row = document.createElement("div");
+      row.className = "obj-respawn-kv";
+      const k = document.createElement("span");
+      k.className = "obj-respawn-kv-key";
+      k.textContent = key;
+      const v = document.createElement("span");
+      v.className = "obj-respawn-kv-val";
+      v.textContent = String(val);
+      row.append(k, v);
+      el.appendChild(row);
+    };
+
+    const xml = (src) => {
+      if (!src) return;
+      const pre = document.createElement("pre");
+      pre.className = "detail-xml-pre";
+      pre.textContent = src;
+      el.appendChild(pre);
+    };
+
+    if (type === "chest") {
+      // Group chest wool by color; sum item counts, deduplicate chest positions by (x,y,z)
+      const byColor = new Map();
+      for (const item of status.chest_wool ?? []) {
+        const name = item.color_name ?? "wool";
+        if (!byColor.has(name)) byColor.set(name, { count: 0, positions: new Set() });
+        const entry = byColor.get(name);
+        entry.count += item.count ?? 0;
+        entry.positions.add(`${item.x},${item.y},${item.z}`);
+      }
+      if (byColor.size > 0) {
+        for (const [color, { count, positions }] of byColor) {
+          const n = positions.size;
+          kv(color, `×${count}  (${n} chest${n !== 1 ? "s" : ""})`);
+        }
+      } else {
+        kv("total", `${status.chest_wool_count} wool stack${status.chest_wool_count !== 1 ? "s" : ""}`);
+      }
+
+    } else if (type === "mob_spawner") {
+      const s = status.mob_spawners?.[0];
+      if (s) {
+        const itemLabel = s.spawn_item_id
+          ? s.spawn_item_id.replace("minecraft:", "") + (s.spawn_item_damage != null ? ` (dmg ${s.spawn_item_damage})` : "")
+          : (s.entity_id ?? "—");
+        kv("spawns", itemLabel);
+        if (s.spawn_count != null)        kv("per activation", s.spawn_count);
+        if (s.min_spawn_delay != null && s.max_spawn_delay != null)
+          kv("delay", `${s.min_spawn_delay}–${s.max_spawn_delay} ticks`);
+        if (s.spawn_range != null)            kv("spawn range", `${s.spawn_range} blocks`);
+        if (s.required_player_range != null)  kv("activation", `${s.required_player_range} blocks`);
+        if (s.max_nearby_entities != null)    kv("entity cap", s.max_nearby_entities);
+        if (status.mob_spawner_count > 1)     kv("spawners", status.mob_spawner_count);
+      }
+
+    } else if (type === "pgm_spawner") {
+      const s = status.pgm_spawner;
+      if (s) {
+        if (s.spawn_region)   kv("spawn region",  s.spawn_region);
+        if (s.player_region)  kv("player region", s.player_region);
+        if (s.max_entities != null) kv("max entities", s.max_entities);
+        for (const item of s.items ?? []) {
+          const dmgSuffix = item.damage != null ? ` (dmg ${item.damage})` : "";
+          const amtSuffix = (item.amount ?? 1) !== 1 ? ` ×${item.amount}` : "";
+          kv("item", `${item.material}${dmgSuffix}${amtSuffix}`);
+        }
+      }
+      xml(status.pgm_spawner_xml);
+
+    } else if (type === "renewable") {
+      for (const r of status.renewables ?? []) {
+        if (r.region_id)      kv("region",  r.region_id);
+        if (r.renew_filter)   kv("renew",   r.renew_filter);
+        if (r.replace_filter) kv("replace", r.replace_filter);
+        if (r.rate != null && r.rate !== 1.0) kv("rate", r.rate);
+      }
+      for (const rule of status.block_drop_rules ?? []) {
+        if (rule.filter_id)    kv("filter",      rule.filter_id);
+        if (rule.replacement)  kv("replacement", rule.replacement);
+        const items = rule.items ?? [];
+        if (items.length > 0) kv("drops", items.map(i => i.material).join(", "));
+      }
+    }
+  }
+
+  // ── Wool XML preview ─────────────────────────────────────────────────────────
+
+  _buildWoolXmlPreview(room) {
+    // Shown immediately (synchronous) using a client-side reconstruction.
+    // When the server response arrives it updates with the authoritative version.
+    const wrapEl = this._woolXmlWrapEl;
+    const xmlEl  = this._woolXmlEl;
+
+    // Build a client-side preview from what we already know
+    const team  = room.captures[0]?.team ?? "";
+    const color = (room.color ?? "").replace(/_/g, " ");
+    const region = room.woolRoomRegion ?? null;
+    const loc = room.location;
+    const mon = room.captures[0]?.monument;
+
+    const lines = [`<wool team="${team}" color="${color}">`];
+    if (region) {
+      lines.push(`  <block region="${region}"/>`);
+    } else if (loc) {
+      lines.push(`  <!-- location: ${loc.x?.toFixed(1)}, ${loc.y?.toFixed(1)}, ${loc.z?.toFixed(1)} -->`);
+    }
+    if (mon) {
+      lines.push("  <monument>");
+      if (mon.region_id) {
+        lines.push(`    <block region="${mon.region_id}"/>`);
+      } else if (mon.x != null) {
+        lines.push(`    <block>${Math.round(mon.x)} ${Math.round(mon.y ?? 0)} ${Math.round(mon.z)}</block>`);
+      }
+      lines.push("  </monument>");
+    }
+    lines.push("</wool>");
+
+    const pre = document.createElement("pre");
+    pre.className = "detail-xml-pre";
+    pre.textContent = lines.join("\n");
+    xmlEl.innerHTML = "";
+    xmlEl.appendChild(pre);
+    wrapEl.hidden = false;
+
+    // When the full status arrives, replace with the server's authoritative XML.
+    this._updateWoolXml = (woolXml) => {
+      if (woolXml && this._selectedRoom === room) {
+        const pre2 = document.createElement("pre");
+        pre2.className = "detail-xml-pre";
+        pre2.textContent = woolXml;
+        xmlEl.innerHTML = "";
+        xmlEl.appendChild(pre2);
+      }
+    };
   }
 
   // ── Monument capture card (read-only) ────────────────────────────────────────
