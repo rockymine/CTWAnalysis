@@ -308,6 +308,14 @@ export async function deleteWool(mapName, teamId, color) {
   return r.json();
 }
 
+export async function fetchWoolRoomStatus(mapName, teamId, color) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/wool/${encodeURIComponent(teamId)}/${encodeURIComponent(color)}/room-status`,
+  );
+  if (!r.ok) return null;
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,

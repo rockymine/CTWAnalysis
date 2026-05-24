@@ -33,6 +33,7 @@ export class ObjectivePanel {
     this._defenderSwatchEl  = document.getElementById("obj-defender-swatch");
     this._woolRoomSelEl     = document.getElementById("obj-wool-room-sel");
     this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
+    this._respawnBadgeEl    = document.getElementById("obj-respawn-badge");
     this._locationEl        = document.getElementById("obj-inspector-location");
     this._capturesEl        = document.getElementById("obj-inspector-captures");
     this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
@@ -319,6 +320,19 @@ export class ObjectivePanel {
       this._saveWoolRoom(room, null);
     });
 
+    // ── Respawn type (async — fetched from server) ──────────────────────────
+    this._updateRespawnBadge("unknown");
+    if (this._mapName && room.captures.length) {
+      const { team, color } = { team: room.captures[0].team, color: room.color };
+      api.fetchWoolRoomStatus(this._mapName, team, color)
+        .then(status => {
+          if (status && this._selectedRoom === room) {
+            this._updateRespawnBadge(status.respawn_type ?? "unknown");
+          }
+        })
+        .catch(() => {});
+    }
+
     // ── Location inputs ─────────────────────────────────────────────────────
     this._buildLocationInputs(room);
 
@@ -529,6 +543,23 @@ export class ObjectivePanel {
     } catch (err) {
       console.error("ObjectivePanel: failed to delete wool:", err);
     }
+  }
+
+  // ── Respawn badge ────────────────────────────────────────────────────────────
+
+  _updateRespawnBadge(type) {
+    const LABELS = {
+      chest:       "Chest",
+      pgm_spawner: "PGM Spawner",
+      mob_spawner: "Mob Spawner",
+      renewable:   "Renewable",
+      unknown:     "Unknown",
+    };
+    const el = this._respawnBadgeEl;
+    // Remove all respawn modifier classes
+    el.className = "obj-respawn-badge";
+    el.classList.add(`obj-respawn-${type}`);
+    el.textContent = LABELS[type] ?? type;
   }
 
   // ── Monument capture card (read-only) ────────────────────────────────────────

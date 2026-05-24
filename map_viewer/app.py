@@ -1459,7 +1459,149 @@ def create_app() -> Flask:
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True})
 
+    @app.route("/api/map/<name>/wool/<team_id>/<color>/room-status")
+    def wool_room_status(name: str, team_id: str, color: str):
+        """Return the respawn mechanism detected for a wool's room.
+
+        Checks (in priority order):
+          1. PGM spawner module  — <spawners> element in map_data.json
+          2. Mob spawner block   — block ID 52 in layout_resource_blocks.parquet
+          3. Renewable wool block — wool block in a <renewable> region
+          4. Chest wool          — wool item in a chest inside the room
+          5. unknown             — nothing detected
+
+        The wool room bounding box is derived from the wool's wool_room_region
+        field plus the region's bounds_2d stored in map_data.json.  If the
+        region has no resolvable bounds (mirror/translate maps), only the
+        XML-based checks (PGM spawner) are performed.
+
+        Returns:
+            {
+                "respawn_type": str,        # one of the five labels above
+                "pgm_spawner": dict | null, # spawner data if matched
+                "chest_wool_count": int,
+                "block_wool_count": int,
+                "mob_spawner_count": int,
+            }
+        """
+        from layout_analysis.wool_query import query_wool_in_region
+
+        out_dir   = _get_output_root() / name
+        data_path = out_dir / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.get("wools", [])
+
+        wool = next(
+            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
+            None,
+        )
+        if wool is None:
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        # ── 1. PGM spawner check (XML-only, no layout files needed) ──────────
+        wool_room_region = wool.get("wool_room_region")
+        matched_spawner  = None
+        wool_color_damage = _wool_color_to_damage(color)
+
+        for spawner in data.get("spawners", []):
+            # Match by player_region == wool_room_region
+            if wool_room_region and spawner.get("player_region") == wool_room_region:
+                matched_spawner = spawner
+                break
+            # Fallback: spawner items include this wool color
+            for item in spawner.get("items", []):
+                if (item.get("material", "").lower() == "wool"
+                        and item.get("damage") == wool_color_damage):
+                    matched_spawner = spawner
+                    break
+            if matched_spawner:
+                break
+
+        # ── 2-4. Layout-based checks (require layout parquet files) ──────────
+        chest_wool_count = 0
+        block_wool_count = 0
+        mob_spawner_count = 0
+
+        room_bounds = _resolve_region_bounds(data, wool_room_region)
+        if room_bounds is not None:
+            min_x, min_z, max_x, max_z = room_bounds
+            try:
+                result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
+                chest_wool_count  = len(result.get("chest_wool",   []))
+                block_wool_count  = len(result.get("block_wool",   []))
+                mob_spawner_count = len(result.get("mob_spawners", []))
+            except Exception:
+                pass  # layout files may not exist; leave counts at zero
+
+        # ── Determine primary respawn type by priority ────────────────────────
+        if matched_spawner:
+            respawn_type = "pgm_spawner"
+        elif mob_spawner_count > 0:
+            respawn_type = "mob_spawner"
+        elif block_wool_count > 0:
+            respawn_type = "renewable"
+        elif chest_wool_count > 0:
+            respawn_type = "chest"
+        else:
+            respawn_type = "unknown"
+
+        return jsonify({
+            "respawn_type":      respawn_type,
+            "pgm_spawner":       matched_spawner,
+            "chest_wool_count":  chest_wool_count,
+            "block_wool_count":  block_wool_count,
+            "mob_spawner_count": mob_spawner_count,
+        })
+
     return app
+
+
+# ---------------------------------------------------------------------------
+# Private helpers used only by app routes
+# ---------------------------------------------------------------------------
+
+# Wool dye color names → Minecraft damage values (same mapping as WOOL_COLORS
+# in wool_query.py but inverted).
+_WOOL_COLOR_DAMAGE: dict[str, int] = {
+    'white': 0, 'orange': 1, 'magenta': 2, 'light_blue': 3,
+    'yellow': 4, 'lime': 5, 'pink': 6, 'gray': 7,
+    'light_gray': 8, 'cyan': 9, 'purple': 10, 'blue': 11,
+    'brown': 12, 'green': 13, 'red': 14, 'black': 15,
+}
+
+
+def _wool_color_to_damage(color: str) -> Optional[int]:
+    """Return the Minecraft damage value for a wool color name, or None."""
+    # Handle names with spaces or underscores (e.g. 'light blue' → 'light_blue')
+    normalized = color.lower().replace(' ', '_')
+    return _WOOL_COLOR_DAMAGE.get(normalized)
+
+
+def _resolve_region_bounds(
+    data: dict,
+    region_id: Optional[str],
+) -> Optional[tuple[float, float, float, float]]:
+    """Return (min_x, min_z, max_x, max_z) for *region_id* from *data['regions']*.
+
+    Returns None if region_id is absent or the region has no bounds_2d.
+    """
+    if not region_id:
+        return None
+    region = data.get("regions", {}).get(region_id)
+    if region is None:
+        return None
+    bounds = region.get("bounds_2d")
+    if not bounds:
+        return None
+    return (
+        bounds["min"]["x"],
+        bounds["min"]["z"],
+        bounds["max"]["x"],
+        bounds["max"]["z"],
+    )
 
 
 if __name__ == "__main__":

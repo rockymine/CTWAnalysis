@@ -9,7 +9,10 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Optional
 
-from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule, WoolSpawner, SpawnerItem
+from .datatypes import (
+    MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule,
+    WoolSpawner, SpawnerItem, Renewable, BlockDropRule, BlockDropItem,
+)
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -125,6 +128,10 @@ class MapXMLParser:
 
         # Parse wool spawners (used for wool room detection downstream).
         data.spawners = self._parse_spawners()
+
+        # Parse renewables and block-drop rules.
+        data.renewables = self._parse_renewables()
+        data.block_drop_rules = self._parse_block_drop_rules()
 
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
@@ -521,6 +528,91 @@ class MapXMLParser:
             ))
 
         return spawners
+
+    def _parse_renewables(self) -> list[Renewable]:
+        """Parse all <renewable> elements from any <renewables> block.
+
+        Captures region reference, rate, renew-filter, replace-filter, and grow.
+        Filter values are stored as raw attribute strings; inline filter children
+        are not resolved (storing an empty string in that case).
+        """
+        renewables: list[Renewable] = []
+        for elem in self.root.findall('.//renewables/renewable'):
+            region_id = elem.get('region', '').strip()
+            if not region_id:
+                continue  # no region reference → cannot tie to a map area
+
+            rate_str = elem.get('rate', '1.0')
+            try:
+                rate = float(rate_str)
+            except ValueError:
+                rate = 1.0
+
+            # renew-filter and replace-filter can be attributes OR inline child elements.
+            # We only capture the attribute form here; inline children are left empty.
+            renew_filter   = elem.get('renew-filter',   '').strip()
+            replace_filter = elem.get('replace-filter', '').strip()
+            grow           = elem.get('grow', 'false').strip().lower() == 'true'
+
+            renewables.append(Renewable(
+                region_id=region_id,
+                rate=rate,
+                renew_filter=renew_filter,
+                replace_filter=replace_filter,
+                grow=grow,
+            ))
+
+        return renewables
+
+    def _parse_block_drop_rules(self) -> list[BlockDropRule]:
+        """Parse all <rule> elements from any <block-drops> block.
+
+        Each rule may have a region attribute, a filter attribute (or inline
+        filter child), a <replacement> child, and a <drops> child with <item>
+        sub-elements.  Only the region, filter, replacement, wrong-tool, and
+        drop items are captured; complex inline filter children are skipped
+        (filter stored as empty string in that case).
+        """
+        rules: list[BlockDropRule] = []
+        for elem in self.root.findall('.//block-drops/rule'):
+            region_id  = elem.get('region',     '').strip()
+            filter_id  = elem.get('filter',     '').strip()
+            wrong_tool = elem.get('wrong-tool', 'false').strip().lower() == 'true'
+
+            replacement_elem = elem.find('replacement')
+            replacement = (replacement_elem.text or '').strip() if replacement_elem is not None else ''
+
+            items: list[BlockDropItem] = []
+            drops_elem = elem.find('drops')
+            if drops_elem is not None:
+                for item_elem in drops_elem.findall('item'):
+                    material  = item_elem.get('material', '').strip()
+                    damage_str = item_elem.get('damage',  '0')
+                    amount_str = item_elem.get('amount',  '1')
+                    chance_str = item_elem.get('chance',  '1.0')
+                    try:
+                        damage = int(damage_str)
+                        amount = int(amount_str)
+                        chance = float(chance_str)
+                    except ValueError:
+                        damage, amount, chance = 0, 1, 1.0
+                    if material:
+                        items.append(BlockDropItem(
+                            material=material,
+                            damage=damage,
+                            amount=amount,
+                            chance=chance,
+                        ))
+
+            rules.append(BlockDropRule(
+                region_id=region_id,
+                filter_id=filter_id,
+                replacement=replacement,
+                wrong_tool=wrong_tool,
+                items=items,
+            ))
+
+        return rules
 
     def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""

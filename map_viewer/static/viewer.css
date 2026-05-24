@@ -1020,6 +1020,22 @@ body {
 #obj-draw-toolbar {
   display: flex; gap: 2px; margin-right: 8px;
 }
+
+/* Respawn badge — shown in the wool inspector */
+.obj-respawn-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.obj-respawn-unknown  { background: var(--bg-hover);  color: var(--text-muted); }
+.obj-respawn-chest    { background: #2a4a6a;          color: #7ec8f0; }
+.obj-respawn-pgm_spawner { background: #2a4a2a;       color: #7ed07e; }
+.obj-respawn-mob_spawner { background: #4a2a4a;       color: #d07ed0; }
+.obj-respawn-renewable   { background: #4a3a1a;       color: #d0aa5a; }
 #obj-cursor-coords {
   flex: 1; text-align: center;
   font-size: 12px; color: var(--text-muted);

@@ -27,6 +27,7 @@ DEFAULT_RESOURCE_BLOCKS: dict[int, str] = {
     35: 'wool',         # wool block — block_data 0-15 encodes color
     41: 'gold_block',
     42: 'iron_block',
+    52: 'mob_spawner',  # mob spawner — may be NBT-configured to drop wool items
     57: 'diamond_block',
 }
 

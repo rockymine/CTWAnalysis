@@ -112,6 +112,44 @@ class ApplyRule:
 
 
 @dataclass
+class Renewable:
+    """A <renewable> element that regenerates broken blocks inside a region.
+
+    In CTW maps, renewables are typically used for iron/gold block regeneration
+    at spawn areas.  The ``renew_filter`` and ``replace_filter`` fields are stored
+    as raw filter-ID strings (or empty when an inline filter child is used).
+    """
+    region_id: str = ""            # region attribute on the <renewable> element
+    rate: float = 1.0              # blocks regenerated per second
+    renew_filter: str = ""         # filter-id reference for which blocks regenerate
+    replace_filter: str = ""       # filter-id reference for what can be replaced
+    grow: bool = False             # whether regeneration spreads from existing blocks
+
+
+@dataclass
+class BlockDropItem:
+    """A single <item> inside a <block-drops> rule's <drops> child."""
+    material: str = ""
+    damage: int = 0
+    amount: int = 1
+    chance: float = 1.0
+
+
+@dataclass
+class BlockDropRule:
+    """A <rule> element inside a <block-drops> block.
+
+    Specifies custom drop behaviour (and optional block replacement) when a
+    block matching ``filter_id`` is broken inside ``region_id``.
+    """
+    region_id: str = ""            # region attribute (empty = global)
+    filter_id: str = ""            # filter attribute (which blocks trigger the rule)
+    replacement: str = ""          # material placed where the broken block was
+    wrong_tool: bool = False       # apply even when the wrong tool is used
+    items: list[BlockDropItem] = field(default_factory=list)
+
+
+@dataclass
 class MapData:
     """Complete map data."""
     name: str = ""
@@ -125,6 +163,8 @@ class MapData:
     observer_spawn: Optional[Spawn] = None
     wools: list[Wool] = field(default_factory=list)
     spawners: list[WoolSpawner] = field(default_factory=list)
+    renewables: list[Renewable] = field(default_factory=list)
+    block_drop_rules: list[BlockDropRule] = field(default_factory=list)
     regions: dict[str, Region] = field(default_factory=dict)
     apply_rules: list[ApplyRule] = field(default_factory=list)
     max_build_height: Optional[int] = None
