@@ -20,6 +20,7 @@ import { RegionSidebar }  from "./region-sidebar.js";
 import { RegionRegistry } from "./region-registry.js";
 import { RegionDetail }          from "./region-detail.js";
 import { deriveBoundsFromCoords } from "./region-types.js";
+import { createRegionHandlers }   from "./region-handlers.js";
 import * as api                   from "./api.js";
 import { DeletedRegionHistory }   from "./deleted-region-history.js";
 import { OverviewActivity }       from "./overview-activity.js";
@@ -115,6 +116,9 @@ const toolCylinderBtn = document.getElementById("tool-cylinder");
 const toolPointBtn    = document.getElementById("tool-point");
 const toolBlockBtn    = document.getElementById("tool-block");
 
+// Shared bounds/coords handlers — initialized after canvas + detail are ready.
+let regionHandlers = null;
+
 const canvas = new MapCanvas(
   document.getElementById("map-svg"),
   document.getElementById("svg-area"),
@@ -145,8 +149,8 @@ const canvas = new MapCanvas(
         setStatus(`Create region failed: ${err.message}`);
       }
     },
-    onBoundsChange: (node, bounds) => handleBoundsChange(node, bounds),
-    onBoundsSave:   (node, bounds) => handleBoundsSave(node, bounds),
+    onBoundsChange: (node, bounds) => regionHandlers.onBoundsChange(node, bounds),
+    onBoundsSave:   (node, bounds) => regionHandlers.onBoundsSave(node, bounds),
   },
 );
 
@@ -156,10 +160,10 @@ const deleteHistory = new DeletedRegionHistory({ onChange: renderHistory });
 const detail = new RegionDetail(
   document.getElementById("region-detail"),
   {
-    onBoundsChange:  (node, bounds) => handleBoundsChange(node, bounds),
-    onBoundsSave:    (node, bounds) => handleBoundsSave(node, bounds),
-    onCoordsChange:  (node, coords) => handleCoordsChange(node, coords),
-    onCoordsSave:    (node, coords) => handleCoordsSave(node, coords),
+    onBoundsChange:  (node, bounds) => regionHandlers.onBoundsChange(node, bounds),
+    onBoundsSave:    (node, bounds) => regionHandlers.onBoundsSave(node, bounds),
+    onCoordsChange:  (node, coords) => regionHandlers.onCoordsChange(node, coords),
+    onCoordsSave:    (node, coords) => regionHandlers.onCoordsSave(node, coords),
     onIdChange: (node, oldId, newId) => {
       registry.renameNode(oldId, newId);
       sidebar.renameNode(oldId, newId);
@@ -172,6 +176,15 @@ const detail = new RegionDetail(
     },
   },
 );
+
+// Initialize shared handlers now that canvas, detail, registry, deleteHistory are ready.
+regionHandlers = createRegionHandlers({
+  canvas,
+  registry,
+  detail,
+  getMapName: () => currentMap,
+  getHistory: () => deleteHistory,
+});
 
 const sidebar = new RegionSidebar(
   document.getElementById("region-list"),
@@ -462,48 +475,6 @@ function countRegions(groupsOrNodes) {
     else { if (item.id) n++; n += countRegions(item.children || []); }
   }
   return n;
-}
-
-// ── shared bounds handlers (used by detail panel and canvas resize) ───────
-
-function handleBoundsChange(node, bounds) {
-  canvas.updateRegionBounds(node, bounds);
-  detail.updateXmlPreview(node);
-  for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
-    canvas.updateRegionBounds(ancestor, ancestor.bounds);
-  }
-}
-
-function handleBoundsSave(node, bounds) {
-  if (!currentMap) return;
-  api.patchRegion(currentMap, node.id, bounds)
-    .then(() => deleteHistory.clearRedo())
-    .catch((err) => { console.error("Region save failed:", err); });
-}
-
-function handleCoordsChange(node, coords) {
-  const newBounds = deriveBoundsFromCoords(node.type, coords);
-  if (newBounds) {
-    node.bounds = newBounds;
-    canvas.updateRegionBounds(node, newBounds);
-    detail.updateXmlPreview(node);
-    for (const ancestor of registry.recomputeAncestorBounds(node.id)) {
-      canvas.updateRegionBounds(ancestor, ancestor.bounds);
-    }
-  }
-}
-
-function handleCoordsSave(node, coords) {
-  if (!currentMap) return;
-  api.updateRegionCoords(currentMap, node.id, coords)
-    .then(res => {
-      if (res.bounds) {
-        node.bounds = res.bounds;
-        canvas.updateRegionBounds(node, res.bounds);
-      }
-      deleteHistory.clearRedo();
-    })
-    .catch(err => console.error("Coord save failed:", err));
 }
 
 // ── region grouping ────────────────────────────────────────────────────────

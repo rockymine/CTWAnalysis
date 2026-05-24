@@ -13,8 +13,8 @@ import { MapCanvas }            from "./map-canvas.js";
 import { TeamsPanel }           from "./teams-panel.js";
 import { RegionRegistry }       from "./region-registry.js";
 import { DeletedRegionHistory } from "./deleted-region-history.js";
-import { deriveBoundsFromCoords } from "./region-types.js";
-import * as api                 from "./api.js";
+import { createRegionHandlers } from "./region-handlers.js";
+import * as api                from "./api.js";
 
 export class TeamsActivity {
   constructor({ onStatusChange } = {}) {
@@ -47,6 +47,7 @@ export class TeamsActivity {
 
     this._deleteHistory  = new DeletedRegionHistory();
     this._spawnLinkCache = new Map();  // root_id → spawn link payload saved before delete
+    this._handlers       = null;       // createRegionHandlers result — set in _initCanvas()
 
     // Panel — constructed after registry so we can pass routing callbacks.
     this._panel = new TeamsPanel({
@@ -112,6 +113,15 @@ export class TeamsActivity {
       onBoundsSave:   (node, bounds) => this._handleBoundsSave(node, bounds),
     });
 
+    // Create shared bounds/coords handlers now that canvas is available.
+    this._handlers = createRegionHandlers({
+      canvas:     this._canvas,
+      registry:   this._registry,
+      detail:     null,             // Teams has no XML-preview on bounds change
+      getMapName: () => this._mapName,
+      getHistory: () => this._deleteHistory,
+    });
+
     this._setTool("move");
     this._attachToolListeners();
     this._enableTools();
@@ -156,45 +166,13 @@ export class TeamsActivity {
     }
   }
 
-  // ── Bounds / coords handlers (mirror main.js patterns) ─────────────────────
+  // ── Bounds / coords handlers — delegated to createRegionHandlers() ─────────
+  // (see region-handlers.js; _handlers is set in _initCanvas() once canvas exists)
 
-  _handleBoundsChange(node, bounds) {
-    this._canvas.updateRegionBounds(node, bounds);
-    for (const ancestor of this._registry.recomputeAncestorBounds(node.id)) {
-      this._canvas.updateRegionBounds(ancestor, ancestor.bounds);
-    }
-  }
-
-  _handleBoundsSave(node, bounds) {
-    if (!this._mapName) return;
-    api.patchRegion(this._mapName, node.id, bounds)
-      .then(() => this._deleteHistory.clearRedo())
-      .catch(err => console.error("Teams: region save failed:", err));
-  }
-
-  _handleCoordsChange(node, coords) {
-    const newBounds = deriveBoundsFromCoords(node.type, coords);
-    if (newBounds) {
-      node.bounds = newBounds;
-      this._canvas.updateRegionBounds(node, newBounds);
-      for (const ancestor of this._registry.recomputeAncestorBounds(node.id)) {
-        this._canvas.updateRegionBounds(ancestor, ancestor.bounds);
-      }
-    }
-  }
-
-  _handleCoordsSave(node, coords) {
-    if (!this._mapName) return;
-    api.updateRegionCoords(this._mapName, node.id, coords)
-      .then(res => {
-        if (res.bounds) {
-          node.bounds = res.bounds;
-          this._canvas.updateRegionBounds(node, res.bounds);
-        }
-        this._deleteHistory.clearRedo();
-      })
-      .catch(err => console.error("Teams: coord save failed:", err));
-  }
+  _handleBoundsChange(node, bounds)  { this._handlers?.onBoundsChange(node, bounds); }
+  _handleBoundsSave(node, bounds)    { this._handlers?.onBoundsSave(node, bounds); }
+  _handleCoordsChange(node, coords)  { this._handlers?.onCoordsChange(node, coords); }
+  _handleCoordsSave(node, coords)    { this._handlers?.onCoordsSave(node, coords); }
 
   _handleRegionRename(node, oldId, newId) {
     this._registry.renameNode(oldId, newId);
