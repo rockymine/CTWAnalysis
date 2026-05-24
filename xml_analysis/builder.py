@@ -116,11 +116,12 @@ class MapXMLParser:
         # Parse spawns (team spawns + optional observer default spawn)
         data.spawns, data.observer_spawn = self._parse_spawns()
 
-        # Parse wools
-        data.wools = self._parse_wools()
-
-        # Parse regions and apply rules
+        # Parse regions and apply rules — must precede wools so that
+        # monument="region-id" attribute references can be resolved.
         data.regions, data.apply_rules = self._parse_regions()
+
+        # Parse wools, resolving monument region references against the regions dict.
+        data.wools = self._parse_wools(data.regions)
 
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
@@ -414,13 +415,17 @@ class MapXMLParser:
         ):
             data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
 
-    def _parse_wools(self) -> list[Wool]:
+    def _parse_wools(self, regions: dict[str, Region]) -> list[Wool]:
         """Parse wool elements.
 
         Handles maps with multiple top-level <wools team="..."> blocks (one per
         team) by iterating all of them with findall().  The team attribute on the
         outer <wools> element is passed as inherited_team so that <wool> children
         without their own team attribute still receive the correct team.
+
+        Monument coordinates are resolved from two XML forms:
+          - Inline child:  <monument><block>x,y,z</block></monument>
+          - Region ref:    monument="region-id"  (the region must be a block or point)
         """
         wools = []
         wools_elems = self.root.findall('wools')
@@ -433,20 +438,45 @@ class MapXMLParser:
                 wools_elem, outer_team
             ):
                 location = self._parse_coords(wool_elem.get('location', '0,0,0'))
-                monument_elem = wool_elem.find('monument/block')
-                monument = (0, 0, 0)
-                if monument_elem is not None and monument_elem.text:
-                    monument = self._parse_coords(monument_elem.text)
+                monument = self._resolve_monument(wool_elem, regions)
 
                 wool = Wool(
                     team=wool_elem.get('team', '') or inherited_team,
                     color=wool_elem.get('color', ''),
                     location=location,
-                    monument=monument
+                    monument=monument,
                 )
                 wools.append(wool)
 
         return wools
+
+    def _resolve_monument(
+        self, wool_elem: ET.Element, regions: dict[str, Region]
+    ) -> tuple[float, float, float]:
+        """Return the monument block coordinates for a <wool> element.
+
+        Checks (in order):
+          1. Inline <monument><block>x,y,z</block></monument> child.
+          2. Inline <monument><point>x,y,z</point></monument> child.
+          3. monument="region-id" attribute — looks up the region and reads its
+             x/y/z fields (BlockRegion or PointRegion).
+
+        Returns (0, 0, 0) if none of the above can be resolved.
+        """
+        # Form 1 & 2: inline child element
+        for tag in ('monument/block', 'monument/point'):
+            child = wool_elem.find(tag)
+            if child is not None and child.text:
+                return self._parse_coords(child.text)
+
+        # Form 3: region-id attribute
+        monument_ref = wool_elem.get('monument')
+        if monument_ref:
+            region = regions.get(monument_ref)
+            if region is not None and isinstance(region, (BlockRegion, PointRegion)):
+                return (region.x, region.y, region.z)
+
+        return (0, 0, 0)
 
     def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""
