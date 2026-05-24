@@ -54,16 +54,14 @@ def query_wool_in_region(
     all_block_wool = _find_block_wool(output_dir, min_x, min_z, max_x, max_z)
     mob_spawners = _find_mob_spawners(output_dir, min_x, min_z, max_x, max_z)
 
-    # Filter wool blocks to those inside a renewable region.  If no renewables
-    # are defined we return all wool blocks (conservative: shows the block exists).
+    # Filter wool blocks to those inside a renewable region.
+    # When no renewables are defined, return an empty list — a wool block without
+    # a renewal rule is not self-respawning, so it doesn't count as "renewable".
     renewable_bounds = _load_renewable_region_bounds(output_dir)
-    if renewable_bounds:
-        block_wool = [
-            w for w in all_block_wool
-            if _point_in_any_bounds(w['x'], w['z'], renewable_bounds)
-        ]
-    else:
-        block_wool = all_block_wool
+    block_wool = [
+        w for w in all_block_wool
+        if _point_in_any_bounds(w['x'], w['z'], renewable_bounds)
+    ] if renewable_bounds else []
 
     colors = sorted({r['color_name'] for r in chest_wool + block_wool})
     return {
