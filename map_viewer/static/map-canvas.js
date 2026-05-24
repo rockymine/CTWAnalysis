@@ -20,15 +20,7 @@
 
 import { buildTransform, buildInverseTransform, svgEl,
          ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
-
-const TEAM_FILL         = { blue: "#3b82f6", red: "#ef4444" };
-const TEAM_FILL_DEFAULT = "#6b7280";
-const WOOL_COLORS = {
-  orange: "#f97316", pink: "#ec4899", lime: "#84cc16", yellow: "#eab308",
-  cyan: "#06b6d4", purple: "#a855f7", white: "#f1f5f9", light_blue: "#38bdf8",
-  magenta: "#d946ef", gray: "#9ca3af", black: "#374151", brown: "#92400e",
-  green: "#22c55e", red: "#ef4444", blue: "#3b82f6",
-};
+import { chatColorHex, dyeColorHex } from "./game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
 const ZOOM_MIN    = 0.5;
@@ -645,7 +637,7 @@ export class MapCanvas {
     for (const island of (this.#ctx.islands || [])) {
       const poly = island.simplified_polygon;
       if (!poly?.exterior?.length) continue;
-      const color = TEAM_FILL_DEFAULT;
+      const color = "#6b7280";
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
         fill: color, stroke: darkenHex(color), "stroke-width": "1.2", "fill-rule": "evenodd",
@@ -705,7 +697,7 @@ export class MapCanvas {
       const p = this.#toSvg(spawn.x, spawn.z);
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
-        "font-size": "12", fill: TEAM_FILL[spawn.team_color] || "#f1f5f9", "font-weight": "bold",
+        "font-size": "12", fill: chatColorHex(spawn.team_color), "font-weight": "bold",
       });
       t.textContent = "★";
       g.appendChild(t);
@@ -721,7 +713,7 @@ export class MapCanvas {
       const p = this.#toSvg(wool.x, wool.z);
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
-        "font-size": "11", fill: WOOL_COLORS[wool.color] || "#f1c40f",
+        "font-size": "11", fill: dyeColorHex(wool.wool_color),
       });
       t.textContent = "◆";
       g.appendChild(t);
