@@ -187,10 +187,15 @@ def _find_block_wool(output_dir: Path, min_x: float, min_z: float, max_x: float,
 
 
 def _find_mob_spawners(output_dir: Path, min_x: float, min_z: float, max_x: float, max_z: float) -> list[dict]:
-    """Return mob spawner blocks (resource_type='mob_spawner') in the bbox.
+    """Return wool-spawning mob spawners in the bbox.
 
-    Only present in layout_resource_blocks.parquet files generated after
-    mob_spawner (block ID 52) was added to DEFAULT_RESOURCE_BLOCKS.
+    A spawner only qualifies if:
+      - Its position is within the bbox (from layout_resource_blocks.parquet), AND
+      - layout_tile_entities.parquet confirms ``spawns_wool == True``.
+
+    When layout_tile_entities.parquet is absent (older pipeline outputs without
+    the TileEntityExtractor run), ALL spawners in the bbox are returned as a
+    conservative fallback — the caller is responsible for noting the uncertainty.
     """
     path = output_dir / 'layout_resource_blocks.parquet'
     if not path.exists():
@@ -198,15 +203,70 @@ def _find_mob_spawners(output_dir: Path, min_x: float, min_z: float, max_x: floa
     df = pd.read_parquet(path)
     if 'resource_type' not in df.columns:
         return []
-    spawners = _bbox_filter(df[df['resource_type'] == 'mob_spawner'], min_x, min_z, max_x, max_z)
+    in_bbox = _bbox_filter(df[df['resource_type'] == 'mob_spawner'], min_x, min_z, max_x, max_z)
+    if in_bbox.empty:
+        return []
+
+    # Enrich with tile entity NBT data, filtering to wool-spawning spawners only
+    te_lookup: dict[tuple[int, int, int], dict] = _load_tile_entity_lookup(output_dir)
+    te_data_available = bool(te_lookup)
+
     results = []
-    for _, row in spawners.iterrows():
-        results.append({
-            'x': int(row['world_x']),
-            'z': int(row['world_z']),
-            'y': int(row['y']),
-        })
+    for _, row in in_bbox.iterrows():
+        wx, wz, wy = int(row['world_x']), int(row['world_z']), int(row['y'])
+        nbt = te_lookup.get((wx, wz, wy))
+
+        if te_data_available:
+            # Filter: only include this spawner if it spawns wool items
+            if nbt is None or not nbt.get('spawns_wool', False):
+                continue
+
+        entry: dict = {'x': wx, 'z': wz, 'y': wy}
+        if nbt:
+            entry.update(nbt)
+        results.append(entry)
     return results
+
+
+def _load_tile_entity_lookup(
+    output_dir: Path,
+) -> dict[tuple[int, int, int], dict]:
+    """Load layout_tile_entities.parquet and return a (x, z, y) → NBT-fields dict.
+
+    Returns an empty dict if the parquet is absent (older pipeline outputs).
+    """
+    te_path = output_dir / 'layout_tile_entities.parquet'
+    if not te_path.exists():
+        return {}
+    try:
+        df = pd.read_parquet(te_path)
+    except Exception:
+        return {}
+
+    nbt_cols = [
+        'entity_id', 'spawns_wool', 'spawn_item_id', 'spawn_item_damage',
+        'spawn_count', 'spawn_range',
+        'min_spawn_delay', 'max_spawn_delay',
+        'required_player_range', 'max_nearby_entities',
+    ]
+    lookup: dict[tuple[int, int, int], dict] = {}
+    for _, row in df.iterrows():
+        key = (int(row['world_x']), int(row['world_z']), int(row['y']))
+        entry = {}
+        for col in nbt_cols:
+            if col in df.columns:
+                val = row[col]
+                # Convert pandas NA / numpy int64 to plain Python types
+                if isinstance(val, bool):
+                    entry[col] = val
+                elif pd.isna(val):
+                    entry[col] = None
+                elif hasattr(val, 'item'):
+                    entry[col] = val.item()
+                else:
+                    entry[col] = val
+        lookup[key] = entry
+    return lookup
 
 
 def _find_all_resource_blocks(output_dir: Path, min_x: float, min_z: float, max_x: float, max_z: float) -> list[dict]:

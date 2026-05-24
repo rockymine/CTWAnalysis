@@ -1523,18 +1523,35 @@ def create_app() -> Flask:
         # ── 2-4. Layout-based checks (require layout parquet files) ──────────
         chest_wool_count = 0
         block_wool_count = 0
-        mob_spawner_count = 0
+        mob_spawners: list[dict] = []
 
         room_bounds = _resolve_region_bounds(data, wool_room_region)
         if room_bounds is not None:
             min_x, min_z, max_x, max_z = room_bounds
             try:
                 result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
-                chest_wool_count  = len(result.get("chest_wool",   []))
-                block_wool_count  = len(result.get("block_wool",   []))
-                mob_spawner_count = len(result.get("mob_spawners", []))
+                chest_wool_count = len(result.get("chest_wool",   []))
+                block_wool_count = len(result.get("block_wool",   []))
+                mob_spawners     = result.get("mob_spawners", [])
             except Exception:
                 pass  # layout files may not exist; leave counts at zero
+
+        mob_spawner_count = len(mob_spawners)
+
+        # Collect a human-readable label per spawner type.
+        # For Item-entity spawners (wool drops) prefer spawn_item_id over entity_id.
+        mob_entity_labels: set[str] = set()
+        for s in mob_spawners:
+            item_id = s.get("spawn_item_id")  # e.g. 'minecraft:wool'
+            entity_id = s.get("entity_id")    # e.g. 'Item', 'Zombie'
+            if item_id:
+                label = item_id.replace("minecraft:", "")
+            elif entity_id:
+                label = entity_id
+            else:
+                continue
+            mob_entity_labels.add(label)
+        mob_entity_types: list[str] = sorted(mob_entity_labels)
 
         # ── Determine primary respawn type by priority ────────────────────────
         if matched_spawner:
@@ -1554,6 +1571,7 @@ def create_app() -> Flask:
             "chest_wool_count":  chest_wool_count,
             "block_wool_count":  block_wool_count,
             "mob_spawner_count": mob_spawner_count,
+            "mob_entity_types":  mob_entity_types,
         })
 
     return app

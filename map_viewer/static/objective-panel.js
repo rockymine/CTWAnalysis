@@ -327,7 +327,10 @@ export class ObjectivePanel {
       api.fetchWoolRoomStatus(this._mapName, team, color)
         .then(status => {
           if (status && this._selectedRoom === room) {
-            this._updateRespawnBadge(status.respawn_type ?? "unknown");
+            this._updateRespawnBadge(
+              status.respawn_type ?? "unknown",
+              status.mob_entity_types ?? [],
+            );
           }
         })
         .catch(() => {});
@@ -547,7 +550,7 @@ export class ObjectivePanel {
 
   // ── Respawn badge ────────────────────────────────────────────────────────────
 
-  _updateRespawnBadge(type) {
+  _updateRespawnBadge(type, mobEntityTypes = []) {
     const LABELS = {
       chest:       "Chest",
       pgm_spawner: "PGM Spawner",
@@ -559,7 +562,12 @@ export class ObjectivePanel {
     // Remove all respawn modifier classes
     el.className = "obj-respawn-badge";
     el.classList.add(`obj-respawn-${type}`);
-    el.textContent = LABELS[type] ?? type;
+
+    let label = LABELS[type] ?? type;
+    if (type === "mob_spawner" && mobEntityTypes.length > 0) {
+      label += ` (${mobEntityTypes.join(", ")})`;
+    }
+    el.textContent = label;
   }
 
   // ── Monument capture card (read-only) ────────────────────────────────────────
