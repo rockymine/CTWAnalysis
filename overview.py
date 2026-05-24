@@ -1,26 +1,46 @@
-import ast, os, json
+import ast
+import json
+import os
+from pathlib import Path
 
-IGNORE = (".venv", "__pycache__", ".git", "site-packages")
+IGNORE_DIRS = {
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+    ".claude",
+    "site-packages",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "output",
+    "map_folders",
+}
+
+OUTPUT_FILE = Path("docs/api_index.json")
 
 api = []
 
-for root, _, files in os.walk("."):
-    if any(x in root for x in IGNORE):
-        continue
-    for f in files:
-        if not f.endswith(".py"):
+for root, dirs, files in os.walk("."):
+    # Prevent os.walk from descending into ignored directories.
+    dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+
+    for filename in files:
+        if not filename.endswith(".py"):
             continue
-        path = os.path.join(root, f)
+
+        path = Path(root) / filename
 
         try:
-            tree = ast.parse(open(path, "r", encoding="utf8").read())
+            source = path.read_text(encoding="utf8")
+            tree = ast.parse(source)
         except Exception:
             continue
 
         entry = {
-            "file": path.replace("\\", "/"),
+            "file": path.as_posix(),
             "functions": [],
-            "classes": []
+            "classes": [],
         }
 
         for node in tree.body:
@@ -28,27 +48,31 @@ for root, _, files in os.walk("."):
                 entry["functions"].append({
                     "name": node.name,
                     "args": [a.arg for a in node.args.args],
-                    "returns": ast.unparse(node.returns) if node.returns else None
+                    "returns": ast.unparse(node.returns) if node.returns else None,
                 })
 
             elif isinstance(node, ast.ClassDef):
                 cls = {
                     "name": node.name,
-                    "methods": []
+                    "methods": [],
                 }
-                for m in node.body:
-                    if isinstance(m, ast.FunctionDef):
+
+                for method in node.body:
+                    if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         cls["methods"].append({
-                            "name": m.name,
-                            "args": [a.arg for a in m.args.args],
-                            "returns": ast.unparse(m.returns) if m.returns else None
+                            "name": method.name,
+                            "args": [a.arg for a in method.args.args],
+                            "returns": ast.unparse(method.returns) if method.returns else None,
                         })
+
                 entry["classes"].append(cls)
 
         if entry["functions"] or entry["classes"]:
             api.append(entry)
 
-with open("docs/api_index.json", "w", encoding="utf8") as f:
+OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+with OUTPUT_FILE.open("w", encoding="utf8") as f:
     json.dump(api, f, indent=2)
 
-print("Wrote docs/api_index.json")
+print(f"Wrote {OUTPUT_FILE}")
