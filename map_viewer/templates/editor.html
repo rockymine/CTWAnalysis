@@ -36,7 +36,7 @@
     <button class="activity-btn" id="activity-teams" title="Teams" disabled data-status="">
       <i data-lucide="users"></i>
     </button>
-    <button class="activity-btn" disabled title="Objective">
+    <button class="activity-btn" id="activity-objective" title="Objective" disabled>
       <i data-lucide="goal"></i>
     </button>
     <button class="activity-btn" id="activity-regions" title="Regions">
@@ -255,6 +255,77 @@
 
     </div>
 
+    <!-- Objective workspace -->
+    <div id="obj-workspace" hidden>
+
+      <!-- Left panel: wool list grouped by team -->
+      <div id="obj-left">
+        <div class="pt-section-header">
+          <h2 class="ov-section-title">Wools</h2>
+        </div>
+        <div id="obj-wool-list"></div>
+      </div>
+
+      <div class="sidebar-handle" id="obj-left-handle"></div>
+
+      <!-- Canvas: map overview with wool / monument POI markers -->
+      <div id="obj-canvas-wrap">
+        <div id="obj-canvas-subbar">
+          <div id="obj-cursor-coords"></div>
+          <div id="obj-canvas-subbar-right">
+            <span id="obj-zoom-level">—</span>
+          </div>
+        </div>
+        <div id="obj-svg-area">
+          <svg id="obj-map-svg" xmlns="http://www.w3.org/2000/svg">
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                  fill="#334155" font-size="14">Loading map…</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="sidebar-handle" id="obj-right-handle"></div>
+
+      <!-- Right panel: wool inspector -->
+      <div id="obj-right">
+        <div id="obj-right-scroll">
+
+          <!-- Empty state -->
+          <div id="obj-inspector-empty">
+            <p class="pt-empty-msg">Select a wool to inspect.</p>
+          </div>
+
+          <!-- Wool inspector (shown on selection) -->
+          <div id="obj-wool-inspector" hidden>
+            <div class="ov-section">
+              <!-- Title: wool swatch + color name -->
+              <div class="obj-wool-title-row">
+                <span id="obj-inspector-swatch" class="obj-wool-swatch-lg"></span>
+                <span id="obj-inspector-title" class="obj-inspector-title-text"></span>
+              </div>
+              <!-- Defending team -->
+              <div class="ov-field">
+                <label class="ov-label">Defended by</label>
+                <div id="obj-inspector-defender" class="obj-defender-row"></div>
+              </div>
+              <!-- Shared wool spawn location -->
+              <div class="ov-field">
+                <label class="ov-label">Location</label>
+                <div id="obj-inspector-location" class="obj-coords-block"></div>
+              </div>
+              <!-- Per-team monument captures -->
+              <div class="ov-field">
+                <label class="ov-label">Monument Captures</label>
+                <div id="obj-inspector-captures" class="obj-captures-list"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
     <!-- Regions workspace -->
     <div id="regions-workspace" hidden>
       <div id="layers">
@@ -358,6 +429,8 @@
   initSidebarResize(document.getElementById('ov-right-handle'), document.getElementById('ov-right'), 'right', 180, 420);
   initSidebarResize(document.getElementById('pt-left-handle'),  document.getElementById('pt-left'),  'left',  180, 420);
   initSidebarResize(document.getElementById('pt-right-handle'), document.getElementById('pt-right'), 'right', 240, 480);
+  initSidebarResize(document.getElementById('obj-left-handle'),  document.getElementById('obj-left'),  'left',  160, 400);
+  initSidebarResize(document.getElementById('obj-right-handle'), document.getElementById('obj-right'), 'right', 220, 460);
 }());
 </script>
 </body>

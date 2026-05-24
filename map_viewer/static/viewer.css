@@ -41,6 +41,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 body {
   font-family: ui-monospace, monospace; font-size: 14px;
   background: var(--bg-base); color: var(--text-bright);
@@ -952,4 +953,177 @@ body {
 #pt-spawn-assignment {
   border-top: 1px solid var(--border);
   margin-top: 0;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Objective workspace (3-column layout)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+#obj-workspace {
+  display: flex; flex-direction: row;
+  flex: 1; overflow: hidden;
+}
+
+/* ── Left panel: wool list ── */
+#obj-left {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-wool-list {
+  flex: 1; overflow-y: auto;
+  padding: 4px 0;
+}
+
+
+.obj-team-dot {
+  width: 10px; height: 10px; flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,.15);
+}
+
+/* ── Wool list: wool rows ── */
+.obj-wool-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px; min-height: 34px;
+  cursor: pointer; user-select: none;
+  border-bottom: 1px solid transparent;
+}
+.obj-wool-row:hover           { background: var(--bg-selected); }
+.obj-wool-row--selected       { background: var(--bg-selected); }
+.obj-wool-swatch {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.12);
+  display: inline-block;
+}
+.obj-wool-label {
+  flex: 1; min-width: 0;
+  font-size: 13px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Canvas ── */
+#obj-canvas-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg-deep);
+}
+#obj-canvas-subbar {
+  display: flex; align-items: center;
+  height: 36px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+}
+#obj-cursor-coords {
+  flex: 1; text-align: center;
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  user-select: none;
+}
+#obj-canvas-subbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+}
+#obj-zoom-level {
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  min-width: 40px; text-align: right;
+}
+#obj-svg-area {
+  flex: 1; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 12px;
+}
+#obj-map-svg { max-width: 100%; max-height: 100%; cursor: default; }
+
+/* ── Right panel: wool inspector ── */
+#obj-right {
+  width: 260px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-right-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* Inspector empty state */
+#obj-inspector-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+}
+
+/* Inspector: defending team row */
+.obj-defender-row {
+  display: flex; align-items: center; gap: 6px;
+}
+.obj-defender-name {
+  font-size: 12px; color: var(--text-primary);
+}
+
+/* Inspector: title row — large swatch + wool name */
+.obj-wool-title-row {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.obj-wool-swatch-lg {
+  width: 16px; height: 16px; flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.15);
+  display: inline-block;
+}
+.obj-inspector-title-text {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+}
+
+/* Inspector: team name (reused in list headers + capture cards) */
+.obj-team-name { flex: 1; font-size: 12px; color: var(--text-secondary); }
+
+/* Inspector: monument captures list */
+.obj-captures-list {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-top: 2px;
+}
+.obj-capture-card {
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 8px;
+}
+.obj-capture-header {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 4px;
+}
+/* Monument coords are indented under the team name */
+.obj-capture-monument {
+  padding-left: 16px;
+}
+
+/* Inspector: XYZ coordinate rows */
+.obj-coords-block {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 2px 0;
+}
+.obj-coord-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px;
+}
+.obj-coord-axis {
+  width: 14px; font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; color: var(--text-muted);
+  user-select: none; text-align: right;
+}
+.obj-coord-value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inspector: monument region_id reference */
+.obj-region-id {
+  font-family: ui-monospace, monospace;
+  font-size: 12px; color: var(--code-color);
+  word-break: break-all;
 }
