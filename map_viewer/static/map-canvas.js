@@ -80,8 +80,9 @@ export class MapCanvas {
   #buildLayerEl   = null;
   #blockLayerEl   = null;  // <g id="layer-blocks"> for top-surface image
   #islandLayerEl  = null;  // <g id="layer-islands"> — fill toggled when blocks shown
-  #spawnLayerEl   = null;
-  #woolLayerEl    = null;
+  #spawnLayerEl    = null;
+  #woolLayerEl     = null;
+  #monumentLayerEl = null;
   #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
   #drawLayerEl    = null;  // <g id="layer-draw"> for draw-tool preview
   #addedNodes     = [];    // nodes added via addRegion() not yet in #groups; re-included on repaint
@@ -153,8 +154,9 @@ export class MapCanvas {
 
   setPoisVisible(v) {
     this.#showPois = v;
-    if (this.#spawnLayerEl) this.#spawnLayerEl.style.display = v ? "" : "none";
-    if (this.#woolLayerEl)  this.#woolLayerEl.style.display  = v ? "" : "none";
+    if (this.#spawnLayerEl)    this.#spawnLayerEl.style.display    = v ? "" : "none";
+    if (this.#woolLayerEl)     this.#woolLayerEl.style.display     = v ? "" : "none";
+    if (this.#monumentLayerEl) this.#monumentLayerEl.style.display = v ? "" : "none";
   }
 
   setBuildVisible(v) {
@@ -368,6 +370,7 @@ export class MapCanvas {
     viewport.appendChild(this.#buildIslands());
     viewport.appendChild(this.#buildSpawnLayer());
     viewport.appendChild(this.#buildWoolLayer());
+    viewport.appendChild(this.#buildMonumentLayer());
     viewport.appendChild(this.#buildXmlRegions());
     viewport.appendChild(this.#buildAnchorLayer());
     viewport.appendChild(this.#buildDrawLayer());
@@ -716,6 +719,22 @@ export class MapCanvas {
         "font-size": "11", fill: dyeColorHex(wool.wool_color),
       });
       t.textContent = "◆";
+      g.appendChild(t);
+    }
+    return g;
+  }
+
+  #buildMonumentLayer() {
+    const g = svgEl("g", { id: "layer-monuments" });
+    this.#monumentLayerEl = g;
+    if (!this.#showPois) g.style.display = "none";
+    for (const mon of (this.#ctx.monuments || [])) {
+      const p = this.#toSvg(mon.x, mon.z);
+      const t = svgEl("text", {
+        x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
+        "font-size": "13", fill: dyeColorHex(mon.wool_color),
+      });
+      t.textContent = "⊕";
       g.appendChild(t);
     }
     return g;

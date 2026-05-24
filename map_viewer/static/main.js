@@ -10,10 +10,11 @@
  *   - Shared UI: breadcrumb, status bar, window resize
  */
 
-import { OverviewActivity } from "./overview-activity.js";
-import { RegionsActivity }  from "./regions-activity.js";
-import { TeamsActivity }    from "./teams-activity.js";
-import * as api             from "./api.js";
+import { OverviewActivity }   from "./overview-activity.js";
+import { RegionsActivity }    from "./regions-activity.js";
+import { TeamsActivity }      from "./teams-activity.js";
+import { ObjectiveActivity }  from "./objective-activity.js";
+import * as api               from "./api.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
 
@@ -32,9 +33,10 @@ function setBreadcrumb(name, version) {
 
 // ── Activity setup ────────────────────────────────────────────────────────────
 
-const activityBtns = document.querySelectorAll(".activity-btn");
-const overviewBtn  = document.getElementById("activity-overview");
-const teamsBtn     = document.getElementById("activity-teams");
+const activityBtns  = document.querySelectorAll(".activity-btn");
+const overviewBtn   = document.getElementById("activity-overview");
+const teamsBtn      = document.getElementById("activity-teams");
+const objectiveBtn  = document.getElementById("activity-objective");
 
 const ACTIVITIES = {
   "activity-overview": new OverviewActivity({
@@ -43,6 +45,7 @@ const ACTIVITIES = {
   "activity-teams": new TeamsActivity({
     onStatusChange: (dotStatus) => { teamsBtn.dataset.status = dotStatus ?? ""; },
   }),
+  "activity-objective": new ObjectiveActivity(),
   "activity-regions": new RegionsActivity({ setStatus }),
 };
 
@@ -57,8 +60,9 @@ function switchActivity(id) {
   requestAnimationFrame(() => ACTIVITIES[id].resize());
 }
 
-overviewBtn.addEventListener("click", () => { if (!overviewBtn.disabled) switchActivity("activity-overview"); });
-teamsBtn.addEventListener("click",    () => { if (!teamsBtn.disabled)    switchActivity("activity-teams"); });
+overviewBtn.addEventListener("click",   () => { if (!overviewBtn.disabled)  switchActivity("activity-overview"); });
+teamsBtn.addEventListener("click",     () => { if (!teamsBtn.disabled)     switchActivity("activity-teams"); });
+objectiveBtn.addEventListener("click", () => { if (!objectiveBtn.disabled) switchActivity("activity-objective"); });
 document.getElementById("activity-regions").addEventListener("click", () => switchActivity("activity-regions"));
 
 // ── Export button ─────────────────────────────────────────────────────────────
@@ -84,16 +88,18 @@ exportBtn.addEventListener("click", async () => {
 
 async function loadMap(name) {
   currentMap = name;
-  exportBtn.disabled   = true;
-  overviewBtn.disabled = true;
-  teamsBtn.disabled    = true;
+  exportBtn.disabled    = true;
+  overviewBtn.disabled  = true;
+  teamsBtn.disabled     = true;
+  objectiveBtn.disabled = true;
   setStatus("Loading…");
   try {
     const ctx = await api.fetchContext(name);
     setBreadcrumb(ctx.map_name, ctx.map_version);
-    exportBtn.disabled   = false;
-    overviewBtn.disabled = false;
-    teamsBtn.disabled    = false;
+    exportBtn.disabled    = false;
+    overviewBtn.disabled  = false;
+    teamsBtn.disabled     = false;
+    objectiveBtn.disabled = false;
     setStatus("");
     // Activate the current activity now that the map name is known.
     // Each activity handles its own data fetching internally.
