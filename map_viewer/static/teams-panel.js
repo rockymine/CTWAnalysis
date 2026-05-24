@@ -142,6 +142,14 @@ export class TeamsPanel {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  /**
+   * Returns the currently-selected spawn region id, or null.
+   * Preferred over accessing _selectedSpawnId directly from outside this class.
+   */
+  getSelectedRegionId() {
+    return this._selectedSpawnId;
+  }
+
   /** Load all teams + spawn data for the given map. */
   async load(mapName) {
     this._mapName = mapName;
@@ -521,34 +529,39 @@ export class TeamsPanel {
     this._spawnYawInput.value = spawnLink?.yaw  ?? 0;
     this._spawnKitInput.value = spawnLink?.kit  ?? "";
 
-    const saveSpawn = async () => { await this._saveSpawn(regionId); };
-    this._spawnTeamSel.addEventListener("change", saveSpawn);
-    this._spawnYawInput.addEventListener("blur", saveSpawn);
-    this._spawnKitInput.addEventListener("blur", saveSpawn);
-    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId));
-
-    // Create spawn link on first team assignment if none exists yet
-    if (!spawnLink) {
-      this._spawnTeamSel.addEventListener("change", async () => {
-        if (!this._spawnForRegion(regionId)) {
-          try {
-            await api.addSpawn(this._mapName, {
-              region_id: regionId,
-              team:      this._spawnTeamSel.value,
-              yaw:       parseFloat(this._spawnYawInput.value) || 0,
-              kit:       this._spawnKitInput.value.trim(),
-            });
-            const mapData = await api.fetchMapData(this._mapName);
-            this._spawns = mapData.spawns ?? [];
-            this._renderSpawnList();
-            this._highlightSpawnRow(regionId);
-            this._updateStatusDot();
-          } catch (err) {
-            console.error("Failed to create spawn link:", err);
-          }
+    // Single change listener: creates the spawn link on first assignment if none
+    // exists yet, then saves on subsequent changes.  A single handler avoids the
+    // dual-listener race where both listeners would call api.addSpawn if saveSpawn
+    // were ever extended to handle the no-link case.
+    const onTeamChange = async () => {
+      if (!this._spawnForRegion(regionId)) {
+        // No link yet — create it
+        try {
+          await api.addSpawn(this._mapName, {
+            region_id: regionId,
+            team:      this._spawnTeamSel.value,
+            yaw:       parseFloat(this._spawnYawInput.value) || 0,
+            kit:       this._spawnKitInput.value.trim(),
+          });
+          const mapData = await api.fetchMapData(this._mapName);
+          this._spawns = mapData.spawns ?? [];
+          this._renderSpawnList();
+          this._highlightSpawnRow(regionId);
+          this._updateStatusDot();
+        } catch (err) {
+          console.error("Failed to create spawn link:", err);
         }
-      }, { once: true });
-    }
+      } else {
+        // Link exists — save normally
+        await this._saveSpawn(regionId);
+      }
+    };
+    this._spawnTeamSel.addEventListener("change", onTeamChange);
+
+    const saveSpawn = async () => { await this._saveSpawn(regionId); };
+    this._spawnYawInput.addEventListener("blur",  saveSpawn);
+    this._spawnKitInput.addEventListener("blur",  saveSpawn);
+    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId));
   }
 
   // ── Private: rename handling ───────────────────────────────────────────────

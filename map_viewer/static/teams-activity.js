@@ -313,9 +313,10 @@ export class TeamsActivity {
       if (e.key === "Escape") this._setTool("move");
 
       // Delete selected spawn region
-      if ((e.key === "Delete" || e.key === "Backspace") && this._panel._selectedSpawnId) {
+      const selectedSpawnId = this._panel.getSelectedRegionId();
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedSpawnId) {
         e.preventDefault();
-        this._deleteSelectedRegion(this._panel._selectedSpawnId);
+        this._deleteSelectedRegion(selectedSpawnId);
       }
     });
   }
