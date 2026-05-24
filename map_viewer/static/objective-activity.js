@@ -16,10 +16,12 @@ import { ObjectivePanel } from "./objective-panel.js";
 import * as api           from "./api.js";
 
 export class ObjectiveActivity {
-  _el       = null;
-  _canvas   = null;
-  _panel    = null;
-  _mapName  = null;
+  _el        = null;
+  _canvas    = null;
+  _panel     = null;
+  _mapName   = null;
+  _ctx       = null;   // last-rendered canvas context (augmented with monuments)
+  _objGroups = null;   // last-rendered region groups
 
   _coordsEl = null;
   _zoomEl   = null;
@@ -31,6 +33,7 @@ export class ObjectiveActivity {
 
     this._panel = new ObjectivePanel({
       onWoolSelect: (wool) => this._onWoolSelect(wool),
+      onWoolSave:   ()     => this._refreshCanvas(),
     });
   }
 
@@ -100,12 +103,38 @@ export class ObjectiveActivity {
         group => group.name === "wool_room" || group.name === "monument",
       );
 
+      this._ctx       = ctx;
+      this._objGroups = objGroups;
       this._canvas.render(ctx, objGroups);
       requestAnimationFrame(() => this._canvas.resize());
 
-      this._panel.load(mapData);
+      this._panel.load(mapName, mapData);
     } catch (err) {
       console.error("Objective: failed to load map:", err);
+    }
+  }
+
+  // ── Canvas refresh (called after any wool edit) ──────────────────────────────
+
+  async _refreshCanvas() {
+    if (!this._mapName || !this._ctx) return;
+    try {
+      const mapData = await api.fetchMapData(this._mapName);
+      this._ctx.monuments = (mapData.wools ?? []).map(wool => ({
+        x:          wool.monument.x,
+        z:          wool.monument.z,
+        wool_color: wool.color,
+        team:       wool.team,
+      }));
+      if (!this._ctx.poi_assignments) this._ctx.poi_assignments = {};
+      this._ctx.poi_assignments.wools = (mapData.wools ?? []).map(wool => ({
+        x:          wool.location.x,
+        z:          wool.location.z,
+        wool_color: wool.color,
+      }));
+      this._canvas.render(this._ctx, this._objGroups);
+    } catch (err) {
+      console.error("Objective: failed to refresh canvas:", err);
     }
   }
 

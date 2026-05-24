@@ -265,6 +265,49 @@ export async function deleteSpawn(mapName, regionId) {
   return r.json();
 }
 
+// ── Wool CRUD ──────────────────────────────────────────────────────────────
+
+export async function addWool(mapName, wool) {
+  const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/wools`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(wool),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Add wool failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function updateWool(mapName, teamId, color, fields) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/wool/${encodeURIComponent(teamId)}/${encodeURIComponent(color)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Update wool failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function deleteWool(mapName, teamId, color) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/wool/${encodeURIComponent(teamId)}/${encodeURIComponent(color)}`,
+    { method: "DELETE" },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Delete wool failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,

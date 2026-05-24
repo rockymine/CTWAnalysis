@@ -258,10 +258,11 @@
     <!-- Objective workspace -->
     <div id="obj-workspace" hidden>
 
-      <!-- Left panel: wool list grouped by team -->
+      <!-- Left panel: wool list -->
       <div id="obj-left">
         <div class="pt-section-header">
           <h2 class="ov-section-title">Wools</h2>
+          <button id="obj-add-wool-btn" class="action-btn">+ Add wool</button>
         </div>
         <div id="obj-wool-list"></div>
       </div>
@@ -297,28 +298,34 @@
 
           <!-- Wool inspector (shown on selection) -->
           <div id="obj-wool-inspector" hidden>
-            <div class="ov-section">
-              <!-- Title: wool swatch + color name -->
-              <div class="obj-wool-title-row">
-                <span id="obj-inspector-swatch" class="obj-wool-swatch-lg"></span>
-                <span id="obj-inspector-title" class="obj-inspector-title-text"></span>
-              </div>
-              <!-- Defending team -->
+            <section class="ov-section">
+              <h2 class="ov-section-title">Wool</h2>
               <div class="ov-field">
-                <label class="ov-label">Defended by</label>
-                <div id="obj-inspector-defender" class="obj-defender-row"></div>
+                <label class="ov-label">Color</label>
+                <div class="pt-color-pick-row">
+                  <span id="obj-wool-color-swatch" class="pt-color-swatch-lg"></span>
+                  <select id="obj-wool-color-sel" class="ov-input"></select>
+                </div>
               </div>
-              <!-- Shared wool spawn location -->
+              <div class="ov-field">
+                <label class="ov-label">Defender</label>
+                <div class="pt-color-pick-row">
+                  <span id="obj-defender-swatch" class="pt-color-swatch-lg"></span>
+                  <select id="obj-defender-sel" class="ov-input"></select>
+                </div>
+              </div>
               <div class="ov-field">
                 <label class="ov-label">Location</label>
-                <div id="obj-inspector-location" class="obj-coords-block"></div>
+                <div id="obj-inspector-location" class="detail-group-row"></div>
               </div>
-              <!-- Per-team monument captures -->
               <div class="ov-field">
                 <label class="ov-label">Monument Captures</label>
                 <div id="obj-inspector-captures" class="obj-captures-list"></div>
               </div>
-            </div>
+              <div class="ov-actions">
+                <button id="obj-delete-wool-btn" class="action-btn pt-action-btn--danger">Delete wool</button>
+              </div>
+            </section>
           </div>
 
         </div>

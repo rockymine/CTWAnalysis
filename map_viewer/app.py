@@ -1331,6 +1331,125 @@ def create_app() -> Flask:
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True})
 
+    # ── Wool endpoints ────────────────────────────────────────────────────────
+
+    @app.route("/api/map/<name>/wools", methods=["POST"])
+    def add_wool(name: str) -> tuple:
+        """Create a new wool entry identified by (team, color)."""
+        body = request.get_json(silent=True) or {}
+        team_id = (body.get("team") or "").strip()
+        color   = (body.get("color") or "").strip()
+        if not team_id:
+            return jsonify({"error": "team is required"}), 400
+        if not color:
+            return jsonify({"error": "color is required"}), 400
+
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        if any(w.get("team") == team_id and w.get("color") == color for w in wools):
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) already exists"}), 409
+
+        loc_raw = body.get("location") or {}
+        mon_raw = body.get("monument") or {}
+        new_wool = {
+            "team":     team_id,
+            "color":    color,
+            "location": {
+                "x": float(loc_raw.get("x", 0)),
+                "y": float(loc_raw.get("y", 0)),
+                "z": float(loc_raw.get("z", 0)),
+            },
+            "monument": {
+                "x": float(mon_raw.get("x", 0)),
+                "y": float(mon_raw.get("y", 0)),
+                "z": float(mon_raw.get("z", 0)),
+            },
+        }
+        wools.append(new_wool)
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "wool": new_wool}), 201
+
+    @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["PATCH"])
+    def update_wool(name: str, team_id: str, color: str) -> tuple:
+        """Update a wool entry by its (team, color) composite key.
+
+        If `location` is in the body, all entries sharing the same (color,
+        old_location) are updated (room-level location change).  Other fields
+        (team rename, color rename) apply only to the matched entry.
+        """
+        body = request.get_json(silent=True) or {}
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        wool = next(
+            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
+            None,
+        )
+        if wool is None:
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        # ── location update: apply to all entries sharing (color, old_location) ──
+        if "location" in body:
+            loc_raw  = body["location"]
+            new_loc  = {
+                "x": float(loc_raw.get("x", 0)),
+                "y": float(loc_raw.get("y", 0)),
+                "z": float(loc_raw.get("z", 0)),
+            }
+            old_loc = wool["location"]
+            for entry in wools:
+                if (entry.get("color") == color
+                        and entry.get("location") == old_loc):
+                    entry["location"] = new_loc
+
+        # ── team rename ──
+        new_team = (body.get("team") or "").strip()
+        if new_team and new_team != team_id:
+            if any(w.get("team") == new_team and w.get("color") == wool.get("color")
+                   for w in wools if w is not wool):
+                return jsonify({"error": f"wool ({new_team!r}, {wool['color']!r}) already exists"}), 409
+            wool["team"] = new_team
+
+        # ── color rename ──
+        new_color = (body.get("color") or "").strip()
+        if new_color and new_color != wool.get("color"):
+            if any(w.get("team") == wool.get("team") and w.get("color") == new_color
+                   for w in wools if w is not wool):
+                return jsonify({"error": f"wool ({wool['team']!r}, {new_color!r}) already exists"}), 409
+            wool["color"] = new_color
+
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "wool": wool})
+
+    @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["DELETE"])
+    def delete_wool(name: str, team_id: str, color: str) -> tuple:
+        """Delete the single wool entry identified by (team, color)."""
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        if not any(w.get("team") == team_id and w.get("color") == color for w in wools):
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        data["wools"] = [
+            w for w in wools
+            if not (w.get("team") == team_id and w.get("color") == color)
+        ]
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
     return app
 
 
