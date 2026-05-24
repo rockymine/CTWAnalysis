@@ -80,6 +80,10 @@ export class TeamsActivity {
     this._el.hidden = true;
   }
 
+  resize() {
+    this._canvas?.resize();
+  }
+
   // ── Canvas init ────────────────────────────────────────────────────────────
 
   _initCanvas() {
