@@ -821,7 +821,7 @@ def create_app() -> Flask:
         result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
         return jsonify(result)
 
-    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder"}
+    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder", "circle"}
 
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
@@ -878,7 +878,7 @@ def create_app() -> Flask:
                     "bounds_2d": bounds_2d,
                 }
 
-            else:  # cylinder
+            elif region_type == "cylinder":
                 bx = float(body["base_x"])
                 bz = float(body["base_z"])
                 by = float(body.get("base_y", 64))
@@ -890,6 +890,18 @@ def create_app() -> Flask:
                     "radius": r, "height": h,
                     "bounds_2d": {"min": {"x": bx - r, "z": bz - r},
                                   "max": {"x": bx + r, "z": bz + r}},
+                }
+
+        else:  # circle
+                cx = float(body["center_x"])
+                cz = float(body["center_z"])
+                r  = float(body["radius"])
+                new_region = {
+                    "id": region_id, "type": "circle",
+                    "center": {"x": cx, "z": cz},
+                    "radius": r,
+                    "bounds_2d": {"min": {"x": cx - r, "z": cz - r},
+                                  "max": {"x": cx + r, "z": cz + r}},
                 }
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": f"Missing or invalid field: {exc}"}), 400

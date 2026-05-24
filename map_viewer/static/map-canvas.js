@@ -95,7 +95,7 @@ export class MapCanvas {
   #addedNodes     = [];    // nodes added via addRegion() not yet in #groups; re-included on repaint
 
   // ── draw tool state ───────────────────────────────────────────────────────
-  #activeTool  = null;  // null | "rectangle" | "cuboid" | "point" | "block" | "cylinder"
+  #activeTool  = null;  // null | "rectangle" | "cuboid" | "point" | "block" | "cylinder" | "circle"
   #drawState   = null;  // null | rectangle/cuboid: { toolType, startBx, startBz, currentBx, currentBz, previewRect, anchor1, anchor2 }
                         //        cylinder: { toolType:"cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius }
 
@@ -457,15 +457,15 @@ export class MapCanvas {
         this.#clickWasDrag = true;  // suppress the following click event
         return;
       }
-      if (this.#activeTool === "cylinder") {
+      if (this.#activeTool === "cylinder" || this.#activeTool === "circle") {
         if (!this.#toWorld) return;
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
         const bx = Math.floor(world.x), bz = Math.floor(world.z);
         if (!this.#drawState) {
-          this.#startCylinderDraw(bx, bz);
+          this.#startRadialDraw(bx, bz);
         } else {
-          this.#completeCylinderDraw(bx, bz);
+          this.#completeRadialDraw(bx, bz);
         }
         this.#clickWasDrag = true;  // suppress the following click event
         return;
@@ -506,10 +506,11 @@ export class MapCanvas {
         const world = this.#toWorld(svgPt.x, svgPt.y);
         this.#updateDrawPreview(Math.floor(world.x), Math.floor(world.z));
       }
-      if (this.#activeTool === "cylinder" && this.#drawState && this.#toWorld) {
+      if ((this.#activeTool === "cylinder" || this.#activeTool === "circle") &&
+          this.#drawState && this.#toWorld) {
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
-        this.#updateCylinderPreview(Math.floor(world.x), Math.floor(world.z));
+        this.#updateRadialPreview(Math.floor(world.x), Math.floor(world.z));
       }
 
       this.#updateCoordsAndHighlight(e.clientX, e.clientY);
@@ -1115,7 +1116,8 @@ export class MapCanvas {
     this.#drawState = null;
   }
 
-  #startCylinderDraw(bx, bz) {
+  /** Shared start for cylinder and circle — both use click-center-then-drag-radius. */
+  #startRadialDraw(bx, bz) {
     if (!this.#drawLayerEl || !this.#toSvg) return;
     const centerX = bx + 0.5, centerZ = bz + 0.5;
     const pt = this.#toSvg(centerX, centerZ);
@@ -1140,10 +1142,11 @@ export class MapCanvas {
     });
 
     this.#drawLayerEl.append(previewCircle, line, dot, label);
-    this.#drawState = { toolType: "cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius: 1 };
+    // toolType carries "cylinder" or "circle" so #completeRadialDraw knows which payload to emit
+    this.#drawState = { toolType: this.#activeTool, centerX, centerZ, dot, line, previewCircle, label, currentRadius: 1 };
   }
 
-  #updateCylinderPreview(bx, bz) {
+  #updateRadialPreview(bx, bz) {
     if (!this.#drawState || !this.#toSvg) return;
     const { centerX, centerZ, line, previewCircle, label } = this.#drawState;
 
@@ -1152,9 +1155,9 @@ export class MapCanvas {
     const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dz * dz)));
     this.#drawState.currentRadius = radius;
 
-    const cPt  = this.#toSvg(centerX, centerZ);
-    const rxPt = this.#toSvg(centerX + radius, centerZ);
-    const rzPt = this.#toSvg(centerX, centerZ + radius);
+    const cPt   = this.#toSvg(centerX, centerZ);
+    const rxPt  = this.#toSvg(centerX + radius, centerZ);
+    const rzPt  = this.#toSvg(centerX, centerZ + radius);
     const endPt = this.#toSvg(cursorX, cursorZ);
 
     line.setAttribute("x2", endPt.x);
@@ -1166,20 +1169,21 @@ export class MapCanvas {
     label.textContent = `r=${radius}`;
   }
 
-  #completeCylinderDraw(bx, bz) {
+  #completeRadialDraw(bx, bz) {
     if (!this.#drawState) return;
-    const { centerX, centerZ } = this.#drawState;
-    // Update preview one last time so radius reflects click position
-    this.#updateCylinderPreview(bx, bz);
+    const { toolType, centerX, centerZ } = this.#drawState;
+    // Update preview one last time so radius reflects the click position
+    this.#updateRadialPreview(bx, bz);
     const r = this.#drawState.currentRadius;
     this.#cancelDraw();
-    if (this.#callbacks.onRegionDraw) {
-      this.#callbacks.onRegionDraw({
-        type: "cylinder",
-        base_x: centerX - 0.5,
-        base_z: centerZ - 0.5,
-        radius: r,
-      });
+    if (!this.#callbacks.onRegionDraw) return;
+
+    if (toolType === "circle") {
+      // circle stores center coords (not block-index base)
+      this.#callbacks.onRegionDraw({ type: "circle", center_x: centerX, center_z: centerZ, radius: r });
+    } else {
+      // cylinder uses base_x/base_z (block-index = center - 0.5)
+      this.#callbacks.onRegionDraw({ type: "cylinder", base_x: centerX - 0.5, base_z: centerZ - 0.5, radius: r });
     }
   }
 
