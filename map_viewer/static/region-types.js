@@ -43,6 +43,35 @@ export function deriveBoundsFromCoords(type, coords) {
   return null;
 }
 
+/**
+ * Drawable tool descriptor — each entry describes one toolbar tool in the
+ * Regions (and potentially future) activities.
+ *
+ * drawMode:
+ *   "drag"    — click + drag to define a bounding rectangle (rectangle, cuboid)
+ *   "radial"  — click center then click/move to set radius (cylinder, circle)
+ *   "click"   — single click places the region (point, block)
+ *
+ * key          — lowercase keyboard shortcut character
+ * toggleOff    — when true, clicking the already-active button returns to "move"
+ *                (rectangle toggles off; other types do not)
+ *
+ * Adding a new drawable type only requires:
+ *   1. An entry here in DRAW_TOOLS (and a TYPE_ICON entry above)
+ *   2. A case in RegionsActivity.#buildCreatePayload / #buildNewNode
+ *   3. A radial/click/drag branch in MapCanvas (if it's a new drawMode)
+ *   4. A circle case in app.py create_region (backend)
+ *   5. An HTML button with id="tool-<type>"
+ */
+export const DRAW_TOOLS = {
+  rectangle: { key: "r", toggleOff: true,  drawMode: "drag"   },
+  cuboid:    { key: "c", toggleOff: false, drawMode: "drag"   },
+  cylinder:  { key: "y", toggleOff: false, drawMode: "radial" },
+  circle:    { key: "o", toggleOff: false, drawMode: "radial" },
+  point:     { key: "p", toggleOff: false, drawMode: "click"  },
+  block:     { key: "b", toggleOff: false, drawMode: "click"  },
+};
+
 export function typeIcon(type, isSynthetic, cssClass = "region-type-icon") {
   const iconData = TYPE_ICON[type] ?? lucide.HelpCircle;
   const el = document.createElement("div");
