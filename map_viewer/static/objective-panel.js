@@ -84,8 +84,8 @@ export class ObjectivePanel {
    * Pass null to clear all highlights.
    */
   highlightRegionRow(regionId) {
-    for (const row of this._regionListEl.querySelectorAll(".obj-region-row")) {
-      row.classList.toggle("obj-region-row--selected", row.dataset.regionId === regionId);
+    for (const row of this._regionListEl.querySelectorAll(".list-row")) {
+      row.classList.toggle("list-row--selected", row.dataset.regionId === regionId);
     }
   }
 
@@ -218,15 +218,15 @@ export class ObjectivePanel {
 
   _buildWoolRow(room) {
     const row = document.createElement("div");
-    row.className = "obj-wool-row";
+    row.className = "list-row";
     row.dataset.roomKey = _roomKey(room);
 
     const swatch = document.createElement("span");
-    swatch.className = "obj-wool-swatch";
+    swatch.className = "list-swatch";
     swatch.style.background = dyeColorHex(room.color);
 
     const label = document.createElement("span");
-    label.className = "obj-wool-label";
+    label.className = "list-label";
     label.textContent = _capitalize(room.color);
 
     row.append(swatch, label);
@@ -237,9 +237,9 @@ export class ObjectivePanel {
   // ── Selection ───────────────────────────────────────────────────────────────
 
   _selectRoom(room, rowEl) {
-    this._woolListEl.querySelectorAll(".obj-wool-row--selected")
-      .forEach(el => el.classList.remove("obj-wool-row--selected"));
-    rowEl.classList.add("obj-wool-row--selected");
+    this._woolListEl.querySelectorAll(".list-row--selected")
+      .forEach(el => el.classList.remove("list-row--selected"));
+    rowEl.classList.add("list-row--selected");
     this._selectedRoom = room;
     this._showInspector(room);
     this._onWoolSelect(room);
@@ -475,8 +475,8 @@ export class ObjectivePanel {
       );
       if (rowEl) {
         rowEl.dataset.roomKey = _roomKey(room);
-        const swatch = rowEl.querySelector(".obj-wool-swatch");
-        const label  = rowEl.querySelector(".obj-wool-label");
+        const swatch = rowEl.querySelector(".list-swatch");
+        const label  = rowEl.querySelector(".list-label");
         if (swatch) swatch.style.background = dyeColorHex(newColor);
         if (label)  label.textContent       = _capitalize(newColor);
       }
@@ -595,13 +595,13 @@ export class ObjectivePanel {
 
     const mkField = (label, value, inputType = "text") => {
       const wrap = document.createElement("div");
-      wrap.className = "ov-field";
+      wrap.className = "field";
       const lbl = document.createElement("label");
-      lbl.className = "ov-label";
+      lbl.className = "field-label";
       lbl.textContent = label;
       const inp = document.createElement("input");
       inp.type = inputType;
-      inp.className = "ov-input";
+      inp.className = "field-input";
       inp.value = value ?? "";
       inp.disabled = true;
       inp.spellcheck = false;
@@ -611,13 +611,13 @@ export class ObjectivePanel {
 
     const mkFieldRow = (...fields) => {
       const row = document.createElement("div");
-      row.className = "ov-field-row";
+      row.className = "field-row";
       for (const f of fields) row.appendChild(f);
       return row;
     };
 
     // Mark a field as narrow (for Amount / numeric columns in a field-row).
-    const compact = (fieldEl) => { fieldEl.classList.add("ov-field--compact"); return fieldEl; };
+    const compact = (fieldEl) => { fieldEl.classList.add("field--compact"); return fieldEl; };
 
     // ── per-type layout ───────────────────────────────────────────────────────
 
@@ -709,7 +709,7 @@ export class ObjectivePanel {
 
   /**
    * Build one "MONUMENT" group for a single capture entry.
-   * Uses the same ov-field / ov-label / ov-input / detail-prefixed-field
+   * Uses the same field / field-label / field-input / detail-prefixed-field
    * input styles as the rest of the inspector, with all inputs disabled.
    */
   _buildCaptureCard(capture) {
@@ -720,28 +720,31 @@ export class ObjectivePanel {
     group.className = "obj-monument-group";
 
     // ── Section title ────────────────────────────────────────────────────────
+    const titleRow = document.createElement("div");
+    titleRow.className = "section-header section-header--ruled";
     const title = document.createElement("h3");
-    title.className = "ov-section-title";
+    title.className = "section-title";
     title.textContent = "Monument";
-    group.appendChild(title);
+    titleRow.appendChild(title);
+    group.appendChild(titleRow);
 
     // ── Team ─────────────────────────────────────────────────────────────────
     const teamField = document.createElement("div");
-    teamField.className = "ov-field";
+    teamField.className = "field";
 
     const teamLabel = document.createElement("label");
-    teamLabel.className = "ov-label";
+    teamLabel.className = "field-label";
     teamLabel.textContent = "Team";
 
     const teamPickRow = document.createElement("div");
-    teamPickRow.className = "pt-color-pick-row";
+    teamPickRow.className = "field-pick-row";
 
     const teamSwatch = document.createElement("span");
-    teamSwatch.className = "pt-color-swatch-lg";
+    teamSwatch.className = "field-swatch";
     teamSwatch.style.background = chatColorHex(team?.color);
 
     const teamSel = document.createElement("select");
-    teamSel.className = "ov-input";
+    teamSel.className = "field-input";
     teamSel.disabled = true;
     const teamOpt = document.createElement("option");
     teamOpt.value       = capture.team;
@@ -755,15 +758,15 @@ export class ObjectivePanel {
     // ── ID (only if the monument is backed by a named region) ─────────────────
     if (mon.region_id) {
       const idField = document.createElement("div");
-      idField.className = "ov-field";
+      idField.className = "field";
 
       const idLabel = document.createElement("label");
-      idLabel.className = "ov-label";
+      idLabel.className = "field-label";
       idLabel.textContent = "ID";
 
       const idInput = document.createElement("input");
       idInput.type      = "text";
-      idInput.className = "ov-input";
+      idInput.className = "field-input";
       idInput.value     = mon.region_id;
       idInput.disabled  = true;
       idInput.spellcheck = false;
@@ -774,10 +777,10 @@ export class ObjectivePanel {
 
     // ── Block coords ─────────────────────────────────────────────────────────
     const blockField = document.createElement("div");
-    blockField.className = "ov-field";
+    blockField.className = "field";
 
     const blockLabel = document.createElement("label");
-    blockLabel.className = "ov-label";
+    blockLabel.className = "field-label";
     blockLabel.textContent = "Block";
 
     const blockRow = coordGroup([
@@ -821,7 +824,7 @@ export class ObjectivePanel {
     this._regionListEl.innerHTML = "";
     if (this._regionNodes.length === 0) {
       const el = document.createElement("div");
-      el.className = "obj-region-empty";
+      el.className = "list-empty";
       el.textContent = "No wool room or monument regions.";
       this._regionListEl.appendChild(el);
       return;
@@ -833,13 +836,13 @@ export class ObjectivePanel {
 
   _buildRegionRow(node) {
     const row = document.createElement("div");
-    row.className = "obj-region-row";
+    row.className = "list-row list-row--compact";
     row.dataset.regionId = node.id;
 
     const iconEl = typeIcon(node.type, node.synthetic_id ?? false);
 
     const label = document.createElement("span");
-    label.className = "obj-region-label";
+    label.className = "list-label list-label--mono";
     label.textContent = node.id;
 
     row.append(iconEl, label);

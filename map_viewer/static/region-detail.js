@@ -246,16 +246,16 @@ export class RegionDetail {
   // Vertical: label div above input
   #makeIdRow(node) {
     const wrap = document.createElement("div");
-    wrap.className = "detail-field-row";
+    wrap.className = "field";
 
     const keyEl = document.createElement("div");
-    keyEl.className = "detail-field-key";
+    keyEl.className = "field-label";
     keyEl.textContent = "ID";
 
     const input = document.createElement("input");
     input.type      = "text";
     input.value     = node.id;
-    input.className = "detail-id-input";
+    input.className = "field-input";
 
     input.addEventListener("blur", () => {
       const newId = input.value.trim();
@@ -406,7 +406,7 @@ export class RegionDetail {
     const header = document.createElement("div");
     header.className = "detail-section-header";
     const labelEl = document.createElement("span");
-    labelEl.className = "detail-section-label";
+    labelEl.className = "section-title";
     labelEl.textContent = entry.label;
     header.appendChild(labelEl);
     if (entry.note) {
@@ -493,7 +493,7 @@ export class RegionDetail {
     const header = document.createElement("div");
     header.className = "detail-section-header";
     const labelEl = document.createElement("span");
-    labelEl.className = "detail-section-label";
+    labelEl.className = "section-title";
     labelEl.textContent = entry.label;
     header.appendChild(labelEl);
     if (entry.unit) {
@@ -508,11 +508,11 @@ export class RegionDetail {
       const input = this.#makeCoordInput(entry.key, node, origCoords, {
         min: entry.min, max: entry.max,
       });
-      input.classList.add("detail-scalar-input");
+      // (no extra class needed — .detail-bounds-input already handles sizing)
       wrap.appendChild(input);
     } else {
       const valEl = document.createElement("span");
-      valEl.className = "detail-field-val";
+      valEl.className = "field-value";
       valEl.textContent = entry.display(node);
       wrap.appendChild(valEl);
     }
@@ -598,7 +598,7 @@ export class RegionDetail {
     const header = document.createElement("div");
     header.className = "detail-section-header";
     const labelEl = document.createElement("span");
-    labelEl.className = "detail-section-label";
+    labelEl.className = "section-title";
     labelEl.textContent = label;
     header.appendChild(labelEl);
     if (hint) {
@@ -625,7 +625,7 @@ export class RegionDetail {
     section.className = "detail-section";
 
     const heading = document.createElement("div");
-    heading.className = "detail-section-label";
+    heading.className = "section-title";
     heading.textContent = `children (${children.length})`;
     section.appendChild(heading);
 
@@ -664,7 +664,7 @@ export class RegionDetail {
     section.className = "detail-section";
 
     const heading = document.createElement("div");
-    heading.className = "detail-section-label";
+    heading.className = "section-title";
     heading.textContent = "XML";
     section.appendChild(heading);
 
@@ -680,12 +680,12 @@ export class RegionDetail {
   // Vertical field: label div above static value span
   #fieldRow(key, value) {
     const row = document.createElement("div");
-    row.className = "detail-field-row";
+    row.className = "field";
     const keyEl = document.createElement("div");
-    keyEl.className = "detail-field-key";
+    keyEl.className = "field-label";
     keyEl.textContent = key.toUpperCase();
     const valEl = document.createElement("span");
-    valEl.className = "detail-field-val";
+    valEl.className = "field-value";
     valEl.textContent = value;
     row.appendChild(keyEl);
     row.appendChild(valEl);

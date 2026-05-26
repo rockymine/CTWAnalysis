@@ -260,7 +260,7 @@ export class TeamsPanel {
     this._teamsListEl.innerHTML = "";
     if (this._teams.length === 0) {
       const el = document.createElement("div");
-      el.className = "pt-spawn-empty";
+      el.className = "list-empty";
       el.textContent = 'No teams yet. Click "+ Add team".';
       this._teamsListEl.appendChild(el);
       return;
@@ -272,20 +272,20 @@ export class TeamsPanel {
 
   _buildTeamRow(team) {
     const row = document.createElement("div");
-    row.className = "pt-team-row";
+    row.className = "list-row";
     row.dataset.teamId = team.id;
-    if (team.id === this._selectedTeamId) row.classList.add("pt-team-row--selected");
+    if (team.id === this._selectedTeamId) row.classList.add("list-row--selected");
 
     const swatch = document.createElement("span");
-    swatch.className = "pt-team-swatch";
+    swatch.className = "list-swatch";
     swatch.style.background = chatColorHex(team.color);
 
     const label = document.createElement("span");
-    label.className = "pt-team-label";
+    label.className = "list-label";
     label.textContent = team.name || team.id;
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.className = "pt-team-delete-btn";
+    deleteBtn.className = "btn-remove btn-remove--hover-only";
     deleteBtn.title = "Delete team";
     deleteBtn.textContent = "✕";
     deleteBtn.addEventListener("click", (e) => {
@@ -304,7 +304,7 @@ export class TeamsPanel {
     this._spawnListEl.innerHTML = "";
     if (this._spawnRegions.length === 0) {
       const el = document.createElement("div");
-      el.className = "pt-spawn-empty";
+      el.className = "list-empty";
       el.textContent = "No spawn regions. Draw a cylinder or point on the canvas.";
       this._spawnListEl.appendChild(el);
       return;
@@ -320,18 +320,18 @@ export class TeamsPanel {
     const team      = this._teams.find(t => t.id === teamId) ?? null;
 
     const row = document.createElement("div");
-    row.className = "pt-spawn-row";
+    row.className = "list-row list-row--compact";
     row.dataset.regionId = region.id;
-    if (region.id === this._selectedSpawnId) row.classList.add("pt-spawn-row--selected");
+    if (region.id === this._selectedSpawnId) row.classList.add("list-row--selected");
 
     const iconEl = typeIcon(region.type, region.synthetic_id ?? false);
 
     const labelEl = document.createElement("span");
-    labelEl.className = "pt-spawn-label";
+    labelEl.className = "list-label";
     labelEl.textContent = region.id;
 
     const tagEl = document.createElement("span");
-    tagEl.className = "pt-spawn-team-tag";
+    tagEl.className = "list-tag";
     tagEl.textContent = team ? (team.name || team.id) : "—";
 
     row.appendChild(iconEl);
@@ -356,26 +356,26 @@ export class TeamsPanel {
   }
 
   _highlightTeamRow(teamId) {
-    for (const row of this._teamsListEl.querySelectorAll(".pt-team-row")) {
-      row.classList.toggle("pt-team-row--selected", row.dataset.teamId === teamId);
+    for (const row of this._teamsListEl.querySelectorAll(".list-row")) {
+      row.classList.toggle("list-row--selected", row.dataset.teamId === teamId);
     }
   }
 
   _clearTeamHighlight() {
-    for (const row of this._teamsListEl.querySelectorAll(".pt-team-row")) {
-      row.classList.remove("pt-team-row--selected");
+    for (const row of this._teamsListEl.querySelectorAll(".list-row")) {
+      row.classList.remove("list-row--selected");
     }
   }
 
   _highlightSpawnRow(regionId) {
-    for (const row of this._spawnListEl.querySelectorAll(".pt-spawn-row")) {
-      row.classList.toggle("pt-spawn-row--selected", row.dataset.regionId === regionId);
+    for (const row of this._spawnListEl.querySelectorAll(".list-row")) {
+      row.classList.toggle("list-row--selected", row.dataset.regionId === regionId);
     }
   }
 
   _clearSpawnHighlight() {
-    for (const row of this._spawnListEl.querySelectorAll(".pt-spawn-row")) {
-      row.classList.remove("pt-spawn-row--selected");
+    for (const row of this._spawnListEl.querySelectorAll(".list-row")) {
+      row.classList.remove("list-row--selected");
     }
   }
 
