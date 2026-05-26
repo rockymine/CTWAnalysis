@@ -17,6 +17,7 @@ import {
   PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS,
   chatColorHex, dyeColorHex,
 } from "./game-colors.js";
+import { typeIcon } from "./region-types.js";
 
 export { PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS };
 
@@ -323,9 +324,7 @@ export class TeamsPanel {
     row.dataset.regionId = region.id;
     if (region.id === this._selectedSpawnId) row.classList.add("pt-spawn-row--selected");
 
-    const dot = document.createElement("span");
-    dot.className = "pt-spawn-team-dot";
-    if (team) dot.style.background = chatColorHex(team.color);
+    const iconEl = typeIcon(region.type, region.synthetic_id ?? false);
 
     const labelEl = document.createElement("span");
     labelEl.className = "pt-spawn-label";
@@ -335,7 +334,7 @@ export class TeamsPanel {
     tagEl.className = "pt-spawn-team-tag";
     tagEl.textContent = team ? (team.name || team.id) : "—";
 
-    row.appendChild(dot);
+    row.appendChild(iconEl);
     row.appendChild(labelEl);
     row.appendChild(tagEl);
     // Route through the activity's registry so canvas + panel stay in sync

@@ -13,6 +13,8 @@
  */
 
 import { chatColorHex, dyeColorHex, MINECRAFT_DYE_COLORS } from "./game-colors.js";
+import { typeIcon } from "./region-types.js";
+import { coordGroup } from "./coord-group.js";
 import * as api from "./api.js";
 
 
@@ -22,6 +24,7 @@ export class ObjectivePanel {
     // ── Left panel ──────────────────────────────────────────────────────────
     this._woolListEl   = document.getElementById("obj-wool-list");
     this._addWoolBtn   = document.getElementById("obj-add-wool-btn");
+    this._regionListEl = document.getElementById("obj-region-list");
 
     // ── Right panel — shared ────────────────────────────────────────────────
     this._inspectorEl  = document.getElementById("obj-wool-inspector");
@@ -36,19 +39,19 @@ export class ObjectivePanel {
     this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
     this._respawnBadgeEl    = document.getElementById("obj-respawn-badge");
     this._respawnDetailEl   = document.getElementById("obj-respawn-detail");
-    this._woolXmlWrapEl     = document.getElementById("obj-wool-xml-wrap");
-    this._woolXmlEl         = document.getElementById("obj-wool-xml");
     this._locationEl        = document.getElementById("obj-inspector-location");
     this._capturesEl        = document.getElementById("obj-inspector-captures");
     this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
 
     this._onWoolSelect    = onWoolSelect ?? (() => {});
-    this._onWoolSave      = opts.onWoolSave   ?? (() => {});
+    this._onWoolSave      = opts.onWoolSave        ?? (() => {});
+    this._onRegionRowClick = opts.onRegionRowClick ?? (() => {});
     this._mapName         = null;
     this._teams           = [];
     this._woolRooms       = [];   // derived, one entry per distinct wool room
     this._woolRoomOptions = [];   // region IDs eligible as wool room candidates
     this._selectedRoom    = null; // currently selected wool room (for click-to-assign)
+    this._regionNodes     = [];   // flat list of obj-group region nodes (for sidebar)
 
     this._addWoolBtn?.addEventListener("click", () => this._addWool());
   }
@@ -63,6 +66,27 @@ export class ObjectivePanel {
     this._selectedRoom    = null;
     this._renderList();
     this._showEmpty();
+  }
+
+  // ── Region sidebar ───────────────────────────────────────────────────────────
+
+  /**
+   * Populate the left-panel region list from the filtered region groups rendered
+   * on the canvas (wool_room + monument categories).  Called once per map load.
+   */
+  loadRegions(objGroups) {
+    this._regionNodes = this._flattenRegionNodes(objGroups);
+    this._renderRegionList();
+  }
+
+  /**
+   * Highlight the given region row (and deselect all others).
+   * Pass null to clear all highlights.
+   */
+  highlightRegionRow(regionId) {
+    for (const row of this._regionListEl.querySelectorAll(".obj-region-row")) {
+      row.classList.toggle("obj-region-row--selected", row.dataset.regionId === regionId);
+    }
   }
 
   // ── Public helpers for canvas interaction ───────────────────────────────────
@@ -339,14 +363,10 @@ export class ObjectivePanel {
               status.mob_entity_types ?? [],
             );
             this._buildRespawnDetail(status);
-            this._updateWoolXml?.(status.wool_xml);
           }
         })
         .catch(() => {});
     }
-
-    // ── Wool XML preview (built synchronously from room data + server XML) ──
-    this._buildWoolXmlPreview(room);
 
     // ── Location inputs ─────────────────────────────────────────────────────
     this._buildLocationInputs(room);
@@ -415,49 +435,23 @@ export class ObjectivePanel {
     this._locationEl.innerHTML = "";
     const origLocation = { ...room.location };
 
-    for (const [axis, key] of [["X", "x"], ["Y", "y"], ["Z", "z"]]) {
-      const field = document.createElement("div");
-      field.className = "detail-prefixed-field";
-
-      const prefix = document.createElement("span");
-      prefix.className  = "detail-prefix";
-      prefix.textContent = axis;
-
-      const input = document.createElement("input");
-      input.type      = "number";
-      input.step      = "any";
-      input.className = "detail-bounds-input";
-      input.value     = room.location[key] ?? 0;
-
-      input.addEventListener("input", () => {
-        const parsed = parseFloat(input.value);
-        if (!isNaN(parsed)) room.location[key] = parsed;
-      });
-
-      input.addEventListener("blur", () => {
-        const parsed = parseFloat(input.value);
-        if (isNaN(parsed)) {
-          input.value     = origLocation[key];
-          room.location[key] = origLocation[key];
-        } else {
-          room.location[key] = parsed;
-          input.value        = parsed;
-          this._saveWoolLocation(room, origLocation);
-        }
-      });
-
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          room.location[key] = origLocation[key];
-          input.value        = origLocation[key];
-        }
-      });
-
-      field.append(prefix, input);
-      this._locationEl.appendChild(field);
-    }
+    // Build the group row via the shared helper, then move its children into
+    // _locationEl (which IS the detail-group-row container in the HTML template).
+    const row = coordGroup([
+      { axis: "X", value: room.location.x, origValue: origLocation.x,
+        onChange: (v) => { room.location.x = v; },
+        onSave:   () => { this._saveWoolLocation(room, origLocation); },
+        onRevert: () => { room.location.x = origLocation.x; } },
+      { axis: "Y", value: room.location.y, origValue: origLocation.y,
+        onChange: (v) => { room.location.y = v; },
+        onSave:   () => { this._saveWoolLocation(room, origLocation); },
+        onRevert: () => { room.location.y = origLocation.y; } },
+      { axis: "Z", value: room.location.z, origValue: origLocation.z,
+        onChange: (v) => { room.location.z = v; },
+        onSave:   () => { this._saveWoolLocation(room, origLocation); },
+        onRevert: () => { room.location.z = origLocation.z; } },
+    ]);
+    while (row.firstChild) this._locationEl.appendChild(row.firstChild);
   }
 
   // ── Save operations ─────────────────────────────────────────────────────────
@@ -582,7 +576,7 @@ export class ObjectivePanel {
     el.textContent = label;
   }
 
-  // ── Respawn detail card ──────────────────────────────────────────────────────
+  // ── Respawn detail fields ────────────────────────────────────────────────────
 
   _buildRespawnDetail(status) {
     const el = this._respawnDetailEl;
@@ -597,198 +591,260 @@ export class ObjectivePanel {
     el.innerHTML = "";
     el.className = `obj-respawn-detail obj-respawn-detail--${type}`;
 
-    const kv = (key, val) => {
-      if (val == null || val === "") return;
-      const row = document.createElement("div");
-      row.className = "obj-respawn-kv";
-      const k = document.createElement("span");
-      k.className = "obj-respawn-kv-key";
-      k.textContent = key;
-      const v = document.createElement("span");
-      v.className = "obj-respawn-kv-val";
-      v.textContent = String(val);
-      row.append(k, v);
-      el.appendChild(row);
+    // ── field builders ────────────────────────────────────────────────────────
+
+    const mkField = (label, value, inputType = "text") => {
+      const wrap = document.createElement("div");
+      wrap.className = "ov-field";
+      const lbl = document.createElement("label");
+      lbl.className = "ov-label";
+      lbl.textContent = label;
+      const inp = document.createElement("input");
+      inp.type = inputType;
+      inp.className = "ov-input";
+      inp.value = value ?? "";
+      inp.disabled = true;
+      inp.spellcheck = false;
+      wrap.append(lbl, inp);
+      return wrap;
     };
 
-    const xml = (src) => {
-      if (!src) return;
-      const pre = document.createElement("pre");
-      pre.className = "detail-xml-pre";
-      pre.textContent = src;
-      el.appendChild(pre);
+    const mkFieldRow = (...fields) => {
+      const row = document.createElement("div");
+      row.className = "ov-field-row";
+      for (const f of fields) row.appendChild(f);
+      return row;
     };
+
+    // Mark a field as narrow (for Amount / numeric columns in a field-row).
+    const compact = (fieldEl) => { fieldEl.classList.add("ov-field--compact"); return fieldEl; };
+
+    // ── per-type layout ───────────────────────────────────────────────────────
 
     if (type === "chest") {
-      // Group chest wool by color; sum item counts, deduplicate chest positions by (x,y,z)
+      // Group chest wool by color; sum counts across chests
       const byColor = new Map();
       for (const item of status.chest_wool ?? []) {
         const name = item.color_name ?? "wool";
-        if (!byColor.has(name)) byColor.set(name, { count: 0, positions: new Set() });
-        const entry = byColor.get(name);
-        entry.count += item.count ?? 0;
-        entry.positions.add(`${item.x},${item.y},${item.z}`);
+        if (!byColor.has(name)) byColor.set(name, 0);
+        byColor.set(name, byColor.get(name) + (item.count ?? 0));
       }
       if (byColor.size > 0) {
-        for (const [color, { count, positions }] of byColor) {
-          const n = positions.size;
-          kv(color, `×${count}  (${n} chest${n !== 1 ? "s" : ""})`);
+        for (const [color, count] of byColor) {
+          el.appendChild(mkFieldRow(
+            mkField("Item", color),
+            compact(mkField("Amount", count, "number")),
+          ));
         }
-      } else {
-        kv("total", `${status.chest_wool_count} wool stack${status.chest_wool_count !== 1 ? "s" : ""}`);
+      } else if (status.chest_wool_count) {
+        el.appendChild(mkFieldRow(
+          mkField("Item", "wool"),
+          compact(mkField("Amount", status.chest_wool_count, "number")),
+        ));
       }
 
     } else if (type === "mob_spawner") {
       const s = status.mob_spawners?.[0];
       if (s) {
         const itemLabel = s.spawn_item_id
-          ? s.spawn_item_id.replace("minecraft:", "") + (s.spawn_item_damage != null ? ` (dmg ${s.spawn_item_damage})` : "")
+          ? s.spawn_item_id.replace("minecraft:", "") +
+            (s.spawn_item_damage != null ? ` (dmg ${s.spawn_item_damage})` : "")
           : (s.entity_id ?? "—");
-        kv("spawns", itemLabel);
-        if (s.spawn_count != null)        kv("per activation", s.spawn_count);
-        if (s.min_spawn_delay != null && s.max_spawn_delay != null)
-          kv("delay", `${s.min_spawn_delay}–${s.max_spawn_delay} ticks`);
-        if (s.spawn_range != null)            kv("spawn range", `${s.spawn_range} blocks`);
-        if (s.required_player_range != null)  kv("activation", `${s.required_player_range} blocks`);
-        if (s.max_nearby_entities != null)    kv("entity cap", s.max_nearby_entities);
-        if (status.mob_spawner_count > 1)     kv("spawners", status.mob_spawner_count);
+        el.appendChild(mkFieldRow(
+          mkField("Item", itemLabel),
+          compact(mkField("Amount", s.spawn_count ?? "", "number")),
+        ));
+        if (s.spawn_range != null || s.required_player_range != null) {
+          el.appendChild(mkFieldRow(
+            mkField("Range",      s.spawn_range ?? ""),
+            mkField("Activation", s.required_player_range ?? ""),
+          ));
+        }
+        if (s.min_spawn_delay != null && s.max_spawn_delay != null) {
+          const delay = s.min_spawn_delay === s.max_spawn_delay
+            ? String(s.min_spawn_delay)
+            : `${s.min_spawn_delay}–${s.max_spawn_delay}`;
+          el.appendChild(mkField("Delay", delay));
+        }
+        if (s.max_nearby_entities != null) {
+          el.appendChild(mkField("Entity Cap", s.max_nearby_entities, "number"));
+        }
+        if (status.mob_spawner_count > 1) {
+          el.appendChild(mkField("Spawners", status.mob_spawner_count, "number"));
+        }
       }
 
     } else if (type === "pgm_spawner") {
       const s = status.pgm_spawner;
       if (s) {
-        if (s.spawn_region)   kv("spawn region",  s.spawn_region);
-        if (s.player_region)  kv("player region", s.player_region);
-        if (s.max_entities != null) kv("max entities", s.max_entities);
+        if (s.spawn_region)         el.appendChild(mkField("Spawn Region",  s.spawn_region));
+        if (s.player_region)        el.appendChild(mkField("Player Region", s.player_region));
+        if (s.max_entities != null) el.appendChild(mkField("Max Entities",  s.max_entities, "number"));
         for (const item of s.items ?? []) {
-          const dmgSuffix = item.damage != null ? ` (dmg ${item.damage})` : "";
-          const amtSuffix = (item.amount ?? 1) !== 1 ? ` ×${item.amount}` : "";
-          kv("item", `${item.material}${dmgSuffix}${amtSuffix}`);
+          const matLabel = item.material + (item.damage != null ? ` (dmg ${item.damage})` : "");
+          el.appendChild(mkFieldRow(
+            mkField("Item", matLabel),
+            compact(mkField("Amount", item.amount ?? 1, "number")),
+          ));
         }
       }
-      xml(status.pgm_spawner_xml);
 
     } else if (type === "renewable") {
       for (const r of status.renewables ?? []) {
-        if (r.region_id)      kv("region",  r.region_id);
-        if (r.renew_filter)   kv("renew",   r.renew_filter);
-        if (r.replace_filter) kv("replace", r.replace_filter);
-        if (r.rate != null && r.rate !== 1.0) kv("rate", r.rate);
+        if (r.region_id)      el.appendChild(mkField("Region",  r.region_id));
+        if (r.renew_filter)   el.appendChild(mkField("Renew",   r.renew_filter));
+        if (r.replace_filter) el.appendChild(mkField("Replace", r.replace_filter));
+        if (r.rate != null && r.rate !== 1.0) el.appendChild(mkField("Rate", r.rate, "number"));
       }
       for (const rule of status.block_drop_rules ?? []) {
-        if (rule.filter_id)    kv("filter",      rule.filter_id);
-        if (rule.replacement)  kv("replacement", rule.replacement);
+        if (rule.filter_id)   el.appendChild(mkField("Filter",      rule.filter_id));
+        if (rule.replacement) el.appendChild(mkField("Replacement", rule.replacement));
         const items = rule.items ?? [];
-        if (items.length > 0) kv("drops", items.map(i => i.material).join(", "));
+        if (items.length > 0) el.appendChild(mkField("Drops", items.map(i => i.material).join(", ")));
       }
     }
   }
 
-  // ── Wool XML preview ─────────────────────────────────────────────────────────
+  // ── Monument capture group ────────────────────────────────────────────────────
 
-  _buildWoolXmlPreview(room) {
-    // Shown immediately (synchronous) using a client-side reconstruction.
-    // When the server response arrives it updates with the authoritative version.
-    const wrapEl = this._woolXmlWrapEl;
-    const xmlEl  = this._woolXmlEl;
-
-    // Build a client-side preview from what we already know
-    const team  = room.captures[0]?.team ?? "";
-    const color = (room.color ?? "").replace(/_/g, " ");
-    const region = room.woolRoomRegion ?? null;
-    const loc = room.location;
-    const mon = room.captures[0]?.monument;
-
-    const lines = [`<wool team="${team}" color="${color}">`];
-    if (region) {
-      lines.push(`  <block region="${region}"/>`);
-    } else if (loc) {
-      lines.push(`  <!-- location: ${loc.x?.toFixed(1)}, ${loc.y?.toFixed(1)}, ${loc.z?.toFixed(1)} -->`);
-    }
-    if (mon) {
-      lines.push("  <monument>");
-      if (mon.region_id) {
-        lines.push(`    <block region="${mon.region_id}"/>`);
-      } else if (mon.x != null) {
-        lines.push(`    <block>${Math.round(mon.x)} ${Math.round(mon.y ?? 0)} ${Math.round(mon.z)}</block>`);
-      }
-      lines.push("  </monument>");
-    }
-    lines.push("</wool>");
-
-    const pre = document.createElement("pre");
-    pre.className = "detail-xml-pre";
-    pre.textContent = lines.join("\n");
-    xmlEl.innerHTML = "";
-    xmlEl.appendChild(pre);
-    wrapEl.hidden = false;
-
-    // When the full status arrives, replace with the server's authoritative XML.
-    this._updateWoolXml = (woolXml) => {
-      if (woolXml && this._selectedRoom === room) {
-        const pre2 = document.createElement("pre");
-        pre2.className = "detail-xml-pre";
-        pre2.textContent = woolXml;
-        xmlEl.innerHTML = "";
-        xmlEl.appendChild(pre2);
-      }
-    };
-  }
-
-  // ── Monument capture card (read-only) ────────────────────────────────────────
-
+  /**
+   * Build one "MONUMENT" group for a single capture entry.
+   * Uses the same ov-field / ov-label / ov-input / detail-prefixed-field
+   * input styles as the rest of the inspector, with all inputs disabled.
+   */
   _buildCaptureCard(capture) {
     const team = this._teams.find(t => t.id === capture.team);
+    const mon  = capture.monument ?? {};
 
-    const card = document.createElement("div");
-    card.className = "obj-capture-card";
+    const group = document.createElement("div");
+    group.className = "obj-monument-group";
 
-    const header = document.createElement("div");
-    header.className = "obj-capture-header";
-    const dot = document.createElement("span");
-    dot.className = "obj-team-dot";
-    dot.style.background = chatColorHex(team?.color);
-    const nameEl = document.createElement("span");
-    nameEl.className = "obj-team-name";
-    nameEl.textContent = team?.name ?? capture.team;
-    header.append(dot, nameEl);
-    card.appendChild(header);
+    // ── Section title ────────────────────────────────────────────────────────
+    const title = document.createElement("h3");
+    title.className = "ov-section-title";
+    title.textContent = "Monument";
+    group.appendChild(title);
 
-    const monEl = document.createElement("div");
-    monEl.className = "obj-capture-monument";
-    this._renderCoords(monEl, capture.monument);
+    // ── Team ─────────────────────────────────────────────────────────────────
+    const teamField = document.createElement("div");
+    teamField.className = "ov-field";
 
-    if (capture.monument?.region_id) {
-      const idRow = document.createElement("div");
-      idRow.className = "obj-coord-row";
-      const axisEl = document.createElement("span");
-      axisEl.className = "obj-coord-axis";
-      axisEl.textContent = "ID";
-      const valEl = document.createElement("span");
-      valEl.className = "obj-region-id";
-      valEl.textContent = capture.monument.region_id;
-      idRow.append(axisEl, valEl);
-      monEl.appendChild(idRow);
+    const teamLabel = document.createElement("label");
+    teamLabel.className = "ov-label";
+    teamLabel.textContent = "Team";
+
+    const teamPickRow = document.createElement("div");
+    teamPickRow.className = "pt-color-pick-row";
+
+    const teamSwatch = document.createElement("span");
+    teamSwatch.className = "pt-color-swatch-lg";
+    teamSwatch.style.background = chatColorHex(team?.color);
+
+    const teamSel = document.createElement("select");
+    teamSel.className = "ov-input";
+    teamSel.disabled = true;
+    const teamOpt = document.createElement("option");
+    teamOpt.value       = capture.team;
+    teamOpt.textContent = team?.name ?? capture.team;
+    teamSel.appendChild(teamOpt);
+
+    teamPickRow.append(teamSwatch, teamSel);
+    teamField.append(teamLabel, teamPickRow);
+    group.appendChild(teamField);
+
+    // ── ID (only if the monument is backed by a named region) ─────────────────
+    if (mon.region_id) {
+      const idField = document.createElement("div");
+      idField.className = "ov-field";
+
+      const idLabel = document.createElement("label");
+      idLabel.className = "ov-label";
+      idLabel.textContent = "ID";
+
+      const idInput = document.createElement("input");
+      idInput.type      = "text";
+      idInput.className = "ov-input";
+      idInput.value     = mon.region_id;
+      idInput.disabled  = true;
+      idInput.spellcheck = false;
+
+      idField.append(idLabel, idInput);
+      group.appendChild(idField);
     }
 
-    card.appendChild(monEl);
-    return card;
+    // ── Block coords ─────────────────────────────────────────────────────────
+    const blockField = document.createElement("div");
+    blockField.className = "ov-field";
+
+    const blockLabel = document.createElement("label");
+    blockLabel.className = "ov-label";
+    blockLabel.textContent = "Block";
+
+    const blockRow = coordGroup([
+      { axis: "X", value: mon.x ?? 0, disabled: true },
+      { axis: "Y", value: mon.y ?? 0, disabled: true },
+      { axis: "Z", value: mon.z ?? 0, disabled: true },
+    ]);
+
+    blockField.append(blockLabel, blockRow);
+    group.appendChild(blockField);
+
+    return group;
   }
 
-  _renderCoords(el, coords) {
-    el.innerHTML = "";
-    for (const [axis, val] of [["X", coords?.x], ["Y", coords?.y], ["Z", coords?.z]]) {
-      const row = document.createElement("div");
-      row.className = "obj-coord-row";
-      const axisEl = document.createElement("span");
-      axisEl.className = "obj-coord-axis";
-      axisEl.textContent = axis;
-      const valEl = document.createElement("span");
-      valEl.className = "obj-coord-value";
-      valEl.textContent = val ?? "?";
-      row.append(axisEl, valEl);
-      el.appendChild(row);
+  // ── Region list rendering ─────────────────────────────────────────────────
+
+  /**
+   * Walk the groups tree and collect every named, non-negative, non-composite
+   * region node that has bounds — the same set the canvas renders.
+   */
+  _flattenRegionNodes(groups) {
+    const COMPOSITE_TYPES = new Set(["union", "intersect", "negative", "complement"]);
+    const out = [];
+    const walk = (items) => {
+      for (const item of items ?? []) {
+        if (item.regions) {
+          walk(item.regions);
+        } else {
+          if (item.id && item.bounds && !item.is_negative && !COMPOSITE_TYPES.has(item.type)) {
+            out.push(item);
+          }
+          walk(item.children);
+        }
+      }
+    };
+    walk(groups);
+    return out;
+  }
+
+  _renderRegionList() {
+    this._regionListEl.innerHTML = "";
+    if (this._regionNodes.length === 0) {
+      const el = document.createElement("div");
+      el.className = "obj-region-empty";
+      el.textContent = "No wool room or monument regions.";
+      this._regionListEl.appendChild(el);
+      return;
     }
+    for (const node of this._regionNodes) {
+      this._regionListEl.appendChild(this._buildRegionRow(node));
+    }
+  }
+
+  _buildRegionRow(node) {
+    const row = document.createElement("div");
+    row.className = "obj-region-row";
+    row.dataset.regionId = node.id;
+
+    const iconEl = typeIcon(node.type, node.synthetic_id ?? false);
+
+    const label = document.createElement("span");
+    label.className = "obj-region-label";
+    label.textContent = node.id;
+
+    row.append(iconEl, label);
+    row.addEventListener("click", () => this._onRegionRowClick(node.id));
+    return row;
   }
 }
 

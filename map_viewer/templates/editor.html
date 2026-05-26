@@ -258,13 +258,22 @@
     <!-- Objective workspace -->
     <div id="obj-workspace" hidden>
 
-      <!-- Left panel: wool list -->
+      <!-- Left panel: wool list (top) + region list (bottom) -->
       <div id="obj-left">
-        <div class="pt-section-header">
-          <h2 class="ov-section-title">Wools</h2>
-          <button id="obj-add-wool-btn" class="action-btn">+ Add wool</button>
+        <div id="obj-wools-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Wools</h2>
+            <button id="obj-add-wool-btn" class="action-btn">+ Add wool</button>
+          </div>
+          <div id="obj-wool-list"></div>
         </div>
-        <div id="obj-wool-list"></div>
+        <div class="pt-left-divider"></div>
+        <div id="obj-regions-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Regions</h2>
+          </div>
+          <div id="obj-region-list"></div>
+        </div>
       </div>
 
       <div class="sidebar-handle" id="obj-left-handle"></div>
@@ -329,27 +338,22 @@
                   <button id="obj-wool-room-clear-btn" class="action-btn" title="Clear room region">✕</button>
                 </div>
               </div>
-              <div class="ov-field">
-                <label class="ov-label">Respawn</label>
+            </section>
+            <section class="ov-section">
+              <div class="obj-section-title-row">
+                <h2 class="ov-section-title">Respawn</h2>
                 <span id="obj-respawn-badge" class="obj-respawn-badge obj-respawn-unknown">—</span>
               </div>
               <div id="obj-respawn-detail" hidden></div>
-              <div class="ov-field">
-                <label class="ov-label">Location</label>
-                <div id="obj-inspector-location" class="detail-group-row"></div>
-              </div>
-              <div class="ov-field">
-                <label class="ov-label">Monument Captures</label>
-                <div id="obj-inspector-captures" class="obj-captures-list"></div>
-              </div>
-              <div id="obj-wool-xml-wrap" hidden>
-                <div class="detail-section-label" style="margin-bottom:4px">Wool XML</div>
-                <div id="obj-wool-xml"></div>
-              </div>
-              <div class="ov-actions">
-                <button id="obj-delete-wool-btn" class="action-btn pt-action-btn--danger">Delete wool</button>
-              </div>
             </section>
+            <section class="ov-section">
+              <h2 class="ov-section-title">Location</h2>
+              <div id="obj-inspector-location" class="detail-group-row"></div>
+            </section>
+            <div id="obj-inspector-captures"></div>
+            <div class="ov-actions">
+              <button id="obj-delete-wool-btn" class="action-btn pt-action-btn--danger">Delete wool</button>
+            </div>
           </div>
 
         </div>

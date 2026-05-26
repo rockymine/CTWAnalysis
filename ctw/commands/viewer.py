@@ -2,6 +2,7 @@
 
 import argparse
 import webbrowser
+from pathlib import Path
 
 
 def register(subparsers) -> None:
@@ -14,6 +15,25 @@ def register(subparsers) -> None:
     p.add_argument('--no-browser', action='store_true',
                    help='Do not open the browser automatically')
     p.set_defaults(func=_run)
+
+
+def _open_browser(url: str) -> None:
+    chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+
+    for path in chrome_paths:
+        if Path(path).exists():
+            webbrowser.register(
+                "chrome",
+                None,
+                webbrowser.BackgroundBrowser(path)
+            )
+            webbrowser.get("chrome").open(url)
+            return
+
+    webbrowser.open(url)
 
 
 def _run(args: argparse.Namespace) -> None:
@@ -37,6 +57,6 @@ def _run(args: argparse.Namespace) -> None:
     log.info("Map viewer running at %s", url)
 
     if not args.no_browser:
-        webbrowser.open(url)
+        _open_browser(url)
 
     app.run(host="127.0.0.1", port=args.port, debug=False)
