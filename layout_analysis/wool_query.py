@@ -9,6 +9,7 @@ diamond) in a region, for configuring respawn modules.
 """
 
 from pathlib import Path
+import json
 import pandas as pd
 
 WOOL_COLORS: dict[int, str] = {
@@ -26,32 +27,52 @@ def query_wool_in_region(
     max_x: float,
     max_z: float,
 ) -> dict:
-    """Return wool chests and wool blocks found inside [min_x, max_x] × [min_z, max_z].
+    """Return wool chests, renewable wool blocks, and mob spawners in a bbox.
 
     Reads layout_chest_contents.parquet and layout_resource_blocks.parquet from
     output_dir.  Returns empty lists gracefully if either file is absent.
+
+    Wool blocks (block_wool) are filtered to only those inside a region covered
+    by a <renewable> rule, using bounds_2d data from map_data.json.  If no
+    renewables are defined (or map_data.json is absent), all wool blocks in the
+    bbox are returned.
 
     Returns:
         {
             'chest_wool': [{'x', 'z', 'y', 'color_id', 'color_name', 'count'}, ...],
             'block_wool': [{'x', 'z', 'y', 'color_id', 'color_name'}, ...],
+            'mob_spawners': [{'x', 'z', 'y'}, ...],
             'summary': {
-                'has_chest_wool': bool,
-                'has_block_wool': bool,
+                'has_chest_wool':  bool,
+                'has_block_wool':  bool,
+                'has_mob_spawner': bool,
                 'colors_found': [str, ...],   # sorted distinct color names
             },
         }
     """
-    chest_wool = _find_chest_wool(output_dir, min_x, min_z, max_x, max_z)
-    block_wool = _find_block_wool(output_dir, min_x, min_z, max_x, max_z)
+    chest_wool   = _find_chest_wool(output_dir, min_x, min_z, max_x, max_z)
+    all_block_wool = _find_block_wool(output_dir, min_x, min_z, max_x, max_z)
+    mob_spawners = _find_mob_spawners(output_dir, min_x, min_z, max_x, max_z)
+
+    # Filter wool blocks to those inside a renewable region.
+    # When no renewables are defined, return an empty list — a wool block without
+    # a renewal rule is not self-respawning, so it doesn't count as "renewable".
+    renewable_bounds = _load_renewable_region_bounds(output_dir)
+    block_wool = [
+        w for w in all_block_wool
+        if _point_in_any_bounds(w['x'], w['z'], renewable_bounds)
+    ] if renewable_bounds else []
+
     colors = sorted({r['color_name'] for r in chest_wool + block_wool})
     return {
-        'chest_wool': chest_wool,
-        'block_wool': block_wool,
+        'chest_wool':   chest_wool,
+        'block_wool':   block_wool,
+        'mob_spawners': mob_spawners,
         'summary': {
-            'has_chest_wool': bool(chest_wool),
-            'has_block_wool': bool(block_wool),
-            'colors_found':   colors,
+            'has_chest_wool':  bool(chest_wool),
+            'has_block_wool':  bool(block_wool),
+            'has_mob_spawner': bool(mob_spawners),
+            'colors_found':    colors,
         },
     }
 
@@ -66,9 +87,9 @@ def query_resources_in_region(
     """Return all resource blocks and wool chests inside [min_x, max_x] × [min_z, max_z].
 
     Covers every type tracked by ResourceBlockExtractor (wool, iron_block,
-    gold_block, diamond_block) plus chests containing wool items.  Designed
-    for the region-inspector UI: a single call tells the editor everything
-    about what needs to be configured for a selected area.
+    gold_block, mob_spawner, diamond_block) plus chests containing wool items.
+    Designed for the region-inspector UI: a single call tells the editor everything
+    about what needs to be configured in a selected area.
 
     Returns:
         {
@@ -146,6 +167,8 @@ def _find_block_wool(output_dir: Path, min_x: float, min_z: float, max_x: float,
     if not path.exists():
         return []
     df = pd.read_parquet(path)
+    if 'resource_type' not in df.columns:
+        return []
     wool = _bbox_filter(df[df['resource_type'] == 'wool'], min_x, min_z, max_x, max_z)
     has_block_data = 'block_data' in wool.columns
     results = []
@@ -161,6 +184,89 @@ def _find_block_wool(output_dir: Path, min_x: float, min_z: float, max_x: float,
             entry['color_name'] = WOOL_COLORS.get(color_id, 'unknown')
         results.append(entry)
     return results
+
+
+def _find_mob_spawners(output_dir: Path, min_x: float, min_z: float, max_x: float, max_z: float) -> list[dict]:
+    """Return wool-spawning mob spawners in the bbox.
+
+    A spawner only qualifies if:
+      - Its position is within the bbox (from layout_resource_blocks.parquet), AND
+      - layout_tile_entities.parquet confirms ``spawns_wool == True``.
+
+    When layout_tile_entities.parquet is absent (older pipeline outputs without
+    the TileEntityExtractor run), ALL spawners in the bbox are returned as a
+    conservative fallback — the caller is responsible for noting the uncertainty.
+    """
+    path = output_dir / 'layout_resource_blocks.parquet'
+    if not path.exists():
+        return []
+    df = pd.read_parquet(path)
+    if 'resource_type' not in df.columns:
+        return []
+    in_bbox = _bbox_filter(df[df['resource_type'] == 'mob_spawner'], min_x, min_z, max_x, max_z)
+    if in_bbox.empty:
+        return []
+
+    # Enrich with tile entity NBT data, filtering to wool-spawning spawners only
+    te_lookup: dict[tuple[int, int, int], dict] = _load_tile_entity_lookup(output_dir)
+    te_data_available = bool(te_lookup)
+
+    results = []
+    for _, row in in_bbox.iterrows():
+        wx, wz, wy = int(row['world_x']), int(row['world_z']), int(row['y'])
+        nbt = te_lookup.get((wx, wz, wy))
+
+        if te_data_available:
+            # Filter: only include this spawner if it spawns wool items
+            if nbt is None or not nbt.get('spawns_wool', False):
+                continue
+
+        entry: dict = {'x': wx, 'z': wz, 'y': wy}
+        if nbt:
+            entry.update(nbt)
+        results.append(entry)
+    return results
+
+
+def _load_tile_entity_lookup(
+    output_dir: Path,
+) -> dict[tuple[int, int, int], dict]:
+    """Load layout_tile_entities.parquet and return a (x, z, y) → NBT-fields dict.
+
+    Returns an empty dict if the parquet is absent (older pipeline outputs).
+    """
+    te_path = output_dir / 'layout_tile_entities.parquet'
+    if not te_path.exists():
+        return {}
+    try:
+        df = pd.read_parquet(te_path)
+    except Exception:
+        return {}
+
+    nbt_cols = [
+        'entity_id', 'spawns_wool', 'spawn_item_id', 'spawn_item_damage',
+        'spawn_count', 'spawn_range',
+        'min_spawn_delay', 'max_spawn_delay',
+        'required_player_range', 'max_nearby_entities',
+    ]
+    lookup: dict[tuple[int, int, int], dict] = {}
+    for _, row in df.iterrows():
+        key = (int(row['world_x']), int(row['world_z']), int(row['y']))
+        entry = {}
+        for col in nbt_cols:
+            if col in df.columns:
+                val = row[col]
+                # Convert pandas NA / numpy int64 to plain Python types
+                if isinstance(val, bool):
+                    entry[col] = val
+                elif pd.isna(val):
+                    entry[col] = None
+                elif hasattr(val, 'item'):
+                    entry[col] = val.item()
+                else:
+                    entry[col] = val
+        lookup[key] = entry
+    return lookup
 
 
 def _find_all_resource_blocks(output_dir: Path, min_x: float, min_z: float, max_x: float, max_z: float) -> list[dict]:
@@ -185,3 +291,52 @@ def _find_all_resource_blocks(output_dir: Path, min_x: float, min_z: float, max_
             entry['color_name'] = WOOL_COLORS.get(bd, 'unknown')
         results.append(entry)
     return results
+
+
+def _load_renewable_region_bounds(output_dir: Path) -> list[tuple[float, float, float, float]]:
+    """Return a list of (min_x, min_z, max_x, max_z) bounding boxes for all
+    renewable regions defined in map_data.json.
+
+    Returns an empty list if map_data.json is absent, has no renewables, or
+    if no renewable's region has a resolvable bounds_2d entry.
+    """
+    data_path = output_dir / 'map_data.json'
+    if not data_path.exists():
+        return []
+    try:
+        data = json.loads(data_path.read_text(encoding='utf-8'))
+    except Exception:
+        return []
+
+    renewables = data.get('renewables', [])
+    if not renewables:
+        return []
+
+    regions = data.get('regions', {})
+    bounds_list: list[tuple[float, float, float, float]] = []
+    for renewable in renewables:
+        region_id = renewable.get('region_id', '')
+        if not region_id:
+            continue
+        region = regions.get(region_id, {})
+        bounds_2d = region.get('bounds_2d')
+        if bounds_2d:
+            min_x = bounds_2d['min']['x']
+            min_z = bounds_2d['min']['z']
+            max_x = bounds_2d['max']['x']
+            max_z = bounds_2d['max']['z']
+            bounds_list.append((min_x, min_z, max_x, max_z))
+
+    return bounds_list
+
+
+def _point_in_any_bounds(
+    x: float,
+    z: float,
+    bounds_list: list[tuple[float, float, float, float]],
+) -> bool:
+    """Return True if (x, z) falls within any bounding box in bounds_list."""
+    return any(
+        min_x <= x <= max_x and min_z <= z <= max_z
+        for min_x, min_z, max_x, max_z in bounds_list
+    )

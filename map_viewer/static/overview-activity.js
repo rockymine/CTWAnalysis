@@ -14,4 +14,8 @@ export class OverviewActivity {
   deactivate() {
     this._el.hidden = true;
   }
+
+  resize() {
+    this._panel._canvas?.resize();
+  }
 }

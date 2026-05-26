@@ -17,7 +17,10 @@ from common.json_export import save_json as _save_json
 
 logger = logging.getLogger('ctw')
 
-from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule
+from .datatypes import (
+    MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule,
+    WoolSpawner, SpawnerItem, Renewable, BlockDropRule, BlockDropItem,
+)
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -52,6 +55,9 @@ def to_dict(data: MapData, categories: Optional[dict[str, list[str]]] = None) ->
         'spawns': [_encode_spawn(spawn) for spawn in data.spawns],
         'observer_spawn': _encode_spawn(data.observer_spawn) if data.observer_spawn else None,
         'wools': [_encode_wool(wool) for wool in data.wools],
+        'spawners': [_encode_spawner(s) for s in data.spawners],
+        'renewables': [_encode_renewable(r) for r in data.renewables],
+        'block_drop_rules': [_encode_block_drop_rule(r) for r in data.block_drop_rules],
         'regions': {
             region_id: _encode_region(region)
             for region_id, region in data.regions.items()
@@ -269,7 +275,7 @@ def _encode_spawn(spawn: Spawn) -> dict[str, Any]:
 
 def _encode_wool(wool: Wool) -> dict[str, Any]:
     """Convert wool to dictionary."""
-    return {
+    result: dict[str, Any] = {
         'team': wool.team,
         'color': wool.color,
         'location': {
@@ -281,8 +287,73 @@ def _encode_wool(wool: Wool) -> dict[str, Any]:
             'x': wool.monument[0],
             'y': wool.monument[1],
             'z': wool.monument[2],
+            **({"region_id": wool.monument_region_id} if wool.monument_region_id else {}),
         },
+        'wool_room_region': wool.wool_room_region,
     }
+    return result
+
+
+def _encode_spawner(spawner: WoolSpawner) -> dict[str, Any]:
+    """Convert a WoolSpawner to dictionary."""
+    result: dict[str, Any] = {
+        'spawn_region': spawner.spawn_region,
+        'player_region': spawner.player_region,
+    }
+    if spawner.delay:
+        result['delay'] = spawner.delay
+    if spawner.max_entities is not None:
+        result['max_entities'] = spawner.max_entities
+    if spawner.items:
+        result['items'] = [_encode_spawner_item(item) for item in spawner.items]
+    return result
+
+
+def _encode_spawner_item(item: SpawnerItem) -> dict[str, Any]:
+    """Convert a SpawnerItem to dictionary."""
+    return {
+        'material': item.material,
+        'damage': item.damage,
+        'amount': item.amount,
+    }
+
+
+def _encode_renewable(renewable: Renewable) -> dict[str, Any]:
+    """Convert a Renewable to dictionary."""
+    result: dict[str, Any] = {'region_id': renewable.region_id}
+    if renewable.rate != 1.0:
+        result['rate'] = renewable.rate
+    if renewable.renew_filter:
+        result['renew_filter'] = renewable.renew_filter
+    if renewable.replace_filter:
+        result['replace_filter'] = renewable.replace_filter
+    if renewable.grow:
+        result['grow'] = True
+    return result
+
+
+def _encode_block_drop_rule(rule: BlockDropRule) -> dict[str, Any]:
+    """Convert a BlockDropRule to dictionary."""
+    result: dict[str, Any] = {}
+    if rule.region_id:
+        result['region_id'] = rule.region_id
+    if rule.filter_id:
+        result['filter_id'] = rule.filter_id
+    if rule.replacement:
+        result['replacement'] = rule.replacement
+    if rule.wrong_tool:
+        result['wrong_tool'] = True
+    if rule.items:
+        result['items'] = [
+            {k: v for k, v in {
+                'material': item.material,
+                'damage':   item.damage   if item.damage   != 0   else None,
+                'amount':   item.amount   if item.amount   != 1   else None,
+                'chance':   item.chance   if item.chance   != 1.0 else None,
+            }.items() if v is not None}
+            for item in rule.items
+        ]
+    return result
 
 
 def _encode_apply_rule(rule: ApplyRule) -> dict[str, Any]:

@@ -29,6 +29,10 @@ CTWAnalysisWithClaudeCode/
 │   ├── extractors.py                 Y0, TopSurface, Density, LowestBedrock, LowestSolid extractors
 │   ├── map_layout_config.py          MapLayoutConfig dataclass + get_map_layout()
 │   ├── map_context.py                assemble_map() — builds map_context.json
+│   ├── features/
+│   │   └── zone_classifier.py        ZoneClassifier (runtime zone labeling) + public detection fns:
+│   │                                   detect_wool_room_region_id(x, z, regions) → str|None
+│   │                                   assign_wool_room_regions(wools, regions, spawners, output_dir)
 │   └── services/                     Orchestration services called by run.py
 │
 ├── island_analysis/
@@ -390,6 +394,76 @@ conn.close()
   }
 }
 ```
+
+---
+
+## Map Data JSON Structure (`output/<map>/map_data.json`)
+
+Written by `xml_analysis/pipeline.py:analyze_xml()`. Raw XML export with wool room
+detection already applied. All fields present — no optional fallbacks.
+
+```jsonc
+{
+  "name": "Display Name",
+  "version": "X.Y.Z",
+  "gamemode": "ctw",
+  "objective": "...",
+  "max_build_height": N,
+  "authors": [{ "uuid": "...", "role": "author|contributor", "contribution": "..." }],
+  "kits": [{ "id": "...", "items": [...], "armor": [...] }],
+  "teams": [{ "id": "...", "name": "...", "color": "...", "dye_color": "...", "max_players": N, "min_players": N }],
+  "spawns": [{ "team": "...", "kit": "...", "yaw": N, "region": {...} }],
+  "observer_spawn": { ... } | null,
+  "wools": [
+    {
+      "team": "team-slug",
+      "color": "red",                          // wool color string
+      "location": { "x": N, "y": N, "z": N }, // chest/spawner location
+      "monument": { "x": N, "y": N, "z": N, "region_id": "blue-monument" | null },
+      "wool_room_region": "red-wool-room"      // detected region ID; null if unresolved (~7%)
+    }
+  ],
+  "spawners": [                                // PGM <spawner> elements (may be empty list)
+    {
+      "spawn_region": "red-wool-spawn",
+      "player_region": "red-wool-room",        // the wool room — most reliable source
+      "delay": "1.5s",
+      "max_entities": N | null,
+      "items": [{ "material": "wool", "damage": 14, "amount": 1 }]
+                                               // damage = Minecraft 1.8.9 wool color ID (0–15)
+    }
+  ],
+  "regions": {
+    "region-id": {
+      "id": "region-id",
+      "type": "rectangle|cuboid|cylinder|union|...",
+      "bounds_2d": { "min": {"x": N, "z": N}, "max": {"x": N, "z": N} },
+      // type-specific fields (min_x/max_x/min_z/max_z for rectangles, etc.)
+    }
+  },
+  "region_categories": {
+    "spawn": ["blue-spawn", ...],
+    "wool": ["red-wool-room", ...],
+    "build": ["blue-build", ...],
+    "other": [...]
+  },
+  "apply_rules": [...]
+}
+```
+
+**Wool room detection priority chain** (in `assign_wool_room_regions()` in
+`layout_analysis/features/zone_classifier.py`):
+1. XML `<spawner>` `player-region` matched by wool color (damage value)
+2. Chest spatial search (`layout_chest_contents.parquet` — wool items inside region)
+3. Wool `location` spatial search (smallest containing named region)
+
+~92–93 % of wools resolve; ~7–8 % (mirror/translate regions) remain `null` and
+can be assigned manually in the map viewer Objective activity.
+
+**Wool damage → color mapping** (Minecraft 1.8.9):
+`0`=white, `1`=orange, `2`=magenta, `3`=light_blue, `4`=yellow, `5`=lime,
+`6`=pink, `7`=gray, `8`=silver, `9`=cyan, `10`=purple, `11`=blue,
+`12`=brown, `13`=green, `14`=red, `15`=black
 
 ---
 

@@ -9,7 +9,10 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Optional
 
-from .datatypes import MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule
+from .datatypes import (
+    MapData, Team, Author, Kit, KitItem, KitArmor, Spawn, Wool, ApplyRule,
+    WoolSpawner, SpawnerItem, Renewable, BlockDropRule, BlockDropItem,
+)
 from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
@@ -116,11 +119,19 @@ class MapXMLParser:
         # Parse spawns (team spawns + optional observer default spawn)
         data.spawns, data.observer_spawn = self._parse_spawns()
 
-        # Parse wools
-        data.wools = self._parse_wools()
-
-        # Parse regions and apply rules
+        # Parse regions and apply rules — must precede wools so that
+        # monument="region-id" attribute references can be resolved.
         data.regions, data.apply_rules = self._parse_regions()
+
+        # Parse wools, resolving monument region references against the regions dict.
+        data.wools = self._parse_wools(data.regions)
+
+        # Parse wool spawners (used for wool room detection downstream).
+        data.spawners = self._parse_spawners()
+
+        # Parse renewables and block-drop rules.
+        data.renewables = self._parse_renewables()
+        data.block_drop_rules = self._parse_block_drop_rules()
 
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
@@ -414,13 +425,17 @@ class MapXMLParser:
         ):
             data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
 
-    def _parse_wools(self) -> list[Wool]:
+    def _parse_wools(self, regions: dict[str, Region]) -> list[Wool]:
         """Parse wool elements.
 
         Handles maps with multiple top-level <wools team="..."> blocks (one per
         team) by iterating all of them with findall().  The team attribute on the
         outer <wools> element is passed as inherited_team so that <wool> children
         without their own team attribute still receive the correct team.
+
+        Monument coordinates are resolved from two XML forms:
+          - Inline child:  <monument><block>x,y,z</block></monument>
+          - Region ref:    monument="region-id"  (the region must be a block or point)
         """
         wools = []
         wools_elems = self.root.findall('wools')
@@ -433,20 +448,171 @@ class MapXMLParser:
                 wools_elem, outer_team
             ):
                 location = self._parse_coords(wool_elem.get('location', '0,0,0'))
-                monument_elem = wool_elem.find('monument/block')
-                monument = (0, 0, 0)
-                if monument_elem is not None and monument_elem.text:
-                    monument = self._parse_coords(monument_elem.text)
+                monument, monument_region_id = self._resolve_monument(wool_elem, regions)
 
                 wool = Wool(
                     team=wool_elem.get('team', '') or inherited_team,
                     color=wool_elem.get('color', ''),
                     location=location,
-                    monument=monument
+                    monument=monument,
+                    monument_region_id=monument_region_id,
                 )
                 wools.append(wool)
 
         return wools
+
+    def _resolve_monument(
+        self, wool_elem: ET.Element, regions: dict[str, Region]
+    ) -> tuple[tuple[float, float, float], Optional[str]]:
+        """Return (coords, region_id) for the monument on a <wool> element.
+
+        Checks (in order):
+          1. Inline <monument><block>x,y,z</block></monument> child.
+          2. Inline <monument><point>x,y,z</point></monument> child.
+          3. monument="region-id" attribute — looks up the region and reads its
+             x/y/z fields (BlockRegion or PointRegion).
+
+        Returns ((0, 0, 0), None) if none of the above can be resolved.
+        region_id is non-None only for form 3.
+        """
+        # Form 1 & 2: inline child element — no region reference to preserve
+        for tag in ('monument/block', 'monument/point'):
+            child = wool_elem.find(tag)
+            if child is not None and child.text:
+                return self._parse_coords(child.text), None
+
+        # Form 3: region-id attribute
+        monument_ref = wool_elem.get('monument')
+        if monument_ref:
+            region = regions.get(monument_ref)
+            if region is not None and isinstance(region, (BlockRegion, PointRegion)):
+                return (region.x, region.y, region.z), monument_ref
+
+        return (0, 0, 0), None
+
+    def _parse_spawners(self) -> list[WoolSpawner]:
+        """Parse all <spawner> elements from any <spawners> block.
+
+        Only spawners that have both a ``spawn-region`` and a ``player-region``
+        attribute are included — both are required to identify the wool room.
+        """
+        spawners: list[WoolSpawner] = []
+        for spawner_elem in self.root.findall('.//spawners/spawner'):
+            spawn_region = spawner_elem.get('spawn-region', '').strip()
+            player_region = spawner_elem.get('player-region', '').strip()
+            if not spawn_region or not player_region:
+                continue
+
+            delay = spawner_elem.get('delay', '')
+            max_entities_str = spawner_elem.get('max-entities', '')
+            max_entities: Optional[int] = int(max_entities_str) if max_entities_str.isdigit() else None
+
+            items: list[SpawnerItem] = []
+            for item_elem in spawner_elem.findall('item'):
+                material = item_elem.get('material', '').strip()
+                damage_str = item_elem.get('damage', '0')
+                amount_str = item_elem.get('amount', '1')
+                try:
+                    damage = int(damage_str)
+                    amount = int(amount_str)
+                except ValueError:
+                    damage, amount = 0, 1
+                items.append(SpawnerItem(material=material, damage=damage, amount=amount))
+
+            spawners.append(WoolSpawner(
+                spawn_region=spawn_region,
+                player_region=player_region,
+                delay=delay,
+                max_entities=max_entities,
+                items=items,
+            ))
+
+        return spawners
+
+    def _parse_renewables(self) -> list[Renewable]:
+        """Parse all <renewable> elements from any <renewables> block.
+
+        Captures region reference, rate, renew-filter, replace-filter, and grow.
+        Filter values are stored as raw attribute strings; inline filter children
+        are not resolved (storing an empty string in that case).
+        """
+        renewables: list[Renewable] = []
+        for elem in self.root.findall('.//renewables/renewable'):
+            region_id = elem.get('region', '').strip()
+            if not region_id:
+                continue  # no region reference → cannot tie to a map area
+
+            rate_str = elem.get('rate', '1.0')
+            try:
+                rate = float(rate_str)
+            except ValueError:
+                rate = 1.0
+
+            # renew-filter and replace-filter can be attributes OR inline child elements.
+            # We only capture the attribute form here; inline children are left empty.
+            renew_filter   = elem.get('renew-filter',   '').strip()
+            replace_filter = elem.get('replace-filter', '').strip()
+            grow           = elem.get('grow', 'false').strip().lower() == 'true'
+
+            renewables.append(Renewable(
+                region_id=region_id,
+                rate=rate,
+                renew_filter=renew_filter,
+                replace_filter=replace_filter,
+                grow=grow,
+            ))
+
+        return renewables
+
+    def _parse_block_drop_rules(self) -> list[BlockDropRule]:
+        """Parse all <rule> elements from any <block-drops> block.
+
+        Each rule may have a region attribute, a filter attribute (or inline
+        filter child), a <replacement> child, and a <drops> child with <item>
+        sub-elements.  Only the region, filter, replacement, wrong-tool, and
+        drop items are captured; complex inline filter children are skipped
+        (filter stored as empty string in that case).
+        """
+        rules: list[BlockDropRule] = []
+        for elem in self.root.findall('.//block-drops/rule'):
+            region_id  = elem.get('region',     '').strip()
+            filter_id  = elem.get('filter',     '').strip()
+            wrong_tool = elem.get('wrong-tool', 'false').strip().lower() == 'true'
+
+            replacement_elem = elem.find('replacement')
+            replacement = (replacement_elem.text or '').strip() if replacement_elem is not None else ''
+
+            items: list[BlockDropItem] = []
+            drops_elem = elem.find('drops')
+            if drops_elem is not None:
+                for item_elem in drops_elem.findall('item'):
+                    material  = item_elem.get('material', '').strip()
+                    damage_str = item_elem.get('damage',  '0')
+                    amount_str = item_elem.get('amount',  '1')
+                    chance_str = item_elem.get('chance',  '1.0')
+                    try:
+                        damage = int(damage_str)
+                        amount = int(amount_str)
+                        chance = float(chance_str)
+                    except ValueError:
+                        damage, amount, chance = 0, 1, 1.0
+                    if material:
+                        items.append(BlockDropItem(
+                            material=material,
+                            damage=damage,
+                            amount=amount,
+                            chance=chance,
+                        ))
+
+            rules.append(BlockDropRule(
+                region_id=region_id,
+                filter_id=filter_id,
+                replacement=replacement,
+                wrong_tool=wrong_tool,
+                items=items,
+            ))
+
+        return rules
 
     def _collect_wool_elements(self, parent: ET.Element, inherited_team: str = '') -> list[tuple[ET.Element, str]]:
         """Collect (wool_element, team) pairs, resolving nested <wools team=...> grouping."""

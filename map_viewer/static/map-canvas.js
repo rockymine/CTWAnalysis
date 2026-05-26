@@ -20,15 +20,7 @@
 
 import { buildTransform, buildInverseTransform, svgEl,
          ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
-
-const TEAM_FILL         = { blue: "#3b82f6", red: "#ef4444" };
-const TEAM_FILL_DEFAULT = "#6b7280";
-const WOOL_COLORS = {
-  orange: "#f97316", pink: "#ec4899", lime: "#84cc16", yellow: "#eab308",
-  cyan: "#06b6d4", purple: "#a855f7", white: "#f1f5f9", light_blue: "#38bdf8",
-  magenta: "#d946ef", gray: "#9ca3af", black: "#374151", brown: "#92400e",
-  green: "#22c55e", red: "#ef4444", blue: "#3b82f6",
-};
+import { chatColorHex, dyeColorHex } from "./game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
 const ZOOM_MIN    = 0.5;
@@ -88,14 +80,15 @@ export class MapCanvas {
   #buildLayerEl   = null;
   #blockLayerEl   = null;  // <g id="layer-blocks"> for top-surface image
   #islandLayerEl  = null;  // <g id="layer-islands"> — fill toggled when blocks shown
-  #spawnLayerEl   = null;
-  #woolLayerEl    = null;
+  #spawnLayerEl    = null;
+  #woolLayerEl     = null;
+  #monumentLayerEl = null;
   #regionsLayerEl = null;  // <g id="layer-regions"> for addRegion()
   #drawLayerEl    = null;  // <g id="layer-draw"> for draw-tool preview
   #addedNodes     = [];    // nodes added via addRegion() not yet in #groups; re-included on repaint
 
   // ── draw tool state ───────────────────────────────────────────────────────
-  #activeTool  = null;  // null | "rectangle" | "cuboid" | "point" | "block" | "cylinder"
+  #activeTool  = null;  // null | "rectangle" | "cuboid" | "point" | "block" | "cylinder" | "circle"
   #drawState   = null;  // null | rectangle/cuboid: { toolType, startBx, startBz, currentBx, currentBz, previewRect, anchor1, anchor2 }
                         //        cylinder: { toolType:"cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius }
 
@@ -161,8 +154,9 @@ export class MapCanvas {
 
   setPoisVisible(v) {
     this.#showPois = v;
-    if (this.#spawnLayerEl) this.#spawnLayerEl.style.display = v ? "" : "none";
-    if (this.#woolLayerEl)  this.#woolLayerEl.style.display  = v ? "" : "none";
+    if (this.#spawnLayerEl)    this.#spawnLayerEl.style.display    = v ? "" : "none";
+    if (this.#woolLayerEl)     this.#woolLayerEl.style.display     = v ? "" : "none";
+    if (this.#monumentLayerEl) this.#monumentLayerEl.style.display = v ? "" : "none";
   }
 
   setBuildVisible(v) {
@@ -375,8 +369,11 @@ export class MapCanvas {
     viewport.appendChild(this.#buildBlockLayer());
     viewport.appendChild(this.#buildIslands());
     viewport.appendChild(this.#buildSpawnLayer());
-    viewport.appendChild(this.#buildWoolLayer());
     viewport.appendChild(this.#buildXmlRegions());
+    // Wool/monument markers rendered after regions so they stay on top and
+    // receive pointer events even when a region fill overlaps their position.
+    viewport.appendChild(this.#buildWoolLayer());
+    viewport.appendChild(this.#buildMonumentLayer());
     viewport.appendChild(this.#buildAnchorLayer());
     viewport.appendChild(this.#buildDrawLayer());
     viewport.appendChild(this.#buildBlockHighlight());
@@ -457,15 +454,15 @@ export class MapCanvas {
         this.#clickWasDrag = true;  // suppress the following click event
         return;
       }
-      if (this.#activeTool === "cylinder") {
+      if (this.#activeTool === "cylinder" || this.#activeTool === "circle") {
         if (!this.#toWorld) return;
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
         const bx = Math.floor(world.x), bz = Math.floor(world.z);
         if (!this.#drawState) {
-          this.#startCylinderDraw(bx, bz);
+          this.#startRadialDraw(bx, bz);
         } else {
-          this.#completeCylinderDraw(bx, bz);
+          this.#completeRadialDraw(bx, bz);
         }
         this.#clickWasDrag = true;  // suppress the following click event
         return;
@@ -506,10 +503,11 @@ export class MapCanvas {
         const world = this.#toWorld(svgPt.x, svgPt.y);
         this.#updateDrawPreview(Math.floor(world.x), Math.floor(world.z));
       }
-      if (this.#activeTool === "cylinder" && this.#drawState && this.#toWorld) {
+      if ((this.#activeTool === "cylinder" || this.#activeTool === "circle") &&
+          this.#drawState && this.#toWorld) {
         const svgPt = this.#clientToSvg(e.clientX, e.clientY);
         const world = this.#toWorld(svgPt.x, svgPt.y);
-        this.#updateCylinderPreview(Math.floor(world.x), Math.floor(world.z));
+        this.#updateRadialPreview(Math.floor(world.x), Math.floor(world.z));
       }
 
       this.#updateCoordsAndHighlight(e.clientX, e.clientY);
@@ -644,7 +642,7 @@ export class MapCanvas {
     for (const island of (this.#ctx.islands || [])) {
       const poly = island.simplified_polygon;
       if (!poly?.exterior?.length) continue;
-      const color = TEAM_FILL_DEFAULT;
+      const color = "#6b7280";
       g.appendChild(svgEl("path", {
         d: polyToPath(poly, this.#toSvg),
         fill: color, stroke: darkenHex(color), "stroke-width": "1.2", "fill-rule": "evenodd",
@@ -704,7 +702,7 @@ export class MapCanvas {
       const p = this.#toSvg(spawn.x, spawn.z);
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
-        "font-size": "12", fill: TEAM_FILL[spawn.team_color] || "#f1f5f9", "font-weight": "bold",
+        "font-size": "12", fill: chatColorHex(spawn.team_color), "font-weight": "bold",
       });
       t.textContent = "★";
       g.appendChild(t);
@@ -720,9 +718,43 @@ export class MapCanvas {
       const p = this.#toSvg(wool.x, wool.z);
       const t = svgEl("text", {
         x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
-        "font-size": "11", fill: WOOL_COLORS[wool.color] || "#f1c40f",
+        "font-size": "11", fill: dyeColorHex(wool.wool_color),
+        style: "cursor:pointer",
       });
       t.textContent = "◆";
+      if (this.#callbacks.onPoiClick) {
+        const woolData = { color: wool.wool_color, x: wool.x, z: wool.z };
+        t.addEventListener("click", (e) => {
+          if (this.#activeTool !== null || this.#clickWasDrag) return;
+          e.stopPropagation();
+          this.#callbacks.onPoiClick("wool", woolData);
+        });
+      }
+      g.appendChild(t);
+    }
+    return g;
+  }
+
+  #buildMonumentLayer() {
+    const g = svgEl("g", { id: "layer-monuments" });
+    this.#monumentLayerEl = g;
+    if (!this.#showPois) g.style.display = "none";
+    for (const mon of (this.#ctx.monuments || [])) {
+      const p = this.#toSvg(mon.x, mon.z);
+      const t = svgEl("text", {
+        x: p.x, y: p.y, "text-anchor": "middle", "dominant-baseline": "middle",
+        "font-size": "13", fill: dyeColorHex(mon.wool_color),
+        style: "cursor:pointer",
+      });
+      t.textContent = "⊕";
+      if (this.#callbacks.onPoiClick) {
+        const monData = { wool_color: mon.wool_color, team: mon.team, x: mon.x, z: mon.z };
+        t.addEventListener("click", (e) => {
+          if (this.#activeTool !== null || this.#clickWasDrag) return;
+          e.stopPropagation();
+          this.#callbacks.onPoiClick("monument", monData);
+        });
+      }
       g.appendChild(t);
     }
     return g;
@@ -1115,7 +1147,8 @@ export class MapCanvas {
     this.#drawState = null;
   }
 
-  #startCylinderDraw(bx, bz) {
+  /** Shared start for cylinder and circle — both use click-center-then-drag-radius. */
+  #startRadialDraw(bx, bz) {
     if (!this.#drawLayerEl || !this.#toSvg) return;
     const centerX = bx + 0.5, centerZ = bz + 0.5;
     const pt = this.#toSvg(centerX, centerZ);
@@ -1140,10 +1173,11 @@ export class MapCanvas {
     });
 
     this.#drawLayerEl.append(previewCircle, line, dot, label);
-    this.#drawState = { toolType: "cylinder", centerX, centerZ, dot, line, previewCircle, label, currentRadius: 1 };
+    // toolType carries "cylinder" or "circle" so #completeRadialDraw knows which payload to emit
+    this.#drawState = { toolType: this.#activeTool, centerX, centerZ, dot, line, previewCircle, label, currentRadius: 1 };
   }
 
-  #updateCylinderPreview(bx, bz) {
+  #updateRadialPreview(bx, bz) {
     if (!this.#drawState || !this.#toSvg) return;
     const { centerX, centerZ, line, previewCircle, label } = this.#drawState;
 
@@ -1152,9 +1186,9 @@ export class MapCanvas {
     const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dz * dz)));
     this.#drawState.currentRadius = radius;
 
-    const cPt  = this.#toSvg(centerX, centerZ);
-    const rxPt = this.#toSvg(centerX + radius, centerZ);
-    const rzPt = this.#toSvg(centerX, centerZ + radius);
+    const cPt   = this.#toSvg(centerX, centerZ);
+    const rxPt  = this.#toSvg(centerX + radius, centerZ);
+    const rzPt  = this.#toSvg(centerX, centerZ + radius);
     const endPt = this.#toSvg(cursorX, cursorZ);
 
     line.setAttribute("x2", endPt.x);
@@ -1166,20 +1200,21 @@ export class MapCanvas {
     label.textContent = `r=${radius}`;
   }
 
-  #completeCylinderDraw(bx, bz) {
+  #completeRadialDraw(bx, bz) {
     if (!this.#drawState) return;
-    const { centerX, centerZ } = this.#drawState;
-    // Update preview one last time so radius reflects click position
-    this.#updateCylinderPreview(bx, bz);
+    const { toolType, centerX, centerZ } = this.#drawState;
+    // Update preview one last time so radius reflects the click position
+    this.#updateRadialPreview(bx, bz);
     const r = this.#drawState.currentRadius;
     this.#cancelDraw();
-    if (this.#callbacks.onRegionDraw) {
-      this.#callbacks.onRegionDraw({
-        type: "cylinder",
-        base_x: centerX - 0.5,
-        base_z: centerZ - 0.5,
-        radius: r,
-      });
+    if (!this.#callbacks.onRegionDraw) return;
+
+    if (toolType === "circle") {
+      // circle stores center coords (not block-index base)
+      this.#callbacks.onRegionDraw({ type: "circle", center_x: centerX, center_z: centerZ, radius: r });
+    } else {
+      // cylinder uses base_x/base_z (block-index = center - 0.5)
+      this.#callbacks.onRegionDraw({ type: "cylinder", base_x: centerX - 0.5, base_z: centerZ - 0.5, radius: r });
     }
   }
 

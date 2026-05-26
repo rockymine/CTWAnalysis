@@ -36,7 +36,7 @@
     <button class="activity-btn" id="activity-teams" title="Teams" disabled data-status="">
       <i data-lucide="users"></i>
     </button>
-    <button class="activity-btn" disabled title="Objective">
+    <button class="activity-btn" id="activity-objective" title="Objective" disabled>
       <i data-lucide="goal"></i>
     </button>
     <button class="activity-btn" id="activity-regions" title="Regions">
@@ -255,6 +255,112 @@
 
     </div>
 
+    <!-- Objective workspace -->
+    <div id="obj-workspace" hidden>
+
+      <!-- Left panel: wool list (top) + region list (bottom) -->
+      <div id="obj-left">
+        <div id="obj-wools-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Wools</h2>
+            <button id="obj-add-wool-btn" class="action-btn">+ Add wool</button>
+          </div>
+          <div id="obj-wool-list"></div>
+        </div>
+        <div class="pt-left-divider"></div>
+        <div id="obj-regions-section">
+          <div class="pt-section-header">
+            <h2 class="ov-section-title">Regions</h2>
+          </div>
+          <div id="obj-region-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-handle" id="obj-left-handle"></div>
+
+      <!-- Canvas: map overview with wool / monument POI markers -->
+      <div id="obj-canvas-wrap">
+        <div id="obj-canvas-subbar">
+          <div id="obj-draw-toolbar">
+            <button id="obj-tool-move"   class="draw-tool-btn" title="Move (M)"  disabled>
+              <i data-lucide="hand"></i>
+            </button>
+            <button id="obj-tool-select" class="draw-tool-btn" title="Select"    disabled>
+              <i data-lucide="mouse-pointer-2"></i>
+            </button>
+          </div>
+          <div id="obj-cursor-coords"></div>
+          <div id="obj-canvas-subbar-right">
+            <span id="obj-zoom-level">—</span>
+          </div>
+        </div>
+        <div id="obj-svg-area">
+          <svg id="obj-map-svg" xmlns="http://www.w3.org/2000/svg">
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                  fill="#334155" font-size="14">Loading map…</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="sidebar-handle" id="obj-right-handle"></div>
+
+      <!-- Right panel: wool inspector -->
+      <div id="obj-right">
+        <div id="obj-right-scroll">
+
+          <!-- Empty state -->
+          <div id="obj-inspector-empty">
+            <p class="pt-empty-msg">Select a wool to inspect.</p>
+          </div>
+
+          <!-- Wool inspector (shown on selection) -->
+          <div id="obj-wool-inspector" hidden>
+            <section class="ov-section">
+              <h2 class="ov-section-title">Wool</h2>
+              <div class="ov-field">
+                <label class="ov-label">Color</label>
+                <div class="pt-color-pick-row">
+                  <span id="obj-wool-color-swatch" class="pt-color-swatch-lg"></span>
+                  <select id="obj-wool-color-sel" class="ov-input"></select>
+                </div>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label">Defender</label>
+                <div class="pt-color-pick-row">
+                  <span id="obj-defender-swatch" class="pt-color-swatch-lg"></span>
+                  <select id="obj-defender-sel" class="ov-input"></select>
+                </div>
+              </div>
+              <div class="ov-field">
+                <label class="ov-label">Room Region</label>
+                <div class="pt-color-pick-row">
+                  <select id="obj-wool-room-sel" class="ov-input"></select>
+                  <button id="obj-wool-room-clear-btn" class="action-btn" title="Clear room region">✕</button>
+                </div>
+              </div>
+            </section>
+            <section class="ov-section">
+              <div class="obj-section-title-row">
+                <h2 class="ov-section-title">Respawn</h2>
+                <span id="obj-respawn-badge" class="obj-respawn-badge obj-respawn-unknown">—</span>
+              </div>
+              <div id="obj-respawn-detail" hidden></div>
+            </section>
+            <section class="ov-section">
+              <h2 class="ov-section-title">Location</h2>
+              <div id="obj-inspector-location" class="detail-group-row"></div>
+            </section>
+            <div id="obj-inspector-captures"></div>
+            <div class="ov-actions">
+              <button id="obj-delete-wool-btn" class="action-btn pt-action-btn--danger">Delete wool</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
     <!-- Regions workspace -->
     <div id="regions-workspace" hidden>
       <div id="layers">
@@ -281,6 +387,9 @@
             </button>
             <button id="tool-cylinder" class="draw-tool-btn" title="Cylinder (Y)"  disabled>
               <i data-lucide="cylinder"></i>
+            </button>
+            <button id="tool-circle"   class="draw-tool-btn" title="Circle (O)"    disabled>
+              <i data-lucide="circle"></i>
             </button>
             <button id="tool-point"    class="draw-tool-btn" title="Point (P)"     disabled>
               <i data-lucide="dot"></i>
@@ -355,6 +464,8 @@
   initSidebarResize(document.getElementById('ov-right-handle'), document.getElementById('ov-right'), 'right', 180, 420);
   initSidebarResize(document.getElementById('pt-left-handle'),  document.getElementById('pt-left'),  'left',  180, 420);
   initSidebarResize(document.getElementById('pt-right-handle'), document.getElementById('pt-right'), 'right', 240, 480);
+  initSidebarResize(document.getElementById('obj-left-handle'),  document.getElementById('obj-left'),  'left',  160, 400);
+  initSidebarResize(document.getElementById('obj-right-handle'), document.getElementById('obj-right'), 'right', 220, 460);
 }());
 </script>
 </body>

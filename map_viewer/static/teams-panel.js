@@ -13,66 +13,13 @@
 
 import { RegionDetail } from "./region-detail.js";
 import * as api         from "./api.js";
+import {
+  PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS,
+  chatColorHex, dyeColorHex,
+} from "./game-colors.js";
+import { typeIcon } from "./region-types.js";
 
-/**
- * PGM chat colors — the `color` field on a team element.
- * Hex values are the standard Minecraft chat-color palette.
- * Values use spaces (matching PGM XML / map_data.json output).
- */
-export const PGM_CHAT_COLORS = [
-  { value: "black",        label: "Black",        hex: "#000000" },
-  { value: "dark blue",    label: "Dark Blue",    hex: "#0000AA" },
-  { value: "dark green",   label: "Dark Green",   hex: "#00AA00" },
-  { value: "dark aqua",    label: "Dark Aqua",    hex: "#00AAAA" },
-  { value: "dark red",     label: "Dark Red",     hex: "#AA0000" },
-  { value: "dark purple",  label: "Dark Purple",  hex: "#AA00AA" },
-  { value: "gold",         label: "Gold",         hex: "#FFAA00" },
-  { value: "gray",         label: "Gray",         hex: "#AAAAAA" },
-  { value: "dark gray",    label: "Dark Gray",    hex: "#555555" },
-  { value: "blue",         label: "Blue",         hex: "#5555FF" },
-  { value: "green",        label: "Green",        hex: "#55FF55" },
-  { value: "aqua",         label: "Aqua",         hex: "#55FFFF" },
-  { value: "red",          label: "Red",          hex: "#FF5555" },
-  { value: "light purple", label: "Light Purple", hex: "#FF55FF" },
-  { value: "yellow",       label: "Yellow",       hex: "#FFFF55" },
-  { value: "white",        label: "White",        hex: "#FFFFFF" },
-];
-
-/**
- * Minecraft dye colors — the `dye_color` field on a team element.
- * Hex values are the armor-dye palette from pgm.dev/docs/reference/misc/colors.
- */
-export const MINECRAFT_DYE_COLORS = [
-  { value: "white",      label: "White",      hex: "#FFFFFF" },
-  { value: "orange",     label: "Orange",     hex: "#D87F33" },
-  { value: "magenta",    label: "Magenta",    hex: "#B24CD8" },
-  { value: "light blue", label: "Light Blue", hex: "#6699D8" },
-  { value: "yellow",     label: "Yellow",     hex: "#E5E533" },
-  { value: "lime",       label: "Lime",       hex: "#7FCC19" },
-  { value: "pink",       label: "Pink",       hex: "#F27FA5" },
-  { value: "gray",       label: "Gray",       hex: "#4C4C4C" },
-  { value: "silver",     label: "Silver",     hex: "#999999" },
-  { value: "cyan",       label: "Cyan",       hex: "#4C7F99" },
-  { value: "purple",     label: "Purple",     hex: "#7F3FB2" },
-  { value: "blue",       label: "Blue",       hex: "#334CB2" },
-  { value: "brown",      label: "Brown",      hex: "#664C33" },
-  { value: "green",      label: "Green",      hex: "#667F33" },
-  { value: "red",        label: "Red",        hex: "#993333" },
-  { value: "black",      label: "Black",      hex: "#191919" },
-];
-
-/** Resolve a PGM chat color name → hex, falling back to a neutral gray. */
-function colorHex(colorName) {
-  // Normalise underscore variants (e.g. "dark_purple" → "dark purple")
-  const normalised = (colorName ?? "").replace(/_/g, " ").toLowerCase();
-  return PGM_CHAT_COLORS.find(c => c.value === normalised)?.hex ?? "#475569";
-}
-
-/** Resolve a Minecraft dye color name → hex, falling back to a neutral gray. */
-function dyeColorHex(colorName) {
-  const normalised = (colorName ?? "").replace(/_/g, " ").toLowerCase();
-  return MINECRAFT_DYE_COLORS.find(c => c.value === normalised)?.hex ?? "#475569";
-}
+export { PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS };
 
 export class TeamsPanel {
   /**
@@ -141,6 +88,14 @@ export class TeamsPanel {
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the currently-selected spawn region id, or null.
+   * Preferred over accessing _selectedSpawnId directly from outside this class.
+   */
+  getSelectedRegionId() {
+    return this._selectedSpawnId;
+  }
 
   /** Load all teams + spawn data for the given map. */
   async load(mapName) {
@@ -323,7 +278,7 @@ export class TeamsPanel {
 
     const swatch = document.createElement("span");
     swatch.className = "pt-team-swatch";
-    swatch.style.background = colorHex(team.color);
+    swatch.style.background = chatColorHex(team.color);
 
     const label = document.createElement("span");
     label.className = "pt-team-label";
@@ -369,9 +324,7 @@ export class TeamsPanel {
     row.dataset.regionId = region.id;
     if (region.id === this._selectedSpawnId) row.classList.add("pt-spawn-row--selected");
 
-    const dot = document.createElement("span");
-    dot.className = "pt-spawn-team-dot";
-    if (team) dot.style.background = colorHex(team.color);
+    const iconEl = typeIcon(region.type, region.synthetic_id ?? false);
 
     const labelEl = document.createElement("span");
     labelEl.className = "pt-spawn-label";
@@ -381,7 +334,7 @@ export class TeamsPanel {
     tagEl.className = "pt-spawn-team-tag";
     tagEl.textContent = team ? (team.name || team.id) : "—";
 
-    row.appendChild(dot);
+    row.appendChild(iconEl);
     row.appendChild(labelEl);
     row.appendChild(tagEl);
     // Route through the activity's registry so canvas + panel stay in sync
@@ -469,12 +422,12 @@ export class TeamsPanel {
     this._teamDyeColorSel.value  = dyeColor;
     this._teamMaxInput.value     = team.max_players ?? 20;
     this._teamMinInput.value     = team.min_players ?? 0;
-    this._teamColorSwatch.style.background    = colorHex(chatColor);
+    this._teamColorSwatch.style.background    = chatColorHex(chatColor);
     this._teamDyeColorSwatch.style.background = dyeColor ? dyeColorHex(dyeColor) : "transparent";
 
     const saveOnBlur = () => this._saveTeam(team.id);
     const saveOnChatColorChange = () => {
-      this._teamColorSwatch.style.background = colorHex(this._teamColorSel.value);
+      this._teamColorSwatch.style.background = chatColorHex(this._teamColorSel.value);
       this._saveTeam(team.id);
     };
     const saveOnDyeColorChange = () => {
@@ -521,34 +474,39 @@ export class TeamsPanel {
     this._spawnYawInput.value = spawnLink?.yaw  ?? 0;
     this._spawnKitInput.value = spawnLink?.kit  ?? "";
 
-    const saveSpawn = async () => { await this._saveSpawn(regionId); };
-    this._spawnTeamSel.addEventListener("change", saveSpawn);
-    this._spawnYawInput.addEventListener("blur", saveSpawn);
-    this._spawnKitInput.addEventListener("blur", saveSpawn);
-    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId));
-
-    // Create spawn link on first team assignment if none exists yet
-    if (!spawnLink) {
-      this._spawnTeamSel.addEventListener("change", async () => {
-        if (!this._spawnForRegion(regionId)) {
-          try {
-            await api.addSpawn(this._mapName, {
-              region_id: regionId,
-              team:      this._spawnTeamSel.value,
-              yaw:       parseFloat(this._spawnYawInput.value) || 0,
-              kit:       this._spawnKitInput.value.trim(),
-            });
-            const mapData = await api.fetchMapData(this._mapName);
-            this._spawns = mapData.spawns ?? [];
-            this._renderSpawnList();
-            this._highlightSpawnRow(regionId);
-            this._updateStatusDot();
-          } catch (err) {
-            console.error("Failed to create spawn link:", err);
-          }
+    // Single change listener: creates the spawn link on first assignment if none
+    // exists yet, then saves on subsequent changes.  A single handler avoids the
+    // dual-listener race where both listeners would call api.addSpawn if saveSpawn
+    // were ever extended to handle the no-link case.
+    const onTeamChange = async () => {
+      if (!this._spawnForRegion(regionId)) {
+        // No link yet — create it
+        try {
+          await api.addSpawn(this._mapName, {
+            region_id: regionId,
+            team:      this._spawnTeamSel.value,
+            yaw:       parseFloat(this._spawnYawInput.value) || 0,
+            kit:       this._spawnKitInput.value.trim(),
+          });
+          const mapData = await api.fetchMapData(this._mapName);
+          this._spawns = mapData.spawns ?? [];
+          this._renderSpawnList();
+          this._highlightSpawnRow(regionId);
+          this._updateStatusDot();
+        } catch (err) {
+          console.error("Failed to create spawn link:", err);
         }
-      }, { once: true });
-    }
+      } else {
+        // Link exists — save normally
+        await this._saveSpawn(regionId);
+      }
+    };
+    this._spawnTeamSel.addEventListener("change", onTeamChange);
+
+    const saveSpawn = async () => { await this._saveSpawn(regionId); };
+    this._spawnYawInput.addEventListener("blur",  saveSpawn);
+    this._spawnKitInput.addEventListener("blur",  saveSpawn);
+    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId));
   }
 
   // ── Private: rename handling ───────────────────────────────────────────────

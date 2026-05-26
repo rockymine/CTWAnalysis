@@ -821,7 +821,7 @@ def create_app() -> Flask:
         result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
         return jsonify(result)
 
-    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder"}
+    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder", "circle"}
 
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
@@ -878,7 +878,7 @@ def create_app() -> Flask:
                     "bounds_2d": bounds_2d,
                 }
 
-            else:  # cylinder
+            elif region_type == "cylinder":
                 bx = float(body["base_x"])
                 bz = float(body["base_z"])
                 by = float(body.get("base_y", 64))
@@ -891,6 +891,19 @@ def create_app() -> Flask:
                     "bounds_2d": {"min": {"x": bx - r, "z": bz - r},
                                   "max": {"x": bx + r, "z": bz + r}},
                 }
+
+            else:  # circle
+                cx = float(body["center_x"])
+                cz = float(body["center_z"])
+                r  = float(body["radius"])
+                new_region = {
+                    "id": region_id, "type": "circle",
+                    "center": {"x": cx, "z": cz},
+                    "radius": r,
+                    "bounds_2d": {"min": {"x": cx - r, "z": cz - r},
+                                  "max": {"x": cx + r, "z": cz + r}},
+                }
+
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
 
@@ -1318,7 +1331,398 @@ def create_app() -> Flask:
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True})
 
+    # ── Wool endpoints ────────────────────────────────────────────────────────
+
+    @app.route("/api/map/<name>/wools", methods=["POST"])
+    def add_wool(name: str) -> tuple:
+        """Create a new wool entry identified by (team, color)."""
+        body = request.get_json(silent=True) or {}
+        team_id = (body.get("team") or "").strip()
+        color   = (body.get("color") or "").strip()
+        if not team_id:
+            return jsonify({"error": "team is required"}), 400
+        if not color:
+            return jsonify({"error": "color is required"}), 400
+
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        if any(w.get("team") == team_id and w.get("color") == color for w in wools):
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) already exists"}), 409
+
+        loc_raw = body.get("location") or {}
+        mon_raw = body.get("monument") or {}
+        new_wool = {
+            "team":     team_id,
+            "color":    color,
+            "location": {
+                "x": float(loc_raw.get("x", 0)),
+                "y": float(loc_raw.get("y", 0)),
+                "z": float(loc_raw.get("z", 0)),
+            },
+            "monument": {
+                "x": float(mon_raw.get("x", 0)),
+                "y": float(mon_raw.get("y", 0)),
+                "z": float(mon_raw.get("z", 0)),
+            },
+        }
+        wools.append(new_wool)
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "wool": new_wool}), 201
+
+    @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["PATCH"])
+    def update_wool(name: str, team_id: str, color: str) -> tuple:
+        """Update a wool entry by its (team, color) composite key.
+
+        If `location` is in the body, all entries sharing the same (color,
+        old_location) are updated (room-level location change).  Other fields
+        (team rename, color rename) apply only to the matched entry.
+        """
+        body = request.get_json(silent=True) or {}
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        wool = next(
+            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
+            None,
+        )
+        if wool is None:
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        # ── location update: apply to all entries sharing (color, old_location) ──
+        if "location" in body:
+            loc_raw  = body["location"]
+            new_loc  = {
+                "x": float(loc_raw.get("x", 0)),
+                "y": float(loc_raw.get("y", 0)),
+                "z": float(loc_raw.get("z", 0)),
+            }
+            old_loc = wool["location"]
+            for entry in wools:
+                if (entry.get("color") == color
+                        and entry.get("location") == old_loc):
+                    entry["location"] = new_loc
+
+        # ── team rename ──
+        new_team = (body.get("team") or "").strip()
+        if new_team and new_team != team_id:
+            if any(w.get("team") == new_team and w.get("color") == wool.get("color")
+                   for w in wools if w is not wool):
+                return jsonify({"error": f"wool ({new_team!r}, {wool['color']!r}) already exists"}), 409
+            wool["team"] = new_team
+
+        # ── color rename ──
+        new_color = (body.get("color") or "").strip()
+        if new_color and new_color != wool.get("color"):
+            if any(w.get("team") == wool.get("team") and w.get("color") == new_color
+                   for w in wools if w is not wool):
+                return jsonify({"error": f"wool ({wool['team']!r}, {new_color!r}) already exists"}), 409
+            wool["color"] = new_color
+
+        # ── wool_room_region update: apply to all entries sharing the same location ──
+        # Explicit None in the body means "clear the assignment"; absent key means "no change".
+        if "wool_room_region" in body:
+            new_region_id = body["wool_room_region"]   # str | None
+            current_loc = wool["location"]
+            for entry in wools:
+                if entry.get("location") == current_loc:
+                    entry["wool_room_region"] = new_region_id
+
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "wool": wool})
+
+    @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["DELETE"])
+    def delete_wool(name: str, team_id: str, color: str) -> tuple:
+        """Delete the single wool entry identified by (team, color)."""
+        data_path = _get_output_root() / name / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.setdefault("wools", [])
+
+        if not any(w.get("team") == team_id and w.get("color") == color for w in wools):
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        data["wools"] = [
+            w for w in wools
+            if not (w.get("team") == team_id and w.get("color") == color)
+        ]
+        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True})
+
+    @app.route("/api/map/<name>/wool/<team_id>/<color>/room-status")
+    def wool_room_status(name: str, team_id: str, color: str):
+        """Return the respawn mechanism detected for a wool's room.
+
+        Checks (in priority order):
+          1. PGM spawner module  — <spawners> element in map_data.json
+          2. Mob spawner block   — block ID 52 in layout_resource_blocks.parquet
+          3. Renewable wool block — wool block in a <renewable> region
+          4. Chest wool          — wool item in a chest inside the room
+          5. unknown             — nothing detected
+
+        The wool room bounding box is derived from the wool's wool_room_region
+        field plus the region's bounds_2d stored in map_data.json.  If the
+        region has no resolvable bounds (mirror/translate maps), only the
+        XML-based checks (PGM spawner) are performed.
+
+        Returns:
+            {
+                "respawn_type": str,        # one of the five labels above
+                "pgm_spawner": dict | null, # spawner data if matched
+                "chest_wool_count": int,
+                "block_wool_count": int,
+                "mob_spawner_count": int,
+            }
+        """
+        from layout_analysis.wool_query import query_wool_in_region
+
+        out_dir   = _get_output_root() / name
+        data_path = out_dir / "map_data.json"
+        if not data_path.exists():
+            abort(404)
+
+        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        wools: list = data.get("wools", [])
+
+        wool = next(
+            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
+            None,
+        )
+        if wool is None:
+            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
+
+        # ── 1. PGM spawner check (XML-only, no layout files needed) ──────────
+        wool_room_region = wool.get("wool_room_region")
+        matched_spawner  = None
+        wool_color_damage = _wool_color_to_damage(color)
+
+        for spawner in data.get("spawners", []):
+            # Match by player_region == wool_room_region
+            if wool_room_region and spawner.get("player_region") == wool_room_region:
+                matched_spawner = spawner
+                break
+            # Fallback: spawner items include this wool color
+            for item in spawner.get("items", []):
+                if (item.get("material", "").lower() == "wool"
+                        and item.get("damage") == wool_color_damage):
+                    matched_spawner = spawner
+                    break
+            if matched_spawner:
+                break
+
+        # ── 2-4. Layout-based checks (require layout parquet files) ──────────
+        chest_wool_count = 0
+        block_wool_count = 0
+        mob_spawners: list[dict] = []
+        layout_result: dict = {}
+
+        room_bounds = _resolve_region_bounds(data, wool_room_region)
+        if room_bounds is not None:
+            min_x, min_z, max_x, max_z = room_bounds
+            try:
+                layout_result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
+                chest_wool_count = len(layout_result.get("chest_wool",   []))
+                block_wool_count = len(layout_result.get("block_wool",   []))
+                mob_spawners     = layout_result.get("mob_spawners", [])
+            except Exception:
+                pass  # layout files may not exist; leave counts at zero
+
+        mob_spawner_count = len(mob_spawners)
+
+        # Collect a human-readable label per spawner type.
+        # For Item-entity spawners (wool drops) prefer spawn_item_id over entity_id.
+        mob_entity_labels: set[str] = set()
+        for s in mob_spawners:
+            item_id = s.get("spawn_item_id")  # e.g. 'minecraft:wool'
+            entity_id = s.get("entity_id")    # e.g. 'Item', 'Zombie'
+            if item_id:
+                label = item_id.replace("minecraft:", "")
+            elif entity_id:
+                label = entity_id
+            else:
+                continue
+            mob_entity_labels.add(label)
+        mob_entity_types: list[str] = sorted(mob_entity_labels)
+
+        # ── Determine primary respawn type by priority ────────────────────────
+        if matched_spawner:
+            respawn_type = "pgm_spawner"
+        elif mob_spawner_count > 0:
+            respawn_type = "mob_spawner"
+        elif block_wool_count > 0:
+            respawn_type = "renewable"
+        elif chest_wool_count > 0:
+            respawn_type = "chest"
+        else:
+            respawn_type = "unknown"
+
+        # ── Renewables matching the wool room region ──────────────────────────
+        # Return any renewable rules whose region_id matches the wool room, plus
+        # any whose bounds_2d spatially contains a block_wool position.
+        all_renewables: list[dict] = data.get("renewables", [])
+        regions_dict: dict = data.get("regions", {})
+        relevant_renewables: list[dict] = []
+        seen_region_ids: set[str] = set()
+        for ren in all_renewables:
+            rid = ren.get("region_id", "")
+            if rid in seen_region_ids:
+                continue
+            matched = rid == wool_room_region
+            if not matched:
+                # Check whether any block_wool falls inside this region
+                region_bounds = regions_dict.get(rid, {}).get("bounds_2d")
+                if region_bounds:
+                    mn = region_bounds["min"]
+                    mx_ = region_bounds["max"]
+                    for bw in layout_result.get("block_wool", []):
+                        if mn["x"] <= bw["x"] <= mx_["x"] and mn["z"] <= bw["z"] <= mx_["z"]:
+                            matched = True
+                            break
+            if matched:
+                relevant_renewables.append(ren)
+                seen_region_ids.add(rid)
+
+        # ── Block-drop rules matching the wool room region ────────────────────
+        relevant_drop_rules: list[dict] = [
+            rule for rule in data.get("block_drop_rules", [])
+            if wool_room_region and rule.get("region_id") == wool_room_region
+        ]
+
+        # ── XML snippets ───────────────────────────────────────────────────────
+        wool_xml = _build_wool_xml(wool)
+        pgm_spawner_xml = _build_spawner_xml(matched_spawner) if matched_spawner else None
+
+        return jsonify({
+            "respawn_type":      respawn_type,
+            "pgm_spawner":       matched_spawner,
+            "pgm_spawner_xml":   pgm_spawner_xml,
+            "chest_wool":        layout_result.get("chest_wool", []),
+            "chest_wool_count":  chest_wool_count,
+            "block_wool_count":  block_wool_count,
+            "mob_spawners":      mob_spawners,
+            "mob_spawner_count": mob_spawner_count,
+            "mob_entity_types":  mob_entity_types,
+            "renewables":        relevant_renewables,
+            "block_drop_rules":  relevant_drop_rules,
+            "wool_xml":          wool_xml,
+        })
+
     return app
+
+
+# ---------------------------------------------------------------------------
+# Private helpers used only by app routes
+# ---------------------------------------------------------------------------
+
+# Wool dye color names → Minecraft damage values (same mapping as WOOL_COLORS
+# in wool_query.py but inverted).
+_WOOL_COLOR_DAMAGE: dict[str, int] = {
+    'white': 0, 'orange': 1, 'magenta': 2, 'light_blue': 3,
+    'yellow': 4, 'lime': 5, 'pink': 6, 'gray': 7,
+    'light_gray': 8, 'cyan': 9, 'purple': 10, 'blue': 11,
+    'brown': 12, 'green': 13, 'red': 14, 'black': 15,
+}
+
+
+def _wool_color_to_damage(color: str) -> Optional[int]:
+    """Return the Minecraft damage value for a wool color name, or None."""
+    # Handle names with spaces or underscores (e.g. 'light blue' → 'light_blue')
+    normalized = color.lower().replace(' ', '_')
+    return _WOOL_COLOR_DAMAGE.get(normalized)
+
+
+def _build_wool_xml(wool: dict) -> str:
+    """Return a reconstructed XML snippet for a wool entry."""
+    team  = wool.get("team", "")
+    color = wool.get("color", "").replace("_", " ")
+    wool_room_region = wool.get("wool_room_region")
+    location  = wool.get("location") or {}
+    monument  = wool.get("monument") or {}
+
+    lines: list[str] = [f'<wool team="{team}" color="{color}">']
+
+    if wool_room_region:
+        lines.append(f'  <block region="{wool_room_region}"/>')
+    elif location:
+        x, y, z = location.get("x", 0), location.get("y", 0), location.get("z", 0)
+        lines.append(f'  <!-- wool block at {x:.1f}, {y:.1f}, {z:.1f} -->')
+
+    if monument:
+        lines.append("  <monument>")
+        region_id = monument.get("region_id")
+        if region_id:
+            lines.append(f'    <block region="{region_id}"/>')
+        else:
+            mx = monument.get("x", 0)
+            my = monument.get("y", 0)
+            mz = monument.get("z", 0)
+            lines.append(f'    <block>{mx:.0f} {my:.0f} {mz:.0f}</block>')
+        lines.append("  </monument>")
+
+    lines.append("</wool>")
+    return "\n".join(lines)
+
+
+def _build_spawner_xml(spawner: dict) -> str:
+    """Return a reconstructed XML snippet for a PGM spawner entry."""
+    parts: list[str] = []
+    if spawn_region := spawner.get("spawn_region"):
+        parts.append(f'spawn-region="{spawn_region}"')
+    if player_region := spawner.get("player_region"):
+        parts.append(f'player-region="{player_region}"')
+    if (max_ent := spawner.get("max_entities")) is not None:
+        parts.append(f'max-entities="{max_ent}"')
+
+    items = spawner.get("items", [])
+    attr_str = " ".join(parts)
+
+    if not items:
+        return f"<spawner {attr_str}/>" if attr_str else "<spawner/>"
+
+    lines: list[str] = [f"<spawner {attr_str}>"]
+    for item in items:
+        iparts: list[str] = [f'material="{item.get("material", "")}"']
+        if (dmg := item.get("damage")) is not None:
+            iparts.append(f'damage="{dmg}"')
+        if (amt := item.get("amount")) is not None and amt != 1:
+            iparts.append(f'amount="{amt}"')
+        lines.append(f'  <item {" ".join(iparts)}/>')
+    lines.append("</spawner>")
+    return "\n".join(lines)
+
+
+def _resolve_region_bounds(
+    data: dict,
+    region_id: Optional[str],
+) -> Optional[tuple[float, float, float, float]]:
+    """Return (min_x, min_z, max_x, max_z) for *region_id* from *data['regions']*.
+
+    Returns None if region_id is absent or the region has no bounds_2d.
+    """
+    if not region_id:
+        return None
+    region = data.get("regions", {}).get(region_id)
+    if region is None:
+        return None
+    bounds = region.get("bounds_2d")
+    if not bounds:
+        return None
+    return (
+        bounds["min"]["x"],
+        bounds["min"]["z"],
+        bounds["max"]["x"],
+        bounds["max"]["z"],
+    )
 
 
 if __name__ == "__main__":

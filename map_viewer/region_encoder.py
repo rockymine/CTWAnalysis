@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-_BLUE    = "#5b8fc7"   # muted blue  — blue-team regions
-_RED     = "#c06060"   # muted red   — red-team regions
-_NEUTRAL = "#64748b"   # slate gray  — everything else
+_NEUTRAL = "#64748b"   # slate gray  — default region color
 
 # Canonical category order and display labels.
 # wool+block → monument; wool+other → wool_room
@@ -29,14 +27,6 @@ def _refine_category(base_cat: str, region_type: str) -> str:
         return "spawn_point" if region_type == "point" else "spawn_area"
     return base_cat
 
-
-def _region_color(region_id: str) -> str:
-    lower = region_id.lower()
-    if "blue" in lower:
-        return _BLUE
-    if "red" in lower:
-        return _RED
-    return _NEUTRAL
 
 
 def _encode_bounds(region: dict) -> dict | None:
@@ -130,7 +120,7 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
         "id": region_id,
         "type": region_type,
         "label": label,
-        "color": _region_color(xml_id),  # color based on XML id; anon nodes get neutral
+        "color": _NEUTRAL,
         "bounds": _encode_bounds(region),
         "coords": _encode_coords(region),
         "is_negative": region_type == "negative",

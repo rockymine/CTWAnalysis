@@ -104,16 +104,16 @@ function nodeToXml(node, depth = 0) {
     const maxY = c.max_y ?? "?";
     attr = ` min="${b.min_x},${minY},${b.min_z}" max="${b.max_x},${maxY},${b.max_z}"`;
   } else if (t === "cylinder") {
-    const by = c.base_y ?? "?";
-    attr = ` base="${b.min_x + (b.max_x - b.min_x) / 2},${by},${b.min_z + (b.max_z - b.min_z) / 2}"` +
+    // Read stored coords directly — avoid float drift from recomputing center out of bounds
+    const bx = c.base_x ?? "?", by = c.base_y ?? "?", bz = c.base_z ?? "?";
+    attr = ` base="${bx},${by},${bz}"` +
            ` radius="${c.radius ?? "?"}" height="${c.height ?? "?"}"`;
   } else if (t === "circle") {
-    attr = ` center="${b.min_x + (b.max_x - b.min_x) / 2},${b.min_z + (b.max_z - b.min_z) / 2}"` +
-           ` radius="${c.radius ?? "?"}"`;
+    const cx = c.center_x ?? "?", cz = c.center_z ?? "?";
+    attr = ` center="${cx},${cz}" radius="${c.radius ?? "?"}"`;
   } else if (t === "sphere") {
-    const oy = c.origin_y ?? "?";
-    attr = ` origin="${b.min_x + (b.max_x - b.min_x) / 2},${oy},${b.min_z + (b.max_z - b.min_z) / 2}"` +
-           ` radius="${c.radius ?? "?"}"`;
+    const ox = c.origin_x ?? "?", oy = c.origin_y ?? "?", oz = c.origin_z ?? "?";
+    attr = ` origin="${ox},${oy},${oz}" radius="${c.radius ?? "?"}"`;
   }
 
   const composite = ["union", "negative", "intersect", "complement"].includes(t);

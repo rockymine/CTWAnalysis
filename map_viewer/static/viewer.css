@@ -41,6 +41,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 body {
   font-family: ui-monospace, monospace; font-size: 14px;
   background: var(--bg-base); color: var(--text-bright);
@@ -845,12 +846,8 @@ body {
 }
 .pt-spawn-row:hover { background: var(--bg-selected); }
 .pt-spawn-row--selected { background: var(--bg-selected); }
-.pt-spawn-team-dot {
-  width: 8px; height: 8px; flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--border);
-  display: inline-block;
-}
+/* type icon sits at the same gap as the rest; drop its own margin-right */
+.pt-spawn-row .region-type-icon { margin-right: 0; }
 .pt-spawn-label {
   flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -952,4 +949,196 @@ body {
 #pt-spawn-assignment {
   border-top: 1px solid var(--border);
   margin-top: 0;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Objective workspace (3-column layout)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+#obj-workspace {
+  display: flex; flex-direction: row;
+  flex: 1; overflow: hidden;
+}
+
+/* ── Left panel: wool list (top) + region list (bottom) ── */
+#obj-left {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-wools-section {
+  flex-shrink: 0;
+  max-height: 55%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-wool-list {
+  flex: 1; overflow-y: auto;
+  padding: 4px 0;
+}
+#obj-regions-section {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-region-list {
+  flex: 1; overflow-y: auto;
+  padding: 4px 0;
+}
+/* Region rows — styled like pt-spawn-row */
+.obj-region-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; min-height: 28px;
+  cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--text-primary);
+}
+.obj-region-row:hover           { background: var(--bg-selected); }
+.obj-region-row--selected       { background: var(--bg-selected); }
+/* type icon sits at the same gap as the rest; drop its own margin-right */
+.obj-region-row .region-type-icon { margin-right: 0; }
+.obj-region-label {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.obj-region-empty {
+  padding: 10px 12px;
+  font-size: 12px; color: var(--text-muted); font-style: italic;
+}
+
+
+.obj-team-dot {
+  width: 10px; height: 10px; flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,.15);
+}
+
+/* ── Wool list: wool rows ── */
+.obj-wool-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px; min-height: 34px;
+  cursor: pointer; user-select: none;
+  border-bottom: 1px solid transparent;
+}
+.obj-wool-row:hover           { background: var(--bg-selected); }
+.obj-wool-row--selected       { background: var(--bg-selected); }
+.obj-wool-swatch {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.12);
+  display: inline-block;
+}
+.obj-wool-label {
+  flex: 1; min-width: 0;
+  font-size: 13px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Canvas ── */
+#obj-canvas-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg-deep);
+}
+#obj-canvas-subbar {
+  display: flex; align-items: center;
+  height: 36px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+}
+#obj-draw-toolbar {
+  display: flex; gap: 2px; margin-right: 8px;
+}
+
+/* Respawn badge — shown in the wool inspector */
+.obj-respawn-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.obj-respawn-unknown  { background: var(--bg-hover);  color: var(--text-muted); }
+.obj-respawn-chest    { background: #2a4a6a;          color: #7ec8f0; }
+.obj-respawn-pgm_spawner { background: #2a4a2a;       color: #7ed07e; }
+.obj-respawn-mob_spawner { background: #4a2a4a;       color: #d07ed0; }
+.obj-respawn-renewable   { background: #4a3a1a;       color: #d0aa5a; }
+
+/* Respawn detail fields — appears below the badge row */
+.obj-respawn-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+/* Narrow fixed-width field for Amount / count columns inside an ov-field-row */
+.ov-field-row > .ov-field--compact { flex: 0 0 64px; }
+
+#obj-cursor-coords {
+  flex: 1; text-align: center;
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  user-select: none;
+}
+#obj-canvas-subbar-right {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+}
+#obj-zoom-level {
+  font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  min-width: 40px; text-align: right;
+}
+#obj-svg-area {
+  flex: 1; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; padding: 12px;
+}
+#obj-map-svg { max-width: 100%; max-height: 100%; cursor: default; }
+
+/* ── Right panel: wool inspector ── */
+/* Inspector is a flex column; each section (Wool, Respawn, Location, Monument) gets gap */
+#obj-wool-inspector { display: flex; flex-direction: column; gap: 20px; }
+
+/* Title row: section heading + inline badge (used by Respawn) */
+.obj-section-title-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border-bottom: 1px solid var(--border); padding-bottom: 6px;
+}
+.obj-section-title-row > .ov-section-title { border-bottom: none; padding-bottom: 0; flex: 1; }
+
+#obj-right {
+  width: 260px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#obj-right-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* Inspector empty state */
+#obj-inspector-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+}
+
+/* (obj-defender-row, obj-defender-name, obj-wool-title-row, obj-wool-swatch-lg,
+   obj-inspector-title-text removed — inspector now uses pt-color-pick-row pattern) */
+
+/* Inspector: monument capture group — one per capturing team */
+.obj-monument-group {
+  display: flex; flex-direction: column; gap: 12px;
+}
+/* Thin separator between multiple monument groups (rare: >2 teams) */
+#obj-inspector-captures > .obj-monument-group + .obj-monument-group {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }

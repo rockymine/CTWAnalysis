@@ -13,7 +13,7 @@ from .extractors import (
     VerticalSegmentsExtractor,
 )
 from .region_reader import RegionReader
-from .features import ResourceBlockExtractor, ChestExtractor
+from .features import ResourceBlockExtractor, ChestExtractor, TileEntityExtractor
 from .map_layout_config import MapLayoutConfig
 
 logger = logging.getLogger('ctw')
@@ -51,6 +51,14 @@ def _extract_features(
                 f"    Saved {cc_path.name} "
                 f"({len(unique_chests)} chests, {len(df)} item slots)"
             )
+
+    if 'tile_entities' in parquet_files:
+        te_path = parquet_files['tile_entities']
+        if not te_path.exists() or force_rerun:
+            logger.debug("  Extracting tile entities...")
+            df = TileEntityExtractor(reader).extract()
+            df.to_parquet(te_path)
+            logger.debug(f"    Saved {te_path.name} ({len(df)} tile entities)")
 
 
 def analyze_layout(
@@ -146,6 +154,7 @@ def analyze_layout(
     if not skip_features:
         parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
         parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
+        parquet_files['tile_entities'] = out / 'layout_tile_entities.parquet'
     if not skip_segments:
         parquet_files['vertical_segments'] = out / 'layout_vertical_segments.parquet'
 
@@ -264,6 +273,7 @@ def _analyze_layout_configured(
     if not skip_features:
         parquet_files['resource_blocks'] = out / 'layout_resource_blocks.parquet'
         parquet_files['chest_contents'] = out / 'layout_chest_contents.parquet'
+        parquet_files['tile_entities'] = out / 'layout_tile_entities.parquet'
     if not skip_segments:
         parquet_files['vertical_segments'] = out / 'layout_vertical_segments.parquet'
 
