@@ -153,7 +153,6 @@ def create_app() -> Flask:
 
     @app.route("/api/source-map/<name>/pipeline-status")
     def pipeline_status(name: str):
-        import time
         output_root = get_output_root()
         out_dir = output_root / name
         steps = check_pipeline_status(out_dir)
