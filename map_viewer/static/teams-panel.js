@@ -149,8 +149,8 @@ export class TeamsPanel {
   onRegionSelect(node) {
     this._selectedSpawnId = node.id;
     this._selectedTeamId  = null;
-    this._highlightSpawnRow(node.id);
-    this._clearTeamHighlight();
+    this._highlightRow(this._spawnListEl, "regionId", node.id);
+    this._highlightRow(this._teamsListEl, "teamId", null);
     this._teamInspEl.hidden  = true;
     this._spawnInspEl.hidden = false;
     this._emptyEl.hidden     = true;
@@ -161,7 +161,7 @@ export class TeamsPanel {
   /** Called when the canvas selection is cleared (empty click or after delete). */
   onRegionDeselect() {
     this._selectedSpawnId = null;
-    this._clearSpawnHighlight();
+    this._highlightRow(this._spawnListEl, "regionId", null);
     this._detail?.clear();
     this._showEmptyState();
   }
@@ -344,33 +344,15 @@ export class TeamsPanel {
     this._opts.onDeselectRegion?.();
     this._selectedTeamId  = teamId;
     this._selectedSpawnId = null;
-    this._highlightTeamRow(teamId);
-    this._clearSpawnHighlight();
+    this._highlightRow(this._teamsListEl, "teamId", teamId);
+    this._highlightRow(this._spawnListEl, "regionId", null);
     const team = this._teams.find(t => t.id === teamId);
     if (team) this._showTeamInspector(team);
   }
 
-  _highlightTeamRow(teamId) {
-    for (const row of this._teamsListEl.querySelectorAll(".list-row")) {
-      row.classList.toggle("list-row--selected", row.dataset.teamId === teamId);
-    }
-  }
-
-  _clearTeamHighlight() {
-    for (const row of this._teamsListEl.querySelectorAll(".list-row")) {
-      row.classList.remove("list-row--selected");
-    }
-  }
-
-  _highlightSpawnRow(regionId) {
-    for (const row of this._spawnListEl.querySelectorAll(".list-row")) {
-      row.classList.toggle("list-row--selected", row.dataset.regionId === regionId);
-    }
-  }
-
-  _clearSpawnHighlight() {
-    for (const row of this._spawnListEl.querySelectorAll(".list-row")) {
-      row.classList.remove("list-row--selected");
+  _highlightRow(listEl, dataAttr, value) {
+    for (const row of listEl.querySelectorAll(".list-row")) {
+      row.classList.toggle("list-row--selected", row.dataset[dataAttr] === value);
     }
   }
 
@@ -486,7 +468,7 @@ export class TeamsPanel {
           const mapData = await api.fetchMapData(this._mapName);
           this._spawns = mapData.spawns ?? [];
           this._renderSpawnList();
-          this._highlightSpawnRow(regionId);
+          this._highlightRow(this._spawnListEl, "regionId", regionId);
           this._updateStatusDot();
         } catch (err) {
           console.error("Failed to create spawn link:", err);
@@ -526,7 +508,7 @@ export class TeamsPanel {
           const mapData = await api.fetchMapData(this._mapName);
           this._spawns = mapData.spawns ?? [];
           this._renderSpawnList();
-          this._highlightSpawnRow(newId);
+          this._highlightRow(this._spawnListEl, "regionId", newId);
           this._selectedSpawnId = newId;
         })
         .catch(err => console.error("Teams: spawn re-link after rename failed:", err));
@@ -578,7 +560,7 @@ export class TeamsPanel {
       if (idx !== -1) this._teams[idx] = updated;
       if (updated.id !== originalId) this._selectedTeamId = updated.id;
       this._renderTeamsList();
-      this._highlightTeamRow(this._selectedTeamId);
+      this._highlightRow(this._teamsListEl, "teamId", this._selectedTeamId);
       this._updateStatusDot();
     } catch (err) {
       console.error("Failed to save team:", err);
@@ -616,7 +598,7 @@ export class TeamsPanel {
       const mapData = await api.fetchMapData(this._mapName);
       this._spawns = mapData.spawns ?? [];
       this._renderSpawnList();
-      this._highlightSpawnRow(regionId);
+      this._highlightRow(this._spawnListEl, "regionId", regionId);
       this._updateStatusDot();
     } catch (err) {
       console.error("Failed to save spawn:", err);
