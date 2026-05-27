@@ -39,7 +39,7 @@ from map_viewer.services.config import (
     get_output_root, 
     load_config
 )
-from map_viewer.services.pipeline import check_pipeline_status
+from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
 from map_viewer.services.region_tree import (
     encode_region_tree_categorized,
     collect_region_subtree_ids,
@@ -64,21 +64,6 @@ from map_viewer.services.regions import (
     resolve_region_bounds
 )
 
-
-class _QueueLogHandler(logging.Handler):
-    """Forwards ctw logger records into the SSE event queue during a pipeline run."""
-
-    def __init__(self, send_fn):
-        super().__init__()
-        self._send = send_fn
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            self._send("log", {"message": self.format(record), "level": record.levelname.lower()})
-        except Exception:
-            self.handleError(record)
-
-logger = logging.getLogger("ctw")
 
 
 def create_app() -> Flask:
@@ -208,145 +193,9 @@ def create_app() -> Flask:
                 event_queue.put(msg)
 
             def pipeline_thread() -> None:
-                _log_handler: Optional[_QueueLogHandler] = None
                 try:
-                    import traceback
-                    from ctw.log import setup_map_file_logging
-                    from map_analysis.pipeline import run_island_geometry, run_symmetry, assemble_map
-                    from layout_analysis.pipeline import analyze_layout
-                    from xml_analysis.pipeline import analyze_xml
-                    from layout_analysis.map_layout_config import get_map_layout
-
-                    map_output_dir.mkdir(parents=True, exist_ok=True)
-                    setup_map_file_logging(map_output_dir)
-
-                    _log_handler = _QueueLogHandler(send)
-                    _log_handler.setLevel(logging.DEBUG)
-                    _log_handler.setFormatter(logging.Formatter('%(message)s'))
-                    logging.getLogger('ctw').addHandler(_log_handler)
-
-                    map_layout_cfg = get_map_layout(name)
-
-                    if map_layout_cfg is not None and map_layout_cfg.skip:
-                        send("skipped", {"reason": "Map is excluded in map_layouts.yaml"})
-                        return
-
-                    # Determine island layout type (mirrors run.py logic)
-                    if map_layout_cfg is not None:
-                        if map_layout_cfg.layer == "y0" and not map_layout_cfg.exclude:
-                            island_layout_type = "y0"
-                        else:
-                            island_layout_type = "decided"
-                    else:
-                        island_layout_type = "bedrock"
-
-                    # Step 1 — XML (runs first so max_build_height is available for layout)
-                    send("step", {"step": "xml", "status": "running", "label": "XML"})
-                    xml_context = None
-                    try:
-                        xml_context = analyze_xml(map_folder, force_rerun=force,
-                                                  output_dir=map_output_dir)
-                        if xml_context:
-                            md = xml_context.map_data
-                            detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
-                        else:
-                            detail_txt = "no map.xml found"
-                        send("step", {"step": "xml", "status": "done", "label": "XML",
-                                      "detail": detail_txt})
-                    except Exception as exc:
-                        send("step", {"step": "xml", "status": "error", "label": "XML",
-                                      "detail": str(exc)})
-                        # Non-fatal: continue without XML (layout will run without height cap)
-
-                    # Step 2 — Layout (receives max_build_height from XML context)
-                    send("step", {"step": "layout", "status": "running", "label": "Layout"})
-                    try:
-                        mbh = xml_context.map_data.max_build_height if xml_context else None
-                        parquet_files = analyze_layout(
-                            map_folder,
-                            force_rerun=force,
-                            output_dir=map_output_dir,
-                            map_layout_config=map_layout_cfg,
-                            max_build_height=mbh,
-                        )
-                        n = len(parquet_files) if parquet_files else 0
-                        send("step", {"step": "layout", "status": "done", "label": "Layout",
-                                      "detail": f"{n} file(s) written"})
-                    except Exception as exc:
-                        send("step", {"step": "layout", "status": "error", "label": "Layout",
-                                      "detail": str(exc)})
-                        send("error", {"message": f"Layout failed: {exc}"})
-                        return
-
-                    # Step 3 — Islands
-                    send("step", {"step": "islands", "status": "running", "label": "Islands"})
-                    try:
-                        geometry = run_island_geometry(
-                            map_folder,
-                            force_rerun=force,
-                            layout_type=island_layout_type,
-                            map_output_dir=map_output_dir,
-                        )
-                        if not geometry:
-                            send("step", {"step": "islands", "status": "error", "label": "Islands",
-                                          "detail": "No islands detected — check layout"})
-                            send("error", {"message": "Island detection produced no results"})
-                            return
-                        send("step", {"step": "islands", "status": "done", "label": "Islands",
-                                      "detail": f"{len(geometry.islands)} island(s)"})
-                    except Exception as exc:
-                        send("step", {"step": "islands", "status": "error", "label": "Islands",
-                                      "detail": str(exc)})
-                        send("error", {"message": f"Islands failed: {exc}"})
-                        return
-
-                    # Step 4 — Symmetry
-                    send("step", {"step": "symmetry", "status": "running", "label": "Symmetry"})
-                    symmetry = None
-                    try:
-                        symmetry = run_symmetry(map_output_dir, geometry=geometry)
-                        desc = (symmetry.primary["description"] if symmetry and symmetry.primary
-                                else "none detected")
-                        send("step", {"step": "symmetry", "status": "done", "label": "Symmetry",
-                                      "detail": desc})
-                    except Exception as exc:
-                        send("step", {"step": "symmetry", "status": "error", "label": "Symmetry",
-                                      "detail": str(exc)})
-                        # Non-fatal: continue without symmetry
-
-                    # Step 5 — Assembly
-                    send("step", {"step": "assembly", "status": "running", "label": "Assembly"})
-                    try:
-                        exclude_obs = (map_layout_cfg.exclude_observer_island
-                                       if map_layout_cfg is not None else False)
-                        exclude_isl = (map_layout_cfg.exclude_islands
-                                       if map_layout_cfg is not None else [])
-                        bbox = (map_layout_cfg.playable_bbox
-                                if map_layout_cfg is not None else None)
-
-                        assemble_map(
-                            map_folder, geometry, map_output_dir,
-                            symmetry=symmetry, xml_context=xml_context,
-                            exclude_observer_island=exclude_obs,
-                            exclude_islands=exclude_isl,
-                            playable_bbox=bbox,
-                        )
-                        send("step", {"step": "assembly", "status": "done", "label": "Assembly"})
-                    except Exception as exc:
-                        send("step", {"step": "assembly", "status": "error", "label": "Assembly",
-                                      "detail": str(exc)})
-                        send("error", {"message": f"Assembly failed: {exc}"})
-                        return
-
-                    send("done", {"message": "Pipeline complete"})
-
-                except Exception as exc:
-                    import traceback as _tb
-                    send("error", {"message": f"Unexpected error: {exc}",
-                                   "detail": _tb.format_exc()})
+                    run_pipeline_steps(map_folder, map_output_dir, name, force, send)
                 finally:
-                    if _log_handler is not None:
-                        logging.getLogger('ctw').removeHandler(_log_handler)
                     event_queue.put(None)  # sentinel
 
             thread = threading.Thread(target=pipeline_thread, daemon=True)
