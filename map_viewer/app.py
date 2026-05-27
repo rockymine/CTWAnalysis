@@ -32,16 +32,17 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from common.visualization.block_colors import block_color
 from layout_analysis.wool_query import query_resources_in_region, query_wool_in_region
-from map_viewer.services import region_editor, team_editor
+from map_viewer.services import region_editor, spawn_editor, team_editor, wool_editor
 from map_viewer.services.config import get_output_root, load_config, save_config as _save_config
 from map_viewer.services.map_data import load_map_data, save_map_data
 from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
 from map_viewer.services.region_editor import InvalidRegionPayload, RegionConflict, RegionNotFound
-from map_viewer.services.team_editor import InvalidTeamPayload, TeamConflict, TeamNotFound
 from map_viewer.services.region_tree import encode_region_tree_categorized
 from map_viewer.services.region_xml import regions_to_xml
 from map_viewer.services.regions import resolve_region_bounds
-from map_viewer.services.spawns import spawn_region_id
+from map_viewer.services.spawn_editor import InvalidSpawnPayload, SpawnConflict, SpawnNotFound
+from map_viewer.services.team_editor import InvalidTeamPayload, TeamConflict, TeamNotFound
+from map_viewer.services.wool_editor import InvalidWoolPayload, WoolConflict, WoolNotFound
 from map_viewer.services.wools import (
     collect_mob_entity_types,
     determine_respawn_type,
@@ -529,64 +530,37 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/spawns", methods=["POST"])
     def add_spawn_link(name: str) -> tuple:
-        """Create a spawn link connecting a region to a team + metadata."""
         body = request.get_json(silent=True) or {}
-        region_id = (body.get("region_id") or "").strip()
-        if not region_id:
-            return jsonify({"error": "region_id is required"}), 400
-
         data, data_path = load_map_data(name)
-        spawns: list = data.setdefault("spawns", [])
-        regions: dict = data.get("regions", {})
-
-        if region_id not in regions:
-            return jsonify({"error": f"region {region_id!r} not found"}), 404
-
-        if any(spawn_region_id(s) == region_id for s in spawns):
-            return jsonify({"error": f"spawn for region {region_id!r} already exists"}), 409
-
-        region_obj = regions[region_id]
-        new_spawn: dict = {
-            "team":   str(body.get("team", "")),
-            "kit":    str(body.get("kit", "")),
-            "yaw":    float(body.get("yaw", 0.0)),
-            "region": region_obj,
-        }
-        spawns.append(new_spawn)
+        try:
+            spawn_editor.add_spawn_link(data, body)
+        except InvalidSpawnPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except SpawnNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except SpawnConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
         return jsonify({"ok": True}), 201
 
     @app.route("/api/map/<name>/spawn/<region_id>", methods=["PATCH"])
     def update_spawn_link(name: str, region_id: str) -> tuple:
-        """Update team, yaw, and kit for the spawn linked to *region_id*."""
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        spawns: list = data.get("spawns", [])
-
-        spawn = next((s for s in spawns if spawn_region_id(s) == region_id), None)
-        if spawn is None:
-            return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
-
-        if "team" in body:
-            spawn["team"] = str(body["team"])
-        if "yaw" in body:
-            spawn["yaw"] = float(body["yaw"])
-        if "kit" in body:
-            spawn["kit"] = str(body["kit"])
-
+        try:
+            spawn_editor.update_spawn_link(data, region_id, body)
+        except SpawnNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
         save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     @app.route("/api/map/<name>/spawn/<region_id>", methods=["DELETE"])
     def delete_spawn_link(name: str, region_id: str) -> tuple:
-        """Remove the spawn link for *region_id*."""
         data, data_path = load_map_data(name)
-        spawns: list = data.get("spawns", [])
-
-        if not any(spawn_region_id(s) == region_id for s in spawns):
-            return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
-
-        data["spawns"] = [s for s in spawns if spawn_region_id(s) != region_id]
+        try:
+            spawn_editor.delete_spawn_link(data, region_id)
+        except SpawnNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
         save_map_data(data, data_path)
         return jsonify({"ok": True})
 
@@ -594,115 +568,37 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/wools", methods=["POST"])
     def add_wool(name: str) -> tuple:
-        """Create a new wool entry identified by (team, color)."""
         body = request.get_json(silent=True) or {}
-        team_id = (body.get("team") or "").strip()
-        color   = (body.get("color") or "").strip()
-        if not team_id:
-            return jsonify({"error": "team is required"}), 400
-        if not color:
-            return jsonify({"error": "color is required"}), 400
-
         data, data_path = load_map_data(name)
-        wools: list = data.setdefault("wools", [])
-
-        if any(w.get("team") == team_id and w.get("color") == color for w in wools):
-            return jsonify({"error": f"wool ({team_id!r}, {color!r}) already exists"}), 409
-
-        loc_raw = body.get("location") or {}
-        mon_raw = body.get("monument") or {}
-        new_wool = {
-            "team":     team_id,
-            "color":    color,
-            "location": {
-                "x": float(loc_raw.get("x", 0)),
-                "y": float(loc_raw.get("y", 0)),
-                "z": float(loc_raw.get("z", 0)),
-            },
-            "monument": {
-                "x": float(mon_raw.get("x", 0)),
-                "y": float(mon_raw.get("y", 0)),
-                "z": float(mon_raw.get("z", 0)),
-            },
-        }
-        wools.append(new_wool)
+        try:
+            result = wool_editor.add_wool(data, body)
+        except InvalidWoolPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except WoolConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "wool": new_wool}), 201
+        return jsonify({"ok": True, **result}), 201
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["PATCH"])
     def update_wool(name: str, team_id: str, color: str) -> tuple:
-        """Update a wool entry by its (team, color) composite key.
-
-        If `location` is in the body, all entries sharing the same (color,
-        old_location) are updated (room-level location change).  Other fields
-        (team rename, color rename) apply only to the matched entry.
-        """
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        wools: list = data.get("wools", [])
-
-        wool = next(
-            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
-            None,
-        )
-        if wool is None:
-            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
-
-        # ── location update: apply to all entries sharing (color, old_location) ──
-        if "location" in body:
-            loc_raw  = body["location"]
-            new_loc  = {
-                "x": float(loc_raw.get("x", 0)),
-                "y": float(loc_raw.get("y", 0)),
-                "z": float(loc_raw.get("z", 0)),
-            }
-            old_loc = wool["location"]
-            for entry in wools:
-                if (entry.get("color") == color
-                        and entry.get("location") == old_loc):
-                    entry["location"] = new_loc
-
-        # ── team rename ──
-        new_team = (body.get("team") or "").strip()
-        if new_team and new_team != team_id:
-            if any(w.get("team") == new_team and w.get("color") == wool.get("color")
-                   for w in wools if w is not wool):
-                return jsonify({"error": f"wool ({new_team!r}, {wool['color']!r}) already exists"}), 409
-            wool["team"] = new_team
-
-        # ── color rename ──
-        new_color = (body.get("color") or "").strip()
-        if new_color and new_color != wool.get("color"):
-            if any(w.get("team") == wool.get("team") and w.get("color") == new_color
-                   for w in wools if w is not wool):
-                return jsonify({"error": f"wool ({wool['team']!r}, {new_color!r}) already exists"}), 409
-            wool["color"] = new_color
-
-        # ── wool_room_region update: apply to all entries sharing the same location ──
-        # Explicit None in the body means "clear the assignment"; absent key means "no change".
-        if "wool_room_region" in body:
-            new_region_id = body["wool_room_region"]   # str | None
-            current_loc = wool["location"]
-            for entry in wools:
-                if entry.get("location") == current_loc:
-                    entry["wool_room_region"] = new_region_id
-
+        try:
+            result = wool_editor.update_wool(data, team_id, color, body)
+        except WoolNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except WoolConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "wool": wool})
+        return jsonify({"ok": True, **result})
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["DELETE"])
     def delete_wool(name: str, team_id: str, color: str) -> tuple:
-        """Delete the single wool entry identified by (team, color)."""
         data, data_path = load_map_data(name)
-        wools: list = data.get("wools", [])
-
-        if not any(w.get("team") == team_id and w.get("color") == color for w in wools):
-            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
-
-        data["wools"] = [
-            w for w in wools
-            if not (w.get("team") == team_id and w.get("color") == color)
-        ]
+        try:
+            wool_editor.delete_wool(data, team_id, color)
+        except WoolNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
         save_map_data(data, data_path)
         return jsonify({"ok": True})
 
