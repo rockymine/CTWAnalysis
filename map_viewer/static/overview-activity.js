@@ -1,4 +1,4 @@
-import { OverviewPanel } from "./overview.js";
+import { OverviewPanel } from "./overview-panel.js";
 
 export class OverviewActivity {
   constructor({ onStatusChange } = {}) {
