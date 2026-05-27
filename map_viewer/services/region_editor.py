@@ -124,12 +124,12 @@ def delete_region(data: dict, region_id: str) -> dict:
 
         region_entries = {rid: regions[rid] for rid in subtree_ids if rid in regions}
 
+        subtree_set = set(subtree_ids)
         for rid in subtree_ids:
             regions.pop(rid, None)
-            for cat_list in data.get("region_categories", {}).values():
-                if rid in cat_list:
-                    cat_list.remove(rid)
-        remove_inline_children(regions, set(subtree_ids))
+        for cat_list in data.get("region_categories", {}).values():
+            cat_list[:] = [rid for rid in cat_list if rid not in subtree_set]
+        remove_inline_children(regions, subtree_set)
 
         return {
             "snapshot": {
