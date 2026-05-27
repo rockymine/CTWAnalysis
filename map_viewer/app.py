@@ -33,6 +33,8 @@ from map_viewer.region_encoder import (
 )
 from common.visualization.block_colors import block_color
 
+from map_viewer.services.config import _get_output_root, _load_config
+
 
 class _QueueLogHandler(logging.Handler):
     """Forwards ctw logger records into the SSE event queue during a pipeline run."""
@@ -47,28 +49,7 @@ class _QueueLogHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-_DEFAULT_OUTPUT_ROOT = Path(__file__).parent.parent / "output"
-CONFIG_PATH = Path(__file__).parent / "config.json"
-
 logger = logging.getLogger("ctw")
-
-
-def _load_config() -> dict:
-    if CONFIG_PATH.exists():
-        try:
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {
-        "maps_folder": "",
-        "output_folder": str(_DEFAULT_OUTPUT_ROOT),
-    }
-
-
-def _get_output_root() -> Path:
-    cfg = _load_config()
-    folder = cfg.get("output_folder", "").strip()
-    return Path(folder) if folder else _DEFAULT_OUTPUT_ROOT
 
 
 # ── Helpers shared across region endpoints ─────────────────────────────────
