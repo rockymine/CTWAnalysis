@@ -60,8 +60,10 @@ from map_viewer.services.wools import (
     find_relevant_renewables,
 )
 from map_viewer.services.regions import (
-    apply_coord_update, 
-    resolve_region_bounds
+    apply_coord_update,
+    build_region_dict,
+    build_union_bounds,
+    resolve_region_bounds,
 )
 
 
@@ -461,62 +463,7 @@ def create_app() -> Flask:
             return jsonify({"error": f"id {region_id!r} already in use"}), 409
 
         try:
-            if region_type in ("rectangle", "cuboid"):
-                min_x = int(round(float(body["min_x"])))
-                min_z = int(round(float(body["min_z"])))
-                max_x = int(round(float(body["max_x"])))
-                max_z = int(round(float(body["max_z"])))
-                new_region: dict = {
-                    "id": region_id, "type": region_type,
-                    "min_x": min_x, "min_z": min_z,
-                    "max_x": max_x, "max_z": max_z,
-                    "bounds_2d": {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}},
-                }
-                if region_type == "cuboid":
-                    new_region["min_y"] = int(round(float(body.get("min_y", 0))))
-                    new_region["max_y"] = int(round(float(body.get("max_y", 256))))
-
-            elif region_type in ("point", "block"):
-                px = int(round(float(body["x"])))
-                pz = int(round(float(body["z"])))
-                py = int(round(float(body.get("y", 64))))
-                if region_type == "block":
-                    bounds_2d = {"min": {"x": px, "z": pz}, "max": {"x": px + 1, "z": pz + 1}}
-                else:
-                    bounds_2d = {"min": {"x": px - 0.5, "z": pz - 0.5},
-                                 "max": {"x": px + 0.5, "z": pz + 0.5}}
-                new_region = {
-                    "id": region_id, "type": region_type,
-                    "position": {"x": px, "y": py, "z": pz},
-                    "bounds_2d": bounds_2d,
-                }
-
-            elif region_type == "cylinder":
-                bx = float(body["base_x"])
-                bz = float(body["base_z"])
-                by = float(body.get("base_y", 64))
-                r  = float(body["radius"])
-                h  = float(body.get("height", 10))
-                new_region = {
-                    "id": region_id, "type": "cylinder",
-                    "base": {"x": bx, "y": by, "z": bz},
-                    "radius": r, "height": h,
-                    "bounds_2d": {"min": {"x": bx - r, "z": bz - r},
-                                  "max": {"x": bx + r, "z": bz + r}},
-                }
-
-            else:  # circle
-                cx = float(body["center_x"])
-                cz = float(body["center_z"])
-                r  = float(body["radius"])
-                new_region = {
-                    "id": region_id, "type": "circle",
-                    "center": {"x": cx, "z": cz},
-                    "radius": r,
-                    "bounds_2d": {"min": {"x": cx - r, "z": cz - r},
-                                  "max": {"x": cx + r, "z": cz + r}},
-                }
-
+            new_region = build_region_dict(region_type, body, region_id)
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
 
@@ -551,16 +498,7 @@ def create_app() -> Flask:
             return jsonify({"error": f"id {union_id!r} already in use"}), 409
 
         children = [regions[cid] for cid in child_ids]
-        bounded  = [c for c in children if c.get("bounds_2d")]
-        if bounded:
-            min_x = min(c["bounds_2d"]["min"]["x"] for c in bounded)
-            min_z = min(c["bounds_2d"]["min"]["z"] for c in bounded)
-            max_x = max(c["bounds_2d"]["max"]["x"] for c in bounded)
-            max_z = max(c["bounds_2d"]["max"]["z"] for c in bounded)
-            bounds_2d = {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
-        else:
-            bounds_2d = None
-            min_x = min_z = max_x = max_z = 0
+        bounds_2d, min_x, min_z, max_x, max_z = build_union_bounds(children)
 
         regions[union_id] = {
             "id": union_id,
