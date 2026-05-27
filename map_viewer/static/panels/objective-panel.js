@@ -12,11 +12,11 @@
  *   - Delete wool button
  */
 
-import { chatColorHex, dyeColorHex, MINECRAFT_DYE_COLORS } from "./game-colors.js";
-import { typeIcon } from "./region-types.js";
-import { coordGroup } from "./coord-group.js";
-import * as api from "./api.js";
-import { renderEmptyPlaceholder } from "./shared/ui-helpers.js";
+import { chatColorHex, dyeColorHex, MINECRAFT_DYE_COLORS } from "../shared/game-colors.js";
+import { typeIcon } from "../region/region-types.js";
+import { coordGroup } from "../shared/coord-group.js";
+import * as api from "../api.js";
+import { renderEmptyPlaceholder } from "../shared/ui-helpers.js";
 
 
 export class ObjectivePanel {
@@ -53,6 +53,7 @@ export class ObjectivePanel {
     this._woolRoomOptions = [];   // region IDs eligible as wool room candidates
     this._selectedRoom    = null; // currently selected wool room (for click-to-assign)
     this._regionNodes     = [];   // flat list of obj-group region nodes (for sidebar)
+    this._inspectorAbort  = null; // AbortController for wool inspector listeners
 
     this._addWoolBtn?.addEventListener("click", () => this._addWool());
   }
@@ -303,17 +304,10 @@ export class ObjectivePanel {
     this._emptyEl.hidden     = true;
     this._inspectorEl.hidden = false;
 
-    // Clone interactive elements to clear stale listeners
-    this._woolColorSelEl.replaceWith(this._woolColorSelEl.cloneNode(false));
-    this._woolColorSelEl    = document.getElementById("obj-wool-color-sel");
-    this._defenderSelEl.replaceWith(this._defenderSelEl.cloneNode(false));
-    this._defenderSelEl     = document.getElementById("obj-defender-sel");
-    this._woolRoomSelEl.replaceWith(this._woolRoomSelEl.cloneNode(false));
-    this._woolRoomSelEl     = document.getElementById("obj-wool-room-sel");
-    this._woolRoomClearBtn.replaceWith(this._woolRoomClearBtn.cloneNode(true));
-    this._woolRoomClearBtn  = document.getElementById("obj-wool-room-clear-btn");
-    this._deleteWoolBtn.replaceWith(this._deleteWoolBtn.cloneNode(true));
-    this._deleteWoolBtn     = document.getElementById("obj-delete-wool-btn");
+    // Remove stale listeners before re-populating
+    this._inspectorAbort?.abort();
+    this._inspectorAbort = new AbortController();
+    const { signal: inspSig } = this._inspectorAbort;
 
     // ── Wool color ──────────────────────────────────────────────────────────
     this._buildWoolColorDropdown(room.color);
@@ -323,7 +317,7 @@ export class ObjectivePanel {
     this._woolColorSelEl.addEventListener("change", () => {
       this._woolColorSwatchEl.style.background = dyeColorHex(this._woolColorSelEl.value);
       this._saveWoolColor(room);
-    });
+    }, { signal: inspSig });
 
     // ── Defender team ───────────────────────────────────────────────────────
     this._buildDefenderDropdown();
@@ -336,18 +330,18 @@ export class ObjectivePanel {
       const team     = this._teams.find(t => t.id === selected);
       this._defenderSwatchEl.style.background = team ? chatColorHex(team.color) : "transparent";
       this._saveWoolDefender(room);
-    });
+    }, { signal: inspSig });
 
     // ── Room region dropdown ────────────────────────────────────────────────
     this._buildWoolRoomDropdown(room.woolRoomRegion);
     this._woolRoomSelEl.addEventListener("change", () => {
       const selected = this._woolRoomSelEl.value || null;
       this._saveWoolRoom(room, selected);
-    });
+    }, { signal: inspSig });
     this._woolRoomClearBtn.addEventListener("click", () => {
       this._woolRoomSelEl.value = "";
       this._saveWoolRoom(room, null);
-    });
+    }, { signal: inspSig });
 
     // ── Respawn type (async — fetched from server) ──────────────────────────
     this._updateRespawnBadge("unknown");
@@ -379,7 +373,7 @@ export class ObjectivePanel {
     }
 
     // ── Delete button ───────────────────────────────────────────────────────
-    this._deleteWoolBtn.addEventListener("click", () => this._deleteWool(room));
+    this._deleteWoolBtn.addEventListener("click", () => this._deleteWool(room), { signal: inspSig });
   }
 
   // ── Dropdowns ───────────────────────────────────────────────────────────────

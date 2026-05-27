@@ -12,13 +12,13 @@
  */
 
 import { RegionDetail } from "./region-detail.js";
-import * as api         from "./api.js";
+import * as api         from "../api.js";
 import {
   PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS,
   chatColorHex, dyeColorHex,
-} from "./game-colors.js";
-import { typeIcon } from "./region-types.js";
-import { renderEmptyPlaceholder } from "./shared/ui-helpers.js";
+} from "../shared/game-colors.js";
+import { typeIcon } from "../region/region-types.js";
+import { renderEmptyPlaceholder } from "../shared/ui-helpers.js";
 
 export { PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS };
 
@@ -75,6 +75,9 @@ export class TeamsPanel {
 
     // RegionDetail — lazily created on first use so the constructor doesn't
     // crash when the browser serves a stale-cached HTML without #pt-spawn-region-detail.
+    this._teamAbort  = null;  // AbortController for team inspector listeners
+    this._spawnAbort = null;  // AbortController for spawn assignment listeners
+
     this._detail     = null;
     this._detailOpts = {
       onBoundsChange: opts.onBoundsChange ?? null,
@@ -371,20 +374,9 @@ export class TeamsPanel {
     this._emptyEl.hidden     = true;
 
     // Remove old listeners before re-populating
-    this._teamIdInput.replaceWith(this._teamIdInput.cloneNode(true));
-    this._teamIdInput    = document.getElementById("pt-team-id");
-    this._teamNameInput.replaceWith(this._teamNameInput.cloneNode(true));
-    this._teamNameInput  = document.getElementById("pt-team-name");
-    this._teamColorSel.replaceWith(this._teamColorSel.cloneNode(false));
-    this._teamColorSel   = document.getElementById("pt-team-color");
-    this._teamDyeColorSel.replaceWith(this._teamDyeColorSel.cloneNode(false));
-    this._teamDyeColorSel = document.getElementById("pt-team-dye-color");
-    this._teamMaxInput.replaceWith(this._teamMaxInput.cloneNode(true));
-    this._teamMaxInput   = document.getElementById("pt-team-max");
-    this._teamMinInput.replaceWith(this._teamMinInput.cloneNode(true));
-    this._teamMinInput   = document.getElementById("pt-team-min");
-    this._teamColorSwatch    = document.getElementById("pt-team-color-swatch");
-    this._teamDyeColorSwatch = document.getElementById("pt-team-dye-color-swatch");
+    this._teamAbort?.abort();
+    this._teamAbort = new AbortController();
+    const { signal: teamSig } = this._teamAbort;
 
     // Normalise underscore variants that may appear in older map_data.json files
     const chatColor = (team.color ?? "dark red").replace(/_/g, " ");
@@ -413,29 +405,25 @@ export class TeamsPanel {
       this._saveTeam(team.id);
     };
 
-    this._teamIdInput.addEventListener("blur", saveOnBlur);
-    this._teamNameInput.addEventListener("blur", saveOnBlur);
-    this._teamColorSel.addEventListener("change", saveOnChatColorChange);
-    this._teamDyeColorSel.addEventListener("change", saveOnDyeColorChange);
-    this._teamMaxInput.addEventListener("blur", saveOnBlur);
-    this._teamMinInput.addEventListener("blur", saveOnBlur);
+    this._teamIdInput.addEventListener("blur",     saveOnBlur,              { signal: teamSig });
+    this._teamNameInput.addEventListener("blur",   saveOnBlur,              { signal: teamSig });
+    this._teamColorSel.addEventListener("change",  saveOnChatColorChange,   { signal: teamSig });
+    this._teamDyeColorSel.addEventListener("change", saveOnDyeColorChange,  { signal: teamSig });
+    this._teamMaxInput.addEventListener("blur",    saveOnBlur,              { signal: teamSig });
+    this._teamMinInput.addEventListener("blur",    saveOnBlur,              { signal: teamSig });
   }
 
   /** Populate the team/yaw/kit fields in the spawn assignment section. */
   _populateSpawnAssignment(regionId) {
-    // Clone inputs to remove stale listeners
-    this._spawnTeamSel.replaceWith(this._spawnTeamSel.cloneNode(false));
-    this._spawnTeamSel = document.getElementById("pt-spawn-team");
-    this._spawnYawInput.replaceWith(this._spawnYawInput.cloneNode(true));
-    this._spawnYawInput = document.getElementById("pt-spawn-yaw");
-    this._spawnKitInput.replaceWith(this._spawnKitInput.cloneNode(true));
-    this._spawnKitInput = document.getElementById("pt-spawn-kit");
-    this._spawnUnlinkBtn.replaceWith(this._spawnUnlinkBtn.cloneNode(true));
-    this._spawnUnlinkBtn = document.getElementById("pt-spawn-unlink-btn");
+    // Remove stale listeners before re-populating
+    this._spawnAbort?.abort();
+    this._spawnAbort = new AbortController();
+    const { signal: spawnSig } = this._spawnAbort;
 
     const spawnLink = this._spawnForRegion(regionId);
 
     // Populate team dropdown
+    this._spawnTeamSel.innerHTML = "";
     const noneOpt = document.createElement("option");
     noneOpt.value = "";
     noneOpt.textContent = "— unassigned —";
@@ -478,12 +466,12 @@ export class TeamsPanel {
         await this._saveSpawn(regionId);
       }
     };
-    this._spawnTeamSel.addEventListener("change", onTeamChange);
+    this._spawnTeamSel.addEventListener("change", onTeamChange, { signal: spawnSig });
 
     const saveSpawn = async () => { await this._saveSpawn(regionId); };
-    this._spawnYawInput.addEventListener("blur",  saveSpawn);
-    this._spawnKitInput.addEventListener("blur",  saveSpawn);
-    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId));
+    this._spawnYawInput.addEventListener("blur",  saveSpawn,                              { signal: spawnSig });
+    this._spawnKitInput.addEventListener("blur",  saveSpawn,                              { signal: spawnSig });
+    this._spawnUnlinkBtn.addEventListener("click", () => this._unlinkSpawn(regionId),     { signal: spawnSig });
   }
 
   // ── Private: rename handling ───────────────────────────────────────────────
