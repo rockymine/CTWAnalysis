@@ -27,7 +27,6 @@ from typing import Optional
 import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
-from map_viewer.constants import CONFIG_PATH
 from map_viewer.services.map_data import (
     load_map_data, 
     save_map_data
@@ -35,10 +34,7 @@ from map_viewer.services.map_data import (
 from map_viewer.services.region_xml import regions_to_xml
 from common.visualization.block_colors import block_color
 
-from map_viewer.services.config import (
-    get_output_root, 
-    load_config
-)
+from map_viewer.services.config import get_output_root, load_config, save_config as _save_config
 from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
 from map_viewer.services.region_tree import encode_region_tree_categorized
 from map_viewer.services.spawns import spawn_region_id
@@ -82,11 +78,7 @@ def create_app() -> Flask:
     @app.route("/api/config", methods=["POST"])
     def save_config():
         body = request.get_json(silent=True) or {}
-        config = load_config()
-        for key in ("maps_folder", "output_folder"):
-            if key in body:
-                config[key] = str(body[key]).strip()
-        CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        _save_config(body)
         return jsonify({"ok": True})
 
     # ── Source-map discovery API ─────────────────────────────────────────────
