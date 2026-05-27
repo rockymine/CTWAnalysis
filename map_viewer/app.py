@@ -66,6 +66,14 @@ from map_viewer.services.regions import (
 
 
 
+_METADATA_FIELDS = {
+    "name", "version", "objective", "max_build_height", "gamemode",
+    "phase", "authors", "symmetry_status",
+}
+
+_SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder", "circle"}
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
@@ -321,11 +329,6 @@ def create_app() -> Flask:
         data, _ = load_map_data(name)
         return jsonify(data)
 
-    _METADATA_FIELDS = {
-        "name", "version", "objective", "max_build_height", "gamemode",
-        "phase", "authors", "symmetry_status",
-    }
-
     @app.route("/api/map/<name>/metadata", methods=["PATCH"])
     def patch_map_metadata(name: str):
         data, data_path = load_map_data(name)
@@ -436,8 +439,6 @@ def create_app() -> Flask:
 
         result = query_resources_in_region(out_dir, min_x, min_z, max_x, max_z)
         return jsonify(result)
-
-    _SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder", "circle"}
 
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
