@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import json
+import json
 
 from map_viewer.constants import _DEFAULT_OUTPUT_ROOT, CONFIG_PATH
 
