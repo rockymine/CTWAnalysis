@@ -32,11 +32,12 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from common.visualization.block_colors import block_color
 from layout_analysis.wool_query import query_resources_in_region, query_wool_in_region
-from map_viewer.services import region_editor
+from map_viewer.services import region_editor, team_editor
 from map_viewer.services.config import get_output_root, load_config, save_config as _save_config
 from map_viewer.services.map_data import load_map_data, save_map_data
 from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
 from map_viewer.services.region_editor import InvalidRegionPayload, RegionConflict, RegionNotFound
+from map_viewer.services.team_editor import InvalidTeamPayload, TeamConflict, TeamNotFound
 from map_viewer.services.region_tree import encode_region_tree_categorized
 from map_viewer.services.region_xml import regions_to_xml
 from map_viewer.services.regions import resolve_region_bounds
@@ -491,76 +492,36 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/teams", methods=["POST"])
     def add_team(name: str) -> tuple:
         body = request.get_json(silent=True) or {}
-        team_id = (body.get("id") or "").strip()
-        if not team_id:
-            return jsonify({"error": "id is required"}), 400
-
         data, data_path = load_map_data(name)
-        teams: list = data.setdefault("teams", [])
-
-        if any(t.get("id") == team_id for t in teams):
-            return jsonify({"error": f"team id {team_id!r} already in use"}), 409
-
-        new_team = {
-            "id":          team_id,
-            "name":        body.get("name", team_id),
-            "color":       body.get("color", "red"),
-            "max_players": int(body.get("max_players", 20)),
-            "min_players": int(body.get("min_players", 0)),
-        }
-        if body.get("dye_color"):
-            new_team["dye_color"] = str(body["dye_color"])
-
-        teams.append(new_team)
+        try:
+            result = team_editor.add_team(data, body)
+        except InvalidTeamPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except TeamConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "team": new_team}), 201
+        return jsonify({"ok": True, **result}), 201
 
     @app.route("/api/map/<name>/teams/<team_id>", methods=["PATCH"])
     def update_team(name: str, team_id: str) -> tuple:
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        teams: list = data.get("teams", [])
-
-        team = next((t for t in teams if t.get("id") == team_id), None)
-        if team is None:
-            return jsonify({"error": f"team {team_id!r} not found"}), 404
-
-        # Handle optional id rename
-        new_id = (body.get("id") or "").strip()
-        if new_id and new_id != team_id:
-            if any(t.get("id") == new_id for t in teams if t is not team):
-                return jsonify({"error": f"team id {new_id!r} already in use"}), 409
-            # Update references in spawns
-            for spawn in data.get("spawns", []):
-                if spawn.get("team") == team_id:
-                    spawn["team"] = new_id
-            obs = data.get("observer_spawn")
-            if obs and obs.get("team") == team_id:
-                obs["team"] = new_id
-            team["id"] = new_id
-
-        for field in ("name", "color", "dye_color"):
-            if field in body:
-                team[field] = str(body[field])
-        for field in ("max_players", "min_players"):
-            if field in body:
-                team[field] = int(body[field])
-
+        try:
+            result = team_editor.update_team(data, team_id, body)
+        except TeamNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except TeamConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "team": team})
+        return jsonify({"ok": True, **result})
 
     @app.route("/api/map/<name>/teams/<team_id>", methods=["DELETE"])
     def delete_team(name: str, team_id: str) -> tuple:
         data, data_path = load_map_data(name)
-        teams: list = data.get("teams", [])
-
-        if not any(t.get("id") == team_id for t in teams):
-            return jsonify({"error": f"team {team_id!r} not found"}), 404
-
-        data["teams"] = [t for t in teams if t.get("id") != team_id]
-        # Remove spawns referencing this team
-        data["spawns"] = [s for s in data.get("spawns", []) if s.get("team") != team_id]
-
+        try:
+            team_editor.delete_team(data, team_id)
+        except TeamNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
         save_map_data(data, data_path)
         return jsonify({"ok": True})
 
