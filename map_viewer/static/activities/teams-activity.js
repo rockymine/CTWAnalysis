@@ -21,10 +21,9 @@ import * as api                from "../api.js";
 export class TeamsActivity {
   constructor({ onStatusChange } = {}) {
     this._el      = document.getElementById("pt-workspace");
-    this._canvas  = null;   // MapCanvas — created on first activate
+    this._canvas  = null;
     this._mapName = null;
 
-    this._tools   = null;   // ToolManager — created in _initCanvas()
     this._coordsEl = document.getElementById("pt-cursor-coords");
     this._zoomEl   = document.getElementById("pt-zoom-level");
 
@@ -32,12 +31,12 @@ export class TeamsActivity {
     // onSelectionChange fans out to canvas (outline, anchors/label) and panel.
     this._registry = new RegionRegistry({
       onSelectionChange: (node, selectedIds) => {
-        this._canvas?.setSelectedRegions(selectedIds);
+        this._canvas.setSelectedRegions(selectedIds);
         if (node) {
-          this._canvas?.showAnchors(node);   // renders name label + anchor blocks
+          this._canvas.showAnchors(node);   // renders name label + anchor blocks
           this._panel.onRegionSelect(node);
         } else {
-          this._canvas?.clearAnchors();
+          this._canvas.clearAnchors();
           this._panel.onRegionDeselect();
         }
       },
@@ -45,7 +44,6 @@ export class TeamsActivity {
 
     this._deleteHistory  = new DeletedRegionHistory();
     this._spawnLinkCache = new Map();  // root_id → spawn link payload saved before delete
-    this._handlers       = null;       // createRegionHandlers result — set in _initCanvas()
 
     // Panel — constructed after registry so we can pass routing callbacks.
     this._panel = new TeamsPanel({
@@ -56,16 +54,14 @@ export class TeamsActivity {
       onBoundsSave:     (node, bounds) => this._handleBoundsSave(node, bounds),
       onCoordsChange:   (node, coords) => this._handleCoordsChange(node, coords),
       onCoordsSave:     (node, coords) => this._handleCoordsSave(node, coords),
-      onRegionRename:   (node, oldId, newId) => this._handlers?.onRenameRegion(node, oldId, newId),
+      onRegionRename:   (node, oldId, newId) => this._handlers.onRenameRegion(node, oldId, newId),
     });
+
+    this._initCanvas();
   }
 
   activate({ mapName } = {}) {
     this._el.hidden = false;
-
-    if (!this._canvas) {
-      this._initCanvas();
-    }
 
     if (mapName && mapName !== this._mapName) {
       this._mapName = mapName;
@@ -79,7 +75,7 @@ export class TeamsActivity {
   }
 
   resize() {
-    this._canvas?.resize();
+    this._canvas.resize();
   }
 
   // ── Canvas init ────────────────────────────────────────────────────────────
@@ -177,10 +173,10 @@ export class TeamsActivity {
   // ── Bounds / coords handlers — delegated to createRegionHandlers() ─────────
   // (see region-handlers.js; _handlers is set in _initCanvas() once canvas exists)
 
-  _handleBoundsChange(node, bounds)  { this._handlers?.onBoundsChange(node, bounds); }
-  _handleBoundsSave(node, bounds)    { this._handlers?.onBoundsSave(node, bounds); }
-  _handleCoordsChange(node, coords)  { this._handlers?.onCoordsChange(node, coords); }
-  _handleCoordsSave(node, coords)    { this._handlers?.onCoordsSave(node, coords); }
+  _handleBoundsChange(node, bounds)  { this._handlers.onBoundsChange(node, bounds); }
+  _handleBoundsSave(node, bounds)    { this._handlers.onBoundsSave(node, bounds); }
+  _handleCoordsChange(node, coords)  { this._handlers.onCoordsChange(node, coords); }
+  _handleCoordsSave(node, coords)    { this._handlers.onCoordsSave(node, coords); }
 
   // ── Delete ────────────────────────────────────────────────────────────────
 

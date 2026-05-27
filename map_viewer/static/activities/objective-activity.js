@@ -54,12 +54,12 @@ export class ObjectiveActivity {
     // synchronously so the visual response is immediate (same as Teams).
     this._registry = new RegionRegistry({
       onSelectionChange: (node, ids) => {
-        this._canvas?.setSelectedRegions(ids);
+        this._canvas.setSelectedRegions(ids);
         if (node) {
-          this._canvas?.showAnchors(node);
+          this._canvas.showAnchors(node);
           this._panel.highlightRegionRow(node.id);
         } else {
-          this._canvas?.clearAnchors();
+          this._canvas.clearAnchors();
           this._panel.highlightRegionRow(null);
         }
       },
@@ -70,16 +70,14 @@ export class ObjectiveActivity {
       onWoolSave:       ()         => this._refreshCanvas(),
       onRegionRowClick: (regionId) => this._onRegionRowClick(regionId),
     });
+
+    this._initCanvas();
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
   activate({ mapName } = {}) {
     this._el.hidden = false;
-
-    if (!this._canvas) {
-      this._initCanvas();
-    }
 
     if (mapName && mapName !== this._mapName) {
       this._mapName = mapName;
@@ -92,7 +90,7 @@ export class ObjectiveActivity {
   }
 
   resize() {
-    this._canvas?.resize();
+    this._canvas.resize();
   }
 
   // ── Canvas init ─────────────────────────────────────────────────────────────
