@@ -40,17 +40,7 @@ from map_viewer.services.config import (
     load_config
 )
 from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
-from map_viewer.services.region_tree import (
-    encode_region_tree_categorized,
-    collect_region_subtree_ids,
-    find_child_region,
-    find_parent_of_child,
-    patch_embedded_region,
-    patch_all_embedded_regions,
-    remove_inline_children,
-    rename_embedded_region,
-    rename_in_children,
-)
+from map_viewer.services.region_tree import encode_region_tree_categorized
 from map_viewer.services.spawns import spawn_region_id
 from map_viewer.services.wools import (
     wool_color_to_damage,
@@ -59,21 +49,15 @@ from map_viewer.services.wools import (
     collect_mob_entity_types,
     find_relevant_renewables,
 )
-from map_viewer.services.regions import (
-    apply_coord_update,
-    build_region_dict,
-    build_union_bounds,
-    resolve_region_bounds,
-)
-
+from map_viewer.services.regions import resolve_region_bounds
+from map_viewer.services import region_editor
+from map_viewer.services.region_editor import RegionNotFound, RegionConflict, InvalidRegionPayload
 
 
 _METADATA_FIELDS = {
     "name", "version", "objective", "max_build_height", "gamemode",
     "phase", "authors", "symmetry_status",
 }
-
-_SUPPORTED_CREATE_TYPES = {"rectangle", "cuboid", "point", "block", "cylinder", "circle"}
 
 
 def create_app() -> Flask:
@@ -445,128 +429,40 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/regions", methods=["POST"])
     def create_region(name: str) -> tuple:
         body = request.get_json(silent=True) or {}
-        region_type = body.get("type", "rectangle")
-        if region_type not in _SUPPORTED_CREATE_TYPES:
-            return jsonify({"error": f"unsupported type '{region_type}'"}), 400
-
         data, data_path = load_map_data(name)
-        regions = data.setdefault("regions", {})
-
-        region_id = (body.get("id") or "").strip()
-        if not region_id:
-            prefix = region_type if region_type != "rectangle" else "region"
-            i = 1
-            while f"{prefix}_{i}" in regions:
-                i += 1
-            region_id = f"{prefix}_{i}"
-        elif region_id in regions:
-            return jsonify({"error": f"id {region_id!r} already in use"}), 409
-
         try:
-            new_region = build_region_dict(region_type, body, region_id)
-        except (KeyError, TypeError, ValueError) as exc:
-            return jsonify({"error": f"Missing or invalid field: {exc}"}), 400
-
-        regions[region_id] = new_region
-        category = body.get("category", "other")
-        data.setdefault("region_categories", {}).setdefault(category, []).append(region_id)
-
+            result = region_editor.create_region(data, body)
+        except InvalidRegionPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RegionConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "id": region_id}), 201
+        return jsonify({"ok": True, **result}), 201
 
     @app.route("/api/map/<name>/regions/group", methods=["POST"])
     def group_regions(name: str) -> tuple:
-        body      = request.get_json(silent=True) or {}
-        child_ids = [str(cid) for cid in body.get("child_ids", [])]
-        if len(child_ids) < 2:
-            return jsonify({"error": "at least 2 regions required"}), 400
-
+        body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        regions = data.setdefault("regions", {})
-
-        missing = [cid for cid in child_ids if cid not in regions]
-        if missing:
-            return jsonify({"error": f"unknown region(s): {missing}"}), 404
-
-        union_id = (body.get("id") or "").strip()
-        if not union_id:
-            i = 1
-            while f"union_{i}" in regions:
-                i += 1
-            union_id = f"union_{i}"
-        elif union_id in regions:
-            return jsonify({"error": f"id {union_id!r} already in use"}), 409
-
-        children = [regions[cid] for cid in child_ids]
-        bounds_2d, min_x, min_z, max_x, max_z = build_union_bounds(children)
-
-        regions[union_id] = {
-            "id": union_id,
-            "type": "union",
-            "children": children,
-            **({"bounds_2d": bounds_2d} if bounds_2d else {}),
-        }
-        data.setdefault("region_categories", {}).setdefault("other", []).append(union_id)
-
+        try:
+            result = region_editor.group_regions(data, body)
+        except InvalidRegionPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RegionNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except RegionConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({
-            "ok": True, "id": union_id,
-            "bounds": {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z},
-        }), 201
+        return jsonify({"ok": True, **result}), 201
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
     def delete_region(name: str, region_id: str) -> tuple:
         data, data_path = load_map_data(name)
-        regions = data.get("regions", {})
-
-        if region_id in regions:
-            # ── Top-level region ─────────────────────────────────────────────
-            subtree_ids = collect_region_subtree_ids(regions, region_id)
-
-            category = "other"
-            for cat_name, cat_list in data.get("region_categories", {}).items():
-                if region_id in cat_list:
-                    category = cat_name
-                    break
-
-            region_entries = {rid: regions[rid] for rid in subtree_ids if rid in regions}
-
-            for rid in subtree_ids:
-                regions.pop(rid, None)
-                for cat_list in data.get("region_categories", {}).values():
-                    if rid in cat_list:
-                        cat_list.remove(rid)
-            remove_inline_children(regions, set(subtree_ids))
-            save_map_data(data, data_path)
-            return jsonify({
-                "ok": True,
-                "snapshot": {
-                    "root_id":        region_id,
-                    "category":       category,
-                    "region_entries": region_entries,
-                },
-            })
-
-        # ── Inline-only child (synthetic baked id, not a top-level region) ──
-        # Named children (e.g. orange-wool-room) are always top-level; only
-        # pipeline-assigned synthetic ids (parent__n) land here.
-        found = find_parent_of_child(regions, region_id)
-        if found is None:
-            return jsonify({"error": f"region {region_id!r} not found"}), 404
-
-        parent_dict, child_dict, child_index = found
-        remove_inline_children(regions, {region_id})
+        try:
+            result = region_editor.delete_region(data, region_id)
+        except RegionNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
         save_map_data(data, data_path)
-        return jsonify({
-            "ok": True,
-            "snapshot": {
-                "root_id":        region_id,
-                "category":       None,
-                "parent_id":      parent_dict.get("id"),
-                "child_index":    child_index,
-                "region_entries": {region_id: child_dict},
-            },
-        })
+        return jsonify({"ok": True, **result})
 
     @app.route("/api/map/<name>/regions/restore", methods=["POST"])
     def restore_region(name: str) -> tuple:
@@ -574,109 +470,32 @@ def create_app() -> Flask:
         snapshot = body.get("snapshot")
         if not snapshot:
             return jsonify({"error": "snapshot required"}), 400
-
-        root_id        = snapshot.get("root_id", "")
-        category       = snapshot.get("category", "other")
-        region_entries = snapshot.get("region_entries", {})
-
-        if not root_id or not region_entries:
-            return jsonify({"error": "invalid snapshot"}), 400
-
         data, data_path = load_map_data(name)
-        regions = data.setdefault("regions", {})
-
-        parent_id = snapshot.get("parent_id")
-        if parent_id is not None:
-            # ── Restore inline child ─────────────────────────────────────────
-            parent_dict = regions.get(parent_id)
-            if parent_dict is None:
-                return jsonify({"error": f"parent region {parent_id!r} not found"}), 404
-            child_dict  = region_entries.get(root_id)
-            child_index = snapshot.get("child_index", 0)
-            children = parent_dict.setdefault("children", [])
-            children.insert(child_index, child_dict)
-            save_map_data(data, data_path)
-            return jsonify({"ok": True, "id": root_id})
-
-        # ── Restore top-level region ─────────────────────────────────────────
-        conflicts = [rid for rid in region_entries if rid in regions]
-        if conflicts:
-            return jsonify({"error": f"id(s) already in use: {conflicts}"}), 409
-
-        regions.update(region_entries)
-        data.setdefault("region_categories", {}).setdefault(category, []).append(root_id)
-
+        try:
+            result = region_editor.restore_region(data, snapshot)
+        except InvalidRegionPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RegionNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except RegionConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        return jsonify({"ok": True, "id": root_id})
+        return jsonify({"ok": True, **result})
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
     def patch_region(name: str, region_id: str) -> tuple:
-        body   = request.get_json(silent=True) or {}
-        bounds = body.get("bounds") if isinstance(body.get("bounds"), dict) else None
-        coords = body.get("coords") if isinstance(body.get("coords"), dict) else None
-        if not body.get("id") and bounds is None and coords is None:
-            return jsonify({"error": "provide 'id', 'bounds', or 'coords'"}), 400
-
+        body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        regions = data.get("regions", {})
-
-        # Top-level lookup first; fall back to recursive child search for synthetic ids.
-        region = regions.get(region_id)
-        is_top_level = region is not None
-        if not is_top_level:
-            region = find_child_region(regions, region_id)
-            if region is None:
-                return jsonify({"error": f"region {region_id!r} not found"}), 404
-
-        # ── optional id rename (top-level named regions only) ─────────────────
-        if is_top_level:
-            new_id = (body.get("id") or "").strip()
-            if new_id and new_id != region_id:
-                if new_id in regions:
-                    return jsonify({"error": f"id {new_id!r} already in use"}), 409
-                regions[new_id] = regions.pop(region_id)
-                regions[new_id]["id"] = new_id
-                for cat_list in data.get("region_categories", {}).values():
-                    for i, rid in enumerate(cat_list):
-                        if rid == region_id:
-                            cat_list[i] = new_id
-                for r in regions.values():
-                    rename_in_children(r, region_id, new_id)
-                for container_key in ("spawns", "wools"):
-                    rename_embedded_region(data.get(container_key, []), region_id, new_id)
-                obs = data.get("observer_spawn")
-                if obs:
-                    rename_embedded_region([obs], region_id, new_id)
-                region_id = new_id
-                region = regions[region_id]
-
-        # ── optional bounds update ────────────────────────────────────────────
-        updated_bounds_2d = None
-        if bounds:
-            updated_bounds_2d = {
-                "min": {"x": bounds["min_x"], "z": bounds["min_z"]},
-                "max": {"x": bounds["max_x"], "z": bounds["max_z"]},
-            }
-            region["bounds_2d"] = updated_bounds_2d
-            if is_top_level:
-                patch_all_embedded_regions(data, region_id, updated_bounds_2d)
-
-        # ── optional coords update ────────────────────────────────────────────
-        if coords:
-            region_type = region.get("type", "")
-            updated_bounds_2d = apply_coord_update(region, region_type, coords)
-            if updated_bounds_2d and is_top_level:
-                patch_all_embedded_regions(data, region_id, updated_bounds_2d)
-
+        try:
+            result = region_editor.patch_region(data, region_id, body)
+        except InvalidRegionPayload as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RegionNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        except RegionConflict as exc:
+            return jsonify({"error": str(exc)}), 409
         save_map_data(data, data_path)
-        response: dict = {"ok": True}
-        if updated_bounds_2d:
-            b = updated_bounds_2d
-            response["bounds"] = {
-                "min_x": b["min"]["x"], "min_z": b["min"]["z"],
-                "max_x": b["max"]["x"], "max_z": b["max"]["z"],
-            }
-        return jsonify(response)
+        return jsonify({"ok": True, **result})
 
     # ── Team CRUD endpoints ───────────────────────────────────────────────────
 
