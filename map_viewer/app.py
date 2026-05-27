@@ -918,7 +918,7 @@ def create_app() -> Flask:
     def update_team(name: str, team_id: str) -> tuple:
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        teams: list = data.setdefault("teams", [])
+        teams: list = data.get("teams", [])
 
         team = next((t for t in teams if t.get("id") == team_id), None)
         if team is None:
@@ -951,7 +951,7 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/teams/<team_id>", methods=["DELETE"])
     def delete_team(name: str, team_id: str) -> tuple:
         data, data_path = load_map_data(name)
-        teams: list = data.setdefault("teams", [])
+        teams: list = data.get("teams", [])
 
         if not any(t.get("id") == team_id for t in teams):
             return jsonify({"error": f"team {team_id!r} not found"}), 404
@@ -999,7 +999,7 @@ def create_app() -> Flask:
         """Update team, yaw, and kit for the spawn linked to *region_id*."""
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        spawns: list = data.setdefault("spawns", [])
+        spawns: list = data.get("spawns", [])
 
         spawn = next((s for s in spawns if spawn_region_id(s) == region_id), None)
         if spawn is None:
@@ -1019,7 +1019,7 @@ def create_app() -> Flask:
     def delete_spawn_link(name: str, region_id: str) -> tuple:
         """Remove the spawn link for *region_id*."""
         data, data_path = load_map_data(name)
-        spawns: list = data.setdefault("spawns", [])
+        spawns: list = data.get("spawns", [])
 
         if not any(spawn_region_id(s) == region_id for s in spawns):
             return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
@@ -1077,7 +1077,7 @@ def create_app() -> Flask:
         """
         body = request.get_json(silent=True) or {}
         data, data_path = load_map_data(name)
-        wools: list = data.setdefault("wools", [])
+        wools: list = data.get("wools", [])
 
         wool = next(
             (w for w in wools if w.get("team") == team_id and w.get("color") == color),
@@ -1132,7 +1132,7 @@ def create_app() -> Flask:
     def delete_wool(name: str, team_id: str, color: str) -> tuple:
         """Delete the single wool entry identified by (team, color)."""
         data, data_path = load_map_data(name)
-        wools: list = data.setdefault("wools", [])
+        wools: list = data.get("wools", [])
 
         if not any(w.get("team") == team_id and w.get("color") == color for w in wools):
             return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
