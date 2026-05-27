@@ -10,10 +10,10 @@
  *   - Shared UI: breadcrumb, status bar, window resize
  */
 
-import { OverviewActivity }   from "./overview-activity.js";
-import { RegionsActivity }    from "./regions-activity.js";
-import { TeamsActivity }      from "./teams-activity.js";
-import { ObjectiveActivity }  from "./objective-activity.js";
+import { OverviewActivity }   from "./activities/overview-activity.js";
+import { RegionsActivity }    from "./activities/regions-activity.js";
+import { TeamsActivity }      from "./activities/teams-activity.js";
+import { ObjectiveActivity }  from "./activities/objective-activity.js";
 import * as api               from "./api.js";
 
 lucide.createIcons({ attrs: { "stroke-width": "1.5", width: "15", height: "15" } });
