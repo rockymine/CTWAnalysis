@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+from flask import Blueprint, render_template
+
+bp = Blueprint("pages", __name__)
+
+
+@bp.route("/")
+def index():
+    return render_template("index.html")
+
+
+@bp.route("/editor")
+def editor():
+    return render_template("editor.html")
