@@ -37,6 +37,7 @@ from common.visualization.block_colors import block_color
 from map_viewer.services.config import get_output_root, load_config
 from map_viewer.services.pipeline import check_pipeline_status
 from map_viewer.services.region_tree import collect_region_subtree_ids, find_child_region, find_parent_of_child, patch_embedded_region, remove_inline_children, rename_embedded_region, rename_in_children
+from map_viewer.services.wools import wool_color_to_damage
 
 
 class _QueueLogHandler(logging.Handler):
@@ -1358,7 +1359,7 @@ def create_app() -> Flask:
         # ── 1. PGM spawner check (XML-only, no layout files needed) ──────────
         wool_room_region = wool.get("wool_room_region")
         matched_spawner  = None
-        wool_color_damage = _wool_color_to_damage(color)
+        wool_color_damage = wool_color_to_damage(color)
 
         for spawner in data.get("spawners", []):
             # Match by player_region == wool_room_region
@@ -1452,14 +1453,9 @@ def create_app() -> Flask:
             if wool_room_region and rule.get("region_id") == wool_room_region
         ]
 
-        # ── XML snippets ───────────────────────────────────────────────────────
-        wool_xml = _build_wool_xml(wool)
-        pgm_spawner_xml = _build_spawner_xml(matched_spawner) if matched_spawner else None
-
         return jsonify({
             "respawn_type":      respawn_type,
             "pgm_spawner":       matched_spawner,
-            "pgm_spawner_xml":   pgm_spawner_xml,
             "chest_wool":        layout_result.get("chest_wool", []),
             "chest_wool_count":  chest_wool_count,
             "block_wool_count":  block_wool_count,
@@ -1468,91 +1464,9 @@ def create_app() -> Flask:
             "mob_entity_types":  mob_entity_types,
             "renewables":        relevant_renewables,
             "block_drop_rules":  relevant_drop_rules,
-            "wool_xml":          wool_xml,
         })
 
     return app
-
-
-# ---------------------------------------------------------------------------
-# Private helpers used only by app routes
-# ---------------------------------------------------------------------------
-
-# Wool dye color names → Minecraft damage values (same mapping as WOOL_COLORS
-# in wool_query.py but inverted).
-_WOOL_COLOR_DAMAGE: dict[str, int] = {
-    'white': 0, 'orange': 1, 'magenta': 2, 'light_blue': 3,
-    'yellow': 4, 'lime': 5, 'pink': 6, 'gray': 7,
-    'light_gray': 8, 'cyan': 9, 'purple': 10, 'blue': 11,
-    'brown': 12, 'green': 13, 'red': 14, 'black': 15,
-}
-
-
-def _wool_color_to_damage(color: str) -> Optional[int]:
-    """Return the Minecraft damage value for a wool color name, or None."""
-    # Handle names with spaces or underscores (e.g. 'light blue' → 'light_blue')
-    normalized = color.lower().replace(' ', '_')
-    return _WOOL_COLOR_DAMAGE.get(normalized)
-
-
-def _build_wool_xml(wool: dict) -> str:
-    """Return a reconstructed XML snippet for a wool entry."""
-    team  = wool.get("team", "")
-    color = wool.get("color", "").replace("_", " ")
-    wool_room_region = wool.get("wool_room_region")
-    location  = wool.get("location") or {}
-    monument  = wool.get("monument") or {}
-
-    lines: list[str] = [f'<wool team="{team}" color="{color}">']
-
-    if wool_room_region:
-        lines.append(f'  <block region="{wool_room_region}"/>')
-    elif location:
-        x, y, z = location.get("x", 0), location.get("y", 0), location.get("z", 0)
-        lines.append(f'  <!-- wool block at {x:.1f}, {y:.1f}, {z:.1f} -->')
-
-    if monument:
-        lines.append("  <monument>")
-        region_id = monument.get("region_id")
-        if region_id:
-            lines.append(f'    <block region="{region_id}"/>')
-        else:
-            mx = monument.get("x", 0)
-            my = monument.get("y", 0)
-            mz = monument.get("z", 0)
-            lines.append(f'    <block>{mx:.0f} {my:.0f} {mz:.0f}</block>')
-        lines.append("  </monument>")
-
-    lines.append("</wool>")
-    return "\n".join(lines)
-
-
-def _build_spawner_xml(spawner: dict) -> str:
-    """Return a reconstructed XML snippet for a PGM spawner entry."""
-    parts: list[str] = []
-    if spawn_region := spawner.get("spawn_region"):
-        parts.append(f'spawn-region="{spawn_region}"')
-    if player_region := spawner.get("player_region"):
-        parts.append(f'player-region="{player_region}"')
-    if (max_ent := spawner.get("max_entities")) is not None:
-        parts.append(f'max-entities="{max_ent}"')
-
-    items = spawner.get("items", [])
-    attr_str = " ".join(parts)
-
-    if not items:
-        return f"<spawner {attr_str}/>" if attr_str else "<spawner/>"
-
-    lines: list[str] = [f"<spawner {attr_str}>"]
-    for item in items:
-        iparts: list[str] = [f'material="{item.get("material", "")}"']
-        if (dmg := item.get("damage")) is not None:
-            iparts.append(f'damage="{dmg}"')
-        if (amt := item.get("amount")) is not None and amt != 1:
-            iparts.append(f'amount="{amt}"')
-        lines.append(f'  <item {" ".join(iparts)}/>')
-    lines.append("</spawner>")
-    return "\n".join(lines)
 
 
 def _resolve_region_bounds(
@@ -1577,7 +1491,6 @@ def _resolve_region_bounds(
         bounds["max"]["x"],
         bounds["max"]["z"],
     )
-
 
 if __name__ == "__main__":
     import argparse
