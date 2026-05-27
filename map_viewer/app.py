@@ -34,8 +34,8 @@ from map_viewer.region_encoder import (
 )
 from common.visualization.block_colors import block_color
 
-from map_viewer.services.config import _get_output_root, _load_config
-from map_viewer.services.pipeline import _check_pipeline_status
+from map_viewer.services.config import get_output_root, load_config
+from map_viewer.services.pipeline import check_pipeline_status
 
 
 class _QueueLogHandler(logging.Handler):
@@ -278,12 +278,12 @@ def create_app() -> Flask:
 
     @app.route("/api/config")
     def get_config():
-        return jsonify(_load_config())
+        return jsonify(load_config())
 
     @app.route("/api/config", methods=["POST"])
     def save_config():
         body = request.get_json(silent=True) or {}
-        config = _load_config()
+        config = load_config()
         for key in ("maps_folder", "output_folder"):
             if key in body:
                 config[key] = str(body[key]).strip()
@@ -294,19 +294,19 @@ def create_app() -> Flask:
 
     @app.route("/api/source-maps")
     def list_source_maps():
-        config = _load_config()
+        config = load_config()
         maps_folder = Path(config.get("maps_folder", "").strip())
         if not maps_folder or not maps_folder.exists():
             return jsonify({"error": "maps_folder not configured or does not exist"}), 400
 
-        output_root = _get_output_root()
+        output_root = get_output_root()
 
         maps = []
         for path in sorted(maps_folder.iterdir()):
             if not path.is_dir():
                 continue
             out_dir = output_root / path.name
-            steps = _check_pipeline_status(out_dir)
+            steps = check_pipeline_status(out_dir)
             all_done = all(s["done"] for s in steps)
             maps.append({
                 "name": path.name,
@@ -317,7 +317,7 @@ def create_app() -> Flask:
 
     @app.route("/api/source-map/<name>/validate")
     def validate_source_map(name: str):
-        config = _load_config()
+        config = load_config()
         maps_folder = Path(config.get("maps_folder", "").strip())
         map_path = maps_folder / name
 
@@ -335,11 +335,11 @@ def create_app() -> Flask:
     @app.route("/api/source-map/<name>/thumbnail")
     def source_map_thumbnail(name: str):
         from flask import send_file
-        config = _load_config()
+        config = load_config()
         maps_folder = Path(config.get("maps_folder", "").strip())
         candidates = [
             maps_folder / name / "map.png",
-            _get_output_root() / name / "map.png",
+            get_output_root() / name / "map.png",
         ]
         for path in candidates:
             if path.exists():
@@ -349,9 +349,9 @@ def create_app() -> Flask:
     @app.route("/api/source-map/<name>/pipeline-status")
     def pipeline_status(name: str):
         import time
-        output_root = _get_output_root()
+        output_root = get_output_root()
         out_dir = output_root / name
-        steps = _check_pipeline_status(out_dir)
+        steps = check_pipeline_status(out_dir)
         all_done = all(s["done"] for s in steps)
         last_updated: Optional[float] = None
         if all_done:
@@ -368,7 +368,7 @@ def create_app() -> Flask:
     def run_pipeline(name: str):
         force = request.args.get("force", "0") == "1"
 
-        config = _load_config()
+        config = load_config()
         maps_folder_str = config.get("maps_folder", "").strip()
         if not maps_folder_str:
             return jsonify({"error": "maps_folder not configured"}), 400
@@ -377,7 +377,7 @@ def create_app() -> Flask:
         if not map_folder.exists():
             return jsonify({"error": f"Map folder not found: {name}"}), 404
 
-        output_root = _get_output_root()
+        output_root = get_output_root()
         map_output_dir = output_root / name
 
         def generate():
@@ -636,7 +636,7 @@ def create_app() -> Flask:
 
     @app.route("/api/maps")
     def list_maps():
-        output_root = _get_output_root()
+        output_root = get_output_root()
         if not output_root.exists():
             return jsonify([])
         maps = [
@@ -650,7 +650,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/map-data")
     def map_data_raw(name: str):
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -663,7 +663,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/metadata", methods=["PATCH"])
     def patch_map_metadata(name: str):
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -676,21 +676,21 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/symmetry")
     def map_symmetry(name: str):
-        sym_path = _get_output_root() / name / "symmetry.json"
+        sym_path = get_output_root() / name / "symmetry.json"
         if not sym_path.exists():
             abort(404)
         return jsonify(json.loads(sym_path.read_text(encoding="utf-8")))
 
     @app.route("/api/map/<name>/context")
     def map_context(name: str):
-        ctx_path = _get_output_root() / name / "map_context.json"
+        ctx_path = get_output_root() / name / "map_context.json"
         if not ctx_path.exists():
             abort(404)
         return jsonify(json.loads(ctx_path.read_text(encoding="utf-8")))
 
     @app.route("/api/map/<name>/regions")
     def map_regions(name: str):
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -702,7 +702,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/export/xml")
     def export_xml(name: str):
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data = json.loads(data_path.read_text(encoding="utf-8"))
@@ -715,7 +715,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/layers/top-surface")
     def layer_top_surface(name: str):
-        parquet_path = _get_output_root() / name / "layout_top_surface.parquet"
+        parquet_path = get_output_root() / name / "layout_top_surface.parquet"
         if not parquet_path.exists():
             abort(404)
         df = pd.read_parquet(
@@ -748,7 +748,7 @@ def create_app() -> Flask:
         except (KeyError, ValueError) as exc:
             return jsonify({"error": f"Invalid or missing parameter: {exc}"}), 400
 
-        out_dir = _get_output_root() / name
+        out_dir = get_output_root() / name
         if not out_dir.exists():
             return jsonify({"error": "Map not found or not preprocessed"}), 404
 
@@ -774,7 +774,7 @@ def create_app() -> Flask:
         except (KeyError, ValueError) as exc:
             return jsonify({"error": f"Invalid or missing parameter: {exc}"}), 400
 
-        out_dir = _get_output_root() / name
+        out_dir = get_output_root() / name
         if not out_dir.exists():
             return jsonify({"error": "Map not found or not preprocessed"}), 404
 
@@ -790,7 +790,7 @@ def create_app() -> Flask:
         if region_type not in _SUPPORTED_CREATE_TYPES:
             return jsonify({"error": f"unsupported type '{region_type}'"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -883,7 +883,7 @@ def create_app() -> Flask:
         if len(child_ids) < 2:
             return jsonify({"error": "at least 2 regions required"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -933,7 +933,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
     def delete_region(name: str, region_id: str) -> tuple:
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
         data    = json.loads(data_path.read_text(encoding="utf-8"))
@@ -1006,7 +1006,7 @@ def create_app() -> Flask:
         if not root_id or not region_entries:
             return jsonify({"error": "invalid snapshot"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1049,7 +1049,7 @@ def create_app() -> Flask:
         if not body.get("id") and bounds is None and coords is None:
             return jsonify({"error": "provide 'id', 'bounds', or 'coords'"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1133,7 +1133,7 @@ def create_app() -> Flask:
         if not team_id:
             return jsonify({"error": "id is required"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1160,7 +1160,7 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/teams/<team_id>", methods=["PATCH"])
     def update_team(name: str, team_id: str) -> tuple:
         body = request.get_json(silent=True) or {}
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1197,7 +1197,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/teams/<team_id>", methods=["DELETE"])
     def delete_team(name: str, team_id: str) -> tuple:
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1224,7 +1224,7 @@ def create_app() -> Flask:
         if not region_id:
             return jsonify({"error": "region_id is required"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1253,7 +1253,7 @@ def create_app() -> Flask:
     def update_spawn_link(name: str, region_id: str) -> tuple:
         """Update team, yaw, and kit for the spawn linked to *region_id*."""
         body = request.get_json(silent=True) or {}
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1277,7 +1277,7 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/spawn/<region_id>", methods=["DELETE"])
     def delete_spawn_link(name: str, region_id: str) -> tuple:
         """Remove the spawn link for *region_id*."""
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1304,7 +1304,7 @@ def create_app() -> Flask:
         if not color:
             return jsonify({"error": "color is required"}), 400
 
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1343,7 +1343,7 @@ def create_app() -> Flask:
         (team rename, color rename) apply only to the matched entry.
         """
         body = request.get_json(silent=True) or {}
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1402,7 +1402,7 @@ def create_app() -> Flask:
     @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["DELETE"])
     def delete_wool(name: str, team_id: str, color: str) -> tuple:
         """Delete the single wool entry identified by (team, color)."""
-        data_path = _get_output_root() / name / "map_data.json"
+        data_path = get_output_root() / name / "map_data.json"
         if not data_path.exists():
             abort(404)
 
@@ -1446,7 +1446,7 @@ def create_app() -> Flask:
         """
         from layout_analysis.wool_query import query_wool_in_region
 
-        out_dir   = _get_output_root() / name
+        out_dir   = get_output_root() / name
         data_path = out_dir / "map_data.json"
         if not data_path.exists():
             abort(404)

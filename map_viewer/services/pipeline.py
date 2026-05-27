@@ -10,7 +10,7 @@ _PIPELINE_STEPS = [
 ]
 
 
-def _check_pipeline_status(output_dir: Path) -> list[dict]:
+def check_pipeline_status(output_dir: Path) -> list[dict]:
     return [
         {
             "id": step["id"],
