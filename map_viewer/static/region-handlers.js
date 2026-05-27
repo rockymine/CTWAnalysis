@@ -7,18 +7,19 @@
  * update on bounds change) while Regions passes its RegionDetail instance.
  *
  * @param {object}          opts
- * @param {object}          opts.canvas        — MapCanvas instance
- * @param {object}          opts.registry      — RegionRegistry instance
- * @param {object|null}     [opts.detail=null] — RegionDetail; null = no XML preview
- * @param {() => string}    opts.getMapName    — returns the current map slug
- * @param {() => object}    opts.getHistory    — returns the DeletedRegionHistory
- * @returns {{ onBoundsChange, onBoundsSave, onCoordsChange, onCoordsSave }}
+ * @param {object}          opts.canvas           — MapCanvas instance
+ * @param {object}          opts.registry         — RegionRegistry instance
+ * @param {object|null}     [opts.detail=null]    — RegionDetail; null = no XML preview
+ * @param {object|null}     [opts.sidebar=null]   — RegionSidebar; null = no sidebar rename
+ * @param {() => string}    opts.getMapName       — returns the current map slug
+ * @param {() => object}    opts.getHistory       — returns the DeletedRegionHistory
+ * @returns {{ onBoundsChange, onBoundsSave, onCoordsChange, onCoordsSave, onRenameRegion }}
  */
 
 import { deriveBoundsFromCoords } from "./region-types.js";
 import * as api from "./api.js";
 
-export function createRegionHandlers({ canvas, registry, detail = null, getMapName, getHistory }) {
+export function createRegionHandlers({ canvas, registry, detail = null, sidebar = null, getMapName, getHistory }) {
   return {
     onBoundsChange(node, bounds) {
       canvas.updateRegionBounds(node, bounds);
@@ -59,6 +60,18 @@ export function createRegionHandlers({ canvas, registry, detail = null, getMapNa
           getHistory()?.clearRedo();
         })
         .catch(err => console.error("Coord save failed:", err));
+    },
+
+    onRenameRegion(node, oldId, newId) {
+      registry.renameNode(oldId, newId);
+      sidebar?.renameNode(oldId, newId);
+      canvas.renameNode(oldId, newId);
+      canvas.showAnchors(node);
+      const mapName = getMapName();
+      if (!mapName) return;
+      api.renameRegion(mapName, oldId, newId)
+        .then(() => getHistory()?.clearRedo())
+        .catch(err => console.error("Region rename failed:", err));
     },
   };
 }

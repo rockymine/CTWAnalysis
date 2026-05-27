@@ -59,7 +59,7 @@ export class TeamsActivity {
       onBoundsSave:     (node, bounds) => this._handleBoundsSave(node, bounds),
       onCoordsChange:   (node, coords) => this._handleCoordsChange(node, coords),
       onCoordsSave:     (node, coords) => this._handleCoordsSave(node, coords),
-      onRegionRename:   (node, oldId, newId) => this._handleRegionRename(node, oldId, newId),
+      onRegionRename:   (node, oldId, newId) => this._handlers?.onRenameRegion(node, oldId, newId),
     });
   }
 
@@ -178,16 +178,6 @@ export class TeamsActivity {
   _handleBoundsSave(node, bounds)    { this._handlers?.onBoundsSave(node, bounds); }
   _handleCoordsChange(node, coords)  { this._handlers?.onCoordsChange(node, coords); }
   _handleCoordsSave(node, coords)    { this._handlers?.onCoordsSave(node, coords); }
-
-  _handleRegionRename(node, oldId, newId) {
-    this._registry.renameNode(oldId, newId);
-    this._canvas.renameNode(oldId, newId);
-    this._canvas.showAnchors(node);  // refresh overlay so new label appears
-    if (!this._mapName) return;
-    api.renameRegion(this._mapName, oldId, newId)
-      .then(() => this._deleteHistory.clearRedo())
-      .catch(err => console.error("Teams: rename failed:", err));
-  }
 
   // ── Delete ────────────────────────────────────────────────────────────────
 

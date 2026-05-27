@@ -161,26 +161,9 @@ export class RegionsActivity {
         onBoundsSave:    (node, bounds) => this.#handlers?.onBoundsSave(node, bounds),
         onCoordsChange:  (node, coords) => this.#handlers?.onCoordsChange(node, coords),
         onCoordsSave:    (node, coords) => this.#handlers?.onCoordsSave(node, coords),
-        onIdChange: (node, oldId, newId) => {
-          this.#registry.renameNode(oldId, newId);
-          this.#sidebar.renameNode(oldId, newId);
-          this.#canvas.renameNode(oldId, newId);
-          this.#canvas.showAnchors(node);
-          if (!this.#mapName) return;
-          api.renameRegion(this.#mapName, oldId, newId)
-            .then(() => this.#deleteHistory.clearRedo())
-            .catch(err => console.error("Region rename failed:", err));
-        },
+        onIdChange: (node, oldId, newId) => this.#handlers?.onRenameRegion(node, oldId, newId),
       },
     );
-
-    this.#handlers = createRegionHandlers({
-      canvas:     this.#canvas,
-      registry:   this.#registry,
-      detail:     this.#detail,
-      getMapName: () => this.#mapName,
-      getHistory: () => this.#deleteHistory,
-    });
 
     this.#sidebar = new RegionSidebar(
       document.getElementById("region-list"),
@@ -213,6 +196,16 @@ export class RegionsActivity {
         },
       },
     );
+
+    // Handlers created last so sidebar and detail are both available.
+    this.#handlers = createRegionHandlers({
+      canvas:     this.#canvas,
+      registry:   this.#registry,
+      detail:     this.#detail,
+      sidebar:    this.#sidebar,
+      getMapName: () => this.#mapName,
+      getHistory: () => this.#deleteHistory,
+    });
   }
 
   // ── toolbar ────────────────────────────────────────────────────────────────
