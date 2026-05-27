@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from layout_analysis.wool_query import query_wool_in_region
+from map_viewer.services.regions import resolve_region_bounds
+from map_viewer.services.wools import (
+    collect_mob_entity_types,
+    determine_respawn_type,
+    find_pgm_spawner,
+    find_relevant_renewables,
+    wool_color_to_damage,
+)
+
 
 class WoolEditorError(Exception):
     pass
@@ -120,3 +132,58 @@ def delete_wool(data: dict, team_id: str, color: str) -> dict:
         if not (w.get("team") == team_id and w.get("color") == color)
     ]
     return {}
+
+
+def get_room_status(data: dict, out_dir: Path, team_id: str, color: str) -> dict:
+    """Return the respawn mechanism detected for a wool's room.
+
+    Raises WoolNotFound if the (team, color) entry does not exist in data.
+    """
+    wools: list = data.get("wools", [])
+    wool = next(
+        (w for w in wools if w.get("team") == team_id and w.get("color") == color),
+        None,
+    )
+    if wool is None:
+        raise WoolNotFound(f"wool ({team_id!r}, {color!r}) not found")
+
+    wool_room_region = wool.get("wool_room_region")
+    matched_spawner  = find_pgm_spawner(data, wool_room_region, wool_color_to_damage(color))
+
+    chest_wool_count = 0
+    block_wool_count = 0
+    mob_spawners: list[dict] = []
+    layout_result: dict = {}
+
+    room_bounds = resolve_region_bounds(data, wool_room_region)
+    if room_bounds is not None:
+        min_x, min_z, max_x, max_z = room_bounds
+        try:
+            layout_result    = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
+            chest_wool_count = len(layout_result.get("chest_wool", []))
+            block_wool_count = len(layout_result.get("block_wool", []))
+            mob_spawners     = layout_result.get("mob_spawners", [])
+        except Exception:
+            pass  # layout files may not exist; leave counts at zero
+
+    mob_spawner_count   = len(mob_spawners)
+    respawn_type        = determine_respawn_type(matched_spawner, mob_spawner_count, block_wool_count, chest_wool_count)
+    mob_entity_types    = collect_mob_entity_types(mob_spawners)
+    relevant_renewables = find_relevant_renewables(data, wool_room_region, layout_result)
+    relevant_drop_rules = [
+        rule for rule in data.get("block_drop_rules", [])
+        if wool_room_region and rule.get("region_id") == wool_room_region
+    ]
+
+    return {
+        "respawn_type":      respawn_type,
+        "pgm_spawner":       matched_spawner,
+        "chest_wool":        layout_result.get("chest_wool", []),
+        "chest_wool_count":  chest_wool_count,
+        "block_wool_count":  block_wool_count,
+        "mob_spawners":      mob_spawners,
+        "mob_spawner_count": mob_spawner_count,
+        "mob_entity_types":  mob_entity_types,
+        "renewables":        relevant_renewables,
+        "block_drop_rules":  relevant_drop_rules,
+    }

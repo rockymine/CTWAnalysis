@@ -37,17 +37,9 @@ from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_ste
 from map_viewer.services.region_editor import InvalidRegionPayload, RegionConflict, RegionNotFound
 from map_viewer.services.region_tree import encode_region_tree_categorized
 from map_viewer.services.region_xml import regions_to_xml
-from map_viewer.services.regions import resolve_region_bounds
 from map_viewer.services.spawn_editor import InvalidSpawnPayload, SpawnConflict, SpawnNotFound
 from map_viewer.services.team_editor import InvalidTeamPayload, TeamConflict, TeamNotFound
 from map_viewer.services.wool_editor import InvalidWoolPayload, WoolConflict, WoolNotFound
-from map_viewer.services.wools import (
-    collect_mob_entity_types,
-    determine_respawn_type,
-    find_pgm_spawner,
-    find_relevant_renewables,
-    wool_color_to_damage,
-)
 
 
 _METADATA_FIELDS = {
@@ -533,80 +525,13 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>/room-status")
     def wool_room_status(name: str, team_id: str, color: str):
-        """Return the respawn mechanism detected for a wool's room.
-
-        Checks (in priority order):
-          1. PGM spawner module  — <spawners> element in map_data.json
-          2. Mob spawner block   — block ID 52 in layout_resource_blocks.parquet
-          3. Renewable wool block — wool block in a <renewable> region
-          4. Chest wool          — wool item in a chest inside the room
-          5. unknown             — nothing detected
-
-        The wool room bounding box is derived from the wool's wool_room_region
-        field plus the region's bounds_2d stored in map_data.json.  If the
-        region has no resolvable bounds (mirror/translate maps), only the
-        XML-based checks (PGM spawner) are performed.
-
-        Returns:
-            {
-                "respawn_type": str,        # one of the five labels above
-                "pgm_spawner": dict | null, # spawner data if matched
-                "chest_wool_count": int,
-                "block_wool_count": int,
-                "mob_spawner_count": int,
-            }
-        """
-        out_dir = get_output_root() / name
         data, _ = load_map_data(name)
-        wools: list = data.get("wools", [])
-
-        wool = next(
-            (w for w in wools if w.get("team") == team_id and w.get("color") == color),
-            None,
-        )
-        if wool is None:
-            return jsonify({"error": f"wool ({team_id!r}, {color!r}) not found"}), 404
-
-        wool_room_region = wool.get("wool_room_region")
-        matched_spawner  = find_pgm_spawner(data, wool_room_region, wool_color_to_damage(color))
-
-        chest_wool_count = 0
-        block_wool_count = 0
-        mob_spawners: list[dict] = []
-        layout_result: dict = {}
-
-        room_bounds = resolve_region_bounds(data, wool_room_region)
-        if room_bounds is not None:
-            min_x, min_z, max_x, max_z = room_bounds
-            try:
-                layout_result = query_wool_in_region(out_dir, min_x, min_z, max_x, max_z)
-                chest_wool_count = len(layout_result.get("chest_wool", []))
-                block_wool_count = len(layout_result.get("block_wool", []))
-                mob_spawners     = layout_result.get("mob_spawners", [])
-            except Exception:
-                pass  # layout files may not exist; leave counts at zero
-
-        mob_spawner_count    = len(mob_spawners)
-        respawn_type         = determine_respawn_type(matched_spawner, mob_spawner_count, block_wool_count, chest_wool_count)
-        mob_entity_types     = collect_mob_entity_types(mob_spawners)
-        relevant_renewables  = find_relevant_renewables(data, wool_room_region, layout_result)
-        relevant_drop_rules  = [
-            rule for rule in data.get("block_drop_rules", [])
-            if wool_room_region and rule.get("region_id") == wool_room_region
-        ]
-
-        return jsonify({
-            "respawn_type":      respawn_type,
-            "pgm_spawner":       matched_spawner,
-            "chest_wool":        layout_result.get("chest_wool", []),
-            "chest_wool_count":  chest_wool_count,
-            "block_wool_count":  block_wool_count,
-            "mob_spawners":      mob_spawners,
-            "mob_spawner_count": mob_spawner_count,
-            "mob_entity_types":  mob_entity_types,
-            "renewables":        relevant_renewables,
-            "block_drop_rules":  relevant_drop_rules,
-        })
+        out_dir = get_output_root() / name
+        try:
+            result = wool_editor.get_room_status(data, out_dir, team_id, color)
+        except WoolNotFound as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify(result)
 
     return app
 
