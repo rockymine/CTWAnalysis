@@ -26,10 +26,11 @@
  *   resize()                — delegate to canvas.resize()
  */
 
-import { MapCanvas }      from "./map-canvas.js";
-import { ObjectivePanel } from "./objective-panel.js";
-import { RegionRegistry } from "./region-registry.js";
-import * as api           from "./api.js";
+import { MapCanvas }      from "../canvas/map-canvas.js";
+import { ObjectivePanel } from "../panels/objective-panel.js";
+import { RegionRegistry } from "../region/region-registry.js";
+import { ToolManager }    from "../shared/tool-manager.js";
+import * as api           from "../api.js";
 
 export class ObjectiveActivity {
   _el        = null;
@@ -40,17 +41,14 @@ export class ObjectiveActivity {
   _ctx       = null;   // last-rendered canvas context (augmented with monuments)
   _objGroups = null;   // last-rendered region groups
 
-  _coordsEl    = null;
-  _zoomEl      = null;
-  _toolMoveBtn = null;
-  _toolSelBtn  = null;
+  _coordsEl = null;
+  _zoomEl   = null;
+  _tools    = null;   // ToolManager — created in _initCanvas()
 
   constructor() {
-    this._el          = document.getElementById("obj-workspace");
-    this._coordsEl    = document.getElementById("obj-cursor-coords");
-    this._zoomEl      = document.getElementById("obj-zoom-level");
-    this._toolMoveBtn = document.getElementById("obj-tool-move");
-    this._toolSelBtn  = document.getElementById("obj-tool-select");
+    this._el       = document.getElementById("obj-workspace");
+    this._coordsEl = document.getElementById("obj-cursor-coords");
+    this._zoomEl   = document.getElementById("obj-zoom-level");
 
     // Registry owns canvas-level region selection.  onSelectionChange fires
     // synchronously so the visual response is immediate (same as Teams).
@@ -139,17 +137,13 @@ export class ObjectiveActivity {
     this._canvas.setPoisVisible(true);
 
     // Wire toolbar buttons
-    this._toolMoveBtn.addEventListener("click", () => this._setTool("move"));
-    this._toolSelBtn.addEventListener("click",  () => this._setTool(null));
-    this._toolMoveBtn.disabled = false;
-    this._toolSelBtn.disabled  = false;
-    this._setTool(null);  // default: select tool
-  }
-
-  _setTool(tool) {
-    this._canvas.setActiveTool(tool);
-    this._toolMoveBtn.classList.toggle("draw-tool-btn--active", tool === "move");
-    this._toolSelBtn.classList.toggle("draw-tool-btn--active",  tool === null);
+    const moveBtn   = document.getElementById("obj-tool-move");
+    const selectBtn = document.getElementById("obj-tool-select");
+    this._tools = new ToolManager(this._canvas, { move: moveBtn, select: selectBtn });
+    moveBtn.addEventListener("click",   () => this._tools.setTool("move"));
+    selectBtn.addEventListener("click", () => this._tools.setTool(null));
+    this._tools.enable();
+    this._tools.setTool(null);  // default: select tool
   }
 
   // ── Map loading ─────────────────────────────────────────────────────────────

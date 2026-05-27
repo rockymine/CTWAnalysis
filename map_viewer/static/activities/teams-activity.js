@@ -9,13 +9,14 @@
  *   • Right panel shows RegionDetail + team/yaw/kit assignment fields.
  */
 
-import { MapCanvas }            from "./map-canvas.js";
-import { TeamsPanel }           from "./teams-panel.js";
-import { RegionRegistry }       from "./region-registry.js";
-import { DeletedRegionHistory } from "./deleted-region-history.js";
-import { createRegionHandlers } from "./region-handlers.js";
-import { isEditableTarget }     from "./shared/ui-helpers.js";
-import * as api                from "./api.js";
+import { MapCanvas }            from "../canvas/map-canvas.js";
+import { TeamsPanel }           from "../panels/teams-panel.js";
+import { RegionRegistry }       from "../region/region-registry.js";
+import { DeletedRegionHistory } from "../region/deleted-region-history.js";
+import { createRegionHandlers } from "../region/region-handlers.js";
+import { isEditableTarget }     from "../shared/ui-helpers.js";
+import { ToolManager }          from "../shared/tool-manager.js";
+import * as api                from "../api.js";
 
 export class TeamsActivity {
   constructor({ onStatusChange } = {}) {
@@ -23,13 +24,9 @@ export class TeamsActivity {
     this._canvas  = null;   // MapCanvas — created on first activate
     this._mapName = null;
 
-    // Tool buttons
-    this._toolMoveBtn     = document.getElementById("pt-tool-move");
-    this._toolSelectBtn   = document.getElementById("pt-tool-select");
-    this._toolCylinderBtn = document.getElementById("pt-tool-cylinder");
-    this._toolPointBtn    = document.getElementById("pt-tool-point");
-    this._coordsEl        = document.getElementById("pt-cursor-coords");
-    this._zoomEl          = document.getElementById("pt-zoom-level");
+    this._tools   = null;   // ToolManager — created in _initCanvas()
+    this._coordsEl = document.getElementById("pt-cursor-coords");
+    this._zoomEl   = document.getElementById("pt-zoom-level");
 
     // Registry — tracks the spawn-region node tree and selection state.
     // onSelectionChange fans out to canvas (outline, anchors/label) and panel.
@@ -104,7 +101,7 @@ export class TeamsActivity {
       },
       onRegionDraw: async (drawResult) => {
         if (!this._mapName) return;
-        this._setTool(null);
+        this._tools.setTool(null);
         const newId = await this._panel.onCanvasDraw(
           this._mapName,
           drawResult,
@@ -127,9 +124,15 @@ export class TeamsActivity {
       getHistory: () => this._deleteHistory,
     });
 
-    this._setTool("move");
+    this._tools = new ToolManager(this._canvas, {
+      move:     document.getElementById("pt-tool-move"),
+      select:   document.getElementById("pt-tool-select"),
+      cylinder: document.getElementById("pt-tool-cylinder"),
+      point:    document.getElementById("pt-tool-point"),
+    });
+    this._tools.enable();
+    this._tools.setTool("move");
     this._attachToolListeners();
-    this._enableTools();
   }
 
   // ── Map loading ────────────────────────────────────────────────────────────
@@ -209,33 +212,14 @@ export class TeamsActivity {
 
   // ── Tool management ────────────────────────────────────────────────────────
 
-  _setTool(tool) {
-    this._canvas.setActiveTool(tool);
-    this._toolMoveBtn.classList.toggle("draw-tool-btn--active",     tool === "move");
-    this._toolSelectBtn.classList.toggle("draw-tool-btn--active",   tool === null);
-    this._toolCylinderBtn.classList.toggle("draw-tool-btn--active", tool === "cylinder");
-    this._toolPointBtn.classList.toggle("draw-tool-btn--active",    tool === "point");
-  }
-
-  _enableTools() {
-    this._toolMoveBtn.disabled     = false;
-    this._toolSelectBtn.disabled   = false;
-    this._toolCylinderBtn.disabled = false;
-    this._toolPointBtn.disabled    = false;
-  }
-
   _attachToolListeners() {
-    this._toolMoveBtn.addEventListener("click", () => this._setTool("move"));
-    this._toolSelectBtn.addEventListener("click", () => this._setTool(null));
-    this._toolCylinderBtn.addEventListener("click", () => {
-      this._setTool(
-        this._toolCylinderBtn.classList.contains("draw-tool-btn--active") ? "move" : "cylinder",
-      );
+    document.getElementById("pt-tool-move").addEventListener("click",     () => this._tools.setTool("move"));
+    document.getElementById("pt-tool-select").addEventListener("click",   () => this._tools.setTool(null));
+    document.getElementById("pt-tool-cylinder").addEventListener("click", () => {
+      this._tools.setTool(this._tools.activeTool === "cylinder" ? "move" : "cylinder");
     });
-    this._toolPointBtn.addEventListener("click", () => {
-      this._setTool(
-        this._toolPointBtn.classList.contains("draw-tool-btn--active") ? "move" : "point",
-      );
+    document.getElementById("pt-tool-point").addEventListener("click", () => {
+      this._tools.setTool(this._tools.activeTool === "point" ? "move" : "point");
     });
 
     document.addEventListener("keydown", (e) => {
@@ -288,19 +272,15 @@ export class TeamsActivity {
       }
 
       // Tool shortcuts
-      if (e.key === "m" || e.key === "M") this._setTool("move");
-      if (e.key === "s" || e.key === "S") this._setTool(null);
+      if (e.key === "m" || e.key === "M") this._tools.setTool("move");
+      if (e.key === "s" || e.key === "S") this._tools.setTool(null);
       if (e.key === "y" || e.key === "Y") {
-        this._setTool(
-          this._toolCylinderBtn.classList.contains("draw-tool-btn--active") ? "move" : "cylinder",
-        );
+        this._tools.setTool(this._tools.activeTool === "cylinder" ? "move" : "cylinder");
       }
       if (e.key === "p" || e.key === "P") {
-        this._setTool(
-          this._toolPointBtn.classList.contains("draw-tool-btn--active") ? "move" : "point",
-        );
+        this._tools.setTool(this._tools.activeTool === "point" ? "move" : "point");
       }
-      if (e.key === "Escape") this._setTool("move");
+      if (e.key === "Escape") this._tools.setTool("move");
 
       // Delete selected spawn region
       const selectedSpawnId = this._panel.getSelectedRegionId();

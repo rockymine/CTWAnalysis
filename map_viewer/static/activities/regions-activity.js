@@ -13,15 +13,16 @@
  *   setButtonsEnabled(enabled)   — enable/disable toolbar after map load
  */
 
-import { MapCanvas }          from "./map-canvas.js";
-import { RegionSidebar }      from "./region-sidebar.js";
-import { RegionRegistry }     from "./region-registry.js";
-import { RegionDetail }       from "./region-detail.js";
-import { DeletedRegionHistory } from "./deleted-region-history.js";
-import { DRAW_TOOLS, deriveBoundsFromCoords } from "./region-types.js";
-import { createRegionHandlers }  from "./region-handlers.js";
-import { isEditableTarget }   from "./shared/ui-helpers.js";
-import * as api               from "./api.js";
+import { MapCanvas }          from "../canvas/map-canvas.js";
+import { RegionSidebar }      from "../panels/region-sidebar.js";
+import { RegionRegistry }     from "../region/region-registry.js";
+import { RegionDetail }       from "../panels/region-detail.js";
+import { DeletedRegionHistory } from "../region/deleted-region-history.js";
+import { DRAW_TOOLS, deriveBoundsFromCoords } from "../region/region-types.js";
+import { createRegionHandlers }  from "../region/region-handlers.js";
+import { isEditableTarget }   from "../shared/ui-helpers.js";
+import { ToolManager }        from "../shared/tool-manager.js";
+import * as api               from "../api.js";
 
 export class RegionsActivity {
   // ── private fields ────────────────────────────────────────────────────────
@@ -42,11 +43,7 @@ export class RegionsActivity {
 
   #blockCache   = null;   // Map: mapName → top-surface data
 
-  // Toolbar button elements
-  #toolMoveBtn     = null;
-  #toolSelectBtn   = null;
-  #toolBtns        = null;   // Map<type, btn>  (DRAW_TOOLS keys)
-  #activeTool      = null;   // current tool string (or null = select)
+  #tools        = null;   // ToolManager — toolbar state + canvas.setActiveTool
 
   // ── constructor ────────────────────────────────────────────────────────────
 
@@ -55,7 +52,6 @@ export class RegionsActivity {
     this.#setStatus    = setStatus ?? (() => {});
     this.#multiSelected = new Set();
     this.#blockCache   = new Map();
-    this.#toolBtns     = new Map();
 
     this.#initComponents();
     this.#initToolbar();
@@ -88,11 +84,9 @@ export class RegionsActivity {
     this.#canvas?.resize();
   }
 
-  /** Called by main.js loadMap() to disable toolbar while loading, re-enable after. */
+  /** Called during map load to disable toolbar while loading, re-enable after. */
   setButtonsEnabled(enabled) {
-    this.#toolMoveBtn.disabled   = !enabled;
-    this.#toolSelectBtn.disabled = !enabled;
-    for (const btn of this.#toolBtns.values()) btn.disabled = !enabled;
+    this.#tools.setEnabled(enabled);
   }
 
   // ── component init ─────────────────────────────────────────────────────────
@@ -135,7 +129,7 @@ export class RegionsActivity {
         },
         onRegionDraw: async (drawResult) => {
           if (!this.#mapName) return;
-          this.#setToolActive(null);
+          this.#tools.setTool(null);
           try {
             const payload  = this.#buildCreatePayload(drawResult);
             const { id: newId } = await api.createRegion(this.#mapName, payload);
@@ -211,30 +205,27 @@ export class RegionsActivity {
   // ── toolbar ────────────────────────────────────────────────────────────────
 
   #initToolbar() {
-    this.#toolMoveBtn   = document.getElementById("tool-move");
-    this.#toolSelectBtn = document.getElementById("tool-select");
-
-    this.#toolMoveBtn.addEventListener("click",   () => this.#setToolActive("move"));
-    this.#toolSelectBtn.addEventListener("click", () => this.#setToolActive(null));
+    const moveBtn   = document.getElementById("tool-move");
+    const selectBtn = document.getElementById("tool-select");
+    const btnMap    = { move: moveBtn, select: selectBtn };
+    const drawDescs = new Map();
 
     for (const [type, desc] of Object.entries(DRAW_TOOLS)) {
       const btn = document.getElementById(`tool-${type}`);
       if (!btn) continue;
-      this.#toolBtns.set(type, btn);
-      btn.addEventListener("click", () => {
-        const currentlyActive = btn.classList.contains("draw-tool-btn--active");
-        this.#setToolActive(desc.toggleOff && currentlyActive ? "move" : type);
-      });
+      btnMap[type] = btn;
+      drawDescs.set(type, desc);
     }
-  }
 
-  #setToolActive(tool) {
-    this.#activeTool = tool;
-    this.#canvas.setActiveTool(tool);
-    this.#toolMoveBtn.classList.toggle("draw-tool-btn--active",   tool === "move");
-    this.#toolSelectBtn.classList.toggle("draw-tool-btn--active", tool === null);
-    for (const [type, btn] of this.#toolBtns) {
-      btn.classList.toggle("draw-tool-btn--active", tool === type);
+    this.#tools = new ToolManager(this.#canvas, btnMap);
+
+    moveBtn.addEventListener("click",   () => this.#tools.setTool("move"));
+    selectBtn.addEventListener("click", () => this.#tools.setTool(null));
+    for (const [type, desc] of drawDescs) {
+      const btn = btnMap[type];
+      btn.addEventListener("click", () => {
+        this.#tools.setTool(desc.toggleOff && this.#tools.activeTool === type ? "move" : type);
+      });
     }
   }
 
@@ -292,24 +283,22 @@ export class RegionsActivity {
 
       // Tool shortcuts: M / S are handled explicitly; DRAW_TOOLS covers the rest
       if ((e.key === "m" || e.key === "M") && this.#mapName) {
-        this.#setToolActive("move");
+        this.#tools.setTool("move");
         return;
       }
       if ((e.key === "s" || e.key === "S") && this.#mapName) {
-        this.#setToolActive(null);
+        this.#tools.setTool(null);
         return;
       }
       for (const [type, desc] of Object.entries(DRAW_TOOLS)) {
         if (e.key.toLowerCase() === desc.key && !e.ctrlKey && this.#mapName) {
-          const btn = this.#toolBtns.get(type);
-          const currentlyActive = btn?.classList.contains("draw-tool-btn--active");
-          this.#setToolActive(desc.toggleOff && currentlyActive ? "move" : type);
+          this.#tools.setTool(desc.toggleOff && this.#tools.activeTool === type ? "move" : type);
           return;
         }
       }
 
       if (e.key === "Escape") {
-        this.#setToolActive("move");
+        this.#tools.setTool("move");
         this.#multiSelected.clear();
         this.#sidebar.setMultiSelected([]);
         return;
@@ -348,7 +337,7 @@ export class RegionsActivity {
         for (const root of group.regions) this.#registry.register(root, null);
       }
       this.setButtonsEnabled(true);
-      this.#setToolActive("move");
+      this.#tools.setTool("move");
       this.#setStatus("");
       requestAnimationFrame(() => this.#canvas.resize());
     } catch (err) {
