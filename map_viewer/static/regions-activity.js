@@ -117,15 +117,15 @@ export class RegionsActivity {
     // Canvas and detail share regionHandlers — create placeholders first,
     // then initialize handlers after both exist.
     this.#canvas = new MapCanvas(
-      document.getElementById("map-svg"),
-      document.getElementById("svg-area"),
+      document.getElementById("rgn-map-svg"),
+      document.getElementById("rgn-svg-area"),
       {
         onCoords: (x, z) => {
-          document.getElementById("cursor-coords").textContent =
+          document.getElementById("rgn-cursor-coords").textContent =
             x !== null ? `X ${x}  Z ${z}` : "";
         },
         onZoom: (scale) => {
-          document.getElementById("zoom-level").textContent =
+          document.getElementById("rgn-zoom-level").textContent =
             `${Math.round(scale * 100)}%`;
         },
         onCanvasClick: (node) => {
