@@ -27,6 +27,7 @@ from typing import Optional
 import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
+from map_viewer.constants import CONFIG_PATH
 from map_viewer.region_encoder import (
     encode_region_tree_categorized,
     regions_to_xml,
@@ -34,6 +35,7 @@ from map_viewer.region_encoder import (
 from common.visualization.block_colors import block_color
 
 from map_viewer.services.config import _get_output_root, _load_config
+from map_viewer.services.pipeline import _check_pipeline_status
 
 
 class _QueueLogHandler(logging.Handler):
@@ -247,29 +249,6 @@ def _apply_coord_update(region: dict, region_type: str, coords: dict) -> dict | 
         return None  # above has no 2D footprint
 
     return None
-
-
-# ── Pipeline status helpers ────────────────────────────────────────────────
-
-_PIPELINE_STEPS = [
-    {"id": "xml",      "label": "XML",      "file": "map_data.json"},
-    {"id": "layout",   "label": "Layout",   "file": "layout_bedrock.parquet"},
-    {"id": "islands",  "label": "Islands",  "file": "islands.json"},
-    {"id": "symmetry", "label": "Symmetry", "file": "symmetry.json"},
-    {"id": "assembly", "label": "Assembly", "file": "map_context.json"},
-]
-
-
-def _check_pipeline_status(output_dir: Path) -> list[dict]:
-    return [
-        {
-            "id": step["id"],
-            "label": step["label"],
-            "file": step["file"],
-            "done": (output_dir / step["file"]).exists(),
-        }
-        for step in _PIPELINE_STEPS
-    ]
 
 
 def _spawn_region_id(spawn: dict) -> str:
