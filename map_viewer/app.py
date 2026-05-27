@@ -28,18 +28,30 @@ import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
 from map_viewer.constants import CONFIG_PATH
-from map_viewer.region_encoder import (
-    encode_region_tree_categorized,
-    regions_to_xml,
-)
+from map_viewer.services.region_xml import regions_to_xml
 from common.visualization.block_colors import block_color
 
-from map_viewer.services.config import get_output_root, load_config
+from map_viewer.services.config import (
+    get_output_root, 
+    load_config
+)
 from map_viewer.services.pipeline import check_pipeline_status
-from map_viewer.services.region_tree import collect_region_subtree_ids, find_child_region, find_parent_of_child, patch_embedded_region, remove_inline_children, rename_embedded_region, rename_in_children
+from map_viewer.services.region_tree import (
+    encode_region_tree_categorized, 
+    collect_region_subtree_ids, 
+    find_child_region, 
+    find_parent_of_child, 
+    patch_embedded_region, 
+    remove_inline_children, 
+    rename_embedded_region, 
+    rename_in_children
+)
 from map_viewer.services.spawns import spawn_region_id
 from map_viewer.services.wools import wool_color_to_damage
-from map_viewer.services.regions import apply_coord_update, resolve_region_bounds
+from map_viewer.services.regions import (
+    apply_coord_update, 
+    resolve_region_bounds
+)
 
 
 class _QueueLogHandler(logging.Handler):

@@ -1,3 +1,152 @@
+from __future__ import annotations
+
+_NEUTRAL = "#64748b"
+
+_CATEGORY_ORDER = ["spawn_area", "spawn_point", "wool_room", "monument", "build", "other"]
+_CATEGORY_LABELS = {
+    "spawn_area":  "Spawn Areas",
+    "spawn_point": "Spawn Points",
+    "wool_room":   "Wool Rooms",
+    "monument":    "Monuments",
+    "build":       "Build",
+    "other":       "Other",
+}
+
+
+def _refine_category(base_cat: str, region_type: str) -> str:
+    if base_cat == "wool":
+        return "monument" if region_type == "block" else "wool_room"
+    if base_cat == "spawn":
+        return "spawn_point" if region_type == "point" else "spawn_area"
+    return base_cat
+
+
+def _collect_named_child_ids(region: dict, out: set[str]) -> None:
+    for child in region.get("children", []):
+        child_id = child.get("id") or ""
+        if child_id:
+            out.add(child_id)
+        _collect_named_child_ids(child, out)
+
+
+def _encode_bounds(region: dict) -> dict | None:
+    bounds_2d = region.get("bounds_2d")
+    if not bounds_2d:
+        return None
+    mn = bounds_2d.get("min", {})
+    mx = bounds_2d.get("max", {})
+    if "x" not in mn or "z" not in mn:
+        return None
+    min_x, min_z = mn["x"], mn["z"]
+    max_x, max_z = mx["x"], mx["z"]
+    region_type = region.get("type")
+    if max_x == min_x and max_z == min_z:
+        if region_type == "block":
+            max_x = min_x + 1
+            max_z = min_z + 1
+        elif region_type == "point":
+            min_x -= 0.5
+            min_z -= 0.5
+            max_x += 0.5
+            max_z += 0.5
+    return {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z}
+
+
+def _encode_coords(region: dict) -> dict | None:
+    region_type = region.get("type")
+    if region_type == "rectangle":
+        return {k: region.get(k) for k in ("min_x", "min_z", "max_x", "max_z")}
+    if region_type == "cuboid":
+        return {k: region.get(k) for k in ("min_x", "min_y", "min_z", "max_x", "max_y", "max_z")}
+    if region_type == "cylinder":
+        base = region.get("base") or {}
+        return {
+            "base_x": base.get("x"), "base_y": base.get("y"), "base_z": base.get("z"),
+            "radius": region.get("radius"), "height": region.get("height"),
+        }
+    if region_type == "circle":
+        center = region.get("center") or {}
+        return {"center_x": center.get("x"), "center_z": center.get("z"), "radius": region.get("radius")}
+    if region_type == "sphere":
+        origin = region.get("origin") or {}
+        return {
+            "origin_x": origin.get("x"), "origin_y": origin.get("y"), "origin_z": origin.get("z"),
+            "radius": region.get("radius"),
+        }
+    if region_type in ("block", "point"):
+        pos = region.get("position") or {}
+        return {"x": pos.get("x"), "y": pos.get("y"), "z": pos.get("z")}
+    if region_type == "reference":
+        return {"ref_id": region.get("ref_id", "")}
+    return None
+
+
+def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
+    xml_id = region.get("id") or ""
+    region_type = region.get("type", "unknown")
+    region_id = xml_id
+    label = xml_id
+    if region_type == "reference":
+        label = f"→ {region.get('ref_id', '?')}"
+    children = [
+        _encode_node(child, parent_id=region_id, index=i)
+        for i, child in enumerate(region.get("children", []))
+    ]
+    return {
+        "id": region_id,
+        "type": region_type,
+        "label": label,
+        "color": _NEUTRAL,
+        "bounds": _encode_bounds(region),
+        "coords": _encode_coords(region),
+        "is_negative": region_type == "negative",
+        "synthetic_id": not bool(xml_id),
+        "children": children,
+    }
+
+
+def encode_region_tree_categorized(
+    regions_dict: dict,
+    categories_dict: dict,
+) -> list[dict]:
+    """Return root regions grouped into thematic categories for the browser."""
+    id_to_category: dict[str, str] = {}
+    for cat in _CATEGORY_ORDER:
+        for region_id in categories_dict.get(cat, []):
+            id_to_category.setdefault(region_id, cat)
+    for cat, ids in categories_dict.items():
+        for region_id in ids:
+            id_to_category.setdefault(region_id, cat)
+
+    named_child_ids: set[str] = set()
+    for region in regions_dict.values():
+        _collect_named_child_ids(region, named_child_ids)
+
+    root_nodes = [
+        _encode_node(region)
+        for region_id, region in regions_dict.items()
+        if region_id not in named_child_ids
+    ]
+
+    groups: dict[str, list[dict]] = {}
+    for node in root_nodes:
+        base_cat = id_to_category.get(node["id"], "other")
+        cat = _refine_category(base_cat, node["type"])
+        groups.setdefault(cat, []).append(node)
+
+    seen = set(_CATEGORY_ORDER)
+    ordered_cats = _CATEGORY_ORDER + [c for c in groups if c not in seen]
+    return [
+        {
+            "name": cat,
+            "label": _CATEGORY_LABELS.get(cat, cat.title()),
+            "regions": groups[cat],
+        }
+        for cat in ordered_cats
+        if cat in groups
+    ]
+
+
 def _walk_embedded_regions(container: list):
     """Yield each embedded region dict found in spawns/wools/observer_spawn items."""
     for item in container:
@@ -81,7 +230,7 @@ def find_parent_of_child(
 def find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
     """Find a region by synthetic id, searching recursively through children.
 
-    Synthetic ids mirror region_encoder._encode_node logic:
+    Synthetic ids mirror _encode_node logic:
       named region   → its own xml id
       anonymous child at index i of parent with sid P → f"{P}__{i}"
     Returns the mutable child dict so the caller can update it in-place.
