@@ -3,15 +3,16 @@ from __future__ import annotations
 from typing import Optional
 
 
+def _bounds(min_x: float, min_z: float, max_x: float, max_z: float) -> dict:
+    return {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
+
+
 def build_region_dict(region_type: str, body: dict, region_id: str) -> dict:
     """Build a new region dict from validated request body fields.
 
     Raises KeyError/TypeError/ValueError on missing or malformed fields so the
     caller can catch them and return a 400.
     """
-    def _bounds(min_x: float, min_z: float, max_x: float, max_z: float) -> dict:
-        return {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
-
     if region_type in ("rectangle", "cuboid"):
         min_x = int(round(float(body["min_x"])))
         min_z = int(round(float(body["min_z"])))
@@ -94,8 +95,21 @@ def apply_coord_update(region: dict, region_type: str, coords: dict) -> dict | N
     Returns the new bounds_2d dict, or None if the type has no 2D footprint change
     (cuboid Y-only edits, above).
     """
-    def _bounds(min_x: float, min_z: float, max_x: float, max_z: float) -> dict:
-        return {"min": {"x": min_x, "z": min_z}, "max": {"x": max_x, "z": max_z}}
+    if region_type == "rectangle":
+        if "min_x" in coords:
+            region["min_x"] = coords["min_x"]
+        if "min_z" in coords:
+            region["min_z"] = coords["min_z"]
+        if "max_x" in coords:
+            region["max_x"] = coords["max_x"]
+        if "max_z" in coords:
+            region["max_z"] = coords["max_z"]
+        new_bounds = _bounds(
+            region.get("min_x", 0), region.get("min_z", 0),
+            region.get("max_x", 0), region.get("max_z", 0),
+        )
+        region["bounds_2d"] = new_bounds
+        return new_bounds
 
     if region_type == "cuboid":
         if "min_y" in coords:
