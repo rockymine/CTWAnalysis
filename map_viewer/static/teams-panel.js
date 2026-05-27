@@ -18,6 +18,7 @@ import {
   chatColorHex, dyeColorHex,
 } from "./game-colors.js";
 import { typeIcon } from "./region-types.js";
+import { renderEmptyPlaceholder } from "./shared/ui-helpers.js";
 
 export { PGM_CHAT_COLORS, MINECRAFT_DYE_COLORS };
 
@@ -259,10 +260,7 @@ export class TeamsPanel {
   _renderTeamsList() {
     this._teamsListEl.innerHTML = "";
     if (this._teams.length === 0) {
-      const el = document.createElement("div");
-      el.className = "list-empty";
-      el.textContent = 'No teams yet. Click "+ Add team".';
-      this._teamsListEl.appendChild(el);
+      renderEmptyPlaceholder(this._teamsListEl, 'No teams yet. Click "+ Add team".');
       return;
     }
     for (const team of this._teams) {
@@ -303,10 +301,7 @@ export class TeamsPanel {
   _renderSpawnList() {
     this._spawnListEl.innerHTML = "";
     if (this._spawnRegions.length === 0) {
-      const el = document.createElement("div");
-      el.className = "list-empty";
-      el.textContent = "No spawn regions. Draw a cylinder or point on the canvas.";
-      this._spawnListEl.appendChild(el);
+      renderEmptyPlaceholder(this._spawnListEl, "No spawn regions. Draw a cylinder or point on the canvas.");
       return;
     }
     for (const region of this._spawnRegions) {

@@ -20,6 +20,7 @@ import { RegionDetail }       from "./region-detail.js";
 import { DeletedRegionHistory } from "./deleted-region-history.js";
 import { DRAW_TOOLS, deriveBoundsFromCoords } from "./region-types.js";
 import { createRegionHandlers }  from "./region-handlers.js";
+import { isEditableTarget }   from "./shared/ui-helpers.js";
 import * as api               from "./api.js";
 
 export class RegionsActivity {
@@ -276,8 +277,7 @@ export class RegionsActivity {
     document.addEventListener("keydown", (e) => {
       // Only fire when this activity is visible
       if (this.#el.hidden) return;
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" ||
-          e.target.tagName === "SELECT" || e.target.isContentEditable) return;
+      if (isEditableTarget(e)) return;
 
       // Undo / Redo (delete history)
       if (e.ctrlKey && e.key === "z" && this.#mapName) {

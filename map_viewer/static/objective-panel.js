@@ -16,6 +16,7 @@ import { chatColorHex, dyeColorHex, MINECRAFT_DYE_COLORS } from "./game-colors.j
 import { typeIcon } from "./region-types.js";
 import { coordGroup } from "./coord-group.js";
 import * as api from "./api.js";
+import { renderEmptyPlaceholder } from "./shared/ui-helpers.js";
 
 
 export class ObjectivePanel {
@@ -823,10 +824,7 @@ export class ObjectivePanel {
   _renderRegionList() {
     this._regionListEl.innerHTML = "";
     if (this._regionNodes.length === 0) {
-      const el = document.createElement("div");
-      el.className = "list-empty";
-      el.textContent = "No wool room or monument regions.";
-      this._regionListEl.appendChild(el);
+      renderEmptyPlaceholder(this._regionListEl, "No wool room or monument regions.");
       return;
     }
     for (const node of this._regionNodes) {

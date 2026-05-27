@@ -14,6 +14,7 @@ import { TeamsPanel }           from "./teams-panel.js";
 import { RegionRegistry }       from "./region-registry.js";
 import { DeletedRegionHistory } from "./deleted-region-history.js";
 import { createRegionHandlers } from "./region-handlers.js";
+import { isEditableTarget }     from "./shared/ui-helpers.js";
 import * as api                from "./api.js";
 
 export class TeamsActivity {
@@ -249,8 +250,7 @@ export class TeamsActivity {
 
     document.addEventListener("keydown", (e) => {
       if (this._el.hidden) return;
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" ||
-          e.target.tagName === "SELECT" || e.target.isContentEditable) return;
+      if (isEditableTarget(e)) return;
 
       // Undo / redo
       if (e.ctrlKey && e.key === "z" && this._mapName) {
