@@ -168,6 +168,14 @@ def patch_embedded_region(container: list, region_id: str, new_bounds_2d: dict) 
             r["bounds_2d"] = new_bounds_2d
 
 
+def patch_all_embedded_regions(data: dict, region_id: str, new_bounds_2d: dict) -> None:
+    """Propagate a bounds_2d change to all embedded copies in spawns, wools, and observer_spawn."""
+    patch_embedded_region(data.get("spawns", []), region_id, new_bounds_2d)
+    patch_embedded_region(data.get("wools",  []), region_id, new_bounds_2d)
+    if obs := data.get("observer_spawn"):
+        patch_embedded_region([obs], region_id, new_bounds_2d)
+
+
 def rename_embedded_region(container: list, old_id: str, new_id: str) -> None:
     """Rename id field on any embedded region copy whose id matches old_id."""
     for r in _walk_embedded_regions(container):

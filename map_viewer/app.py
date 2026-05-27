@@ -41,14 +41,15 @@ from map_viewer.services.config import (
 )
 from map_viewer.services.pipeline import check_pipeline_status
 from map_viewer.services.region_tree import (
-    encode_region_tree_categorized, 
-    collect_region_subtree_ids, 
-    find_child_region, 
-    find_parent_of_child, 
-    patch_embedded_region, 
-    remove_inline_children, 
-    rename_embedded_region, 
-    rename_in_children
+    encode_region_tree_categorized,
+    collect_region_subtree_ids,
+    find_child_region,
+    find_parent_of_child,
+    patch_embedded_region,
+    patch_all_embedded_regions,
+    remove_inline_children,
+    rename_embedded_region,
+    rename_in_children,
 )
 from map_viewer.services.spawns import spawn_region_id
 from map_viewer.services.wools import wool_color_to_damage
@@ -865,22 +866,14 @@ def create_app() -> Flask:
             }
             region["bounds_2d"] = updated_bounds_2d
             if is_top_level:
-                patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
-                patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
-                obs = data.get("observer_spawn")
-                if obs:
-                    patch_embedded_region([obs], region_id, updated_bounds_2d)
+                patch_all_embedded_regions(data, region_id, updated_bounds_2d)
 
         # ── optional coords update ────────────────────────────────────────────
         if coords:
             region_type = region.get("type", "")
             updated_bounds_2d = apply_coord_update(region, region_type, coords)
             if updated_bounds_2d and is_top_level:
-                patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
-                patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
-                obs = data.get("observer_spawn")
-                if obs:
-                    patch_embedded_region([obs], region_id, updated_bounds_2d)
+                patch_all_embedded_regions(data, region_id, updated_bounds_2d)
 
         save_map_data(data, data_path)
         response: dict = {"ok": True}
