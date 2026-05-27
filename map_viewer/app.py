@@ -36,6 +36,7 @@ from common.visualization.block_colors import block_color
 
 from map_viewer.services.config import get_output_root, load_config
 from map_viewer.services.pipeline import check_pipeline_status
+from map_viewer.services.region_tree import collect_region_subtree_ids, find_child_region, find_parent_of_child, patch_embedded_region, remove_inline_children, rename_embedded_region, rename_in_children
 
 
 class _QueueLogHandler(logging.Handler):
@@ -55,113 +56,6 @@ logger = logging.getLogger("ctw")
 
 
 # ── Helpers shared across region endpoints ─────────────────────────────────
-
-def _walk_embedded_regions(container: list):
-    """Yield each embedded region dict found in spawns/wools/observer_spawn items."""
-    for item in container:
-        embedded = item.get("region") or item.get("monument")
-        if embedded:
-            yield from _walk_region_recursive(embedded)
-
-
-def _walk_region_recursive(region: dict):
-    yield region
-    for child in region.get("children", []):
-        yield from _walk_region_recursive(child)
-
-
-def _patch_embedded_region(container: list, region_id: str, new_bounds_2d: dict) -> None:
-    """Update bounds_2d on any embedded region copy whose id matches region_id."""
-    for r in _walk_embedded_regions(container):
-        if r.get("id") == region_id:
-            r["bounds_2d"] = new_bounds_2d
-
-
-def _rename_embedded_region(container: list, old_id: str, new_id: str) -> None:
-    """Rename id field on any embedded region copy whose id matches old_id."""
-    for r in _walk_embedded_regions(container):
-        if r.get("id") == old_id:
-            r["id"] = new_id
-
-
-def _collect_region_subtree_ids(regions: dict, region_id: str) -> list[str]:
-    """Return region_id and all descendant ids found in regions (depth-first)."""
-    result = [region_id]
-    for child in regions.get(region_id, {}).get("children", []):
-        child_id = child.get("id")
-        if child_id and child_id in regions:
-            result.extend(_collect_region_subtree_ids(regions, child_id))
-    return result
-
-
-def _remove_inline_children(regions: dict, ids_to_remove: set[str]) -> None:
-    """Remove inline child entries matching ids_to_remove from all regions' children arrays."""
-    for region in regions.values():
-        children = region.get("children")
-        if isinstance(children, list):
-            region["children"] = [c for c in children if c.get("id") not in ids_to_remove]
-
-
-def _rename_in_children(region: dict, old_id: str, new_id: str) -> None:
-    """Recursively update id in a composite region's children array."""
-    for child in region.get("children", []):
-        if child.get("id") == old_id:
-            child["id"] = new_id
-        _rename_in_children(child, old_id, new_id)
-
-
-def _find_parent_of_child(
-    regions: dict,
-    target_id: str,
-) -> tuple[dict, dict, int] | None:
-    """Search all regions recursively for a child with *target_id*.
-
-    Returns ``(parent_dict, child_dict, child_index)`` so the caller can splice
-    the child back in (restore) or build an undo snapshot.  Returns ``None`` if
-    the id is not found as a nested child.
-    """
-    def _walk(region: dict) -> tuple[dict, dict, int] | None:
-        for i, child in enumerate(region.get("children", [])):
-            if child.get("id") == target_id:
-                return region, child, i
-            result = _walk(child)
-            if result is not None:
-                return result
-        return None
-
-    for region in regions.values():
-        result = _walk(region)
-        if result is not None:
-            return result
-    return None
-
-
-def _find_child_region(regions_dict: dict, target_sid: str) -> dict | None:
-    """Find a region by synthetic id, searching recursively through children.
-
-    Synthetic ids mirror region_encoder._encode_node logic:
-      named region   → its own xml id
-      anonymous child at index i of parent with sid P → f"{P}__{i}"
-    Returns the mutable child dict so the caller can update it in-place.
-    """
-    def _walk(region: dict, region_sid: str) -> dict | None:
-        for i, child in enumerate(region.get("children", [])):
-            child_xml_id = child.get("id", "")
-            child_sid = child_xml_id if child_xml_id else f"{region_sid}__{i}"
-            if child_sid == target_sid:
-                return child
-            result = _walk(child, child_sid)
-            if result is not None:
-                return result
-        return None
-
-    for rid, region in regions_dict.items():
-        region_sid = region.get("id", "") or rid
-        result = _walk(region, region_sid)
-        if result is not None:
-            return result
-    return None
-
 
 def _apply_coord_update(region: dict, region_type: str, coords: dict) -> dict | None:
     """Update raw geometry fields on *region* from *coords* and recompute bounds_2d.
@@ -941,7 +835,7 @@ def create_app() -> Flask:
 
         if region_id in regions:
             # ── Top-level region ─────────────────────────────────────────────
-            subtree_ids = _collect_region_subtree_ids(regions, region_id)
+            subtree_ids = collect_region_subtree_ids(regions, region_id)
 
             category = "other"
             for cat_name, cat_list in data.get("region_categories", {}).items():
@@ -956,7 +850,7 @@ def create_app() -> Flask:
                 for cat_list in data.get("region_categories", {}).values():
                     if rid in cat_list:
                         cat_list.remove(rid)
-            _remove_inline_children(regions, set(subtree_ids))
+            remove_inline_children(regions, set(subtree_ids))
             data_path.write_text(
                 json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
             )
@@ -972,12 +866,12 @@ def create_app() -> Flask:
         # ── Inline-only child (synthetic baked id, not a top-level region) ──
         # Named children (e.g. orange-wool-room) are always top-level; only
         # pipeline-assigned synthetic ids (parent__n) land here.
-        found = _find_parent_of_child(regions, region_id)
+        found = find_parent_of_child(regions, region_id)
         if found is None:
             return jsonify({"error": f"region {region_id!r} not found"}), 404
 
         parent_dict, child_dict, child_index = found
-        _remove_inline_children(regions, {region_id})
+        remove_inline_children(regions, {region_id})
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
@@ -1060,7 +954,7 @@ def create_app() -> Flask:
         region = regions.get(region_id)
         is_top_level = region is not None
         if not is_top_level:
-            region = _find_child_region(regions, region_id)
+            region = find_child_region(regions, region_id)
             if region is None:
                 return jsonify({"error": f"region {region_id!r} not found"}), 404
 
@@ -1077,12 +971,12 @@ def create_app() -> Flask:
                         if rid == region_id:
                             cat_list[i] = new_id
                 for r in regions.values():
-                    _rename_in_children(r, region_id, new_id)
+                    rename_in_children(r, region_id, new_id)
                 for container_key in ("spawns", "wools"):
-                    _rename_embedded_region(data.get(container_key, []), region_id, new_id)
+                    rename_embedded_region(data.get(container_key, []), region_id, new_id)
                 obs = data.get("observer_spawn")
                 if obs:
-                    _rename_embedded_region([obs], region_id, new_id)
+                    rename_embedded_region([obs], region_id, new_id)
                 region_id = new_id
                 region = regions[region_id]
 
@@ -1095,22 +989,22 @@ def create_app() -> Flask:
             }
             region["bounds_2d"] = updated_bounds_2d
             if is_top_level:
-                _patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
-                _patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
+                patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
+                patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
                 obs = data.get("observer_spawn")
                 if obs:
-                    _patch_embedded_region([obs], region_id, updated_bounds_2d)
+                    patch_embedded_region([obs], region_id, updated_bounds_2d)
 
         # ── optional coords update ────────────────────────────────────────────
         if coords:
             region_type = region.get("type", "")
             updated_bounds_2d = _apply_coord_update(region, region_type, coords)
             if updated_bounds_2d and is_top_level:
-                _patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
-                _patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
+                patch_embedded_region(data.get("spawns", []), region_id, updated_bounds_2d)
+                patch_embedded_region(data.get("wools", []), region_id, updated_bounds_2d)
                 obs = data.get("observer_spawn")
                 if obs:
-                    _patch_embedded_region([obs], region_id, updated_bounds_2d)
+                    patch_embedded_region([obs], region_id, updated_bounds_2d)
 
         data_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
