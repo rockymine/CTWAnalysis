@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>CTW Map Editor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='components.css') }}"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='viewer.css') }}"/>
 </head>
 <body>
@@ -61,43 +62,49 @@
       <!-- Left panel: map identity + authors -->
       <div id="ov-left">
         <div id="ov-left-scroll">
-          <section class="ov-section">
-            <h2 class="ov-section-title">Map Identity</h2>
-            <div class="ov-field">
-              <label class="ov-label" for="ov-name">Map Name <span class="ov-required">*</span></label>
-              <input id="ov-name" class="ov-input" type="text" placeholder="My CTW Map"/>
+          <section class="panel-section">
+            <div class="section-header section-header--ruled">
+              <h2 class="section-title">Map Identity</h2>
             </div>
-            <div class="ov-field-row">
-              <div class="ov-field">
-                <label class="ov-label" for="ov-version">Version <span class="ov-required">*</span></label>
-                <input id="ov-version" class="ov-input" type="text" placeholder="1.0.0"/>
+            <div class="field">
+              <label class="field-label" for="ov-name">Map Name <span class="field-required">*</span></label>
+              <input id="ov-name" class="field-input" type="text" placeholder="My CTW Map"/>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label" for="ov-version">Version <span class="field-required">*</span></label>
+                <input id="ov-version" class="field-input" type="text" placeholder="1.0.0"/>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="ov-gamemode">Gamemode <span class="ov-required">*</span></label>
-                <input id="ov-gamemode" class="ov-input" type="text" placeholder="ctw"/>
+              <div class="field">
+                <label class="field-label" for="ov-gamemode">Gamemode <span class="field-required">*</span></label>
+                <input id="ov-gamemode" class="field-input" type="text" placeholder="ctw"/>
               </div>
             </div>
-            <div class="ov-field">
-              <label class="ov-label" for="ov-objective">Objective</label>
-              <textarea id="ov-objective" class="ov-input ov-input--textarea" rows="2" placeholder="Capture all enemy wools!"></textarea>
+            <div class="field">
+              <label class="field-label" for="ov-objective">Objective</label>
+              <textarea id="ov-objective" class="field-input field-input--textarea" rows="2" placeholder="Capture all enemy wools!"></textarea>
             </div>
           </section>
 
-          <section class="ov-section">
-            <h2 class="ov-section-title">Authors</h2>
+          <section class="panel-section">
+            <div class="section-header section-header--ruled">
+              <h2 class="section-title">Authors</h2>
+            </div>
             <div id="ov-authors-list"></div>
             <button id="ov-add-author" class="action-btn">+ Add author</button>
           </section>
 
-          <section class="ov-section">
-            <h2 class="ov-section-title">Contributors</h2>
+          <section class="panel-section">
+            <div class="section-header section-header--ruled">
+              <h2 class="section-title">Contributors</h2>
+            </div>
             <div id="ov-contributors-list"></div>
             <button id="ov-add-contributor" class="action-btn">+ Add contributor</button>
           </section>
 
-          <div class="ov-actions">
+          <div class="panel-actions">
             <button id="ov-save-btn" class="action-btn action-btn--primary" disabled>Save changes</button>
-            <span id="ov-save-status"></span>
+            <span id="ov-save-status" class="panel-save-status"></span>
           </div>
         </div>
       </div>
@@ -128,16 +135,16 @@
       <!-- Left panel: teams list (top) + spawn region list (bottom) -->
       <div id="pt-left">
         <div id="pt-teams-section">
-          <div class="pt-section-header">
-            <h2 class="ov-section-title">Teams</h2>
+          <div class="section-header section-header--list">
+            <h2 class="section-title">Teams</h2>
             <button id="pt-add-team-btn" class="action-btn">+ Add team</button>
           </div>
           <div id="pt-teams-list"></div>
         </div>
-        <div class="pt-left-divider"></div>
+        <div class="panel-divider"></div>
         <div id="pt-spawns-section">
-          <div class="pt-section-header">
-            <h2 class="ov-section-title">Spawn Regions</h2>
+          <div class="section-header section-header--list">
+            <h2 class="section-title">Spawn Regions</h2>
           </div>
           <div id="pt-spawn-list"></div>
         </div>
@@ -147,8 +154,8 @@
 
       <!-- Canvas: map overview with spawn regions highlighted -->
       <div id="pt-canvas-wrap">
-        <div id="pt-canvas-subbar">
-          <div id="pt-draw-toolbar">
+        <div id="pt-canvas-subbar" class="canvas-subbar">
+          <div id="pt-draw-toolbar" class="canvas-toolbar">
             <button id="pt-tool-move"     class="draw-tool-btn" title="Move (M)"     disabled>
               <i data-lucide="hand"></i>
             </button>
@@ -162,9 +169,9 @@
               <i data-lucide="dot"></i>
             </button>
           </div>
-          <div id="pt-cursor-coords"></div>
-          <div id="pt-canvas-subbar-right">
-            <span id="pt-zoom-level">—</span>
+          <div id="pt-cursor-coords" class="canvas-cursor"></div>
+          <div id="pt-canvas-subbar-right" class="canvas-subbar-right">
+            <span id="pt-zoom-level" class="canvas-zoom">—</span>
           </div>
         </div>
         <div id="pt-svg-area">
@@ -183,38 +190,40 @@
 
           <!-- Team inspector (shown when a team row is selected) -->
           <div id="pt-team-inspector" hidden>
-            <section class="ov-section">
-              <h2 class="ov-section-title">Team</h2>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-team-id">ID <span class="ov-required">*</span></label>
-                <input id="pt-team-id" class="ov-input" type="text" placeholder="e.g. blue-team" spellcheck="false"/>
+            <section class="panel-section">
+              <div class="section-header section-header--ruled">
+                <h2 class="section-title">Team</h2>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-team-name">Display Name</label>
-                <input id="pt-team-name" class="ov-input" type="text" placeholder="e.g. Blue"/>
+              <div class="field">
+                <label class="field-label" for="pt-team-id">ID <span class="field-required">*</span></label>
+                <input id="pt-team-id" class="field-input" type="text" placeholder="e.g. blue-team" spellcheck="false"/>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-team-color">Chat Color <span class="ov-required">*</span></label>
-                <div class="pt-color-pick-row">
-                  <span id="pt-team-color-swatch" class="pt-color-swatch-lg"></span>
-                  <select id="pt-team-color" class="ov-input"></select>
+              <div class="field">
+                <label class="field-label" for="pt-team-name">Display Name</label>
+                <input id="pt-team-name" class="field-input" type="text" placeholder="e.g. Blue"/>
+              </div>
+              <div class="field">
+                <label class="field-label" for="pt-team-color">Chat Color <span class="field-required">*</span></label>
+                <div class="field-pick-row">
+                  <span id="pt-team-color-swatch" class="field-swatch"></span>
+                  <select id="pt-team-color" class="field-input"></select>
                 </div>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-team-dye-color">Dye Color</label>
-                <div class="pt-color-pick-row">
-                  <span id="pt-team-dye-color-swatch" class="pt-color-swatch-lg"></span>
-                  <select id="pt-team-dye-color" class="ov-input"></select>
+              <div class="field">
+                <label class="field-label" for="pt-team-dye-color">Dye Color</label>
+                <div class="field-pick-row">
+                  <span id="pt-team-dye-color-swatch" class="field-swatch"></span>
+                  <select id="pt-team-dye-color" class="field-input"></select>
                 </div>
               </div>
-              <div class="ov-field-row">
-                <div class="ov-field">
-                  <label class="ov-label" for="pt-team-max">Max Players</label>
-                  <input id="pt-team-max" class="ov-input" type="number" min="1" max="500" value="20"/>
+              <div class="field-row">
+                <div class="field">
+                  <label class="field-label" for="pt-team-max">Max Players</label>
+                  <input id="pt-team-max" class="field-input" type="number" min="1" max="500" value="20"/>
                 </div>
-                <div class="ov-field">
-                  <label class="ov-label" for="pt-team-min">Min Players</label>
-                  <input id="pt-team-min" class="ov-input" type="number" min="0" max="500" value="0"/>
+                <div class="field">
+                  <label class="field-label" for="pt-team-min">Min Players</label>
+                  <input id="pt-team-min" class="field-input" type="number" min="0" max="500" value="0"/>
                 </div>
               </div>
             </section>
@@ -225,29 +234,31 @@
             <!-- RegionDetail renders here: region name, type, geometry, XML preview -->
             <div id="pt-spawn-region-detail"></div>
             <!-- Spawn-specific configuration -->
-            <section class="ov-section" id="pt-spawn-assignment">
-              <h2 class="ov-section-title">Spawn Assignment</h2>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-spawn-team">Team</label>
-                <select id="pt-spawn-team" class="ov-input"></select>
+            <section class="panel-section" id="pt-spawn-assignment">
+              <div class="section-header section-header--ruled">
+                <h2 class="section-title">Spawn Assignment</h2>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-spawn-yaw">Yaw (°)</label>
-                <input id="pt-spawn-yaw" class="ov-input" type="number" step="1" min="-180" max="180" placeholder="0"/>
+              <div class="field">
+                <label class="field-label" for="pt-spawn-team">Team</label>
+                <select id="pt-spawn-team" class="field-input"></select>
               </div>
-              <div class="ov-field">
-                <label class="ov-label" for="pt-spawn-kit">Kit</label>
-                <input id="pt-spawn-kit" class="ov-input" type="text" placeholder="e.g. spawn-kit" spellcheck="false"/>
+              <div class="field">
+                <label class="field-label" for="pt-spawn-yaw">Yaw (°)</label>
+                <input id="pt-spawn-yaw" class="field-input" type="number" step="1" min="-180" max="180" placeholder="0"/>
               </div>
-              <div class="ov-actions">
-                <button id="pt-spawn-unlink-btn" class="action-btn pt-action-btn--danger">Remove spawn link</button>
+              <div class="field">
+                <label class="field-label" for="pt-spawn-kit">Kit</label>
+                <input id="pt-spawn-kit" class="field-input" type="text" placeholder="e.g. spawn-kit" spellcheck="false"/>
+              </div>
+              <div class="panel-actions">
+                <button id="pt-spawn-unlink-btn" class="action-btn action-btn--danger">Remove spawn link</button>
               </div>
             </section>
           </div>
 
           <!-- Empty state -->
-          <div id="pt-inspector-empty">
-            <p class="pt-empty-msg">Select a team or spawn region to inspect.</p>
+          <div id="pt-inspector-empty" class="panel-empty">
+            <p class="panel-empty-msg">Select a team or spawn region to inspect.</p>
           </div>
 
         </div>
@@ -261,16 +272,16 @@
       <!-- Left panel: wool list (top) + region list (bottom) -->
       <div id="obj-left">
         <div id="obj-wools-section">
-          <div class="pt-section-header">
-            <h2 class="ov-section-title">Wools</h2>
+          <div class="section-header section-header--list">
+            <h2 class="section-title">Wools</h2>
             <button id="obj-add-wool-btn" class="action-btn">+ Add wool</button>
           </div>
           <div id="obj-wool-list"></div>
         </div>
-        <div class="pt-left-divider"></div>
+        <div class="panel-divider"></div>
         <div id="obj-regions-section">
-          <div class="pt-section-header">
-            <h2 class="ov-section-title">Regions</h2>
+          <div class="section-header section-header--list">
+            <h2 class="section-title">Regions</h2>
           </div>
           <div id="obj-region-list"></div>
         </div>
@@ -280,8 +291,8 @@
 
       <!-- Canvas: map overview with wool / monument POI markers -->
       <div id="obj-canvas-wrap">
-        <div id="obj-canvas-subbar">
-          <div id="obj-draw-toolbar">
+        <div id="obj-canvas-subbar" class="canvas-subbar">
+          <div id="obj-draw-toolbar" class="canvas-toolbar">
             <button id="obj-tool-move"   class="draw-tool-btn" title="Move (M)"  disabled>
               <i data-lucide="hand"></i>
             </button>
@@ -289,9 +300,9 @@
               <i data-lucide="mouse-pointer-2"></i>
             </button>
           </div>
-          <div id="obj-cursor-coords"></div>
-          <div id="obj-canvas-subbar-right">
-            <span id="obj-zoom-level">—</span>
+          <div id="obj-cursor-coords" class="canvas-cursor"></div>
+          <div id="obj-canvas-subbar-right" class="canvas-subbar-right">
+            <span id="obj-zoom-level" class="canvas-zoom">—</span>
           </div>
         </div>
         <div id="obj-svg-area">
@@ -309,50 +320,54 @@
         <div id="obj-right-scroll">
 
           <!-- Empty state -->
-          <div id="obj-inspector-empty">
-            <p class="pt-empty-msg">Select a wool to inspect.</p>
+          <div id="obj-inspector-empty" class="panel-empty">
+            <p class="panel-empty-msg">Select a wool to inspect.</p>
           </div>
 
           <!-- Wool inspector (shown on selection) -->
           <div id="obj-wool-inspector" hidden>
-            <section class="ov-section">
-              <h2 class="ov-section-title">Wool</h2>
-              <div class="ov-field">
-                <label class="ov-label">Color</label>
-                <div class="pt-color-pick-row">
-                  <span id="obj-wool-color-swatch" class="pt-color-swatch-lg"></span>
-                  <select id="obj-wool-color-sel" class="ov-input"></select>
+            <section class="panel-section">
+              <div class="section-header section-header--ruled">
+                <h2 class="section-title">Wool</h2>
+              </div>
+              <div class="field">
+                <label class="field-label">Color</label>
+                <div class="field-pick-row">
+                  <span id="obj-wool-color-swatch" class="field-swatch"></span>
+                  <select id="obj-wool-color-sel" class="field-input"></select>
                 </div>
               </div>
-              <div class="ov-field">
-                <label class="ov-label">Defender</label>
-                <div class="pt-color-pick-row">
-                  <span id="obj-defender-swatch" class="pt-color-swatch-lg"></span>
-                  <select id="obj-defender-sel" class="ov-input"></select>
+              <div class="field">
+                <label class="field-label">Defender</label>
+                <div class="field-pick-row">
+                  <span id="obj-defender-swatch" class="field-swatch"></span>
+                  <select id="obj-defender-sel" class="field-input"></select>
                 </div>
               </div>
-              <div class="ov-field">
-                <label class="ov-label">Room Region</label>
-                <div class="pt-color-pick-row">
-                  <select id="obj-wool-room-sel" class="ov-input"></select>
-                  <button id="obj-wool-room-clear-btn" class="action-btn" title="Clear room region">✕</button>
+              <div class="field">
+                <label class="field-label">Room Region</label>
+                <div class="field-pick-row">
+                  <select id="obj-wool-room-sel" class="field-input"></select>
+                  <button id="obj-wool-room-clear-btn" class="btn-remove" title="Clear room region">✕</button>
                 </div>
               </div>
             </section>
-            <section class="ov-section">
-              <div class="obj-section-title-row">
-                <h2 class="ov-section-title">Respawn</h2>
+            <section class="panel-section">
+              <div class="section-header section-header--ruled">
+                <h2 class="section-title">Respawn</h2>
                 <span id="obj-respawn-badge" class="obj-respawn-badge obj-respawn-unknown">—</span>
               </div>
               <div id="obj-respawn-detail" hidden></div>
             </section>
-            <section class="ov-section">
-              <h2 class="ov-section-title">Location</h2>
+            <section class="panel-section">
+              <div class="section-header section-header--ruled">
+                <h2 class="section-title">Location</h2>
+              </div>
               <div id="obj-inspector-location" class="detail-group-row"></div>
             </section>
             <div id="obj-inspector-captures"></div>
-            <div class="ov-actions">
-              <button id="obj-delete-wool-btn" class="action-btn pt-action-btn--danger">Delete wool</button>
+            <div class="panel-actions">
+              <button id="obj-delete-wool-btn" class="action-btn action-btn--danger">Delete wool</button>
             </div>
           </div>
 
@@ -364,15 +379,17 @@
     <!-- Regions workspace -->
     <div id="regions-workspace" hidden>
       <div id="layers">
-        <div id="layers-header">REGIONS</div>
+        <div class="section-header section-header--list" style="border-bottom: 1px solid var(--border);">
+          <h2 class="section-title">Regions</h2>
+        </div>
         <div id="region-list">
           <div id="empty-msg">No map loaded</div>
         </div>
       </div>
       <div class="sidebar-handle" id="left-handle"></div>
       <div id="canvas-wrap">
-        <div id="canvas-subbar">
-          <div id="draw-toolbar">
+        <div id="canvas-subbar" class="canvas-subbar">
+          <div id="draw-toolbar" class="canvas-toolbar">
             <button id="tool-move"   class="draw-tool-btn" title="Move"          disabled>
               <i data-lucide="hand"></i>
             </button>
@@ -398,9 +415,9 @@
               <i data-lucide="square"></i>
             </button>
           </div>
-          <div id="cursor-coords"></div>
-          <div id="canvas-subbar-right">
-            <span id="zoom-level">—</span>
+          <div id="cursor-coords" class="canvas-cursor"></div>
+          <div id="canvas-subbar-right" class="canvas-subbar-right">
+            <span id="zoom-level" class="canvas-zoom">—</span>
             <div class="subbar-sep"></div>
             <label class="layer-item"><input type="checkbox" id="toggle-blocks"><span>Blocks</span></label>
             <label class="layer-item"><input type="checkbox" id="toggle-pois"><span>POIs</span></label>

@@ -89,28 +89,9 @@ body {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
 }
 
-/* ── canvas sub-toolbar ── */
-#canvas-subbar {
-  display: flex; align-items: center; gap: 4px;
-  height: 36px; flex-shrink: 0; padding: 0 8px;
-  background: var(--bg-panel); border-bottom: 1px solid var(--border);
-}
-#canvas-subbar-right {
-  display: flex; align-items: center; gap: 8px; margin-left: auto;
-}
-#zoom-level {
-  font-size: 11px; color: var(--text-dim);
-  font-variant-numeric: tabular-nums; min-width: 38px; text-align: right;
-  user-select: none;
-}
+/* ── canvas sub-toolbar (Regions) — appearance from .canvas-subbar in components.css ── */
 .subbar-sep {
   width: 1px; height: 16px; background: var(--border); flex-shrink: 0;
-}
-#cursor-coords {
-  flex: 1; text-align: center;
-  font-size: 11px; color: var(--text-dim);
-  font-variant-numeric: tabular-nums; pointer-events: none;
-  user-select: none;
 }
 .layer-item {
   display: flex; align-items: center; gap: 5px;
@@ -157,11 +138,6 @@ body {
   width: 280px; flex-shrink: 0; background: var(--bg-panel);
   display: flex; flex-direction: column; overflow: hidden;
 }
-#layers-header {
-  padding: 10px 14px; border-bottom: 1px solid var(--border);
-  font-weight: 600; color: var(--text-white); font-size: 12px;
-  letter-spacing: .05em; flex-shrink: 0; user-select: none;
-}
 #region-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
 
 /* ── inspector panel (right) ── */
@@ -170,7 +146,7 @@ body {
   display: flex; flex-direction: column; overflow: hidden;
 }
 #region-detail-wrap {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px;
 }
 #history-panel {
   flex-shrink: 0; max-height: 140px; overflow-y: auto;
@@ -276,21 +252,9 @@ body {
 }
 
 .detail-section { margin-bottom: 14px; }
-.detail-section-label {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-muted);
-  user-select: none;
-}
+/* detail-section-label → use .section-title (components.css) */
 
-.detail-field-row { display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; }
-.detail-field-key {
-  font-size: 10px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--text-muted); user-select: none;
-}
-.detail-field-val {
-  font-size: 13px; color: var(--text-secondary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+/* detail-field-row / detail-field-key / detail-field-val → use .field / .field-label / .field-value (components.css) */
 
 /* ── section header: label left, hint right ── */
 .detail-section-header {
@@ -371,13 +335,7 @@ body {
 .detail-child-dot  { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .detail-child-name { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-child-type { color: var(--text-muted); flex-shrink: 0; }
-.detail-id-input {
-  background: var(--bg-panel); border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text-primary);
-  font-family: ui-monospace, monospace; font-size: 13px;
-  padding: 6px 10px; outline: none; width: 100%; box-sizing: border-box;
-}
-.detail-id-input:focus { border-color: var(--accent); }
+/* detail-id-input → use .field-input (components.css) */
 
 .detail-bounds-input {
   background: var(--bg-panel); border: 1px solid var(--border);
@@ -679,45 +637,6 @@ body {
   padding: 16px 14px;
   border-left: none;
 }
-.ov-section { display: flex; flex-direction: column; gap: 12px; }
-.ov-section-title {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-muted);
-  padding-bottom: 8px; border-bottom: 1px solid var(--border);
-  margin: 0;
-}
-.ov-section-title--toggle { cursor: pointer; user-select: none; }
-.ov-section-title--toggle:hover { color: var(--text-secondary); }
-.ov-field { display: flex; flex-direction: column; gap: 5px; }
-.ov-field-row { display: flex; gap: 14px; }
-.ov-field-row .ov-field { flex: 1; }
-.ov-label { font-size: 11px; color: var(--text-secondary); user-select: none; }
-.ov-required { color: var(--color-error); }
-.ov-input {
-  background: var(--bg-panel); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 6px 10px; font-size: 13px; font-family: inherit;
-  outline: none; width: 100%; box-sizing: border-box;
-}
-.ov-input:focus { border-color: var(--accent); }
-.ov-input--textarea { resize: vertical; min-height: 34px; line-height: 1.4; }
-.ov-author-row {
-  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
-}
-.ov-author-avatar {
-  width: 16px; height: 16px; flex-shrink: 0;
-  border-radius: 2px; image-rendering: pixelated;
-  background: var(--border);
-}
-.ov-author-row .ov-author-name         { flex: 2; min-width: 0; }
-.ov-author-row .ov-author-name--error  { border-color: var(--color-error) !important; }
-.ov-author-row .ov-author-contribution { flex: 2; min-width: 0; }
-.ov-author-remove {
-  flex-shrink: 0; background: none; border: none;
-  color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 4px 6px;
-}
-.ov-author-remove:hover { color: var(--color-error); }
-.ov-actions { display: flex; align-items: center; gap: 12px; padding-top: 4px; }
 #ov-save-status { font-size: 12px; color: var(--text-secondary); }
 
 /* ── Symmetry panel ── */
@@ -726,16 +645,6 @@ body {
 .ov-sym-loading { font-size: 12px; color: var(--text-muted); }
 .ov-sym-error   { font-size: 12px; color: var(--color-error); }
 .ov-sym-hint    { font-size: 11px; color: var(--text-muted); }
-
-/* Header row: title + status badge — styled like .ov-section-title */
-.ov-sym-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding-bottom: 8px; border-bottom: 1px solid var(--border);
-}
-.ov-sym-title {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-muted);
-}
 
 /* Status badges */
 .ov-sym-badge {
@@ -751,7 +660,7 @@ body {
 .ov-sym-coord-section { display: flex; flex-direction: column; gap: 5px; }
 .ov-sym-coord-header  { display: flex; align-items: center; justify-content: space-between; }
 
-/* Preview section — header uses .ov-section-title style */
+/* Preview section — header uses .section-title style */
 .ov-sym-preview-section { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .ov-sym-preview-svg {
   background: var(--bg-base); border: 1px solid var(--border);
@@ -787,10 +696,6 @@ body {
   flex: 1; overflow-y: auto;
   padding: 4px 0;
 }
-.pt-left-divider {
-  height: 1px; flex-shrink: 0;
-  background: var(--border);
-}
 #pt-spawns-section {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
@@ -799,97 +704,13 @@ body {
 #pt-spawn-list {
   flex: 1; overflow-y: auto;
 }
-.pt-section-header {
-  display: flex; align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px 6px;
-  flex-shrink: 0;
-}
-.pt-section-header .ov-section-title { border-bottom: none; padding-bottom: 0; }
-.pt-section-header .action-btn { padding: 2px 10px; font-size: 12px; }
-
-/* Team rows */
-.pt-team-row {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 12px; min-height: 34px;
-  cursor: pointer; user-select: none;
-  border-bottom: 1px solid transparent;
-}
-.pt-team-row:hover { background: var(--bg-selected); }
-.pt-team-row--selected { background: var(--bg-selected); }
-.pt-team-swatch {
-  width: 14px; height: 14px; flex-shrink: 0;
-  border-radius: 3px;
-  border: 1px solid rgba(255,255,255,.12);
-  display: inline-block;
-}
-.pt-team-label {
-  flex: 1; min-width: 0;
-  font-size: 13px; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.pt-team-delete-btn {
-  flex-shrink: 0; background: none; border: none;
-  color: var(--text-muted); cursor: pointer;
-  font-size: 13px; padding: 3px 5px; line-height: 1;
-  opacity: 0; transition: opacity .1s, color .1s;
-}
-.pt-team-row:hover .pt-team-delete-btn { opacity: 1; }
-.pt-team-delete-btn:hover { color: var(--color-error); }
-
-/* Spawn rows — reuse region-row look */
-.pt-spawn-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 12px; min-height: 28px;
-  cursor: pointer; user-select: none;
-  font-size: 13px; color: var(--text-primary);
-}
-.pt-spawn-row:hover { background: var(--bg-selected); }
-.pt-spawn-row--selected { background: var(--bg-selected); }
-/* type icon sits at the same gap as the rest; drop its own margin-right */
-.pt-spawn-row .region-type-icon { margin-right: 0; }
-.pt-spawn-label {
-  flex: 1; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.pt-spawn-team-tag {
-  font-size: 11px; color: var(--text-muted);
-  flex-shrink: 0;
-}
-.pt-spawn-empty {
-  padding: 10px 12px;
-  font-size: 12px; color: var(--text-muted); font-style: italic;
-}
+/* type icon on spawn rows: drop its own margin-right (gap on .list-row handles spacing) */
+#pt-spawn-list .region-type-icon { margin-right: 0; }
 
 /* Canvas */
 #pt-canvas-wrap {
   flex: 1; display: flex; flex-direction: column;
   overflow: hidden; background: var(--bg-deep);
-}
-#pt-canvas-subbar {
-  display: flex; align-items: center; gap: 0;
-  height: 36px; flex-shrink: 0;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  padding: 0 8px;
-}
-#pt-draw-toolbar {
-  display: flex; gap: 2px; margin-right: 8px;
-}
-#pt-cursor-coords {
-  flex: 1; text-align: center;
-  font-size: 12px; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, monospace;
-}
-#pt-canvas-subbar-right {
-  display: flex; align-items: center; gap: 8px; margin-left: 8px;
-}
-#pt-zoom-level {
-  font-size: 12px; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, monospace;
-  min-width: 40px; text-align: right;
 }
 #pt-svg-area {
   flex: 1; display: flex; align-items: center;
@@ -907,49 +728,14 @@ body {
 #pt-right-scroll {
   flex: 1; min-height: 0;
   overflow-y: auto;
-  padding: 14px 12px;
+  padding: 16px 14px;
   display: flex; flex-direction: column; gap: 0;
 }
 
-/* Color pick row in team inspector */
-.pt-color-pick-row {
-  display: flex; align-items: center; gap: 8px;
-}
-.pt-color-swatch-lg {
-  width: 20px; height: 20px; flex-shrink: 0;
-  border-radius: 4px; display: inline-block;
-  border: 1px solid rgba(255,255,255,.15);
-}
-.pt-color-pick-row .ov-input { flex: 1; }
-
-/* Inspector empty state */
-#pt-inspector-empty {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-}
-.pt-empty-msg {
-  font-size: 12px; color: var(--text-muted);
-  text-align: center; padding: 16px;
-}
-
-/* Danger action button */
-.pt-action-btn--danger {
-  color: var(--color-error);
-  border-color: var(--color-error);
-}
-.pt-action-btn--danger:hover {
-  background: rgba(239,68,68,.1);
-  color: var(--color-error);
-}
-
 /* RegionDetail host inside spawn inspector — no extra padding (detail handles its own) */
-#pt-spawn-region-detail {
-  padding: 0;
-}
+#pt-spawn-region-detail { padding: 0; }
 /* Visual separator between geometry detail and spawn assignment section */
-#pt-spawn-assignment {
-  border-top: 1px solid var(--border);
-  margin-top: 0;
-}
+#pt-spawn-assignment { border-top: 1px solid var(--border); margin-top: 0; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Objective workspace (3-column layout)
@@ -986,71 +772,13 @@ body {
   flex: 1; overflow-y: auto;
   padding: 4px 0;
 }
-/* Region rows — styled like pt-spawn-row */
-.obj-region-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 12px; min-height: 28px;
-  cursor: pointer; user-select: none;
-  font-size: 13px; color: var(--text-primary);
-}
-.obj-region-row:hover           { background: var(--bg-selected); }
-.obj-region-row--selected       { background: var(--bg-selected); }
-/* type icon sits at the same gap as the rest; drop its own margin-right */
-.obj-region-row .region-type-icon { margin-right: 0; }
-.obj-region-label {
-  flex: 1; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.obj-region-empty {
-  padding: 10px 12px;
-  font-size: 12px; color: var(--text-muted); font-style: italic;
-}
-
-
-.obj-team-dot {
-  width: 10px; height: 10px; flex-shrink: 0;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(255,255,255,.15);
-}
-
-/* ── Wool list: wool rows ── */
-.obj-wool-row {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 12px; min-height: 34px;
-  cursor: pointer; user-select: none;
-  border-bottom: 1px solid transparent;
-}
-.obj-wool-row:hover           { background: var(--bg-selected); }
-.obj-wool-row--selected       { background: var(--bg-selected); }
-.obj-wool-swatch {
-  width: 14px; height: 14px; flex-shrink: 0;
-  border-radius: 3px;
-  border: 1px solid rgba(255,255,255,.12);
-  display: inline-block;
-}
-.obj-wool-label {
-  flex: 1; min-width: 0;
-  font-size: 13px; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+/* type icon on region rows: drop its own margin-right */
+#obj-region-list .region-type-icon { margin-right: 0; }
 
 /* ── Canvas ── */
 #obj-canvas-wrap {
   flex: 1; display: flex; flex-direction: column;
   overflow: hidden; background: var(--bg-deep);
-}
-#obj-canvas-subbar {
-  display: flex; align-items: center;
-  height: 36px; flex-shrink: 0;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  padding: 0 8px;
-}
-#obj-draw-toolbar {
-  display: flex; gap: 2px; margin-right: 8px;
 }
 
 /* Respawn badge — shown in the wool inspector */
@@ -1076,25 +804,6 @@ body {
   gap: 10px;
   margin: 4px 0 8px;
 }
-/* Narrow fixed-width field for Amount / count columns inside an ov-field-row */
-.ov-field-row > .ov-field--compact { flex: 0 0 64px; }
-
-#obj-cursor-coords {
-  flex: 1; text-align: center;
-  font-size: 12px; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, monospace;
-  user-select: none;
-}
-#obj-canvas-subbar-right {
-  display: flex; align-items: center; gap: 8px; margin-left: auto;
-}
-#obj-zoom-level {
-  font-size: 12px; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, monospace;
-  min-width: 40px; text-align: right;
-}
 #obj-svg-area {
   flex: 1; display: flex; align-items: center;
   justify-content: center; overflow: hidden; padding: 12px;
@@ -1105,13 +814,6 @@ body {
 /* Inspector is a flex column; each section (Wool, Respawn, Location, Monument) gets gap */
 #obj-wool-inspector { display: flex; flex-direction: column; gap: 20px; }
 
-/* Title row: section heading + inline badge (used by Respawn) */
-.obj-section-title-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  border-bottom: 1px solid var(--border); padding-bottom: 6px;
-}
-.obj-section-title-row > .ov-section-title { border-bottom: none; padding-bottom: 0; flex: 1; }
-
 #obj-right {
   width: 260px; flex-shrink: 0;
   background: var(--bg-panel);
@@ -1121,17 +823,9 @@ body {
 #obj-right-scroll {
   flex: 1; min-height: 0;
   overflow-y: auto;
-  padding: 14px 12px;
+  padding: 16px 14px;
   display: flex; flex-direction: column; gap: 0;
 }
-
-/* Inspector empty state */
-#obj-inspector-empty {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-}
-
-/* (obj-defender-row, obj-defender-name, obj-wool-title-row, obj-wool-swatch-lg,
-   obj-inspector-title-text removed — inspector now uses pt-color-pick-row pattern) */
 
 /* Inspector: monument capture group — one per capturing team */
 .obj-monument-group {

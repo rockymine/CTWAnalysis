@@ -143,21 +143,21 @@ export class OverviewPanel {
 
   _addPersonRow(listEl, { uuid = "", name = "", contribution = "" } = {}) {
     const row = document.createElement("div");
-    row.className = "ov-author-row";
+    row.className = "author-row";
     row.dataset.uuid = uuid;
 
     const avatarSrc = uuid ? _avatarUrl(uuid) : _AVATAR_EMPTY;
     const displayName = name || uuid;  // show UUID as fallback until resolved
 
     row.innerHTML = `
-      <img class="ov-author-avatar" src="${_esc(avatarSrc)}" width="16" height="16" alt=""/>
-      <input class="ov-input ov-author-name" type="text" placeholder="Minecraft username" value="${_esc(displayName)}"/>
-      <input class="ov-input ov-author-contribution" type="text" placeholder="Contribution (optional)" value="${_esc(contribution ?? "")}"/>
-      <button class="ov-author-remove" title="Remove">✕</button>
+      <img class="author-avatar" src="${_esc(avatarSrc)}" width="16" height="16" alt=""/>
+      <input class="field-input author-name" type="text" placeholder="Minecraft username" value="${_esc(displayName)}"/>
+      <input class="field-input author-contribution" type="text" placeholder="Contribution (optional)" value="${_esc(contribution ?? "")}"/>
+      <button class="btn-remove" title="Remove">✕</button>
     `;
 
-    const avatarImg = row.querySelector(".ov-author-avatar");
-    const nameInput = row.querySelector(".ov-author-name");
+    const avatarImg = row.querySelector(".author-avatar");
+    const nameInput = row.querySelector(".author-name");
 
     // Resolve username or UUID → canonical name + UUID on blur
     nameInput.addEventListener("blur", async () => {
@@ -170,11 +170,11 @@ export class OverviewPanel {
         nameInput.value  = player.name;
         nameInput.title  = player.uuid;
         avatarImg.src    = _avatarUrl(player.uuid);
-        nameInput.classList.remove("ov-author-name--error");
+        nameInput.classList.remove("author-name--error");
       } catch {
         row.dataset.uuid = "";
         avatarImg.src    = _AVATAR_EMPTY;
-        nameInput.classList.add("ov-author-name--error");
+        nameInput.classList.add("author-name--error");
         nameInput.title  = "Player not found";
       } finally {
         delete nameInput.dataset.resolving;
@@ -191,7 +191,7 @@ export class OverviewPanel {
       }).catch(() => { /* leave UUID in field */ });
     }
 
-    row.querySelector(".ov-author-remove").addEventListener("click", () => {
+    row.querySelector(".btn-remove").addEventListener("click", () => {
       row.remove();
       this._setDirty(true);
     });
@@ -203,12 +203,12 @@ export class OverviewPanel {
 
   _collectAuthors() {
     const fromList = (listEl, role) =>
-      [...listEl.querySelectorAll(".ov-author-row")]
+      [...listEl.querySelectorAll(".author-row")]
         .map(row => ({
           uuid:         row.dataset.uuid || "",
-          name:         row.querySelector(".ov-author-name").value.trim() || null,
+          name:         row.querySelector(".author-name").value.trim() || null,
           role,
-          contribution: row.querySelector(".ov-author-contribution").value.trim() || null,
+          contribution: row.querySelector(".author-contribution").value.trim() || null,
         }))
         .filter(entry => entry.uuid);
     return [
@@ -258,8 +258,8 @@ export class OverviewPanel {
       none:      '<span class="ov-sym-badge ov-sym-badge--none">No symmetry</span>',
     }[status] ?? '<span class="ov-sym-badge ov-sym-badge--pending">Not confirmed</span>';
 
-    const header = `<div class="ov-sym-header">
-      <span class="ov-sym-title">Symmetry Axis</span>${badgeHtml}</div>`;
+    const header = `<div class="section-header section-header--ruled">
+      <span class="section-title">Symmetry Axis</span>${badgeHtml}</div>`;
 
     if (!symData) {
       this._symBodyEl.innerHTML = `${header}
@@ -284,14 +284,14 @@ export class OverviewPanel {
       : `<option value="">None detected</option>`;
 
     this._symBodyEl.innerHTML = `${header}
-      <div class="ov-field">
-        <label class="ov-label">Primary type</label>
-        <select id="ov-sym-axis-select" class="ov-input">${options}</select>
+      <div class="field">
+        <label class="field-label">Primary type</label>
+        <select id="ov-sym-axis-select" class="field-input">${options}</select>
       </div>
       <div class="ov-sym-coord-section">
         <div class="ov-sym-coord-header">
-          <span class="ov-label" id="ov-sym-coord-label">${coordLabel}</span>
-          <span class="ov-label">blocks</span>
+          <span class="field-label" id="ov-sym-coord-label">${coordLabel}</span>
+          <span class="field-label">blocks</span>
         </div>
         <div class="detail-group-row">
           <div class="detail-prefixed-field">
@@ -305,7 +305,7 @@ export class OverviewPanel {
         </div>
       </div>
       <div class="ov-sym-preview-section">
-        <div class="ov-section-title">Preview</div>
+        <div class="section-title">Preview</div>
         <div id="ov-sym-preview-svg" class="ov-sym-preview-svg">${_symPreviewSvg(primaryEntry?.type ?? "mirror_x")}</div>
       </div>
       <div class="ov-sym-actions">
