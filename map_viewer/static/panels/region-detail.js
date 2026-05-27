@@ -1,4 +1,4 @@
-import { typeIcon } from "./region-types.js";
+import { typeIcon } from "../region/region-types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

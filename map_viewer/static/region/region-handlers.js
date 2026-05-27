@@ -17,7 +17,7 @@
  */
 
 import { deriveBoundsFromCoords } from "./region-types.js";
-import * as api from "./api.js";
+import * as api from "../api.js";
 
 export function createRegionHandlers({ canvas, registry, detail = null, sidebar = null, getMapName, getHistory }) {
   return {

@@ -6,7 +6,7 @@
  * only data-driven colours are set inline.
  */
 
-import { typeIcon } from "./region-types.js";
+import { typeIcon } from "../region/region-types.js";
 
 function icon(iconData, size = 14) {
   return lucide.createElement(iconData, { width: size, height: size, "stroke-width": "1.5" });

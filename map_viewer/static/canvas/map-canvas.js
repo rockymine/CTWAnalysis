@@ -20,7 +20,7 @@
 
 import { buildTransform, buildInverseTransform, svgEl,
          ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
-import { chatColorHex, dyeColorHex } from "./game-colors.js";
+import { chatColorHex, dyeColorHex } from "../shared/game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
 const ZOOM_MIN    = 0.5;
