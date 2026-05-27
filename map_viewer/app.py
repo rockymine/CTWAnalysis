@@ -28,6 +28,10 @@ import pandas as pd
 from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
 
 from map_viewer.constants import CONFIG_PATH
+from map_viewer.services.map_data import (
+    load_map_data, 
+    save_map_data
+)
 from map_viewer.services.region_xml import regions_to_xml
 from common.visualization.block_colors import block_color
 
@@ -459,10 +463,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/map-data")
     def map_data_raw(name: str):
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, _ = load_map_data(name)
         return jsonify(data)
 
     _METADATA_FIELDS = {
@@ -472,15 +473,12 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/metadata", methods=["PATCH"])
     def patch_map_metadata(name: str):
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         payload = request.get_json(force=True)
         for key, value in payload.items():
             if key in _METADATA_FIELDS:
                 data[key] = value
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     @app.route("/api/map/<name>/symmetry")
@@ -499,10 +497,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/regions")
     def map_regions(name: str):
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, _ = load_map_data(name)
         groups = encode_region_tree_categorized(
             data.get("regions", {}),
             data.get("region_categories", {}),
@@ -511,10 +506,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/export/xml")
     def export_xml(name: str):
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, _ = load_map_data(name)
         xml = regions_to_xml(data.get("regions", {}))
         filename = f"{name}_regions.xml"
         return xml, 200, {
@@ -599,11 +591,7 @@ def create_app() -> Flask:
         if region_type not in _SUPPORTED_CREATE_TYPES:
             return jsonify({"error": f"unsupported type '{region_type}'"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         regions = data.setdefault("regions", {})
 
         region_id = (body.get("id") or "").strip()
@@ -680,9 +668,7 @@ def create_app() -> Flask:
         category = body.get("category", "other")
         data.setdefault("region_categories", {}).setdefault(category, []).append(region_id)
 
-        data_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "id": region_id}), 201
 
     @app.route("/api/map/<name>/regions/group", methods=["POST"])
@@ -692,11 +678,7 @@ def create_app() -> Flask:
         if len(child_ids) < 2:
             return jsonify({"error": "at least 2 regions required"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         regions = data.setdefault("regions", {})
 
         missing = [cid for cid in child_ids if cid not in regions]
@@ -732,9 +714,7 @@ def create_app() -> Flask:
         }
         data.setdefault("region_categories", {}).setdefault("other", []).append(union_id)
 
-        data_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        save_map_data(data, data_path)
         return jsonify({
             "ok": True, "id": union_id,
             "bounds": {"min_x": min_x, "min_z": min_z, "max_x": max_x, "max_z": max_z},
@@ -742,10 +722,7 @@ def create_app() -> Flask:
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["DELETE"])
     def delete_region(name: str, region_id: str) -> tuple:
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         regions = data.get("regions", {})
 
         if region_id in regions:
@@ -766,9 +743,7 @@ def create_app() -> Flask:
                     if rid in cat_list:
                         cat_list.remove(rid)
             remove_inline_children(regions, set(subtree_ids))
-            data_path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            save_map_data(data, data_path)
             return jsonify({
                 "ok": True,
                 "snapshot": {
@@ -787,9 +762,7 @@ def create_app() -> Flask:
 
         parent_dict, child_dict, child_index = found
         remove_inline_children(regions, {region_id})
-        data_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        save_map_data(data, data_path)
         return jsonify({
             "ok": True,
             "snapshot": {
@@ -815,11 +788,7 @@ def create_app() -> Flask:
         if not root_id or not region_entries:
             return jsonify({"error": "invalid snapshot"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         regions = data.setdefault("regions", {})
 
         parent_id = snapshot.get("parent_id")
@@ -832,9 +801,7 @@ def create_app() -> Flask:
             child_index = snapshot.get("child_index", 0)
             children = parent_dict.setdefault("children", [])
             children.insert(child_index, child_dict)
-            data_path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            save_map_data(data, data_path)
             return jsonify({"ok": True, "id": root_id})
 
         # ── Restore top-level region ─────────────────────────────────────────
@@ -845,9 +812,7 @@ def create_app() -> Flask:
         regions.update(region_entries)
         data.setdefault("region_categories", {}).setdefault(category, []).append(root_id)
 
-        data_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "id": root_id})
 
     @app.route("/api/map/<name>/region/<region_id>", methods=["PATCH"])
@@ -858,11 +823,7 @@ def create_app() -> Flask:
         if not body.get("id") and bounds is None and coords is None:
             return jsonify({"error": "provide 'id', 'bounds', or 'coords'"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data    = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         regions = data.get("regions", {})
 
         # Top-level lookup first; fall back to recursive child search for synthetic ids.
@@ -921,9 +882,7 @@ def create_app() -> Flask:
                 if obs:
                     patch_embedded_region([obs], region_id, updated_bounds_2d)
 
-        data_path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        save_map_data(data, data_path)
         response: dict = {"ok": True}
         if updated_bounds_2d:
             b = updated_bounds_2d
@@ -942,11 +901,7 @@ def create_app() -> Flask:
         if not team_id:
             return jsonify({"error": "id is required"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         teams: list = data.setdefault("teams", [])
 
         if any(t.get("id") == team_id for t in teams):
@@ -963,17 +918,13 @@ def create_app() -> Flask:
             new_team["dye_color"] = str(body["dye_color"])
 
         teams.append(new_team)
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "team": new_team}), 201
 
     @app.route("/api/map/<name>/teams/<team_id>", methods=["PATCH"])
     def update_team(name: str, team_id: str) -> tuple:
         body = request.get_json(silent=True) or {}
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         teams: list = data.setdefault("teams", [])
 
         team = next((t for t in teams if t.get("id") == team_id), None)
@@ -1001,16 +952,12 @@ def create_app() -> Flask:
             if field in body:
                 team[field] = int(body[field])
 
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "team": team})
 
     @app.route("/api/map/<name>/teams/<team_id>", methods=["DELETE"])
     def delete_team(name: str, team_id: str) -> tuple:
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         teams: list = data.setdefault("teams", [])
 
         if not any(t.get("id") == team_id for t in teams):
@@ -1020,7 +967,7 @@ def create_app() -> Flask:
         # Remove spawns referencing this team
         data["spawns"] = [s for s in data.get("spawns", []) if s.get("team") != team_id]
 
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     # ── Spawn link endpoints ──────────────────────────────────────────────────
@@ -1033,11 +980,7 @@ def create_app() -> Flask:
         if not region_id:
             return jsonify({"error": "region_id is required"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         spawns: list = data.setdefault("spawns", [])
         regions: dict = data.get("regions", {})
 
@@ -1055,18 +998,14 @@ def create_app() -> Flask:
             "region": region_obj,
         }
         spawns.append(new_spawn)
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True}), 201
 
     @app.route("/api/map/<name>/spawn/<region_id>", methods=["PATCH"])
     def update_spawn_link(name: str, region_id: str) -> tuple:
         """Update team, yaw, and kit for the spawn linked to *region_id*."""
         body = request.get_json(silent=True) or {}
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         spawns: list = data.setdefault("spawns", [])
 
         spawn = next((s for s in spawns if spawn_region_id(s) == region_id), None)
@@ -1080,24 +1019,20 @@ def create_app() -> Flask:
         if "kit" in body:
             spawn["kit"] = str(body["kit"])
 
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     @app.route("/api/map/<name>/spawn/<region_id>", methods=["DELETE"])
     def delete_spawn_link(name: str, region_id: str) -> tuple:
         """Remove the spawn link for *region_id*."""
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         spawns: list = data.setdefault("spawns", [])
 
         if not any(spawn_region_id(s) == region_id for s in spawns):
             return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
 
         data["spawns"] = [s for s in spawns if spawn_region_id(s) != region_id]
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     # ── Wool endpoints ────────────────────────────────────────────────────────
@@ -1113,11 +1048,7 @@ def create_app() -> Flask:
         if not color:
             return jsonify({"error": "color is required"}), 400
 
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         wools: list = data.setdefault("wools", [])
 
         if any(w.get("team") == team_id and w.get("color") == color for w in wools):
@@ -1140,7 +1071,7 @@ def create_app() -> Flask:
             },
         }
         wools.append(new_wool)
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "wool": new_wool}), 201
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["PATCH"])
@@ -1152,11 +1083,7 @@ def create_app() -> Flask:
         (team rename, color rename) apply only to the matched entry.
         """
         body = request.get_json(silent=True) or {}
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         wools: list = data.setdefault("wools", [])
 
         wool = next(
@@ -1205,17 +1132,13 @@ def create_app() -> Flask:
                 if entry.get("location") == current_loc:
                     entry["wool_room_region"] = new_region_id
 
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True, "wool": wool})
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>", methods=["DELETE"])
     def delete_wool(name: str, team_id: str, color: str) -> tuple:
         """Delete the single wool entry identified by (team, color)."""
-        data_path = get_output_root() / name / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        data, data_path = load_map_data(name)
         wools: list = data.setdefault("wools", [])
 
         if not any(w.get("team") == team_id and w.get("color") == color for w in wools):
@@ -1225,7 +1148,7 @@ def create_app() -> Flask:
             w for w in wools
             if not (w.get("team") == team_id and w.get("color") == color)
         ]
-        data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        save_map_data(data, data_path)
         return jsonify({"ok": True})
 
     @app.route("/api/map/<name>/wool/<team_id>/<color>/room-status")
@@ -1255,12 +1178,8 @@ def create_app() -> Flask:
         """
         from layout_analysis.wool_query import query_wool_in_region
 
-        out_dir   = get_output_root() / name
-        data_path = out_dir / "map_data.json"
-        if not data_path.exists():
-            abort(404)
-
-        data  = json.loads(data_path.read_text(encoding="utf-8"))
+        out_dir = get_output_root() / name
+        data, _ = load_map_data(name)
         wools: list = data.get("wools", [])
 
         wool = next(
