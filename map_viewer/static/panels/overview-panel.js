@@ -1,5 +1,5 @@
-import * as api from "./api.js";
-import { OverviewCanvas } from "./overview-canvas.js";
+import * as api from "../api.js";
+import { OverviewCanvas } from "../canvas/overview-canvas.js";
 
 const SYM_LABELS = {
   mirror_x: "Mirror — vertical axis",
@@ -90,6 +90,10 @@ export class OverviewPanel {
       this._addPersonRow(this._contributorsEl, {});
       this._setDirty(true);
     });
+  }
+
+  resize() {
+    this._canvas?.resize();
   }
 
   async load(mapName) {

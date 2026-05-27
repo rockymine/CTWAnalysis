@@ -1,21 +1,24 @@
 import { OverviewPanel } from "../panels/overview-panel.js";
 
 export class OverviewActivity {
+  #el    = null;
+  #panel = null;
+
   constructor({ onStatusChange } = {}) {
-    this._el    = document.getElementById("overview-workspace");
-    this._panel = new OverviewPanel(this._el, { onStatusChange });
+    this.#el    = document.getElementById("overview-workspace");
+    this.#panel = new OverviewPanel(this.#el, { onStatusChange });
   }
 
   activate({ mapName } = {}) {
-    this._el.hidden = false;
-    if (mapName) this._panel.load(mapName);
+    this.#el.hidden = false;
+    if (mapName) this.#panel.load(mapName);
   }
 
   deactivate() {
-    this._el.hidden = true;
+    this.#el.hidden = true;
   }
 
   resize() {
-    this._panel._canvas?.resize();
+    this.#panel.resize();
   }
 }

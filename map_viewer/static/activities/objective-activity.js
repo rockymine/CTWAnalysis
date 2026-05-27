@@ -33,120 +33,122 @@ import { ToolManager }    from "../shared/tool-manager.js";
 import * as api           from "../api.js";
 
 export class ObjectiveActivity {
-  _el        = null;
-  _canvas    = null;
-  _panel     = null;
-  _registry  = null;
-  _mapName   = null;
-  _ctx       = null;   // last-rendered canvas context (augmented with monuments)
-  _objGroups = null;   // last-rendered region groups
+  // ── private fields ────────────────────────────────────────────────────────
 
-  _coordsEl = null;
-  _zoomEl   = null;
-  _tools    = null;   // ToolManager — created in _initCanvas()
+  #el        = null;
+  #canvas    = null;
+  #panel     = null;
+  #registry  = null;
+  #mapName   = null;
+  #ctx       = null;   // last-rendered canvas context (augmented with monuments)
+  #objGroups = null;   // last-rendered region groups
+
+  #coordsEl = null;
+  #zoomEl   = null;
+  #tools    = null;
 
   constructor() {
-    this._el       = document.getElementById("obj-workspace");
-    this._coordsEl = document.getElementById("obj-cursor-coords");
-    this._zoomEl   = document.getElementById("obj-zoom-level");
+    this.#el       = document.getElementById("obj-workspace");
+    this.#coordsEl = document.getElementById("obj-cursor-coords");
+    this.#zoomEl   = document.getElementById("obj-zoom-level");
 
     // Registry owns canvas-level region selection.  onSelectionChange fires
     // synchronously so the visual response is immediate (same as Teams).
-    this._registry = new RegionRegistry({
+    this.#registry = new RegionRegistry({
       onSelectionChange: (node, ids) => {
-        this._canvas.setSelectedRegions(ids);
+        this.#canvas.setSelectedRegions(ids);
         if (node) {
-          this._canvas.showAnchors(node);
-          this._panel.highlightRegionRow(node.id);
+          this.#canvas.showAnchors(node);
+          this.#panel.highlightRegionRow(node.id);
         } else {
-          this._canvas.clearAnchors();
-          this._panel.highlightRegionRow(null);
+          this.#canvas.clearAnchors();
+          this.#panel.highlightRegionRow(null);
         }
       },
     });
 
-    this._panel = new ObjectivePanel({
-      onWoolSelect:     (wool)     => this._onWoolSelect(wool),
-      onWoolSave:       ()         => this._refreshCanvas(),
-      onRegionRowClick: (regionId) => this._onRegionRowClick(regionId),
+    this.#panel = new ObjectivePanel({
+      onWoolSelect:     (wool)     => this.#onWoolSelect(wool),
+      onWoolSave:       ()         => this.#refreshCanvas(),
+      onRegionRowClick: (regionId) => this.#onRegionRowClick(regionId),
     });
 
-    this._initCanvas();
+    this.#initCanvas();
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
   activate({ mapName } = {}) {
-    this._el.hidden = false;
+    this.#el.hidden = false;
 
-    if (mapName && mapName !== this._mapName) {
-      this._mapName = mapName;
-      this._loadMap(mapName);
+    if (mapName && mapName !== this.#mapName) {
+      this.#mapName = mapName;
+      this.#loadMap(mapName);
     }
   }
 
   deactivate() {
-    this._el.hidden = true;
+    this.#el.hidden = true;
   }
 
   resize() {
-    this._canvas.resize();
+    this.#canvas.resize();
   }
 
   // ── Canvas init ─────────────────────────────────────────────────────────────
 
-  _initCanvas() {
+  #initCanvas() {
     const svgEl  = document.getElementById("obj-map-svg");
     const wrapEl = document.getElementById("obj-svg-area");
 
-    this._canvas = new MapCanvas(svgEl, wrapEl, {
+    this.#canvas = new MapCanvas(svgEl, wrapEl, {
       onCoords: (x, z) => {
-        this._coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
+        this.#coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
       },
       onZoom: (scale) => {
-        this._zoomEl.textContent = `${Math.round(scale * 100)}%`;
+        this.#zoomEl.textContent = `${Math.round(scale * 100)}%`;
       },
       // Click on a region: immediately select it via the registry (gives instant
       // visual feedback — same mechanism as Teams/Regions), then sync the panel.
       onCanvasClick: (node) => {
         if (!node) {
-          this._registry.deselect();
+          this.#registry.deselect();
           return;
         }
         // Registry fires onSelectionChange synchronously → setSelectedRegions +
         // showAnchors happen before the panel does any inspector DOM work.
-        this._registry.select(node.id);
-        const found = this._panel.selectRoomByRegion(node.id);
-        if (!found && this._panel.hasSelectedWool()) {
-          this._panel.assignWoolRoom(node.id);
+        this.#registry.select(node.id);
+        const found = this.#panel.selectRoomByRegion(node.id);
+        if (!found && this.#panel.hasSelectedWool()) {
+          this.#panel.assignWoolRoom(node.id);
         }
       },
       // Click on a wool ◆ or monument ⊕ marker: select the corresponding wool.
       onPoiClick: (type, data) => {
         if (type === "wool") {
-          this._panel.selectRoomByLocation(data.x, data.z);
+          this.#panel.selectRoomByLocation(data.x, data.z);
         } else if (type === "monument") {
-          this._panel.selectRoomByMonument(data.x, data.z);
+          this.#panel.selectRoomByMonument(data.x, data.z);
         }
       },
     });
 
     // Always show wool ◆ and monument ⊕ markers in the Objective activity
-    this._canvas.setPoisVisible(true);
+    this.#canvas.setPoisVisible(true);
 
     // Wire toolbar buttons
     const moveBtn   = document.getElementById("obj-tool-move");
     const selectBtn = document.getElementById("obj-tool-select");
-    this._tools = new ToolManager(this._canvas, { move: moveBtn, select: selectBtn });
-    moveBtn.addEventListener("click",   () => this._tools.setTool("move"));
-    selectBtn.addEventListener("click", () => this._tools.setTool(null));
-    this._tools.enable();
-    this._tools.setTool(null);  // default: select tool
+    this.#tools = new ToolManager(this.#canvas, { move: moveBtn, select: selectBtn });
+    moveBtn.addEventListener("click",   () => this.#tools.setTool("move"));
+    selectBtn.addEventListener("click", () => this.#tools.setTool(null));
+    this.#tools.enable();
+    this.#tools.setTool(null);  // default: select tool
   }
 
   // ── Map loading ─────────────────────────────────────────────────────────────
 
-  async _loadMap(mapName) {
+  async #loadMap(mapName) {
     try {
       const [ctx, mapData, groups] = await Promise.all([
         api.fetchContext(mapName),
@@ -167,20 +169,20 @@ export class ObjectiveActivity {
         group => group.name === "wool_room" || group.name === "monument",
       );
 
-      this._ctx       = ctx;
-      this._objGroups = objGroups;
-      this._canvas.render(ctx, objGroups);
-      requestAnimationFrame(() => this._canvas.resize());
+      this.#ctx       = ctx;
+      this.#objGroups = objGroups;
+      this.#canvas.render(ctx, objGroups);
+      requestAnimationFrame(() => this.#canvas.resize());
 
       // Register region nodes so the registry can look them up by id for
       // instant selection (same pattern as TeamsActivity).
-      this._registry.clear();
+      this.#registry.clear();
       for (const group of objGroups) {
-        for (const root of group.regions) this._registry.register(root, null);
+        for (const root of group.regions) this.#registry.register(root, null);
       }
 
-      this._panel.load(mapName, mapData);
-      this._panel.loadRegions(objGroups);
+      this.#panel.load(mapName, mapData);
+      this.#panel.loadRegions(objGroups);
     } catch (err) {
       console.error("Objective: failed to load map:", err);
     }
@@ -188,33 +190,33 @@ export class ObjectiveActivity {
 
   // ── Canvas refresh (called after any wool edit) ──────────────────────────────
 
-  async _refreshCanvas() {
-    if (!this._mapName || !this._ctx) return;
+  async #refreshCanvas() {
+    if (!this.#mapName || !this.#ctx) return;
     try {
-      const mapData = await api.fetchMapData(this._mapName);
-      this._ctx.monuments = (mapData.wools ?? []).map(wool => ({
+      const mapData = await api.fetchMapData(this.#mapName);
+      this.#ctx.monuments = (mapData.wools ?? []).map(wool => ({
         x:          wool.monument.x,
         z:          wool.monument.z,
         wool_color: wool.color,
         team:       wool.team,
       }));
-      if (!this._ctx.poi_assignments) this._ctx.poi_assignments = {};
-      this._ctx.poi_assignments.wools = (mapData.wools ?? []).map(wool => ({
+      if (!this.#ctx.poi_assignments) this.#ctx.poi_assignments = {};
+      this.#ctx.poi_assignments.wools = (mapData.wools ?? []).map(wool => ({
         x:          wool.location.x,
         z:          wool.location.z,
         wool_color: wool.color,
       }));
-      this._canvas.render(this._ctx, this._objGroups);
+      this.#canvas.render(this.#ctx, this.#objGroups);
       // Re-apply the region highlight + anchors for the currently selected wool.
       // canvas.render() resets #selectedNode, so showAnchors must be re-called.
-      if (this._panel.hasSelectedWool()) {
-        const regionId = this._panel.selectedWoolRoomRegion();
+      if (this.#panel.hasSelectedWool()) {
+        const regionId = this.#panel.selectedWoolRoomRegion();
         if (regionId) {
-          const node = this._registry?.getNode(regionId);
-          this._canvas.setSelectedRegions([regionId]);
-          if (node) this._canvas.showAnchors(node);
+          const node = this.#registry.getNode(regionId);
+          this.#canvas.setSelectedRegions([regionId]);
+          if (node) this.#canvas.showAnchors(node);
         } else {
-          this._canvas.setSelectedRegions([]);
+          this.#canvas.setSelectedRegions([]);
         }
       }
     } catch (err) {
@@ -229,12 +231,12 @@ export class ObjectiveActivity {
    * Routes through the registry so setSelectedRegions + showAnchors both fire
    * (same mechanism used by canvas clicks and region row clicks).
    */
-  _onWoolSelect(room) {
+  #onWoolSelect(room) {
     const regionId = room?.woolRoomRegion ?? null;
-    if (regionId && this._registry?.getNode(regionId)) {
-      this._registry.select(regionId);
+    if (regionId && this.#registry.getNode(regionId)) {
+      this.#registry.select(regionId);
     } else {
-      this._registry?.deselect();
+      this.#registry.deselect();
     }
   }
 
@@ -243,12 +245,12 @@ export class ObjectiveActivity {
    * Selects the region via the registry (visual), then tries to select the
    * corresponding wool — same logic as a canvas click.
    */
-  _onRegionRowClick(regionId) {
-    if (!this._registry?.getNode(regionId)) return;
-    this._registry.select(regionId);
-    const found = this._panel.selectRoomByRegion(regionId);
-    if (!found && this._panel.hasSelectedWool()) {
-      this._panel.assignWoolRoom(regionId);
+  #onRegionRowClick(regionId) {
+    if (!this.#registry.getNode(regionId)) return;
+    this.#registry.select(regionId);
+    const found = this.#panel.selectRoomByRegion(regionId);
+    if (!found && this.#panel.hasSelectedWool()) {
+      this.#panel.assignWoolRoom(regionId);
     }
   }
 }

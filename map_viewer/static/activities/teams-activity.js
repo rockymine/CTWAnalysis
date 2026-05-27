@@ -19,188 +19,200 @@ import { ToolManager }          from "../shared/tool-manager.js";
 import * as api                from "../api.js";
 
 export class TeamsActivity {
-  constructor({ onStatusChange } = {}) {
-    this._el      = document.getElementById("pt-workspace");
-    this._canvas  = null;
-    this._mapName = null;
+  // ── private fields ────────────────────────────────────────────────────────
 
-    this._coordsEl = document.getElementById("pt-cursor-coords");
-    this._zoomEl   = document.getElementById("pt-zoom-level");
+  #el            = null;
+  #canvas        = null;
+  #mapName       = null;
+
+  #coordsEl      = null;
+  #zoomEl        = null;
+
+  #registry      = null;
+  #deleteHistory = null;
+  #spawnLinkCache = null;  // root_id → spawn link payload saved before delete
+  #panel         = null;
+  #handlers      = null;
+  #tools         = null;
+
+  constructor({ onStatusChange } = {}) {
+    this.#el       = document.getElementById("pt-workspace");
+    this.#coordsEl = document.getElementById("pt-cursor-coords");
+    this.#zoomEl   = document.getElementById("pt-zoom-level");
 
     // Registry — tracks the spawn-region node tree and selection state.
     // onSelectionChange fans out to canvas (outline, anchors/label) and panel.
-    this._registry = new RegionRegistry({
+    this.#registry = new RegionRegistry({
       onSelectionChange: (node, selectedIds) => {
-        this._canvas.setSelectedRegions(selectedIds);
+        this.#canvas.setSelectedRegions(selectedIds);
         if (node) {
-          this._canvas.showAnchors(node);   // renders name label + anchor blocks
-          this._panel.onRegionSelect(node);
+          this.#canvas.showAnchors(node);   // renders name label + anchor blocks
+          this.#panel.onRegionSelect(node);
         } else {
-          this._canvas.clearAnchors();
-          this._panel.onRegionDeselect();
+          this.#canvas.clearAnchors();
+          this.#panel.onRegionDeselect();
         }
       },
     });
 
-    this._deleteHistory  = new DeletedRegionHistory();
-    this._spawnLinkCache = new Map();  // root_id → spawn link payload saved before delete
+    this.#deleteHistory  = new DeletedRegionHistory();
+    this.#spawnLinkCache = new Map();
 
     // Panel — constructed after registry so we can pass routing callbacks.
-    this._panel = new TeamsPanel({
+    this.#panel = new TeamsPanel({
       onStatusChange,
-      onSpawnRowClick:  (regionId) => this._registry.select(regionId),
-      onDeselectRegion: ()         => this._registry.deselect(),
-      onBoundsChange:   (node, bounds) => this._handleBoundsChange(node, bounds),
-      onBoundsSave:     (node, bounds) => this._handleBoundsSave(node, bounds),
-      onCoordsChange:   (node, coords) => this._handleCoordsChange(node, coords),
-      onCoordsSave:     (node, coords) => this._handleCoordsSave(node, coords),
-      onRegionRename:   (node, oldId, newId) => this._handlers.onRenameRegion(node, oldId, newId),
+      onSpawnRowClick:  (regionId) => this.#registry.select(regionId),
+      onDeselectRegion: ()         => this.#registry.deselect(),
+      onBoundsChange:   (node, bounds) => this.#handleBoundsChange(node, bounds),
+      onBoundsSave:     (node, bounds) => this.#handleBoundsSave(node, bounds),
+      onCoordsChange:   (node, coords) => this.#handleCoordsChange(node, coords),
+      onCoordsSave:     (node, coords) => this.#handleCoordsSave(node, coords),
+      onRegionRename:   (node, oldId, newId) => this.#handlers.onRenameRegion(node, oldId, newId),
     });
 
-    this._initCanvas();
+    this.#initCanvas();
   }
 
   activate({ mapName } = {}) {
-    this._el.hidden = false;
+    this.#el.hidden = false;
 
-    if (mapName && mapName !== this._mapName) {
-      this._mapName = mapName;
-      this._panel.load(mapName);
-      this._loadMapIntoCanvas(mapName);
+    if (mapName && mapName !== this.#mapName) {
+      this.#mapName = mapName;
+      this.#panel.load(mapName);
+      this.#loadMapIntoCanvas(mapName);
     }
   }
 
   deactivate() {
-    this._el.hidden = true;
+    this.#el.hidden = true;
   }
 
   resize() {
-    this._canvas.resize();
+    this.#canvas.resize();
   }
 
   // ── Canvas init ────────────────────────────────────────────────────────────
 
-  _initCanvas() {
+  #initCanvas() {
     const svgEl  = document.getElementById("pt-map-svg");
     const wrapEl = document.getElementById("pt-svg-area");
 
-    this._canvas = new MapCanvas(svgEl, wrapEl, {
+    this.#canvas = new MapCanvas(svgEl, wrapEl, {
       onCoords: (x, z) => {
-        this._coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
+        this.#coordsEl.textContent = x !== null ? `X ${x}  Z ${z}` : "";
       },
       onZoom: (scale) => {
-        this._zoomEl.textContent = `${Math.round(scale * 100)}%`;
+        this.#zoomEl.textContent = `${Math.round(scale * 100)}%`;
       },
       onCanvasClick: (node) => {
-        if (node) this._registry.select(node.id);
-        else      this._registry.deselect();
+        if (node) this.#registry.select(node.id);
+        else      this.#registry.deselect();
       },
       onRegionDraw: async (drawResult) => {
-        if (!this._mapName) return;
-        this._tools.setTool(null);
-        const newId = await this._panel.onCanvasDraw(
-          this._mapName,
+        if (!this.#mapName) return;
+        this.#tools.setTool(null);
+        const newId = await this.#panel.onCanvasDraw(
+          this.#mapName,
           drawResult,
-          async (payload) => api.createRegion(this._mapName, payload),
+          async (payload) => api.createRegion(this.#mapName, payload),
         );
-        await this._reloadCanvas(this._mapName);
-        await this._panel.reloadSpawnList(this._mapName);
-        if (newId) this._registry.select(newId);
+        await this.#reloadCanvas(this.#mapName);
+        await this.#panel.reloadSpawnList(this.#mapName);
+        if (newId) this.#registry.select(newId);
       },
-      onBoundsChange: (node, bounds) => this._handleBoundsChange(node, bounds),
-      onBoundsSave:   (node, bounds) => this._handleBoundsSave(node, bounds),
+      onBoundsChange: (node, bounds) => this.#handleBoundsChange(node, bounds),
+      onBoundsSave:   (node, bounds) => this.#handleBoundsSave(node, bounds),
     });
 
     // Create shared bounds/coords handlers now that canvas is available.
-    this._handlers = createRegionHandlers({
-      canvas:     this._canvas,
-      registry:   this._registry,
+    this.#handlers = createRegionHandlers({
+      canvas:     this.#canvas,
+      registry:   this.#registry,
       detail:     null,             // Teams has no XML-preview on bounds change
-      getMapName: () => this._mapName,
-      getHistory: () => this._deleteHistory,
+      getMapName: () => this.#mapName,
+      getHistory: () => this.#deleteHistory,
     });
 
-    this._tools = new ToolManager(this._canvas, {
+    this.#tools = new ToolManager(this.#canvas, {
       move:     document.getElementById("pt-tool-move"),
       select:   document.getElementById("pt-tool-select"),
       cylinder: document.getElementById("pt-tool-cylinder"),
       point:    document.getElementById("pt-tool-point"),
     });
-    this._tools.enable();
-    this._tools.setTool("move");
-    this._attachToolListeners();
+    this.#tools.enable();
+    this.#tools.setTool("move");
+    this.#attachToolListeners();
   }
 
   // ── Map loading ────────────────────────────────────────────────────────────
 
-  async _loadMapIntoCanvas(mapName) {
+  async #loadMapIntoCanvas(mapName) {
     try {
       const [ctx, groups] = await Promise.all([
         api.fetchContext(mapName),
         api.fetchRegions(mapName),
       ]);
-      const spawnGroups = this._filterSpawnGroups(groups);
-      this._canvas.render(ctx, spawnGroups);
-      this._registerNodes(spawnGroups);
+      const spawnGroups = this.#filterSpawnGroups(groups);
+      this.#canvas.render(ctx, spawnGroups);
+      this.#registerNodes(spawnGroups);
     } catch (err) {
       console.error("Teams canvas: failed to load map:", err);
     }
   }
 
   /** Reload only the regions layer (used after undo/redo or delete). */
-  async _reloadCanvas(mapName) {
+  async #reloadCanvas(mapName) {
     try {
       const groups = await api.fetchRegions(mapName);
-      const spawnGroups = this._filterSpawnGroups(groups);
-      this._canvas.refreshRegions(spawnGroups);
-      this._registerNodes(spawnGroups);
+      const spawnGroups = this.#filterSpawnGroups(groups);
+      this.#canvas.refreshRegions(spawnGroups);
+      this.#registerNodes(spawnGroups);
     } catch (err) {
       console.error("Teams canvas: failed to reload:", err);
     }
   }
 
-  _filterSpawnGroups(groups) {
+  #filterSpawnGroups(groups) {
     return groups.filter(g => g.name === "spawn_area" || g.name === "spawn_point");
   }
 
-  _registerNodes(spawnGroups) {
-    this._registry.clear();
+  #registerNodes(spawnGroups) {
+    this.#registry.clear();
     for (const group of spawnGroups) {
-      for (const root of group.regions) this._registry.register(root, null);
+      for (const root of group.regions) this.#registry.register(root, null);
     }
   }
 
   // ── Bounds / coords handlers — delegated to createRegionHandlers() ─────────
-  // (see region-handlers.js; _handlers is set in _initCanvas() once canvas exists)
 
-  _handleBoundsChange(node, bounds)  { this._handlers.onBoundsChange(node, bounds); }
-  _handleBoundsSave(node, bounds)    { this._handlers.onBoundsSave(node, bounds); }
-  _handleCoordsChange(node, coords)  { this._handlers.onCoordsChange(node, coords); }
-  _handleCoordsSave(node, coords)    { this._handlers.onCoordsSave(node, coords); }
+  #handleBoundsChange(node, bounds)  { this.#handlers.onBoundsChange(node, bounds); }
+  #handleBoundsSave(node, bounds)    { this.#handlers.onBoundsSave(node, bounds); }
+  #handleCoordsChange(node, coords)  { this.#handlers.onCoordsChange(node, coords); }
+  #handleCoordsSave(node, coords)    { this.#handlers.onCoordsSave(node, coords); }
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
-  async _deleteSelectedRegion(regionId) {
-    if (!this._mapName) return;
-    const node = this._registry.getNode(regionId);
+  async #deleteSelectedRegion(regionId) {
+    if (!this.#mapName) return;
+    const node = this.#registry.getNode(regionId);
     if (!node || node.synthetic_id) return;
     try {
       // Save the spawn link before deleting so undo can restore it
-      const spawnLink = this._panel.getSpawnLink(regionId);
-      await api.deleteSpawn(this._mapName, regionId).catch(() => {});
-      const { snapshot } = await api.deleteRegion(this._mapName, regionId);
+      const spawnLink = this.#panel.getSpawnLink(regionId);
+      await api.deleteSpawn(this.#mapName, regionId).catch(() => {});
+      const { snapshot } = await api.deleteRegion(this.#mapName, regionId);
       if (spawnLink) {
-        this._spawnLinkCache.set(snapshot.root_id, {
+        this.#spawnLinkCache.set(snapshot.root_id, {
           region_id: regionId,
           team: spawnLink.team ?? "",
           yaw:  spawnLink.yaw  ?? 0,
           kit:  spawnLink.kit  ?? "",
         });
       }
-      this._canvas.removeRegion(regionId);
-      this._registry.unregister(regionId);  // fires deselect → clears anchors + panel
-      this._deleteHistory.pushDelete(snapshot);
-      await this._panel.reloadSpawnList(this._mapName);
+      this.#canvas.removeRegion(regionId);
+      this.#registry.unregister(regionId);  // fires deselect → clears anchors + panel
+      this.#deleteHistory.pushDelete(snapshot);
+      await this.#panel.reloadSpawnList(this.#mapName);
     } catch (err) {
       console.error("Teams: failed to delete region:", err);
     }
@@ -208,59 +220,59 @@ export class TeamsActivity {
 
   // ── Tool management ────────────────────────────────────────────────────────
 
-  _attachToolListeners() {
-    document.getElementById("pt-tool-move").addEventListener("click",     () => this._tools.setTool("move"));
-    document.getElementById("pt-tool-select").addEventListener("click",   () => this._tools.setTool(null));
+  #attachToolListeners() {
+    document.getElementById("pt-tool-move").addEventListener("click",     () => this.#tools.setTool("move"));
+    document.getElementById("pt-tool-select").addEventListener("click",   () => this.#tools.setTool(null));
     document.getElementById("pt-tool-cylinder").addEventListener("click", () => {
-      this._tools.setTool(this._tools.activeTool === "cylinder" ? "move" : "cylinder");
+      this.#tools.setTool(this.#tools.activeTool === "cylinder" ? "move" : "cylinder");
     });
     document.getElementById("pt-tool-point").addEventListener("click", () => {
-      this._tools.setTool(this._tools.activeTool === "point" ? "move" : "point");
+      this.#tools.setTool(this.#tools.activeTool === "point" ? "move" : "point");
     });
 
     document.addEventListener("keydown", (e) => {
-      if (this._el.hidden) return;
+      if (this.#el.hidden) return;
       if (isEditableTarget(e)) return;
 
       // Undo / redo
-      if (e.ctrlKey && e.key === "z" && this._mapName) {
+      if (e.ctrlKey && e.key === "z" && this.#mapName) {
         e.preventDefault();
-        this._deleteHistory.undo(
+        this.#deleteHistory.undo(
           async (snapshot) => {
-            await api.restoreRegion(this._mapName, snapshot);
+            await api.restoreRegion(this.#mapName, snapshot);
             // Re-create the spawn link that was deleted alongside the region
-            const savedLink = this._spawnLinkCache.get(snapshot.root_id);
+            const savedLink = this.#spawnLinkCache.get(snapshot.root_id);
             if (savedLink) {
-              await api.addSpawn(this._mapName, savedLink).catch(() => {});
-              this._spawnLinkCache.delete(snapshot.root_id);
+              await api.addSpawn(this.#mapName, savedLink).catch(() => {});
+              this.#spawnLinkCache.delete(snapshot.root_id);
             }
-            await this._reloadCanvas(this._mapName);
-            await this._panel.reloadSpawnList(this._mapName);
-            this._registry.select(snapshot.root_id);
+            await this.#reloadCanvas(this.#mapName);
+            await this.#panel.reloadSpawnList(this.#mapName);
+            this.#registry.select(snapshot.root_id);
           },
           err => console.error("Teams undo failed:", err),
         );
         return;
       }
-      if (e.ctrlKey && e.key === "y" && this._mapName) {
+      if (e.ctrlKey && e.key === "y" && this.#mapName) {
         e.preventDefault();
-        this._deleteHistory.redo(
+        this.#deleteHistory.redo(
           async (snapshot) => {
-            // Save the spawn link again before re-deleting (mirrors _deleteSelectedRegion)
+            // Save the spawn link again before re-deleting (mirrors #deleteSelectedRegion)
             const regionId = snapshot.root_id;
-            const spawnLink = this._panel.getSpawnLink(regionId);
-            await api.deleteSpawn(this._mapName, regionId).catch(() => {});
+            const spawnLink = this.#panel.getSpawnLink(regionId);
+            await api.deleteSpawn(this.#mapName, regionId).catch(() => {});
             if (spawnLink) {
-              this._spawnLinkCache.set(regionId, {
+              this.#spawnLinkCache.set(regionId, {
                 region_id: regionId,
                 team: spawnLink.team ?? "",
                 yaw:  spawnLink.yaw  ?? 0,
                 kit:  spawnLink.kit  ?? "",
               });
             }
-            await api.deleteRegion(this._mapName, regionId);
-            await this._reloadCanvas(this._mapName);
-            await this._panel.reloadSpawnList(this._mapName);
+            await api.deleteRegion(this.#mapName, regionId);
+            await this.#reloadCanvas(this.#mapName);
+            await this.#panel.reloadSpawnList(this.#mapName);
           },
           err => console.error("Teams redo failed:", err),
         );
@@ -268,21 +280,21 @@ export class TeamsActivity {
       }
 
       // Tool shortcuts
-      if (e.key === "m" || e.key === "M") this._tools.setTool("move");
-      if (e.key === "s" || e.key === "S") this._tools.setTool(null);
+      if (e.key === "m" || e.key === "M") this.#tools.setTool("move");
+      if (e.key === "s" || e.key === "S") this.#tools.setTool(null);
       if (e.key === "y" || e.key === "Y") {
-        this._tools.setTool(this._tools.activeTool === "cylinder" ? "move" : "cylinder");
+        this.#tools.setTool(this.#tools.activeTool === "cylinder" ? "move" : "cylinder");
       }
       if (e.key === "p" || e.key === "P") {
-        this._tools.setTool(this._tools.activeTool === "point" ? "move" : "point");
+        this.#tools.setTool(this.#tools.activeTool === "point" ? "move" : "point");
       }
-      if (e.key === "Escape") this._tools.setTool("move");
+      if (e.key === "Escape") this.#tools.setTool("move");
 
       // Delete selected spawn region
-      const selectedSpawnId = this._panel.getSelectedRegionId();
+      const selectedSpawnId = this.#panel.getSelectedRegionId();
       if ((e.key === "Delete" || e.key === "Backspace") && selectedSpawnId) {
         e.preventDefault();
-        this._deleteSelectedRegion(selectedSpawnId);
+        this.#deleteSelectedRegion(selectedSpawnId);
       }
     });
   }
