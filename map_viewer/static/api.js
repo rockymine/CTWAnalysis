@@ -39,12 +39,6 @@ export async function fetchPipelineStatus(name) {
   return r.json();
 }
 
-export async function fetchMaps() {
-  const r = await fetch("/api/maps");
-  if (!r.ok) throw new Error("Failed to load map list");
-  return r.json();
-}
-
 export async function fetchMapData(mapName) {
   const r = await fetch(`/api/map/${encodeURIComponent(mapName)}/map-data`);
   if (!r.ok) throw new Error(`Failed to load map data for ${mapName}`);
