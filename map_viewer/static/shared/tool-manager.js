@@ -30,7 +30,6 @@ export class ToolManager {
     }
   }
 
-  setEnabled(enabled) {
-    for (const btn of this.#buttons.values()) btn.disabled = !enabled;
-  }
+  enable()              { this.setEnabled(true); }
+  setEnabled(enabled)   { for (const btn of this.#buttons.values()) btn.disabled = !enabled; }
 }
