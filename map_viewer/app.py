@@ -21,33 +21,33 @@ import json
 import logging
 import queue
 import threading
+import urllib.error
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from flask import Flask, Response, jsonify, abort, render_template, request, stream_with_context
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file, stream_with_context
 
-from map_viewer.services.map_data import (
-    load_map_data, 
-    save_map_data
-)
-from map_viewer.services.region_xml import regions_to_xml
 from common.visualization.block_colors import block_color
-
+from layout_analysis.wool_query import query_resources_in_region, query_wool_in_region
+from map_viewer.services import region_editor
 from map_viewer.services.config import get_output_root, load_config, save_config as _save_config
+from map_viewer.services.map_data import load_map_data, save_map_data
 from map_viewer.services.pipeline import check_pipeline_status, run_pipeline_steps
+from map_viewer.services.region_editor import InvalidRegionPayload, RegionConflict, RegionNotFound
 from map_viewer.services.region_tree import encode_region_tree_categorized
+from map_viewer.services.region_xml import regions_to_xml
+from map_viewer.services.regions import resolve_region_bounds
 from map_viewer.services.spawns import spawn_region_id
 from map_viewer.services.wools import (
-    wool_color_to_damage,
-    find_pgm_spawner,
-    determine_respawn_type,
     collect_mob_entity_types,
+    determine_respawn_type,
+    find_pgm_spawner,
     find_relevant_renewables,
+    wool_color_to_damage,
 )
-from map_viewer.services.regions import resolve_region_bounds
-from map_viewer.services import region_editor
-from map_viewer.services.region_editor import RegionNotFound, RegionConflict, InvalidRegionPayload
 
 
 _METADATA_FIELDS = {
@@ -125,7 +125,6 @@ def create_app() -> Flask:
 
     @app.route("/api/source-map/<name>/thumbnail")
     def source_map_thumbnail(name: str):
-        from flask import send_file
         config = load_config()
         maps_folder = Path(config.get("maps_folder", "").strip())
         candidates = [
@@ -376,7 +375,6 @@ def create_app() -> Flask:
 
         Query params: min_x, min_z, max_x, max_z (all required, numeric).
         """
-        from layout_analysis.wool_query import query_wool_in_region
         try:
             min_x = float(request.args["min_x"])
             min_z = float(request.args["min_z"])
@@ -402,7 +400,6 @@ def create_app() -> Flask:
 
         Query params: min_x, min_z, max_x, max_z (all required, numeric).
         """
-        from layout_analysis.wool_query import query_resources_in_region
         try:
             min_x = float(request.args["min_x"])
             min_z = float(request.args["min_z"])
@@ -773,8 +770,6 @@ def create_app() -> Flask:
                 "mob_spawner_count": int,
             }
         """
-        from layout_analysis.wool_query import query_wool_in_region
-
         out_dir = get_output_root() / name
         data, _ = load_map_data(name)
         wools: list = data.get("wools", [])
