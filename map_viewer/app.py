@@ -1069,7 +1069,7 @@ def create_app() -> Flask:
         data = json.loads(data_path.read_text(encoding="utf-8"))
         spawns: list = data.setdefault("spawns", [])
 
-        spawn = next((s for s in spawns if _spawn_region_id(s) == region_id), None)
+        spawn = next((s for s in spawns if spawn_region_id(s) == region_id), None)
         if spawn is None:
             return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
 
@@ -1093,10 +1093,10 @@ def create_app() -> Flask:
         data = json.loads(data_path.read_text(encoding="utf-8"))
         spawns: list = data.setdefault("spawns", [])
 
-        if not any(_spawn_region_id(s) == region_id for s in spawns):
+        if not any(spawn_region_id(s) == region_id for s in spawns):
             return jsonify({"error": f"no spawn for region {region_id!r}"}), 404
 
-        data["spawns"] = [s for s in spawns if _spawn_region_id(s) != region_id]
+        data["spawns"] = [s for s in spawns if spawn_region_id(s) != region_id]
         data_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return jsonify({"ok": True})
 
