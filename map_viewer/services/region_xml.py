@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from map_viewer.services.region_tree import _collect_named_child_ids
+from map_viewer.services.region_tree import collect_named_child_ids
 
 _COMPOSITE_TYPES = {"union", "negative", "complement", "intersect"}
 
@@ -52,32 +52,26 @@ def _region_to_xml(region: dict, indent: int = 0) -> str:
 
     if region_type == "cylinder":
         base = region.get("base") or {}
-        cx = (min_x + max_x) / 2 if min_x is not None and max_x is not None else base.get("x")
-        cz = (min_z + max_z) / 2 if min_z is not None and max_z is not None else base.get("z")
         return (
             f'{pad}<cylinder{id_attr}'
-            f' base="{_fmt(cx, base.get("y"), cz)}"'
+            f' base="{_fmt(base.get("x"), base.get("y"), base.get("z"))}"'
             f' radius="{_fmt_num(region.get("radius"))}"'
             f' height="{_fmt_num(region.get("height"))}"/>'
         )
 
     if region_type == "circle":
         center = region.get("center") or {}
-        cx = (min_x + max_x) / 2 if min_x is not None and max_x is not None else center.get("x")
-        cz = (min_z + max_z) / 2 if min_z is not None and max_z is not None else center.get("z")
         return (
             f'{pad}<circle{id_attr}'
-            f' center="{_fmt(cx, cz)}"'
+            f' center="{_fmt(center.get("x"), center.get("z"))}"'
             f' radius="{_fmt_num(region.get("radius"))}"/>'
         )
 
     if region_type == "sphere":
         origin = region.get("origin") or {}
-        cx = (min_x + max_x) / 2 if min_x is not None and max_x is not None else origin.get("x")
-        cz = (min_z + max_z) / 2 if min_z is not None and max_z is not None else origin.get("z")
         return (
             f'{pad}<sphere{id_attr}'
-            f' origin="{_fmt(cx, origin.get("y"), cz)}"'
+            f' origin="{_fmt(origin.get("x"), origin.get("y"), origin.get("z"))}"'
             f' radius="{_fmt_num(region.get("radius"))}"/>'
         )
 
@@ -97,7 +91,7 @@ def regions_to_xml(regions_dict: dict) -> str:
     """Serialise a map_data.json regions dict to a ``<regions>`` XML block."""
     named_child_ids: set[str] = set()
     for region in regions_dict.values():
-        _collect_named_child_ids(region, named_child_ids)
+        collect_named_child_ids(region, named_child_ids)
 
     roots = [r for rid, r in regions_dict.items() if rid not in named_child_ids]
     lines = ["<regions>"] + [_region_to_xml(r, indent=1) for r in roots] + ["</regions>"]

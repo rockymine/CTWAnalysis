@@ -21,12 +21,12 @@ def _refine_category(base_cat: str, region_type: str) -> str:
     return base_cat
 
 
-def _collect_named_child_ids(region: dict, out: set[str]) -> None:
+def collect_named_child_ids(region: dict, out: set[str]) -> None:
     for child in region.get("children", []):
         child_id = child.get("id") or ""
         if child_id:
             out.add(child_id)
-        _collect_named_child_ids(child, out)
+        collect_named_child_ids(child, out)
 
 
 def _encode_bounds(region: dict) -> dict | None:
@@ -120,7 +120,7 @@ def encode_region_tree_categorized(
 
     named_child_ids: set[str] = set()
     for region in regions_dict.values():
-        _collect_named_child_ids(region, named_child_ids)
+        collect_named_child_ids(region, named_child_ids)
 
     root_nodes = [
         _encode_node(region)
