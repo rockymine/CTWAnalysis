@@ -447,10 +447,16 @@ function renderIslandSVG(islands) {
     const color    = ISLAND_PALETTE[i % ISLAND_PALETTE.length];
     const excluded = state.excludeIslands.includes(island.id);
 
-    const d = poly.exterior.map((pt, j) => `${j === 0 ? "M" : "L"}${pt[0]},${pt[1]}`).join(" ") + " Z";
+    const ringToPath = (pts) =>
+      pts.map((pt, j) => `${j === 0 ? "M" : "L"}${pt[0]},${pt[1]}`).join(" ") + " Z";
+    let d = ringToPath(poly.exterior);
+    if (poly.holes && poly.holes.length) {
+      for (const ring of poly.holes) d += " " + ringToPath(ring);
+    }
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
+    path.setAttribute("fill-rule", "evenodd");
     const hatchId = `cfg-hatch-${i % ISLAND_PALETTE.length}`;
     path.setAttribute("fill",          excluded ? `url(#${hatchId})` : color);
     path.setAttribute("fill-opacity",  excluded ? "0.55" : "0.20");
