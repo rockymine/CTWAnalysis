@@ -3,10 +3,14 @@
  *
  * Data flow:
  *   init → loadExistingConfig + loadLayerPreviews + loadIslandData (parallel)
- *   runLayerExtraction → SSE → reload layer previews
- *   selectLayer → populate block dropdown
+ *          → checkAndShowContinue (if already configured + pipeline done)
+ *   runLayerExtraction → SSE steps=layout_all → reload layer previews
+ *   selectLayer → populate block dropdown → markDirty
  *   selectIsland → highlight SVG + list row + inspector
- *   saveConfig → PATCH /api/layout-config/<name> → show Continue link
+ *   saveConfig → PATCH /api/layout-config/<name>
+ *             → runFullPipeline (SSE full pipeline, force=1)
+ *             → loadIslandData (refresh from fresh map_context.json)
+ *             → show Continue link
  */
 
 import { blockDataToDataUrl } from "./shared/block-render.js";
@@ -17,6 +21,7 @@ import {
   fetchLayoutLayers,
   fetchObserverIslandHint,
   fetchContext,
+  fetchPipelineStatus,
 } from "./api.js";
 
 // ── Map name ──────────────────────────────────────────────────────────────
@@ -42,6 +47,8 @@ const state = {
   viewBox:          null,  // {x, y, w, h} current SVG viewBox
   initialViewBox:   null,  // viewBox that fits all islands
   isRunning:        false,
+  pipelineRunning:  false, // true while full pipeline SSE is in flight
+  isDirty:          false, // true when config has changed since last save
   bboxIsAuto:       true,  // false once user has manually edited any bbox field
   boundsTable:      null,  // boundsTable instance (created after DOM is ready)
 };
@@ -66,7 +73,10 @@ const cfgBboxSection          = document.getElementById("cfg-bbox-section");
 const cfgBboxDivider          = document.getElementById("cfg-bbox-divider");
 const saveBtn                 = document.getElementById("save-btn");
 const saveStatus              = document.getElementById("save-status");
+const dirtyBadge              = document.getElementById("dirty-badge");
 const continueBtn             = document.getElementById("continue-btn");
+const pipelineBar             = document.getElementById("cfg-pipeline-bar");
+const pipelineStepList        = document.getElementById("cfg-pipeline-step-list");
 const statusEl                = document.getElementById("status");
 const cfgToolMove             = document.getElementById("cfg-tool-move");
 const cfgToolSelect           = document.getElementById("cfg-tool-select");
@@ -101,13 +111,14 @@ for (const layer of LAYERS) {
   radio.addEventListener("change", () => { if (radio.checked) selectLayer(layer); });
 }
 
-function selectLayer(layer) {
+function selectLayer(layer, silent = false) {
   state.selectedLayer = layer;
   for (const l of LAYERS) {
     const panel = document.getElementById(`panel-${l}`);
     if (panel) panel.classList.toggle("layer-panel--selected", l === layer);
   }
   populateBlockDropdown(layer);
+  if (!silent) markDirty();
 }
 
 function populateBlockDropdown(layer) {
@@ -237,6 +248,7 @@ blockExcludeSelect.addEventListener("change", () => {
     state.excludeIds.push(id);
     renderExcludeList();
     populateBlockDropdown(state.selectedLayer);
+    markDirty();
   }
   blockExcludeSelect.value = "";
 });
@@ -275,6 +287,7 @@ function renderExcludeList() {
       state.excludeIds = state.excludeIds.filter(x => x !== id);
       renderExcludeList();
       if (state.selectedLayer) populateBlockDropdown(state.selectedLayer);
+      markDirty();
     });
 
     row.appendChild(swatch);
@@ -531,6 +544,7 @@ function toggleIslandExclude(id) {
   if (state.bboxIsAuto) fillDefaultBbox();
   renderIslandList(state.islandData);
   updateIslandSVGState();
+  markDirty();
 }
 
 // ── Island selection ───────────────────────────────────────────────────────
@@ -574,7 +588,7 @@ function renderInspector(island) {
 function ensureBoundsTable() {
   if (state.boundsTable) return;
   state.boundsTable = boundsTable(["X", "Z"], {
-    onInput: () => { state.bboxIsAuto = false; },
+    onInput: () => { state.bboxIsAuto = false; markDirty(); },
   });
   cfgBboxSection.appendChild(state.boundsTable.el);
 }
@@ -649,7 +663,7 @@ async function loadExistingConfig() {
 
     if (cfg.layer) {
       const radio = document.getElementById(`radio-${cfg.layer}`);
-      if (radio) { radio.checked = true; selectLayer(cfg.layer); }
+      if (radio) { radio.checked = true; selectLayer(cfg.layer, true); }
     }
 
     if (cfg.exclude && cfg.exclude.length) {
@@ -669,6 +683,7 @@ async function loadExistingConfig() {
       });
       state.bboxIsAuto = false;
     }
+    markClean();
   } catch (_) {}
 }
 
@@ -677,6 +692,7 @@ async function loadExistingConfig() {
 saveBtn.addEventListener("click", saveConfig);
 
 async function saveConfig() {
+  if (state.isRunning || state.pipelineRunning) return;
   if (!state.selectedLayer) {
     flashSave("Select a layer first.", true);
     return;
@@ -703,13 +719,20 @@ async function saveConfig() {
   try {
     saveBtn.disabled = true;
     await patchLayoutConfig(MAP_NAME, payload);
-    flashSave("Saved.");
+    markClean();
+    saveStatus.textContent = "Saved. Running pipeline…";
+    saveStatus.className   = "config-save-msg config-save-msg--ok";
+    await runFullPipeline();
+    saveStatus.textContent = "Pipeline complete.";
+    setTimeout(() => { saveStatus.textContent = ""; saveStatus.className = "config-save-msg"; }, 3000);
     continueBtn.href   = `/editor?map=${enc(MAP_NAME)}`;
     continueBtn.hidden = false;
+    await loadIslandData();
   } catch (err) {
     flashSave(`Error: ${err.message}`, true);
   } finally {
-    saveBtn.disabled = false;
+    saveBtn.disabled        = false;
+    state.pipelineRunning   = false;
   }
 }
 
@@ -717,6 +740,71 @@ function flashSave(msg, isError = false) {
   saveStatus.textContent = msg;
   saveStatus.className   = "config-save-msg" + (isError ? " config-save-msg--error" : " config-save-msg--ok");
   setTimeout(() => { saveStatus.textContent = ""; saveStatus.className = "config-save-msg"; }, 3000);
+}
+
+// ── Dirty state ────────────────────────────────────────────────────────────
+
+function markDirty() {
+  state.isDirty      = true;
+  dirtyBadge.hidden  = false;
+  continueBtn.hidden = true;
+}
+
+function markClean() {
+  state.isDirty     = false;
+  dirtyBadge.hidden = true;
+}
+
+// ── Full pipeline (post-save) ──────────────────────────────────────────────
+
+function runFullPipeline() {
+  return new Promise((resolve, reject) => {
+    state.pipelineRunning  = true;
+    pipelineBar.hidden     = false;
+    pipelineStepList.innerHTML = "";
+    const stepEls = {};
+    let settled   = false;
+
+    const url = `/api/source-map/${enc(MAP_NAME)}/pipeline/run?force=1`;
+    const es  = new EventSource(url);
+
+    es.addEventListener("step", (e) => {
+      const { step, status, label, detail } = JSON.parse(e.data);
+      if (!stepEls[step]) {
+        const el = document.createElement("span");
+        el.className  = "cfg-pipeline-step";
+        el.dataset.step = step;
+        el.textContent  = label;
+        pipelineStepList.appendChild(el);
+        stepEls[step] = el;
+      }
+      stepEls[step].dataset.status = status;
+      if (status === "done" && detail) stepEls[step].title = detail;
+    });
+
+    es.addEventListener("done", () => {
+      if (settled) return;
+      settled = true;
+      es.close();
+      resolve();
+    });
+
+    es.addEventListener("error", (e) => {
+      if (settled) return;
+      settled = true;
+      const data = e.data ? JSON.parse(e.data) : {};
+      es.close();
+      reject(new Error(data.message || "Pipeline failed"));
+    });
+
+    es.onerror = () => {
+      if (settled) return;
+      if (es.readyState === EventSource.CLOSED) {
+        settled = true;
+        reject(new Error("Pipeline connection lost"));
+      }
+    };
+  });
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -729,12 +817,24 @@ function setStatus(msg) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
+async function checkAndShowContinue() {
+  if (!state.selectedLayer) return;
+  try {
+    const status = await fetchPipelineStatus(MAP_NAME);
+    if (status.all_done) {
+      continueBtn.href   = `/editor?map=${enc(MAP_NAME)}`;
+      continueBtn.hidden = false;
+    }
+  } catch (_) {}
+}
+
 async function init() {
   await Promise.all([
     loadExistingConfig(),
     loadLayerPreviews(),
     loadIslandData(),
   ]);
+  await checkAndShowContinue();
 }
 
 init();

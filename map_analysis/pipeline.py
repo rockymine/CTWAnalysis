@@ -91,14 +91,12 @@ def _generate_skeleton_visuals(
     map_name: str,
     plots: bool = True,
 ) -> None:
-    """Write island and skeleton debug images.
+    """Write island and skeleton debug images. No-op when plots=False.
 
-    Always generated (in images/):
+    When plots=True (in images/):
         - island_detail.png
         - unique_islands.png
-
-    Only when plots=True:
-        - images/island_{id}_debug.png (per canonical shape)
+        - island_{id}_debug.png (per canonical shape)
         - skeleton_report.txt (at output root)
     """
     from island_analysis.visualization import plot_island_detail
@@ -107,6 +105,9 @@ def _generate_skeleton_visuals(
         plot_unique_islands,
         generate_skeleton_report,
     )
+
+    if not plots:
+        return
 
     logger.debug("  Generating visualizations...")
 
@@ -118,27 +119,25 @@ def _generate_skeleton_visuals(
         output_path=str(images_dir / 'island_detail.png'),
     )
 
-    if plots:
-        result_by_id = {r.island_id: r for r in skeletons}
-        for key, ids in canonical_groups.items():
-            rep_id = min(ids)
-            if rep_id in result_by_id:
-                plot_island_debug(
-                    result_by_id[rep_id],
-                    str(images_dir / f'island_{rep_id}_debug.png'),
-                )
+    result_by_id = {r.island_id: r for r in skeletons}
+    for key, ids in canonical_groups.items():
+        rep_id = min(ids)
+        if rep_id in result_by_id:
+            plot_island_debug(
+                result_by_id[rep_id],
+                str(images_dir / f'island_{rep_id}_debug.png'),
+            )
 
     plot_unique_islands(
         skeletons, canonical_groups,
         str(images_dir / 'unique_islands.png'),
     )
 
-    if plots:
-        generate_skeleton_report(
-            skeletons, canonical_groups,
-            str(island_output_dir / 'skeleton_report.txt'),
-            map_name=map_name,
-        )
+    generate_skeleton_report(
+        skeletons, canonical_groups,
+        str(island_output_dir / 'skeleton_report.txt'),
+        map_name=map_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1020,13 +1019,13 @@ def assemble_map(
     island_graphs = build_island_graphs(final_islands, skeletons, node_annotations)
     map_graph_exporter.save(island_graphs, map_ctx.map_name, map_output_dir)
 
-    # Map overview plot (needs map_context for polygons + build regions)
-    from skeleton_analysis.visualization import plot_map_overview
-    plot_map_overview(
-        skeletons,
-        str(skeleton_output_dir / 'map_overview.png'),
-        map_context=map_context_exporter.to_dict(map_ctx),
-    )
+    if plots:
+        from skeleton_analysis.visualization import plot_map_overview
+        plot_map_overview(
+            skeletons,
+            str(skeleton_output_dir / 'map_overview.png'),
+            map_context=map_context_exporter.to_dict(map_ctx),
+        )
 
     logger.debug("  map_context.json written")
 

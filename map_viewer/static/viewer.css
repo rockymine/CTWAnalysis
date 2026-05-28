@@ -397,6 +397,26 @@ body {
 .config-save-msg { font-size: 12px; }
 .config-save-msg--ok    { color: var(--color-success); }
 .config-save-msg--error { color: var(--color-error); }
+.cfg-dirty-badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 10px;
+  background: var(--color-warn, #d97706); color: #fff;
+  letter-spacing: 0.04em; flex-shrink: 0;
+}
+.cfg-pipeline-bar {
+  display: flex; align-items: center; padding: 5px 16px;
+  background: var(--bg-deep); border-bottom: 1px solid var(--border);
+  font-size: 12px; flex-shrink: 0;
+}
+.cfg-pipeline-step-list { display: flex; align-items: center; gap: 0; }
+.cfg-pipeline-step {
+  padding: 1px 10px; color: var(--text-dim); position: relative;
+}
+.cfg-pipeline-step + .cfg-pipeline-step::before {
+  content: "›"; position: absolute; left: 0; color: var(--text-dim);
+}
+.cfg-pipeline-step[data-status="running"] { color: var(--text-secondary); font-style: italic; }
+.cfg-pipeline-step[data-status="done"]    { color: var(--color-success); }
+.cfg-pipeline-step[data-status="error"]   { color: var(--color-error); }
 
 /* ── Action buttons ── */
 .action-btn {

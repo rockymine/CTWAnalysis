@@ -21,8 +21,13 @@
   <span id="status"></span>
   <span class="topbar-divider"></span>
   <span id="save-status" class="config-save-msg"></span>
+  <span id="dirty-badge" class="cfg-dirty-badge" hidden>unsaved</span>
   <button id="save-btn" class="topbar-btn">Save</button>
   <a id="continue-btn" class="topbar-btn" hidden>Continue to Editor →</a>
+</div>
+
+<div id="cfg-pipeline-bar" class="cfg-pipeline-bar" hidden>
+  <div id="cfg-pipeline-step-list" class="cfg-pipeline-step-list"></div>
 </div>
 
 <div id="main">
@@ -131,7 +136,7 @@
           <h2 class="section-title">Island Exclusions</h2>
         </div>
         <div class="cfg-excl-section-body">
-          <div id="island-unavailable" class="cfg-unavailable">Run the full pipeline from the dashboard to unlock island selection.</div>
+          <div id="island-unavailable" class="cfg-unavailable">Save your configuration to run the pipeline and unlock island selection.</div>
           <div id="island-list" hidden></div>
         </div>
 
@@ -161,7 +166,7 @@
             <g id="island-map-g"></g>
           </svg>
           <div id="island-canvas-placeholder" class="cfg-map-placeholder">
-            Run the full pipeline to see the island map.
+            Save your configuration to generate the island map.
           </div>
         </div>
       </div>

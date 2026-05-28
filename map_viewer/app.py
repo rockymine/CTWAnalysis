@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import logging
 
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend; must be set before pyplot is imported
+
 from flask import Flask
 
 from map_viewer.routes import (
