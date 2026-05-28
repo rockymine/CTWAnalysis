@@ -10,7 +10,7 @@ from .extractors import (
     Y0LayerExtractor,
     TopSurfaceExtractor,
     LowestBedrockExtractor,
-    LowestSolidLayerExtractor,
+    LowestSolidExtractor,
     VerticalSegmentsExtractor,
 )
 from .region_reader import RegionReader
@@ -25,7 +25,7 @@ __all__ = [
     "Y0LayerExtractor",
     "TopSurfaceExtractor",
     "LowestBedrockExtractor",
-    "LowestSolidLayerExtractor",
+    "LowestSolidExtractor",
     "VerticalSegmentsExtractor",
     "RegionReader",
     "save_point_plot",

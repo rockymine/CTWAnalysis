@@ -2,11 +2,11 @@
 Extraction modes for analyzing Minecraft world layouts.
 
 Provides five extractors:
-1. Y0LayerExtractor            - Extracts non-air blocks at world y=0
-2. TopSurfaceExtractor         - Finds highest non-excluded non-air block in each column
-3. LowestBedrockExtractor      - Finds lowest bedrock (block 7) in each column
-4. LowestSolidLayerExtractor   - Finds lowest non-excluded non-air block in each column
-5. VerticalSegmentsExtractor   - Finds all contiguous Y-ranges of solid blocks per column
+1. Y0LayerExtractor          - Extracts non-air blocks at world y=0
+2. TopSurfaceExtractor       - Finds highest non-excluded non-air block in each column
+3. LowestSolidExtractor      - Finds lowest non-excluded non-air block in each column
+4. LowestBedrockExtractor    - Finds lowest bedrock (block 7) in each column
+5. VerticalSegmentsExtractor - Finds all contiguous Y-ranges of solid blocks per column
 
 All extractors read Minecraft Anvil section data as NumPy arrays (one section read per
 section_y rather than one get_block call per block), giving a large speedup for
@@ -101,6 +101,15 @@ def _build_full_blocks(chunk) -> np.ndarray:
         if 0 <= y_start < 256:
             full[y_start:y_start + 16] = blocks_3d
     return full
+
+
+def _build_exclude_lut(exclude: frozenset[int]) -> np.ndarray:
+    """Return a 65536-element bool LUT where True means the block ID is excluded (air or in exclude)."""
+    lut = np.zeros(65536, dtype=bool)
+    lut[0] = True
+    for i in exclude:
+        lut[i] = True
+    return lut
 
 
 # ---------------------------------------------------------------------------
@@ -255,10 +264,11 @@ class TopSurfaceExtractor:
                               Read from <maxBuildHeight> in map.xml.
         """
         self.reader = region_reader
-        self._exclude_ids: set[int] = set(exclude_ids) if exclude_ids else set()
-        if skip_non_solid:
-            self._exclude_ids |= NON_SOLID_BLOCK_IDS
         self._max_build_height: int | None = max_build_height
+        exclude: frozenset[int] = frozenset(exclude_ids) if exclude_ids else frozenset()
+        if skip_non_solid:
+            exclude = exclude | NON_SOLID_BLOCK_IDS
+        self._exclude_lut = _build_exclude_lut(exclude)
 
     def extract(self) -> pd.DataFrame:
         """
@@ -304,9 +314,7 @@ class TopSurfaceExtractor:
                         continue
 
                 # Solid mask: non-air and not excluded
-                solid = blocks_3d != 0
-                for exc in self._exclude_ids:
-                    solid &= blocks_3d != exc
+                solid = ~self._exclude_lut[blocks_3d]
 
                 # For sections that straddle the build height, zero out rows
                 # above the limit. limit_local_y is the first local index to exclude
@@ -362,87 +370,13 @@ class TopSurfaceExtractor:
         })
 
 
-class LowestBedrockExtractor:
-    """
-    Finds the lowest bedrock block (block_id=7) in each column.
-
-    Criterion: column contains at least one bedrock block
-    """
-
-    def __init__(self, region_reader: RegionReader) -> None:
-        self.reader = region_reader
-
-    def extract(self) -> pd.DataFrame:
-        """
-        Extract the lowest bedrock block in each column.
-
-        Returns:
-            DataFrame with columns: world_x, world_z, y, block_data
-        """
-        all_wx: list[np.ndarray] = []
-        all_wz: list[np.ndarray] = []
-        all_y:  list[np.ndarray] = []
-        all_dt: list[np.ndarray] = []
-        chunk_count = 0
-
-        logger.debug("Extracting lowest bedrock blocks...")
-
-        for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
-            chunk_count += 1
-            if chunk_count % 100 == 0:
-                n = sum(len(a) for a in all_wx)
-                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
-
-            found_y = np.full((16, 16), -1, dtype=np.int16)
-            found_dt = np.zeros((16, 16), dtype=np.uint8)
-
-            for section_y, blocks_3d, data_3d in _iter_chunk_sections(chunk):
-                if np.all(found_y >= 0):
-                    break
-
-                bedrock_mask = blocks_3d == 7          # (16, 16, 16)
-                not_found = found_y < 0                # (16, 16)
-                has_any = bedrock_mask.any(axis=0)     # (16, 16)
-                to_process = not_found & has_any
-
-                if not np.any(to_process):
-                    continue
-
-                # Lowest bedrock: first True along y axis
-                first_y = np.argmax(bedrock_mask, axis=0)  # (16, 16)
-                zz, xx = np.where(to_process)
-                local_ys = first_y[zz, xx]
-
-                found_y[zz, xx] = (section_y * 16 + local_ys).astype(np.int16)
-                found_dt[zz, xx] = data_3d[local_ys, zz, xx]
-
-            zz, xx = np.where(found_y >= 0)
-            if len(zz):
-                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
-                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
-                all_y.append(found_y[zz, xx])
-                all_dt.append(found_dt[zz, xx])
-
-        total = sum(len(a) for a in all_wx)
-        logger.debug(f"Completed lowest bedrock extraction: {chunk_count} chunks, {total} matching points")
-
-        if not all_wx:
-            return pd.DataFrame(columns=['world_x', 'world_z', 'y', 'block_data'])
-        return pd.DataFrame({
-            'world_x': np.concatenate(all_wx),
-            'world_z': np.concatenate(all_wz),
-            'y': np.concatenate(all_y),
-            'block_data': np.concatenate(all_dt),
-        })
-
-
-# Default block IDs excluded by LowestSolidLayerExtractor.
+# Default block IDs excluded by LowestSolidExtractor.
 # Block 36 (PISTON_MOVING_PIECE) is used by many maps as a build-region
 # boundary marker and should never be treated as part of an island.
 _DEFAULT_SOLID_EXCLUDE: frozenset[int] = frozenset({36})
 
 
-class LowestSolidLayerExtractor:
+class LowestSolidExtractor:
     """
     Finds the lowest non-excluded non-air block in each column.
 
@@ -477,10 +411,8 @@ class LowestSolidLayerExtractor:
                          override (an empty set means only air is excluded).
         """
         self.reader = region_reader
-        self._exclude_ids: frozenset[int] = (
-            frozenset(exclude_ids) if exclude_ids is not None
-            else _DEFAULT_SOLID_EXCLUDE
-        )
+        exclude = frozenset(exclude_ids) if exclude_ids is not None else _DEFAULT_SOLID_EXCLUDE
+        self._exclude_lut = _build_exclude_lut(exclude)
 
     def extract(self) -> pd.DataFrame:
         """
@@ -513,9 +445,7 @@ class LowestSolidLayerExtractor:
                     break
 
                 # Solid mask: non-air and not in exclude set
-                solid = blocks_3d != 0
-                for exc in self._exclude_ids:
-                    solid &= blocks_3d != exc
+                solid = ~self._exclude_lut[blocks_3d]
 
                 not_found = found_y < 0               # (16, 16)
                 has_any = solid.any(axis=0)            # (16, 16)
@@ -553,6 +483,30 @@ class LowestSolidLayerExtractor:
             'block_id': np.concatenate(all_id),
             'block_data': np.concatenate(all_dt),
         })
+
+
+class LowestBedrockExtractor:
+    """
+    Finds the lowest bedrock block (block_id=7) in each column.
+
+    Implemented as a filtered view over LowestSolidExtractor: finds the lowest
+    non-air block per column, then retains only columns where that block is bedrock.
+
+    Criterion: column contains at least one bedrock block
+    """
+
+    def __init__(self, region_reader: RegionReader) -> None:
+        self._inner = LowestSolidExtractor(region_reader, exclude_ids=set())
+
+    def extract(self) -> pd.DataFrame:
+        """
+        Extract the lowest bedrock block in each column.
+
+        Returns:
+            DataFrame with columns: world_x, world_z, y, block_id, block_data
+        """
+        df = self._inner.extract()
+        return df[df.block_id == 7].reset_index(drop=True)
 
 
 class VerticalSegmentsExtractor:
@@ -594,9 +548,10 @@ class VerticalSegmentsExtractor:
                             Default 1 includes every single-block layer.
         """
         self.reader = region_reader
-        self._exclude_ids: frozenset[int] = frozenset(exclude_ids) if exclude_ids else frozenset()
+        exclude: frozenset[int] = frozenset(exclude_ids) if exclude_ids else frozenset()
         if skip_non_solid:
-            self._exclude_ids = self._exclude_ids | NON_SOLID_BLOCK_IDS | _SEGMENTS_EXTRA_EXCLUDE
+            exclude = exclude | NON_SOLID_BLOCK_IDS | _SEGMENTS_EXTRA_EXCLUDE
+        self._exclude_lut = _build_exclude_lut(exclude)
         self.min_run_length = min_run_length
 
     def extract(self) -> pd.DataFrame:
@@ -622,11 +577,9 @@ class VerticalSegmentsExtractor:
                 n = sum(len(a) for a in all_wx)
                 logger.debug(f"  Processed {chunk_count} chunks, found {n} runs...")
 
-            full_blocks = _build_full_blocks(chunk)  # (256, 16, 16) uint16
+            full_blocks = _build_full_blocks(chunk)          # (256, 16, 16) uint16
 
-            solid = full_blocks != 0                 # (256, 16, 16) bool
-            for exc in self._exclude_ids:
-                solid &= full_blocks != exc
+            solid = ~self._exclude_lut[full_blocks]          # (256, 16, 16) bool
 
             # Flatten to (256, 256): axis-1 col index = z*16 + x (C-order)
             flat = solid.reshape(256, 256)

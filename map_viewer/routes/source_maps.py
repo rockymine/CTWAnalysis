@@ -176,10 +176,9 @@ def run_pipeline(name: str):
 def layout_layers(name: str):
     out_dir = get_output_root() / name
     # (filename, fixed_block_id_or_None)
-    # bedrock parquet omits block_id since it's always 7 (bedrock)
     layer_files = {
         "y0":           ("layout_y0.parquet",           None),
-        "bedrock":      ("layout_bedrock.parquet",      7),
+        "bedrock":      ("layout_bedrock.parquet",      None),
         "lowest_solid": ("layout_lowest_solid.parquet", None),
         "top_surface":  ("layout_top_surface.parquet",  None),
     }

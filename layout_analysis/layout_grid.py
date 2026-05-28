@@ -130,7 +130,7 @@ def _plot_map(
                     ha='center', va='center', color='gray')
             continue
 
-        default_id = 7 if layer_key == 'layout_bedrock' else 0
+        default_id = 0
         draw_layout_image(ax, df, default_block_id=default_id)
 
         patches = _legend_patches(df)

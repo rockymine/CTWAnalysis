@@ -8,7 +8,7 @@ from .extractors import (
     Y0LayerExtractor,
     TopSurfaceExtractor,
     LowestBedrockExtractor,
-    LowestSolidLayerExtractor,
+    LowestSolidExtractor,
     VerticalSegmentsExtractor,
 )
 from .region_reader import RegionReader
@@ -201,7 +201,7 @@ def analyze_layout(
     if 'lowest_solid' in parquet_files:
         if not parquet_files['lowest_solid'].exists() or force_rerun:
             logger.debug("  Extracting lowest solid layer...")
-            extractor = LowestSolidLayerExtractor(reader)
+            extractor = LowestSolidExtractor(reader)
             df = extractor.extract()
             df.to_parquet(parquet_files['lowest_solid'])
             logger.debug(f"    Saved {parquet_files['lowest_solid'].name} ({len(df)} blocks)")
@@ -296,7 +296,7 @@ def _analyze_layout_configured(
         elif layer == 'lowest_solid':
             # Merge config exclusions with the mandatory block-36 exclusion
             exclude_set = set(exclude) | {36}
-            extractor = LowestSolidLayerExtractor(reader, exclude_ids=exclude_set)
+            extractor = LowestSolidExtractor(reader, exclude_ids=exclude_set)
             df = extractor.extract()
             df.to_parquet(decided_path)
             logger.debug(f"    Saved {decided_path.name} ({len(df)} blocks)")
