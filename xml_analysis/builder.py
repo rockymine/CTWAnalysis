@@ -136,6 +136,9 @@ class MapXMLParser:
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
 
+        # Resolve mirror/translate ref_region_id → source now that all regions are parsed
+        self._resolve_transform_regions(data)
+
         # Parse max build height
         data.max_build_height = self._parse_max_build_height()
 
@@ -424,6 +427,17 @@ class MapXMLParser:
             and data.observer_spawn.region.ref_id in data.regions
         ):
             data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
+
+    @staticmethod
+    def _resolve_transform_regions(data: MapData):
+        """Resolve ref_region_id → source on mirror/translate regions so that
+        get_bounds_2d() works for the reference form (e.g. <mirror region="id"/>)."""
+        for region in data.regions.values():
+            if isinstance(region, (MirrorRegion, TranslateRegion)):
+                if region.source is None and region.ref_region_id:
+                    resolved = data.regions.get(region.ref_region_id)
+                    if resolved is not None:
+                        region.source = resolved
 
     def _parse_wools(self, regions: dict[str, Region]) -> list[Wool]:
         """Parse wool elements.

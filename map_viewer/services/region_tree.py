@@ -78,6 +78,18 @@ def _encode_coords(region: dict) -> dict | None:
         return {"x": pos.get("x"), "y": pos.get("y"), "z": pos.get("z")}
     if region_type == "reference":
         return {"ref_id": region.get("ref_id", "")}
+    if region_type == "mirror":
+        origin = region.get("origin") or {}
+        normal = region.get("normal") or {}
+        return {
+            "origin_x": origin.get("x"), "origin_y": origin.get("y"), "origin_z": origin.get("z"),
+            "normal_x": normal.get("x"), "normal_y": normal.get("y"), "normal_z": normal.get("z"),
+        }
+    if region_type == "translate":
+        offset = region.get("offset") or {}
+        return {
+            "offset_x": offset.get("x"), "offset_y": offset.get("y"), "offset_z": offset.get("z"),
+        }
     return None
 
 
@@ -92,6 +104,8 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
         _encode_node(child, parent_id=region_id, index=i)
         for i, child in enumerate(region.get("children", []))
     ]
+    raw_source = region.get("source")
+    source_node = _encode_node(raw_source) if raw_source else None
     return {
         "id": region_id,
         "type": region_type,
@@ -102,6 +116,7 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
         "is_negative": region_type == "negative",
         "synthetic_id": not bool(xml_id),
         "children": children,
+        "source": source_node,
     }
 
 

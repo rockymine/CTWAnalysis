@@ -1224,6 +1224,8 @@ export class MapCanvas {
       else {
         if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) out.push(item);
         this.#flattenNamed(item.children || [], out);
+        // Recurse into anonymous sources (named sources are already top-level nodes)
+        if (item.source && !item.source.id) this.#flattenNamed([item.source], out);
       }
     }
     return out;
