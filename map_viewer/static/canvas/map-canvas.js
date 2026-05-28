@@ -19,7 +19,7 @@
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
-         ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
+         ringToPath, polyToPath, boundsToRingPath, clipHalfPlane } from "./transform.js";
 import { chatColorHex, dyeColorHex } from "../shared/game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
@@ -918,6 +918,12 @@ export class MapCanvas {
       });
       g.appendChild(shape);
       this.#shapeMap.set(id, { shape, type });
+    } else if (type === "half") {
+      const shape = this.#halfShape(region, color);
+      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
+    } else if (type === "complement" && (region.children || []).some(c => c.type === "half")) {
+      const shape = this.#complementHalfShape(region, color);
+      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
     } else {
       const shape = svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
@@ -929,6 +935,46 @@ export class MapCanvas {
       this.#shapeMap.set(id, { shape, type });
     }
     return g;
+  }
+
+  #halfPolyAttrs(color) {
+    return {
+      fill: color, "fill-opacity": "0.20",
+      stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "4,2",
+      "vector-effect": "non-scaling-stroke",
+    };
+  }
+
+  /** Render a standalone half-plane clipped to the map bounding box. */
+  #halfShape(region, color) {
+    const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = region.coords ?? {};
+    if (ox == null || nx == null) return null;
+    const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
+    const poly = clipHalfPlane(
+      [[minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ]],
+      ox, oz, nx, nz,
+    );
+    if (poly.length < 3) return null;
+    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#halfPolyAttrs(color) });
+  }
+
+  /** Render a complement whose subtracted children are half-planes.
+   *  Clips the first child's bounding rectangle against the negated normal of
+   *  each half child in sequence, producing the cut polygon. */
+  #complementHalfShape(region, color) {
+    const base = (region.children || [])[0];
+    if (!base?.bounds) return null;
+    const { min_x, min_z, max_x, max_z } = base.bounds;
+    let poly = [[min_x, min_z], [max_x, min_z], [max_x, max_z], [min_x, max_z]];
+    for (const child of (region.children || []).slice(1)) {
+      if (child.type !== "half") continue;
+      const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = child.coords ?? {};
+      if (ox == null || nx == null) continue;
+      // Complement subtracts the half → keep the side where dot(P-O, N) < 0
+      poly = clipHalfPlane(poly, ox, oz, -nx, -nz);
+    }
+    if (poly.length < 3) return null;
+    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#halfPolyAttrs(color) });
   }
 
   #negativeShape(region, color) {
@@ -1220,13 +1266,22 @@ export class MapCanvas {
 
   #flattenNamed(groupsOrNodes, out = []) {
     for (const item of groupsOrNodes) {
-      if (item.regions) { this.#flattenNamed(item.regions, out); }
-      else {
-        if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) out.push(item);
-        this.#flattenNamed(item.children || [], out);
-        // Recurse into anonymous sources (named sources are already top-level nodes)
-        if (item.source && !item.source.id) this.#flattenNamed([item.source], out);
+      if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
+
+      // A complement whose subtracted children include at least one half-plane
+      // is rendered as a single clipped polygon — don't recurse into children.
+      if (item.id && item.type === "complement" && item.bounds &&
+          (item.children || []).some(c => c.type === "half")) {
+        out.push(item);
+        continue;
       }
+
+      if (item.id && !COMPOSITE_TYPES.has(item.type) && (item.bounds || item.type === "half")) {
+        out.push(item);
+      }
+      this.#flattenNamed(item.children || [], out);
+      // Recurse into anonymous sources (named sources are already top-level nodes)
+      if (item.source && !item.source.id) this.#flattenNamed([item.source], out);
     }
     return out;
   }

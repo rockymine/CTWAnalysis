@@ -25,7 +25,7 @@ from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
     ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
-    MirrorRegion, TranslateRegion,
+    MirrorRegion, TranslateRegion, HalfRegion,
 )
 
 
@@ -169,6 +169,10 @@ def _encode_region(region: Region) -> dict[str, Any]:
 
     elif isinstance(region, (UnionRegion, NegativeRegion, ComplementRegion, IntersectRegion)):
         base['children'] = [_encode_region(child) for child in region.children]
+
+    elif isinstance(region, HalfRegion):
+        base['origin'] = {'x': _coord(region.origin_x), 'y': _coord(region.origin_y), 'z': _coord(region.origin_z)}
+        base['normal'] = {'x': _coord(region.normal_x), 'y': _coord(region.normal_y), 'z': _coord(region.normal_z)}
 
     elif isinstance(region, MirrorRegion):
         if region.source:

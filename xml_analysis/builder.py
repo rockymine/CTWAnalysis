@@ -17,7 +17,7 @@ from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
     ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
-    MirrorRegion, TranslateRegion,
+    MirrorRegion, TranslateRegion, HalfRegion,
 )
 
 
@@ -719,6 +719,8 @@ class MapXMLParser:
             return EverywhereRegion(id=region_id)
         elif tag == 'above':
             return AboveRegion(id=region_id, y=float(elem.get('y', '0')))
+        elif tag == 'half':
+            return self._parse_half(elem, region_id)
         elif tag == 'mirror':
             return self._parse_mirror(elem, region_id)
         elif tag == 'translate':
@@ -913,6 +915,16 @@ class MapXMLParser:
         return IntersectRegion(
             id=region_id,
             children=children
+        )
+
+    def _parse_half(self, elem: ET.Element, region_id: str) -> HalfRegion:
+        """Parse half region: <half normal="X,Y,Z" origin="X,Y,Z"/>."""
+        origin = self._parse_coords(elem.get('origin', '0,0,0'))
+        normal = self._parse_coords(elem.get('normal', '0,0,0'))
+        return HalfRegion(
+            id=region_id,
+            origin_x=origin[0], origin_y=origin[1], origin_z=origin[2],
+            normal_x=normal[0], normal_y=normal[1], normal_z=normal[2],
         )
 
     def _parse_mirror(self, elem: ET.Element, region_id: str) -> MirrorRegion:

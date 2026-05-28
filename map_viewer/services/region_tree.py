@@ -78,6 +78,13 @@ def _encode_coords(region: dict) -> dict | None:
         return {"x": pos.get("x"), "y": pos.get("y"), "z": pos.get("z")}
     if region_type == "reference":
         return {"ref_id": region.get("ref_id", "")}
+    if region_type == "half":
+        origin = region.get("origin") or {}
+        normal = region.get("normal") or {}
+        return {
+            "origin_x": origin.get("x"), "origin_y": origin.get("y"), "origin_z": origin.get("z"),
+            "normal_x": normal.get("x"), "normal_y": normal.get("y"), "normal_z": normal.get("z"),
+        }
     if region_type == "mirror":
         origin = region.get("origin") or {}
         normal = region.get("normal") or {}

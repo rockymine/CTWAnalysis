@@ -62,6 +62,18 @@ const GEOMETRY_SCHEMA = {
   reference: [
     { type: "scalar", label: "REF", key: null, display: n => n.coords?.ref_id ?? "?" },
   ],
+  half: [
+    { type: "group", label: "ORIGIN", axes: [
+      { axis: "X", key: null, display: n => fmt(n.coords?.origin_x) },
+      { axis: "Y", key: null, display: n => fmt(n.coords?.origin_y) },
+      { axis: "Z", key: null, display: n => fmt(n.coords?.origin_z) },
+    ]},
+    { type: "group", label: "NORMAL", axes: [
+      { axis: "X", key: null, display: n => fmt(n.coords?.normal_x) },
+      { axis: "Y", key: null, display: n => fmt(n.coords?.normal_y) },
+      { axis: "Z", key: null, display: n => fmt(n.coords?.normal_z) },
+    ]},
+  ],
   mirror: [
     { type: "group", label: "ORIGIN", axes: [
       { axis: "X", key: null, display: n => fmt(n.coords?.origin_x) },
@@ -114,6 +126,10 @@ function nodeToXml(node, depth = 0) {
   } else if (t === "sphere") {
     const ox = c.origin_x ?? "?", oy = c.origin_y ?? "?", oz = c.origin_z ?? "?";
     attr = ` origin="${ox},${oy},${oz}" radius="${c.radius ?? "?"}"`;
+  } else if (t === "half") {
+    const ox = c.origin_x ?? "?", oy = c.origin_y ?? "?", oz = c.origin_z ?? "?";
+    const nx = c.normal_x ?? "?", ny = c.normal_y ?? "?", nz = c.normal_z ?? "?";
+    attr = ` origin="${ox},${oy},${oz}" normal="${nx},${ny},${nz}"`;
   }
 
   const composite = ["union", "negative", "intersect", "complement"].includes(t);
