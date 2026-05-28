@@ -26,21 +26,26 @@ CTWAnalysisWithClaudeCode/
 │       └── docs.py                   API index regeneration
 │
 ├── layout_analysis/
-│   ├── extractors.py                 Y0, TopSurface, Density, LowestBedrock, LowestSolid extractors
+│   ├── extractors.py                 6 extractor classes: Y0Layer, TopSurface, VerticalDensity,
+│   │                                 LowestBedrock, LowestSolid, VerticalSegments
+│   ├── pipeline.py                   analyze_layout() — orchestrates all extractors; main entry point
 │   ├── map_layout_config.py          MapLayoutConfig dataclass + get_map_layout()
-│   ├── map_context.py                assemble_map() — builds map_context.json
 │   ├── features/
-│   │   └── zone_classifier.py        ZoneClassifier (runtime zone labeling) + public detection fns:
-│   │                                   detect_wool_room_region_id(x, z, regions) → str|None
-│   │                                   assign_wool_room_regions(wools, regions, spawners, output_dir)
-│   └── services/                     Orchestration services called by run.py
+│   │   ├── zone_classifier.py        ZoneClassifier (spawn/wool_room/defense/field classification)
+│   │   │                               assign_wool_room_regions(wools, regions, spawners, output_dir)
+│   │   ├── resource_blocks.py        ResourceBlockExtractor — iron/gold/diamond/wool blocks
+│   │   ├── chests.py                 ChestExtractor — chest tile-entity inventories
+│   │   └── tile_entities.py          TileEntityExtractor — all tile entities
+│   ├── region_reader.py              RegionReader — reads Minecraft .mca region files
+│   └── wool_query.py                 query_wool_in_region(), query_resources_in_region()
 │
 ├── island_analysis/
 │   ├── detection.py                  detect_islands(), find_island_holes()
 │   ├── datatypes.py                  Island dataclass
+│   ├── polygon.py                    Island polygon construction helpers
+│   ├── pipeline.py                   Island analysis pipeline entry point
 │   ├── profile.py                    IslandFeatures/IslandProfile/IslandRasterStrategy; profile_islands(), classify_island(), save/load_profiles(); override helpers; cross-map plots
-│   ├── profile_review.py             Interactive web review server; run via `ctw islands profile-review`
-│   └── triangulation.py             triangulate_islands_canonical()
+│   └── profile_review.py             Interactive web review server; run via `ctw islands profile-review`
 │
 ├── skeleton_analysis/
 │   ├── pipeline.py                   run_island_geometry() — main entry for islands+skeleton
@@ -549,34 +554,58 @@ ctw db "SELECT COUNT(*) FROM matches"   # ad-hoc SQL
 
 ## Layout Extractors
 
-```python
-# layout_analysis/extractors.py
+Six extractor classes in `layout_analysis/extractors.py`. All orchestrated by `analyze_layout()` in `layout_analysis/pipeline.py` — call that function, not individual extractors.
 
+```python
 NON_SOLID_BLOCK_IDS = frozenset({31, 32, 37, 38, 55, 77, 143})
-# Decorative blocks excluded from top-surface when --skip-non-solid:
+# Decorative blocks excluded when --skip-non-solid:
 # 31=tall_grass, 32=dead_bush, 37=dandelion, 38=rose, 55=redstone_wire,
 # 77=stone_button, 143=wooden_button
 # Water (8, 9) is NEVER in this set — water is a walkable surface in CTW
+
+class Y0LayerExtractor:
+    def __init__(self, region_reader)
+    # Produces: layout_y0.parquet — always extracted; needed for block-36 build-region detection
 
 class TopSurfaceExtractor:
     def __init__(self, region_reader, exclude_ids=None, skip_non_solid=False,
                  max_build_height=None)
     # skip_non_solid=True unions NON_SOLID_BLOCK_IDS into exclude_ids
-    # max_build_height=N skips blocks at y >= N (read from map.xml via
-    #   _read_max_build_height() in layout.py — applied automatically in analyze_layout)
-
-class Y0LayerExtractor:
-    def __init__(self, region_reader)
+    # max_build_height=N skips blocks at y >= N (from map.xml; applied automatically in analyze_layout)
+    # Produces: layout_top_surface.parquet
 
 class VerticalDensityExtractor:
     def __init__(self, region_reader, threshold=10, mode='run'|'count')
+    # Produces: layout_vertical_density.parquet
 
 class LowestBedrockExtractor:
     def __init__(self, region_reader)
+    # Produces: layout_bedrock.parquet
 
 class LowestSolidLayerExtractor:
     def __init__(self, region_reader, exclude_ids=None)
+    # Produces: layout_lowest_solid.parquet
+
+class VerticalSegmentsExtractor:
+    def __init__(self, region_reader, exclude_ids=None, skip_non_solid=True, min_run_length=1)
+    # Finds all contiguous Y-ranges of solid blocks per column — building block for
+    # side-profile/cross-section rendering. Opt-in: skip_segments=False in analyze_layout().
+    # Produces: layout_vertical_segments.parquet (one row per unbroken solid run)
 ```
+
+`analyze_layout()` in `layout_analysis/pipeline.py` is the entry point:
+```python
+analyze_layout(
+    map_folder, force_rerun=False, output_dir=None,
+    map_layout_config=None,   # from get_map_layout() — drives configured path
+    max_build_height=None,    # from XML step; caps TopSurface scan
+    skip_segments=True,       # VerticalSegments is expensive; opt-in
+    skip_features=False,      # ResourceBlock/Chest/TileEntity extractors
+    ...
+) -> Optional[dict]           # returns dict of name → Path for generated parquets
+```
+
+When `map_layout_config` is provided (most maps), it produces `layout_y0.parquet` + `layout_decided.parquet` (the layer used for island detection) and skips the generic comparison layers.
 
 ---
 
@@ -685,6 +714,81 @@ def migrate_terrain_height_table(db_path=None) -> None:
 ```
 
 Migrations are idempotent — safe to call multiple times.
+
+---
+
+## Map Viewer Architecture
+
+The map viewer (`map_viewer/`) is the primary user-facing tool — a Flask app for inspecting and editing CTW map data in a browser. Start it with `python ctw.py viewer` (opens `http://localhost:7891`).
+
+### Pages
+
+| Route | Template | Purpose |
+|---|---|---|
+| `/` | `index.html` | Dashboard: configure map/output folders, list maps, show pipeline status, trigger pipeline run |
+| `/editor?map=<name>` | `editor.html` | Full map editor: canvas, region sidebar, inspector panel |
+| `/configure` | `configure.html` | Global settings (maps folder, output folder) |
+
+### Flask App
+
+`map_viewer/app.py:create_app()` registers 10 blueprints:
+
+| Blueprint module | URL prefix | Responsibility |
+|---|---|---|
+| `routes/pages.py` | *(none)* | HTML page routes |
+| `routes/config.py` | `/api` | GET/POST global viewer config (`maps_folder`, `output_root`) |
+| `routes/layout_config.py` | `/api` | GET/PATCH per-map `map_layouts.json` entries |
+| `routes/source_maps.py` | `/api` | Map listing, pipeline run (SSE), layout layer data, observer-island hint, wool/resource queries |
+| `routes/map_data.py` | `/api` | Map data read/patch, symmetry, context, regions list, XML export, top-surface layer |
+| `routes/regions.py` | `/api/map` | Region CRUD (create, group, restore, delete, patch) |
+| `routes/teams.py` | `/api/map` | Team CRUD |
+| `routes/spawns.py` | `/api/map` | Spawn-link CRUD |
+| `routes/wools.py` | `/api/map` | Wool CRUD + room-status check |
+| `routes/minecraft.py` | `/api/minecraft` | Mojang API proxy (player username/UUID lookup) |
+
+### Service Layer
+
+All business logic lives in `map_viewer/services/`. Routes are thin wrappers that call one service function, handle typed exceptions, and call `save_map_data`.
+
+| Service | Key exports |
+|---|---|
+| `config.py` | `load_config()`, `save_config()`, `get_output_root()` |
+| `map_data.py` | `load_map_data(name)` → `(data, path)`, `save_map_data(data, path)` |
+| `pipeline.py` | `run_pipeline_steps()`, `run_layout_only_steps()`, `check_pipeline_status()` |
+| `region_editor.py` | `create_region()`, `group_regions()`, `delete_region()`, `restore_region()`, `patch_region()` |
+| `wool_editor.py` | `add_wool()`, `update_wool()`, `delete_wool()`, `get_room_status()` |
+| `spawn_editor.py` | `add_spawn_link()`, `update_spawn_link()`, `delete_spawn_link()` |
+| `team_editor.py` | `add_team()`, `update_team()`, `delete_team()` |
+| `region_tree.py` | `encode_region_tree_categorized()` — builds categorised sidebar tree for the editor |
+| `region_xml.py` | `regions_to_xml()` — serialises `regions` dict back to PGM XML for export |
+| `regions.py` | `build_region_dict()`, `apply_coord_update()`, `resolve_region_bounds()` |
+| `wools.py` | Wool helper fns: `wool_color_to_damage()`, `find_pgm_spawner()`, `find_relevant_renewables()` |
+| `mojang.py` | `resolve_username()`, `resolve_uuid()` — Mojang API lookups |
+
+Each editor service raises typed exceptions (e.g. `RegionNotFound`, `WoolConflict`) that the route layer maps to HTTP 404/409 responses.
+
+### Editing Model
+
+- **Source of truth for the editor is `map_data.json`** — all region/team/spawn/wool edits read and write this file via `load_map_data` / `save_map_data`.
+- `map_context.json` is pipeline output — the editor does not write to it directly. Re-run the pipeline (Assembly step) to regenerate it after edits.
+- `map_layouts.json` is edited separately via the `layout_config` blueprint.
+
+### Pipeline Streaming (SSE)
+
+`POST /api/source-map/<name>/pipeline/run` returns a `text/event-stream` response. The pipeline runs in a background thread; progress is forwarded via a queue:
+
+```
+Event types:
+  step   {"step": "xml"|"layout"|"islands"|"symmetry"|"assembly", "status": "running"|"done"|"error", "detail": "..."}
+  log    {"message": "...", "level": "info"|"debug"|"warning"}
+  error  {"message": "...", "detail": "..."}
+  done   {"message": "Pipeline complete"}
+  skipped {"reason": "Map is excluded in map_layouts.json"}
+```
+
+Pipeline step order in the viewer differs from the CLI numbering: **XML runs first** (step 1) to supply `max_build_height` to the Layout extractor, then Layout → Islands → Symmetry → Assembly.
+
+`run_layout_only_steps()` is used when `?steps=layout_all` is passed — runs only the 4 layer extractors, no island detection. Used by the "Extract layers" button on the dashboard for maps without full config.
 
 ---
 

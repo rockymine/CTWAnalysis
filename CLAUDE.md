@@ -93,7 +93,8 @@ match_logs/*.parquet
 | `ctw.py` | Thin entry point — bootstraps `ctw/cli.py` |
 | `ctw/commands/` | One file per top-level CLI command; handlers are thin wrappers over business logic |
 | `ctw/common.py` | `resolve_map_folder`, `collect_map_folders`, `resolve_output_dir`, `ensure_match_db`, `_slugs_with_matches` |
-| `layout_analysis/extractors.py` | Five extractor classes: `Y0Layer`, `TopSurface`, `VerticalDensity`, `LowestBedrock`, `LowestSolid` |
+| `layout_analysis/extractors.py` | Six extractor classes: `Y0Layer`, `TopSurface`, `VerticalDensity`, `LowestBedrock`, `LowestSolid`, `VerticalSegments` |
+| `layout_analysis/pipeline.py` | `analyze_layout()` — orchestrates all extractors; the actual entry point for layout extraction |
 | `island_analysis/` | Island detection, polygon construction, canonical classification, interactive profile review |
 | `skeleton_analysis/pipeline.py` | `run_island_geometry()` — skeleton graphs + POI annotation per island |
 | `xml_analysis/` | PGM `map.xml` parser; produces `MapData` / `MapXmlContext` |
@@ -104,7 +105,7 @@ match_logs/*.parquet
 | `match_analysis/database/schema.py` | `initialize_database()` and all migrations (idempotent) |
 | `common/geometry/` | `BoundingBox`, `Point2D`, `block_centers()`, `blocks_to_unit_squares()`, `raster_imshow_extent()` |
 | `common/visualization/map_primitives.py` | `draw_build_region`, `draw_island_outlines`, `draw_poi_markers`, `draw_map_base` — preferred import location |
-| `map_viewer/` | Flask browser app for inspecting and editing map region data |
+| `map_viewer/` | **Primary user-facing tool** — Flask app (port 7891) for inspecting and editing map data. Three pages: dashboard (`/`), editor (`/editor`), configure (`/configure`). Ten route blueprints over `routes/`; all business logic in `services/`. Edits write to `map_data.json` in-place; pipeline runs via SSE streaming. Full architecture in `CODEBASE.md § Map Viewer Architecture`. |
 
 ### Primary Output Files
 
