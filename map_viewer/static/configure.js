@@ -1,16 +1,15 @@
 /**
- * Configure page — layer selection, block exclusions, island review, save.
+ * Configure page — layer selection, block exclusions, island review.
  *
  * Data flow:
  *   init → loadExistingConfig + loadLayerPreviews + loadIslandData (parallel)
- *          → checkAndShowContinue (if already configured + pipeline done)
+ *          → checkAndShowContinue → markReady or markStale
+ *   any field change → scheduleSave (debounced PATCH) + markStale
  *   runLayerExtraction → SSE steps=layout_all → reload layer previews
- *   selectLayer → populate block dropdown → markDirty
+ *   selectLayer → populate block dropdown → scheduleSave
  *   selectIsland → highlight SVG + list row + inspector
- *   saveConfig → PATCH /api/layout-config/<name>
- *             → runFullPipeline (SSE full pipeline, force=1)
- *             → loadIslandData (refresh from fresh map_context.json)
- *             → show Continue link
+ *   Run Pipeline btn → runFullPipeline (SSE, force=1)
+ *                    → markReady + loadIslandData
  */
 
 import { blockDataToDataUrl } from "./shared/block-render.js";
@@ -48,7 +47,6 @@ const state = {
   initialViewBox:   null,  // viewBox that fits all islands
   isRunning:        false,
   pipelineRunning:  false, // true while full pipeline SSE is in flight
-  isDirty:          false, // true when config has changed since last save
   bboxIsAuto:       true,  // false once user has manually edited any bbox field
   boundsTable:      null,  // boundsTable instance (created after DOM is ready)
 };
@@ -71,9 +69,8 @@ const islandCanvasPlaceholder = document.getElementById("island-canvas-placehold
 const islandList              = document.getElementById("island-list");
 const cfgBboxSection          = document.getElementById("cfg-bbox-section");
 const cfgBboxDivider          = document.getElementById("cfg-bbox-divider");
-const saveBtn                 = document.getElementById("save-btn");
-const saveStatus              = document.getElementById("save-status");
-const dirtyBadge              = document.getElementById("dirty-badge");
+const pipelineMsgEl           = document.getElementById("pipeline-msg");
+const runPipelineBtn          = document.getElementById("run-pipeline-btn");
 const continueBtn             = document.getElementById("continue-btn");
 const pipelineBar             = document.getElementById("cfg-pipeline-bar");
 const pipelineStepList        = document.getElementById("cfg-pipeline-step-list");
@@ -118,7 +115,7 @@ function selectLayer(layer, silent = false) {
     if (panel) panel.classList.toggle("layer-panel--selected", l === layer);
   }
   populateBlockDropdown(layer);
-  if (!silent) markDirty();
+  if (!silent) scheduleSave();
 }
 
 function populateBlockDropdown(layer) {
@@ -248,7 +245,7 @@ blockExcludeSelect.addEventListener("change", () => {
     state.excludeIds.push(id);
     renderExcludeList();
     populateBlockDropdown(state.selectedLayer);
-    markDirty();
+    scheduleSave();
   }
   blockExcludeSelect.value = "";
 });
@@ -287,7 +284,7 @@ function renderExcludeList() {
       state.excludeIds = state.excludeIds.filter(x => x !== id);
       renderExcludeList();
       if (state.selectedLayer) populateBlockDropdown(state.selectedLayer);
-      markDirty();
+      scheduleSave();
     });
 
     row.appendChild(swatch);
@@ -550,7 +547,7 @@ function toggleIslandExclude(id) {
   if (state.bboxIsAuto) fillDefaultBbox();
   renderIslandList(state.islandData);
   updateIslandSVGState();
-  markDirty();
+  scheduleSave();
 }
 
 // ── Island selection ───────────────────────────────────────────────────────
@@ -594,7 +591,7 @@ function renderInspector(island) {
 function ensureBoundsTable() {
   if (state.boundsTable) return;
   state.boundsTable = boundsTable(["X", "Z"], {
-    onInput: () => { state.bboxIsAuto = false; markDirty(); },
+    onInput: () => { state.bboxIsAuto = false; scheduleSave(); },
   });
   cfgBboxSection.appendChild(state.boundsTable.el);
 }
@@ -689,77 +686,71 @@ async function loadExistingConfig() {
       });
       state.bboxIsAuto = false;
     }
-    markClean();
   } catch (_) {}
 }
 
-// ── Save configuration ─────────────────────────────────────────────────────
+// ── Auto-save (debounced) ──────────────────────────────────────────────────
 
-saveBtn.addEventListener("click", saveConfig);
+let _saveTimer = null;
 
-async function saveConfig() {
-  if (state.isRunning || state.pipelineRunning) return;
-  if (!state.selectedLayer) {
-    flashSave("Select a layer first.", true);
-    return;
-  }
-
+function buildPayload() {
+  if (!state.selectedLayer) return null;
   let playable_bbox = null;
   if (state.boundsTable && state.boundsTable.hasValues()) {
     const vals = state.boundsTable.getValues();
     const { X, Z } = vals;
-    if (X.min === null || X.max === null || Z.min === null || Z.max === null) {
-      flashSave("Bounding box values must be numbers.", true); return;
+    if (X.min !== null && X.max !== null && Z.min !== null && Z.max !== null) {
+      playable_bbox = [X.min, Z.min, X.max, Z.max];
     }
-    playable_bbox = [X.min, Z.min, X.max, Z.max];
   }
-
-  const payload = {
+  return {
     layer:           state.selectedLayer,
     exclude:         state.excludeIds,
     skip:            false,
     exclude_islands: state.excludeIslands,
-    playable_bbox:   playable_bbox,
+    playable_bbox,
   };
+}
 
+function scheduleSave() {
+  markStale();
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    const payload = buildPayload();
+    if (payload) patchLayoutConfig(MAP_NAME, payload).catch(() => {});
+  }, 500);
+}
+
+// ── Pipeline state ─────────────────────────────────────────────────────────
+
+function markStale() {
+  pipelineMsgEl.textContent = "Pipeline re-run required";
+  pipelineMsgEl.hidden      = false;
+  runPipelineBtn.hidden     = false;
+  continueBtn.hidden        = true;
+}
+
+function markReady() {
+  pipelineMsgEl.hidden  = true;
+  runPipelineBtn.hidden = true;
+  continueBtn.href      = `/editor?map=${enc(MAP_NAME)}`;
+  continueBtn.hidden    = false;
+}
+
+runPipelineBtn.addEventListener("click", async () => {
+  if (state.isRunning || state.pipelineRunning) return;
+  runPipelineBtn.disabled = true;
   try {
-    saveBtn.disabled = true;
-    await patchLayoutConfig(MAP_NAME, payload);
-    markClean();
-    saveStatus.textContent = "Saved. Running pipeline…";
-    saveStatus.className   = "config-save-msg config-save-msg--ok";
     await runFullPipeline();
-    saveStatus.textContent = "Pipeline complete.";
-    setTimeout(() => { saveStatus.textContent = ""; saveStatus.className = "config-save-msg"; }, 3000);
-    continueBtn.href   = `/editor?map=${enc(MAP_NAME)}`;
-    continueBtn.hidden = false;
+    markReady();
     await loadIslandData();
   } catch (err) {
-    flashSave(`Error: ${err.message}`, true);
+    pipelineMsgEl.textContent = `Pipeline failed: ${err.message}`;
   } finally {
-    saveBtn.disabled        = false;
-    state.pipelineRunning   = false;
+    runPipelineBtn.disabled  = false;
+    state.pipelineRunning    = false;
   }
-}
-
-function flashSave(msg, isError = false) {
-  saveStatus.textContent = msg;
-  saveStatus.className   = "config-save-msg" + (isError ? " config-save-msg--error" : " config-save-msg--ok");
-  setTimeout(() => { saveStatus.textContent = ""; saveStatus.className = "config-save-msg"; }, 3000);
-}
-
-// ── Dirty state ────────────────────────────────────────────────────────────
-
-function markDirty() {
-  state.isDirty      = true;
-  dirtyBadge.hidden  = false;
-  continueBtn.hidden = true;
-}
-
-function markClean() {
-  state.isDirty     = false;
-  dirtyBadge.hidden = true;
-}
+});
 
 // ── Full pipeline (post-save) ──────────────────────────────────────────────
 
@@ -827,10 +818,7 @@ async function checkAndShowContinue() {
   if (!state.selectedLayer) return;
   try {
     const status = await fetchPipelineStatus(MAP_NAME);
-    if (status.all_done) {
-      continueBtn.href   = `/editor?map=${enc(MAP_NAME)}`;
-      continueBtn.hidden = false;
-    }
+    if (status.all_done) markReady(); else markStale();
   } catch (_) {}
 }
 
