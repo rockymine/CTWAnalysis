@@ -164,6 +164,7 @@ async function loadLayerPreviews() {
       }
     }
     if (state.selectedLayer) populateBlockDropdown(state.selectedLayer);
+    runBtn.hidden = LAYERS.every(l => state.layerData[l]);
   } catch (err) {
     setStatus(`Layer preview error: ${err.message}`);
   }
