@@ -95,9 +95,9 @@ def _process_single_map(map_folder, args, output_override=None):
     map_name = map_folder.name
     map_layout_cfg = get_map_layout(map_name)
 
-    # Skip maps explicitly excluded in map_layouts.yaml
+    # Skip maps explicitly excluded in map_layouts.json
     if map_layout_cfg is not None and map_layout_cfg.skip:
-        logger.info(f"Skipping {map_name}: excluded in map_layouts.yaml")
+        logger.info(f"Skipping {map_name}: excluded in map_layouts.json")
         return map_name, True, None
 
     logger.info(f"Processing: {map_name}")
@@ -184,10 +184,6 @@ def _process_single_map(map_folder, args, output_override=None):
         # [5/5] Map Assembly (combines geometry + symmetry + XML)
         if not args.no_assembly:
             if geometry is not None:
-                exclude_obs = (
-                    map_layout_cfg.exclude_observer_island
-                    if map_layout_cfg is not None else False
-                )
                 exclude_isl = (
                     map_layout_cfg.exclude_islands
                     if map_layout_cfg is not None else []
@@ -199,7 +195,7 @@ def _process_single_map(map_folder, args, output_override=None):
                 _, final_symmetry = assemble_map(
                     map_folder, geometry, map_output_dir,
                     symmetry=symmetry, xml_context=xml_context, plots=args.plots,
-                    exclude_observer_island=exclude_obs,
+                    exclude_observer_island=False,
                     exclude_islands=exclude_isl,
                     playable_bbox=bbox,
                 )

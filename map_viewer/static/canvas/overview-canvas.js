@@ -1,4 +1,5 @@
 import { buildTransform, svgEl as makeEl } from "./transform.js";
+import { blockDataToDataUrl } from "../shared/block-render.js";
 
 const SYMMETRY_COLOR   = "#a855f7";  // purple-500
 const SYMMETRY_SKIPPED = 0.25;
@@ -82,31 +83,12 @@ export class OverviewCanvas {
 
   #renderBlocks() {
     const blockData = this.#blockData;
-    const { xs, zs, colors, min_x, min_z, max_x, max_z } = blockData;
-    const imgW = max_x - min_x + 1;
-    const imgH = max_z - min_z + 1;
-
-    const offscreen = document.createElement("canvas");
-    offscreen.width  = imgW;
-    offscreen.height = imgH;
-    const ctx2d  = offscreen.getContext("2d");
-    const pixels = ctx2d.createImageData(imgW, imgH);
-    const data   = pixels.data;
-
-    for (let idx = 0; idx < xs.length; idx++) {
-      const rgb       = parseInt(colors[idx].slice(1), 16);
-      const pixelIdx  = ((zs[idx] - min_z) * imgW + (xs[idx] - min_x)) * 4;
-      data[pixelIdx]     = (rgb >> 16) & 0xff;
-      data[pixelIdx + 1] = (rgb >> 8)  & 0xff;
-      data[pixelIdx + 2] =  rgb        & 0xff;
-      data[pixelIdx + 3] = 255;
-    }
-    ctx2d.putImageData(pixels, 0, 0);
+    const { min_x, min_z, max_x, max_z } = blockData;
 
     const p1  = this.#toSvg(min_x,     min_z);
     const p2  = this.#toSvg(max_x + 1, max_z + 1);
     const img = makeEl("image");
-    img.setAttribute("href",            offscreen.toDataURL("image/png"));
+    img.setAttribute("href",            blockDataToDataUrl(blockData));
     img.setAttribute("x",               Math.min(p1.x, p2.x));
     img.setAttribute("y",               Math.min(p1.y, p2.y));
     img.setAttribute("width",           Math.abs(p2.x - p1.x));

@@ -81,7 +81,7 @@ def analyze_layout(
     """Step 2: Extract layout data from world folder.
 
     When *map_layout_config* is provided the extraction is driven by the
-    per-map configuration from map_layouts.yaml:
+    per-map configuration from map_layouts.json:
 
     * ``layout_y0.parquet`` is always generated (needed for build-region
       detection via block-36 markers).
@@ -110,7 +110,7 @@ def analyze_layout(
             flowers) are excluded from the surface scan.
         threshold: Density threshold for vertical density extractor.
         density_mode: Mode for vertical density extractor ('run' or 'count').
-        map_layout_config: Per-map config from map_layouts.yaml.  When
+        map_layout_config: Per-map config from map_layouts.json.  When
             provided, drives which layer and exclusions to use.
         max_build_height: Y-level ceiling from map.xml.  When set, the
             TopSurfaceExtractor ignores blocks at y >= this value, preventing
@@ -249,7 +249,7 @@ def _analyze_layout_configured(
     max_build_height: Optional[int] = None,
     skip_segments: bool = True,
 ) -> Optional[dict]:
-    """Configured extraction path driven by map_layouts.yaml.
+    """Configured extraction path driven by map_layouts.json.
 
     Always produces layout_y0.parquet.  Produces layout_decided.parquet when
     the configured layer is not y0 or when y0 is configured with exclusions.

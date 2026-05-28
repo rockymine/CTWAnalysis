@@ -1,0 +1,872 @@
+{
+  "maps": {
+    "2d": {
+      "layer": "y0"
+    },
+    "acapulco": {
+      "layer": "bedrock"
+    },
+    "ad_astra": {
+      "layer": "y0"
+    },
+    "ad_infinitum": {
+      "layer": "bedrock"
+    },
+    "aequabilis": {
+      "layer": "y0"
+    },
+    "aether": {
+      "layer": "y0"
+    },
+    "after_hours": {
+      "layer": "bedrock"
+    },
+    "agrorythe": {
+      "layer": "bedrock"
+    },
+    "agrostid": {
+      "layer": "bedrock"
+    },
+    "amphitheater": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30,
+        68,
+        95,
+        96,
+        131,
+        160
+      ]
+    },
+    "annealing_iv": {
+      "layer": "y0"
+    },
+    "apocalypse_ctw": {
+      "layer": "y0"
+    },
+    "apostle": {
+      "layer": "bedrock"
+    },
+    "appalachia": {
+      "layer": "bedrock"
+    },
+    "arabia": {
+      "layer": "bedrock"
+    },
+    "araxa": {
+      "layer": "lowest_solid"
+    },
+    "autumn_breeze": {
+      "layer": "y0"
+    },
+    "bamboo_valley_v": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "banana_split": {
+      "layer": "y0"
+    },
+    "belvedere": {
+      "layer": "bedrock"
+    },
+    "blocks_ctw": {
+      "layer": "bedrock"
+    },
+    "bloom": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "blossom_ctw": {
+      "layer": "bedrock"
+    },
+    "boulders": {
+      "layer": "bedrock"
+    },
+    "brittlebush": {
+      "layer": "bedrock"
+    },
+    "brittlebush_ii": {
+      "layer": "y0"
+    },
+    "cake_day": {
+      "layer": "top_surface",
+      "exclude": [
+        55
+      ]
+    },
+    "canyon_ii": {
+      "layer": "bedrock"
+    },
+    "cargo": {
+      "layer": "lowest_solid"
+    },
+    "catscratch": {
+      "layer": "lowest_solid",
+      "exclude": [
+        55
+      ]
+    },
+    "celestial_islands": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18,
+        30,
+        102
+      ]
+    },
+    "checkmate": {
+      "skip": true
+    },
+    "chestnut": {
+      "layer": "bedrock"
+    },
+    "circus_ctw": {
+      "layer": "bedrock"
+    },
+    "citadel": {
+      "skip": true
+    },
+    "clayclay": {
+      "layer": "bedrock"
+    },
+    "clearcut": {
+      "layer": "bedrock"
+    },
+    "cloud_nine": {
+      "skip": true
+    },
+    "coconut_mald": {
+      "layer": "y0"
+    },
+    "colorado": {
+      "layer": "lowest_solid",
+      "exclude": [
+        8,
+        9,
+        30
+      ]
+    },
+    "columbia_ctw": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "comb_conquest": {
+      "layer": "y0"
+    },
+    "constellation": {
+      "layer": "bedrock"
+    },
+    "corrupted_paradise_ctw": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "curly_pride": {
+      "layer": "y0"
+    },
+    "curly_wools_ix": {
+      "skip": true
+    },
+    "cyril": {
+      "layer": "bedrock"
+    },
+    "dead_noon": {
+      "layer": "y0"
+    },
+    "deciduous_nights": {
+      "layer": "y0"
+    },
+    "deepwind_jungle": {
+      "layer": "y0"
+    },
+    "desert_country": {
+      "layer": "bedrock"
+    },
+    "desert_eclipse": {
+      "layer": "bedrock"
+    },
+    "desolate_gully_ctw": {
+      "layer": "bedrock"
+    },
+    "discovery": {
+      "layer": "top_surface",
+      "exclude": [
+        30
+      ]
+    },
+    "down_side_up": {
+      "skip": true
+    },
+    "downforce": {
+      "layer": "lowest_solid"
+    },
+    "dromedary": {
+      "layer": "y0"
+    },
+    "duality": {
+      "layer": "bedrock"
+    },
+    "dynamo": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18
+      ]
+    },
+    "edo": {
+      "layer": "bedrock"
+    },
+    "emergency_meeting": {
+      "layer": "bedrock"
+    },
+    "empire": {
+      "layer": "y0"
+    },
+    "enchanted": {
+      "layer": "bedrock"
+    },
+    "ender_hill": {
+      "skip": true
+    },
+    "epsilon": {
+      "layer": "bedrock"
+    },
+    "exitium": {
+      "layer": "lowest_solid"
+    },
+    "exogrid": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "expedition": {
+      "layer": "bedrock"
+    },
+    "factorio_mainbus": {
+      "layer": "lowest_solid"
+    },
+    "fairy_tales_2_a_tale_or_two": {
+      "layer": "lowest_solid"
+    },
+    "fairy_tales_2_mini": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "fairy_tales_metamorphose": {
+      "layer": "lowest_solid"
+    },
+    "fall_of_babylon": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18,
+        55
+      ]
+    },
+    "feel_good_inc": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "firum_ctw": {
+      "layer": "bedrock"
+    },
+    "flush_vibes_ii": {
+      "layer": "y0"
+    },
+    "fourchette": {
+      "layer": "lowest_solid",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "frost": {
+      "layer": "bedrock"
+    },
+    "garf": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "gethsemane": {
+      "layer": "y0"
+    },
+    "gloomwald": {
+      "layer": "y0"
+    },
+    "gobi": {
+      "layer": "bedrock"
+    },
+    "golden_drought": {
+      "layer": "lowest_solid",
+      "exclude_islands": [
+        14,
+        15
+      ]
+    },
+    "golden_drought_iii": {
+      "layer": "lowest_solid"
+    },
+    "golden_drought_iv": {
+      "layer": "lowest_solid"
+    },
+    "golden_drought_v": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "gongua_ctw": {
+      "layer": "lowest_solid"
+    },
+    "goo_lagoon": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "green_gem_ctw": {
+      "layer": "y0"
+    },
+    "green_gem_ctw_mini": {
+      "layer": "y0"
+    },
+    "greenhill": {
+      "layer": "bedrock"
+    },
+    "gridlock_2": {
+      "layer": "lowest_solid"
+    },
+    "hallows": {
+      "layer": "lowest_solid"
+    },
+    "harbor_ctw": {
+      "layer": "top_surface",
+      "exclude": [
+        8,
+        9,
+        30,
+        166
+      ]
+    },
+    "hauoli_mau_lanui": {
+      "layer": "y0"
+    },
+    "hello_world": {
+      "layer": "y0"
+    },
+    "hillside_daydream": {
+      "layer": "lowest_solid",
+      "exclude": [
+        8,
+        9,
+        18,
+        30
+      ]
+    },
+    "hobbit_ctw": {
+      "layer": "y0"
+    },
+    "honeycombed": {
+      "layer": "y0",
+      "exclude": [
+        159
+      ]
+    },
+    "hotel_overcast": {
+      "layer": "bedrock"
+    },
+    "huanxiang": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9,
+        166
+      ]
+    },
+    "icecream_sandwiched_ii": {
+      "layer": "bedrock"
+    },
+    "infernal_shadow": {
+      "layer": "bedrock"
+    },
+    "ingwaz": {
+      "layer": "lowest_solid",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "istana_ctw": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "java_ii": {
+      "layer": "bedrock"
+    },
+    "jungle_beat": {
+      "layer": "bedrock"
+    },
+    "jupiter": {
+      "layer": "y0"
+    },
+    "jurassic": {
+      "layer": "bedrock"
+    },
+    "kanto": {
+      "layer": "y0"
+    },
+    "keipha_ctw": {
+      "layer": "y0"
+    },
+    "kerskyn": {
+      "layer": "bedrock"
+    },
+    "kingdom": {
+      "layer": "y0"
+    },
+    "krager": {
+      "layer": "y0",
+      "exclude": [
+        41
+      ]
+    },
+    "la_bataille_de_lepee": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18,
+        30
+      ]
+    },
+    "level_up": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9,
+        30
+      ]
+    },
+    "levels": {
+      "skip": true
+    },
+    "long_distance": {
+      "layer": "y0"
+    },
+    "lotus": {
+      "layer": "bedrock"
+    },
+    "lupa": {
+      "layer": "lowest_solid",
+      "exclude_islands": [
+        5,
+        10
+      ]
+    },
+    "lupain": {
+      "layer": "bedrock"
+    },
+    "madness_on_rails": {
+      "layer": "bedrock"
+    },
+    "mahatma": {
+      "layer": "y0"
+    },
+    "mame_i_shrunk_the_pvpers": {
+      "layer": "bedrock"
+    },
+    "mexico": {
+      "skip": true
+    },
+    "mini_drought": {
+      "layer": "lowest_solid",
+      "exclude_islands": [
+        6,
+        7
+      ]
+    },
+    "mushroom_gorge": {
+      "layer": "lowest_solid"
+    },
+    "nether_war_ctw": {
+      "layer": "y0"
+    },
+    "nextgen": {
+      "layer": "y0"
+    },
+    "nextrace": {
+      "layer": "y0"
+    },
+    "no_mans_land": {
+      "layer": "bedrock"
+    },
+    "nobles_district": {
+      "layer": "bedrock"
+    },
+    "nyxis": {
+      "layer": "bedrock"
+    },
+    "oaken_meadow": {
+      "layer": "y0",
+      "exclude_islands": [
+        3,
+        4
+      ]
+    },
+    "oaken_meadow_mini": {
+      "layer": "bedrock"
+    },
+    "oasis_ctw": {
+      "layer": "bedrock"
+    },
+    "oceano_ctw": {
+      "layer": "y0"
+    },
+    "onier": {
+      "layer": "lowest_solid",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "oumuamua": {
+      "layer": "bedrock",
+      "playable_bbox": [
+        -70,
+        -70,
+        70,
+        70
+      ]
+    },
+    "ouroboros": {
+      "layer": "bedrock"
+    },
+    "outback": {
+      "layer": "y0"
+    },
+    "outback_mini": {
+      "layer": "y0"
+    },
+    "outback_outback_edition": {
+      "layer": "bedrock"
+    },
+    "outlyne": {
+      "layer": "bedrock"
+    },
+    "paddos": {
+      "layer": "y0"
+    },
+    "peloponnesia": {
+      "layer": "bedrock"
+    },
+    "persisto": {
+      "layer": "bedrock"
+    },
+    "philosophers_stone": {
+      "layer": "bedrock"
+    },
+    "pigland": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "pineium_ctw": {
+      "layer": "bedrock"
+    },
+    "pirates_i": {
+      "layer": "top_surface",
+      "exclude": [
+        8,
+        9,
+        111
+      ]
+    },
+    "pixelmix": {
+      "layer": "bedrock"
+    },
+    "placid_spring": {
+      "layer": "bedrock"
+    },
+    "prisma_ctw": {
+      "layer": "y0"
+    },
+    "race_for_victory": {
+      "layer": "bedrock"
+    },
+    "race_for_victory_2": {
+      "layer": "y0"
+    },
+    "race_for_victory_3": {
+      "layer": "y0"
+    },
+    "raceway": {
+      "layer": "bedrock"
+    },
+    "renegade": {
+      "layer": "bedrock"
+    },
+    "research_base": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30,
+        95
+      ]
+    },
+    "rice": {
+      "layer": "y0"
+    },
+    "rind_rushers_ii": {
+      "layer": "bedrock"
+    },
+    "ring_race": {
+      "layer": "y0"
+    },
+    "ringpull": {
+      "layer": "y0"
+    },
+    "rocky_top": {
+      "layer": "bedrock"
+    },
+    "rotten": {
+      "layer": "y0"
+    },
+    "ruedigers_octawool": {
+      "layer": "lowest_solid"
+    },
+    "sakura_garden": {
+      "layer": "y0"
+    },
+    "sakura_garden_ii": {
+      "layer": "y0",
+      "exclude": [
+        17,
+        33
+      ]
+    },
+    "sanctum_wasser": {
+      "layer": "bedrock"
+    },
+    "santorini": {
+      "layer": "bedrock"
+    },
+    "sheep_ctw": {
+      "skip": true
+    },
+    "shroom_galaxy": {
+      "layer": "y0"
+    },
+    "simplicity_ctw": {
+      "layer": "y0"
+    },
+    "smashcap": {
+      "layer": "bedrock"
+    },
+    "snow_level": {
+      "layer": "bedrock"
+    },
+    "split_strata": {
+      "layer": "y0"
+    },
+    "stalactites_a_land_down_under": {
+      "layer": "y0"
+    },
+    "standstill": {
+      "layer": "y0"
+    },
+    "station_x": {
+      "layer": "y0"
+    },
+    "steel_valley": {
+      "layer": "top_surface",
+      "exclude": [
+        9
+      ]
+    },
+    "summertime_at_browns_farms": {
+      "layer": "y0"
+    },
+    "sunbliss": {
+      "layer": "bedrock"
+    },
+    "super_happy_fun_world": {
+      "layer": "top_surface",
+      "exclude": [
+        11,
+        7
+      ]
+    },
+    "sweetopia": {
+      "layer": "bedrock"
+    },
+    "tangier": {
+      "layer": "y0"
+    },
+    "tebulas_ii": {
+      "skip": true
+    },
+    "thornwood": {
+      "layer": "bedrock"
+    },
+    "thunder": {
+      "layer": "lowest_solid",
+      "exclude": [
+        30
+      ]
+    },
+    "thunderbolt": {
+      "layer": "y0"
+    },
+    "timbered": {
+      "layer": "y0",
+      "exclude": [
+        30
+      ]
+    },
+    "tohjo_falls_ii": {
+      "layer": "y0"
+    },
+    "townside": {
+      "layer": "y0"
+    },
+    "townside_mini": {
+      "layer": "y0"
+    },
+    "tranquility": {
+      "layer": "bedrock"
+    },
+    "tulip_mania": {
+      "layer": "y0"
+    },
+    "tulip_mania_ii": {
+      "layer": "y0"
+    },
+    "tumbleweed": {
+      "layer": "bedrock"
+    },
+    "tuscany": {
+      "layer": "bedrock"
+    },
+    "tusho_ctw": {
+      "layer": "y0"
+    },
+    "twisted": {
+      "layer": "bedrock"
+    },
+    "two_tier": {
+      "layer": "lowest_solid"
+    },
+    "underpass": {
+      "layer": "lowest_solid"
+    },
+    "vegas": {
+      "layer": "y0"
+    },
+    "veld": {
+      "layer": "bedrock"
+    },
+    "vertex": {
+      "layer": "y0",
+      "exclude": [
+        8,
+        9
+      ]
+    },
+    "vesuvius": {
+      "layer": "y0"
+    },
+    "villa_i": {
+      "layer": "y0"
+    },
+    "villa_ii": {
+      "layer": "y0"
+    },
+    "war_of_the_acres": {
+      "layer": "bedrock"
+    },
+    "welcome_to_wool_square": {
+      "layer": "bedrock"
+    },
+    "when_men_cried": {
+      "layer": "y0"
+    },
+    "wholething": {
+      "layer": "y0"
+    },
+    "winter_wakening": {
+      "layer": "bedrock"
+    },
+    "winterbane": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18,
+        55
+      ]
+    },
+    "wintertime": {
+      "layer": "y0"
+    },
+    "witchs_potions": {
+      "layer": "bedrock"
+    },
+    "wits_end": {
+      "layer": "lowest_solid"
+    },
+    "xinx": {
+      "layer": "y0"
+    },
+    "xion": {
+      "layer": "bedrock"
+    },
+    "xunkohtli": {
+      "layer": "y0"
+    },
+    "yermo": {
+      "layer": "lowest_solid",
+      "exclude": [
+        18,
+        55,
+        68
+      ]
+    },
+    "3084": {
+      "layer": "bedrock",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [
+        10
+      ],
+      "playable_bbox": null
+    },
+    "803": {
+      "layer": "bedrock",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [
+        3
+      ],
+      "playable_bbox": [
+        -126,
+        -81,
+        71,
+        48
+      ]
+    }
+  }
+}

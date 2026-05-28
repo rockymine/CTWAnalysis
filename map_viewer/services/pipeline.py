@@ -47,7 +47,7 @@ def run_pipeline_steps(
         map_layout_cfg = get_map_layout(name)
 
         if map_layout_cfg is not None and map_layout_cfg.skip:
-            send("skipped", {"reason": "Map is excluded in map_layouts.yaml"})
+            send("skipped", {"reason": "Map is excluded in map_layouts.json"})
             return
 
         if map_layout_cfg is not None:
@@ -118,13 +118,12 @@ def run_pipeline_steps(
         # Step 5 — Assembly
         send("step", {"step": "assembly", "status": "running", "label": "Assembly"})
         try:
-            exclude_obs = map_layout_cfg.exclude_observer_island if map_layout_cfg is not None else False
             exclude_isl = map_layout_cfg.exclude_islands if map_layout_cfg is not None else []
             bbox        = map_layout_cfg.playable_bbox if map_layout_cfg is not None else None
             assemble_map(
                 map_folder, geometry, map_output_dir,
                 symmetry=symmetry, xml_context=xml_context,
-                exclude_observer_island=exclude_obs, exclude_islands=exclude_isl, playable_bbox=bbox,
+                exclude_observer_island=False, exclude_islands=exclude_isl, playable_bbox=bbox,
             )
             send("step", {"step": "assembly", "status": "done", "label": "Assembly"})
         except Exception as exc:
@@ -140,9 +139,30 @@ def run_pipeline_steps(
         ctw_logger.removeHandler(log_handler)
 
 
+def run_layout_only_steps(
+    map_folder: Path,
+    map_output_dir: Path,
+    force: bool,
+    send: Callable[[str, dict], None],
+) -> None:
+    """Run only the layout extraction (all 4 layers). No config required."""
+    from layout_analysis.pipeline import analyze_layout
+
+    map_output_dir.mkdir(parents=True, exist_ok=True)
+    send("step", {"step": "layout", "status": "running", "label": "Layout"})
+    try:
+        analyze_layout(map_folder, force_rerun=force, output_dir=map_output_dir, skip_features=True)
+        send("step", {"step": "layout", "status": "done", "label": "Layout",
+                      "detail": "4 layer files written"})
+        send("done", {"message": "Layer extraction complete"})
+    except Exception as exc:
+        send("step", {"step": "layout", "status": "error", "label": "Layout", "detail": str(exc)})
+        send("error", {"message": str(exc)})
+
+
 _PIPELINE_STEPS = [
     {"id": "xml",      "label": "XML",      "file": "map_data.json"},
-    {"id": "layout",   "label": "Layout",   "file": "layout_bedrock.parquet"},
+    {"id": "layout",   "label": "Layout",   "file": "layout_y0.parquet"},
     {"id": "islands",  "label": "Islands",  "file": "islands.json"},
     {"id": "symmetry", "label": "Symmetry", "file": "symmetry.json"},
     {"id": "assembly", "label": "Assembly", "file": "map_context.json"},

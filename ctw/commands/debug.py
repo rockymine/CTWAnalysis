@@ -510,7 +510,7 @@ def handle_fork_layout(args: object) -> None:
 
 
 def _is_map_skipped(map_slug: str) -> bool:
-    """Return True if the map is flagged skip:true in map_layouts.yaml."""
+    """Return True if the map is flagged skip:true in map_layouts.json."""
     from layout_analysis.map_layout_config import get_map_layout
     cfg = get_map_layout(map_slug)
     return cfg is not None and cfg.skip
@@ -520,7 +520,7 @@ def _load_profile_entries(args) -> list[tuple[str, object, dict]]:
     """Load (map_slug, IslandProfile, island_dict) triples from all relevant maps.
 
     island_dict is the representative island entry from map_context.json.
-    Maps flagged skip:true in map_layouts.yaml are excluded.
+    Maps flagged skip:true in map_layouts.json are excluded.
     """
     import json as _json
     from pathlib import Path

@@ -7,6 +7,7 @@ from flask import Flask
 
 from map_viewer.routes import (
     config,
+    layout_config,
     map_data,
     minecraft,
     pages,
@@ -23,6 +24,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(pages.bp)
     app.register_blueprint(config.bp)
+    app.register_blueprint(layout_config.bp)
     app.register_blueprint(source_maps.bp)
     app.register_blueprint(map_data.bp)
     app.register_blueprint(regions.bp)

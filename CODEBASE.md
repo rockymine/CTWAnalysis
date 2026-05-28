@@ -109,7 +109,7 @@ CTWAnalysisWithClaudeCode/
 │   └── island_profile_overrides.json  Manual classification overrides: canonical_key → {profile, note}
 │
 ├── match_logs/                       Raw match parquet files (not in git)
-├── map_layouts.yaml                  Per-map extraction config (layer, exclude, playable_bbox)
+├── map_layouts.json                  Per-map extraction config (layer, exclude, playable_bbox)
 ├── ctw_config.yaml                   Global CLI defaults
 └── docs/
     ├── cli.md                        Full CLI reference
@@ -607,7 +607,7 @@ Raw event types: 0=MATCH_START, 1=MATCH_END, 2=SPAWN, 3=KILL, 4=DEATH, 5=POSITIO
 
 ---
 
-## Map Layout Config (`map_layouts.yaml`)
+## Map Layout Config (`map_layouts.json`)
 
 ```yaml
 maps:

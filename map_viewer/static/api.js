@@ -173,6 +173,39 @@ export async function fetchTopSurface(mapName) {
   return r.json();
 }
 
+// ── Configure page API ─────────────────────────────────────────────────────
+
+export async function fetchLayoutConfig(mapName) {
+  const r = await fetch(`/api/layout-config/${encodeURIComponent(mapName)}`);
+  if (!r.ok) throw new Error(`Failed to load layout config (${r.status})`);
+  return r.json();
+}
+
+export async function patchLayoutConfig(mapName, payload) {
+  const r = await fetch(`/api/layout-config/${encodeURIComponent(mapName)}`, {
+    method:  "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to save layout config (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function fetchLayoutLayers(mapName) {
+  const r = await fetch(`/api/source-map/${encodeURIComponent(mapName)}/layout-layers`);
+  if (!r.ok) throw new Error(`Failed to load layout layers (${r.status})`);
+  return r.json();
+}
+
+export async function fetchObserverIslandHint(mapName) {
+  const r = await fetch(`/api/source-map/${encodeURIComponent(mapName)}/observer-island-hint`);
+  if (!r.ok) throw new Error(`Failed to load observer island hint (${r.status})`);
+  return r.json();
+}
+
 // ── Team CRUD ──────────────────────────────────────────────────────────────
 
 export async function addTeam(mapName, team) {

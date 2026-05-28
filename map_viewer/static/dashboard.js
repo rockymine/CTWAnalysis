@@ -33,8 +33,9 @@ const mapDetailEmpty    = document.getElementById("map-detail-empty");
 const mapDetailContent  = document.getElementById("map-detail-content");
 const detailMapThumbnail    = document.getElementById("detail-map-thumbnail");
 const detailMapPlaceholder  = document.getElementById("detail-map-placeholder");
-const detailMapName     = document.getElementById("detail-map-name");
-const detailValidation  = document.getElementById("detail-validation");
+const detailMapName       = document.getElementById("detail-map-name");
+const detailConfigStatus  = document.getElementById("detail-config-status");
+const detailValidation    = document.getElementById("detail-validation");
 const detailSteps       = document.getElementById("detail-steps");
 const detailActions     = document.getElementById("detail-actions");
 const pipelineConsole   = document.getElementById("pipeline-console");
@@ -110,11 +111,16 @@ function renderMapList() {
     dot.className = "map-status-dot" + (map.preprocessed ? " map-status-dot--done" : "");
     dot.title = map.preprocessed ? "All pipeline steps complete" : "Not fully preprocessed";
 
+    const configBadge = document.createElement("span");
+    configBadge.className = "map-config-badge" + (map.configured ? " map-config-badge--ok" : " map-config-badge--missing");
+    configBadge.title = map.configured ? "Layout configured" : "Layout not configured";
+
     const label = document.createElement("span");
     label.className = "map-list-label";
     label.textContent = map.name;
 
     row.appendChild(dot);
+    row.appendChild(configBadge);
     row.appendChild(label);
     row.addEventListener("click", () => selectMap(map.name));
     mapListEl.appendChild(row);
@@ -134,6 +140,15 @@ async function selectMap(name) {
   renderMapList();
   showDetail();
   detailMapName.textContent = name.replace(/_/g, " ");
+
+  const selectedMapData = state.maps.find(m => m.name === name);
+  if (detailConfigStatus) {
+    if (selectedMapData && selectedMapData.configured) {
+      detailConfigStatus.innerHTML = '<span class="tag tag--ok">Configured</span>';
+    } else {
+      detailConfigStatus.innerHTML = '<span class="tag tag--warn">Not configured</span>';
+    }
+  }
 
   // Load thumbnail — show placeholder if not found
   if (detailMapThumbnail) {
@@ -176,6 +191,7 @@ function showDetail() {
   detailValidation.innerHTML = '<span class="tag tag--loading">Checking…</span>';
   detailSteps.innerHTML      = '<span class="tag tag--loading">Loading…</span>';
   detailActions.innerHTML    = "";
+  if (detailConfigStatus) detailConfigStatus.innerHTML = "";
   pipelineConsole.hidden     = true;
   openEditorBtn.hidden       = true;
 }
@@ -285,13 +301,24 @@ function renderActions() {
 }
 
 function renderOpenEditor() {
-  const status = state.pipelineStatus;
-  if (status && status.all_done) {
-    openEditorBtn.href   = `/editor?map=${encodeURIComponent(state.selectedMap)}`;
-    openEditorBtn.hidden = false;
-  } else {
+  const validation = state.validation;
+  if (!validation || !validation.valid) {
     openEditorBtn.hidden = true;
+    return;
   }
+  const selectedMapData = state.maps.find(m => m.name === state.selectedMap);
+  const configured = selectedMapData && selectedMapData.configured;
+  const allDone    = state.pipelineStatus && state.pipelineStatus.all_done;
+  const mapParam   = encodeURIComponent(state.selectedMap);
+
+  if (configured && allDone) {
+    openEditorBtn.href        = `/editor?map=${mapParam}`;
+    openEditorBtn.textContent = "Open in Editor →";
+  } else {
+    openEditorBtn.href        = `/configure?map=${mapParam}`;
+    openEditorBtn.textContent = "Configure →";
+  }
+  openEditorBtn.hidden = false;
 }
 
 // ── Pipeline execution ──────────────────────────────────────────────────────

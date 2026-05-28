@@ -13,3 +13,10 @@ def index():
 @bp.route("/editor")
 def editor():
     return render_template("editor.html")
+
+
+@bp.route("/configure")
+def configure():
+    from flask import request as req
+    map_name = req.args.get("map", "")
+    return render_template("configure.html", map_name=map_name)
