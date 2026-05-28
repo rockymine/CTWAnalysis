@@ -95,6 +95,15 @@ CTWAnalysisWithClaudeCode/
 ├── visualization/
 │   └── map_primitives.py             (re-export from common/visualization — prefer common/)
 │
+├── map_viewer/                       PRIMARY USER-FACING TOOL — Flask app (port 7891)
+│   ├── app.py                        create_app() — registers 10 blueprints
+│   ├── routes/                       One module per blueprint (pages, config, layout_config,
+│   │                                 source_maps, map_data, regions, teams, spawns, wools, minecraft)
+│   ├── services/                     All business logic (pipeline, region_editor, wool_editor,
+│   │                                 spawn_editor, team_editor, region_tree, region_xml, …)
+│   ├── templates/                    index.html, editor.html, configure.html
+│   └── static/                       JS/CSS frontend assets
+│
 ├── map_folders/<map>/                RAW INPUT (never modified)
 │   ├── region/                       Minecraft .mca region files
 │   └── map.xml                       PGM map definition
@@ -727,7 +736,7 @@ The map viewer (`map_viewer/`) is the primary user-facing tool — a Flask app f
 |---|---|---|
 | `/` | `index.html` | Dashboard: configure map/output folders, list maps, show pipeline status, trigger pipeline run |
 | `/editor?map=<name>` | `editor.html` | Full map editor: canvas, region sidebar, inspector panel |
-| `/configure` | `configure.html` | Global settings (maps folder, output folder) |
+| `/configure?map=<name>` | `configure.html` | Per-map configuration: observer island exclusion, layout layer, exclude list, playable bbox |
 
 ### Flask App
 
