@@ -867,6 +867,47 @@
         71,
         48
       ]
+    },
+    "newgen": {
+      "layer": "bedrock",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [],
+      "playable_bbox": [
+        57,
+        -198,
+        262,
+        7
+      ]
+    },
+    "golden_drought_vi": {
+      "layer": "lowest_solid",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [
+        4,
+        7,
+        9,
+        8
+      ],
+      "playable_bbox": [
+        -32,
+        -165,
+        33,
+        166
+      ]
+    },
+    "after_hours_ii": {
+      "layer": "lowest_solid",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [],
+      "playable_bbox": [
+        -178,
+        -149,
+        59,
+        0
+      ]
     }
   }
 }

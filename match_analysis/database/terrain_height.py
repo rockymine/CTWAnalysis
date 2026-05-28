@@ -22,7 +22,7 @@ from layout_analysis.map_layout_config import get_map_layout
 
 logger = logging.getLogger('ctw')
 
-# Layer name (from map_layouts.yaml) → raw layout parquet filename.
+# Layer name (from map_layouts.json) → raw layout parquet filename.
 # For configured maps the actual clustering parquet is layout_decided.parquet;
 # this mapping is used as a fallback for unconfigured maps.
 _LAYER_TO_PARQUET: dict[str, str] = {
@@ -39,7 +39,7 @@ def _find_clustering_parquet(output_dir: Path, map_slug: str) -> Path | None:
     Priority order:
     1. ``layout_decided.parquet`` — written by island detection for all
        configured maps (the most common case).
-    2. Layer-specific file from ``map_layouts.yaml`` config — covers
+    2. Layer-specific file from ``map_layouts.json`` config — covers
        configured maps where ``layer == 'y0'`` with no exclusions (island
        detection writes back to ``layout_y0.parquet`` directly in that case).
     3. ``layout_bedrock.parquet`` — default for unconfigured maps running
