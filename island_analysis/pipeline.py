@@ -23,7 +23,6 @@ LAYOUT_FILES = {
     'bedrock': 'layout_bedrock.parquet',
     'y0': 'layout_y0.parquet',
     'top': 'layout_top_surface.parquet',
-    'density': 'layout_vertical_density.parquet',
     'solid': 'layout_lowest_solid.parquet',
     'decided': 'layout_decided.parquet',
 }

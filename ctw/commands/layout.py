@@ -13,7 +13,6 @@ from layout_analysis import (
     RegionReader,
     Y0LayerExtractor,
     TopSurfaceExtractor,
-    VerticalDensityExtractor,
     LowestBedrockExtractor,
     ResourceBlockExtractor,
     ChestExtractor,
@@ -49,14 +48,8 @@ def register(subparsers):
     p.add_argument('--output', default=None,
                    help='Output root directory (default: output/). Each map '
                         'writes to <output>/<map_name>/.')
-    p.add_argument('--threshold', type=int, default=10,
-                   help='Density threshold (default: 10)')
-    p.add_argument('--density-mode', default='run,count',
-                   metavar='{run,count}',
-                   help='Comma-separated density modes (default: run,count)')
     p.add_argument('--skip-y0', action='store_true', help='Skip Y0 extraction')
     p.add_argument('--skip-surface', action='store_true', help='Skip top surface')
-    p.add_argument('--skip-density', action='store_true', help='Skip density')
     p.add_argument('--skip-bedrock', action='store_true', help='Skip bedrock')
     p.add_argument('--skip-lowest-solid', action='store_true',
                    help='Skip lowest-solid-layer extraction')
@@ -103,7 +96,6 @@ def handler(args):
 
         reader = RegionReader(str(region_folder))
         results = {}
-        density_results = {}
 
         if not args.skip_y0:
             df = Y0LayerExtractor(reader).extract()
@@ -119,13 +111,6 @@ def handler(args):
         else:
             results['top_surface'] = pd.DataFrame()
 
-        if not args.skip_density:
-            for mode in (m.strip() for m in args.density_mode.split(',') if m.strip() in ('run', 'count')):
-                df = VerticalDensityExtractor(reader, threshold=args.threshold, mode=mode).extract()
-                name = f"{mode}_N{args.threshold}"
-                df.to_parquet(str(output_dir / f'density_{name}_points.parquet'))
-                density_results[name] = df
-
         if not args.skip_bedrock:
             df = LowestBedrockExtractor(reader).extract()
             df.to_parquet(str(output_dir / 'lowest_bedrock_points.parquet'))
@@ -136,7 +121,6 @@ def handler(args):
         save_all_plots(
             y0_df=results.get('y0', pd.DataFrame()),
             top_surface_df=results.get('top_surface', pd.DataFrame()),
-            density_dfs=density_results,
             bedrock_df=results.get('bedrock', pd.DataFrame()),
             output_dir=str(output_dir),
         )
@@ -148,13 +132,10 @@ def handler(args):
         force_rerun=args.force,
         skip_y0=args.skip_y0,
         skip_surface=args.skip_surface,
-        skip_density=args.skip_density,
         skip_bedrock=args.skip_bedrock,
         skip_lowest_solid=args.skip_lowest_solid,
         skip_features=args.skip_features,
         skip_non_solid=args.skip_non_solid,
-        threshold=args.threshold,
-        density_mode=args.density_mode,
     )
 
     if args.workers > 1 and len(map_folders) > 1:

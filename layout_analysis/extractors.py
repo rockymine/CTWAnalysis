@@ -1,13 +1,12 @@
 """
 Extraction modes for analyzing Minecraft world layouts.
 
-Provides six extractors:
+Provides five extractors:
 1. Y0LayerExtractor            - Extracts non-air blocks at world y=0
 2. TopSurfaceExtractor         - Finds highest non-excluded non-air block in each column
-3. VerticalDensityExtractor    - Filters columns by density metrics
-4. LowestBedrockExtractor      - Finds lowest bedrock (block 7) in each column
-5. LowestSolidLayerExtractor   - Finds lowest non-excluded non-air block in each column
-6. VerticalSegmentsExtractor   - Finds all contiguous Y-ranges of solid blocks per column
+3. LowestBedrockExtractor      - Finds lowest bedrock (block 7) in each column
+4. LowestSolidLayerExtractor   - Finds lowest non-excluded non-air block in each column
+5. VerticalSegmentsExtractor   - Finds all contiguous Y-ranges of solid blocks per column
 
 All extractors read Minecraft Anvil section data as NumPy arrays (one section read per
 section_y rather than one get_block call per block), giving a large speedup for
@@ -15,7 +14,7 @@ full-column scans.
 """
 
 import logging
-from typing import Iterator, Literal
+from typing import Iterator
 import numpy as np
 import pandas as pd
 from .region_reader import RegionReader
@@ -92,17 +91,6 @@ def _iter_chunk_sections(chunk) -> Iterator[tuple[int, np.ndarray, np.ndarray]]:
 
     for item in sorted(parsed, key=lambda t: t[0]):
         yield item
-
-
-def _col_max_run(col: np.ndarray) -> int:
-    """Maximum consecutive True run length in a 1-D boolean array."""
-    if not np.any(col):
-        return 0
-    extended = np.concatenate([[False], col, [False]])
-    diff = np.diff(extended.astype(np.int8))
-    starts = np.where(diff == 1)[0]
-    ends = np.where(diff == -1)[0]
-    return int((ends - starts).max())
 
 
 def _build_full_blocks(chunk) -> np.ndarray:
@@ -374,81 +362,6 @@ class TopSurfaceExtractor:
         })
 
 
-class VerticalDensityExtractor:
-    """
-    Filters columns by vertical density metrics.
-
-    Supports two modes:
-    - 'run': Maximum consecutive run length of non-air blocks
-    - 'count': Total number of non-air blocks
-
-    Criterion: metric >= threshold
-    """
-
-    def __init__(
-        self,
-        region_reader: RegionReader,
-        threshold: int = 10,
-        mode: Literal['run', 'count'] = 'run',
-    ) -> None:
-        self.reader = region_reader
-        self.threshold = threshold
-        self.mode = mode
-
-    def extract(self) -> pd.DataFrame:
-        """
-        Extract columns meeting the density threshold.
-
-        Returns:
-            DataFrame with columns: world_x, world_z, metric
-        """
-        all_wx: list[np.ndarray] = []
-        all_wz: list[np.ndarray] = []
-        all_m:  list[np.ndarray] = []
-        chunk_count = 0
-
-        logger.debug(f"Extracting vertical density (mode={self.mode}, threshold={self.threshold})...")
-
-        for chunk, chunk_x, chunk_z in self.reader.iter_chunks():
-            chunk_count += 1
-            if chunk_count % 100 == 0:
-                n = sum(len(a) for a in all_wx)
-                logger.debug(f"  Processed {chunk_count} chunks, found {n} points...")
-
-            full_blocks = _build_full_blocks(chunk)
-
-            non_air = full_blocks != 0  # (256, 16, 16)
-
-            if self.mode == 'count':
-                metrics = np.sum(non_air, axis=0).astype(np.int32)   # (16, 16)
-            else:  # 'run'
-                # Compute max consecutive run per column (256 columns, 256 y-steps)
-                flat = non_air.reshape(256, 256)  # [y, col]
-                metrics = np.zeros(256, dtype=np.int32)
-                for col_i in range(256):
-                    metrics[col_i] = _col_max_run(flat[:, col_i])
-                metrics = metrics.reshape(16, 16)
-
-            # Filter by threshold
-            mask = metrics >= self.threshold
-            zz, xx = np.where(mask)
-            if len(zz):
-                all_wx.append((chunk_x * 16 + xx).astype(np.int32))
-                all_wz.append((chunk_z * 16 + zz).astype(np.int32))
-                all_m.append(metrics[zz, xx])
-
-        total = sum(len(a) for a in all_wx)
-        logger.debug(f"Completed density extraction: {chunk_count} chunks, {total} matching points")
-
-        if not all_wx:
-            return pd.DataFrame(columns=['world_x', 'world_z', 'metric'])
-        return pd.DataFrame({
-            'world_x': np.concatenate(all_wx),
-            'world_z': np.concatenate(all_wz),
-            'metric': np.concatenate(all_m),
-        })
-
-
 class LowestBedrockExtractor:
     """
     Finds the lowest bedrock block (block_id=7) in each column.
@@ -655,8 +568,7 @@ class VerticalSegmentsExtractor:
     renderer can draw a filled rectangle from y_start to y_end for each row
     without needing to know what is in the air gaps between runs.
 
-    Uses _build_full_blocks internally — same approach as VerticalDensityExtractor
-    but extracting interval boundaries rather than a density metric.
+    Uses _build_full_blocks internally, extracting interval boundaries per column.
 
     Criterion: at least one qualifying block exists anywhere in the column
     """

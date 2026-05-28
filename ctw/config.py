@@ -27,11 +27,8 @@ CONFIG_SCHEMA: dict[str, dict[str, type]] = {
         'output': str,
     },
     'layout': {
-        'threshold': int,
-        'density_mode': str,
         'skip_y0': bool,
         'skip_surface': bool,
-        'skip_density': bool,
         'skip_bedrock': bool,
     },
     'islands': {

@@ -7,7 +7,6 @@ from typing import Optional
 from .extractors import (
     Y0LayerExtractor,
     TopSurfaceExtractor,
-    VerticalDensityExtractor,
     LowestBedrockExtractor,
     LowestSolidLayerExtractor,
     VerticalSegmentsExtractor,
@@ -67,14 +66,11 @@ def analyze_layout(
     output_dir: Optional[Path] = None,
     skip_y0: bool = False,
     skip_surface: bool = False,
-    skip_density: bool = False,
     skip_bedrock: bool = False,
     skip_lowest_solid: bool = False,
     skip_features: bool = False,
     skip_non_solid: bool = False,
     skip_segments: bool = True,
-    threshold: int = 10,
-    density_mode: str = 'run',
     map_layout_config: Optional[MapLayoutConfig] = None,
     max_build_height: Optional[int] = None,
 ) -> Optional[dict]:
@@ -98,7 +94,6 @@ def analyze_layout(
         output_dir: Where to write parquet files (default: map_folder).
         skip_y0: Skip Y=0 layer extraction (ignored when map_layout_config is set).
         skip_surface: Skip top surface extraction.
-        skip_density: Skip vertical density extraction.
         skip_bedrock: Skip bedrock extraction.
         skip_lowest_solid: Skip lowest-solid-layer extraction.
         skip_features: Skip feature extraction (resource blocks and chests).
@@ -108,8 +103,6 @@ def analyze_layout(
             full-block scan is expensive.
             so decorative blocks (buttons, redstone wire, dead bushes, tall grass,
             flowers) are excluded from the surface scan.
-        threshold: Density threshold for vertical density extractor.
-        density_mode: Mode for vertical density extractor ('run' or 'count').
         map_layout_config: Per-map config from map_layouts.json.  When
             provided, drives which layer and exclusions to use.
         max_build_height: Y-level ceiling from map.xml.  When set, the
@@ -145,8 +138,6 @@ def analyze_layout(
         parquet_files['y0_layer'] = out / 'layout_y0.parquet'
     if not skip_surface:
         parquet_files['top_surface'] = out / 'layout_top_surface.parquet'
-    if not skip_density:
-        parquet_files['vertical_density'] = out / 'layout_vertical_density.parquet'
     if not skip_bedrock:
         parquet_files['bedrock'] = out / 'layout_bedrock.parquet'
     if not skip_lowest_solid:
@@ -196,15 +187,6 @@ def analyze_layout(
             df = extractor.extract()
             df.to_parquet(parquet_files['top_surface'])
             logger.debug(f"    Saved {parquet_files['top_surface'].name} ({len(df)} blocks)")
-
-    # Extract vertical density
-    if 'vertical_density' in parquet_files:
-        if not parquet_files['vertical_density'].exists() or force_rerun:
-            logger.debug(f"  Extracting vertical density (mode={density_mode}, threshold={threshold})...")
-            extractor = VerticalDensityExtractor(reader, threshold=threshold, mode=density_mode)
-            df = extractor.extract()
-            df.to_parquet(parquet_files['vertical_density'])
-            logger.debug(f"    Saved {parquet_files['vertical_density'].name} ({len(df)} columns)")
 
     # Extract bedrock
     if 'bedrock' in parquet_files:

@@ -96,7 +96,6 @@ def save_point_plot(
 def save_all_plots(
     y0_df: pd.DataFrame,
     top_surface_df: pd.DataFrame,
-    density_dfs: dict[str, pd.DataFrame],
     bedrock_df: pd.DataFrame,
     output_dir: str
 ) -> None:
@@ -106,8 +105,6 @@ def save_all_plots(
     Args:
         y0_df: Y0 layer extraction results
         top_surface_df: Top surface extraction results
-        density_dfs: Dictionary mapping mode names to density extraction results
-                     e.g., {'run_N10': df, 'count_N10': df}
         bedrock_df: Lowest bedrock extraction results
         output_dir: Directory to save plots
     """
@@ -129,14 +126,6 @@ def save_all_plots(
         str(output_path / 'top_surface.png'),
         'Top Surface - Highest non-air block per column'
     )
-
-    # Density plots
-    for mode_name, df in density_dfs.items():
-        save_point_plot(
-            df,
-            str(output_path / f'density_{mode_name}.png'),
-            f'Vertical Density - {mode_name.replace("_", " ").title()}'
-        )
 
     # Bedrock plot
     save_point_plot(

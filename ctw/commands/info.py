@@ -34,7 +34,6 @@ def handler(args):
         'layout_y0.parquet': 'Layout Y0',
         'layout_bedrock.parquet': 'Layout Bedrock',
         'layout_top_surface.parquet': 'Layout Top Surface',
-        'layout_vertical_density.parquet': 'Layout Vertical Density',
         'map_data.json': 'XML Data',
         'map_graph.json': 'Map Graph',
         'map_context.json': 'Map Context',
