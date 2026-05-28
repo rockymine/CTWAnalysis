@@ -625,6 +625,7 @@ async function loadIslandData() {
       cfgBboxSection.hidden = cfgBboxDivider.hidden = true;
       return;
     }
+    if (topbarMapName && context.map_name)    topbarMapName.textContent = context.map_name;
     if (topbarVersion && context.map_version) topbarVersion.textContent = `v${context.map_version}`;
     const islands = context.islands || [];
 
