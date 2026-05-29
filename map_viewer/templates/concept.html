@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CTW Layout Concept</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='components.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='viewer.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='concept.css') }}"/>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<div id="topbar">
+  <a href="/" class="topbar-breadcrumb-home" title="Back to dashboard">
+    <i data-lucide="folder"></i>
+    <span>Maps</span>
+  </a>
+  <span class="topbar-sep">›</span>
+  <span class="topbar-crumb">Layout Concept</span>
+  <span id="status" style="margin-left:auto; font-size:12px; color:var(--text-secondary)"></span>
+  <button id="ct-export" class="topbar-btn">Export JSON</button>
+</div>
+
+<div id="main">
+
+  <!-- ── Left sidebar: shape list ── -->
+  <div id="concept-layers">
+    <div class="section-header section-header--list">
+      <span class="section-title">Shapes</span>
+    </div>
+    <div id="ct-shape-list" class="concept-shape-list">
+      <div class="concept-empty">No shapes yet. Draw with the tools above.</div>
+    </div>
+  </div>
+
+  <div class="sidebar-handle"></div>
+
+  <!-- ── Canvas column ── -->
+  <div id="concept-canvas-col">
+
+    <!-- Toolbar -->
+    <div class="canvas-subbar">
+      <div id="draw-toolbar">
+        <button id="ct-tool-move" class="draw-tool-btn draw-tool-btn--active"
+                title="Move / pan (M)">
+          <i data-lucide="move"></i>
+        </button>
+        <button id="ct-tool-rect" class="draw-tool-btn" title="Rectangle (R)">
+          <i data-lucide="square"></i>
+        </button>
+        <button id="ct-tool-circ" class="draw-tool-btn" title="Circle (O)">
+          <i data-lucide="circle"></i>
+        </button>
+        <button id="ct-tool-poly" class="draw-tool-btn"
+                title="Polygon — click vertices, double-click or click first vertex to close (P)">
+          <i data-lucide="pentagon"></i>
+        </button>
+      </div>
+
+      <div class="subbar-sep"></div>
+
+      <!-- Add / subtract operation toggle -->
+      <button id="ct-op-add" class="draw-tool-btn draw-tool-btn--active"
+              title="Add mode — shapes grow the island mass">
+        <i data-lucide="plus-square"></i>
+        <span style="font-size:11px;margin-left:3px">Add</span>
+      </button>
+      <button id="ct-op-sub" class="draw-tool-btn"
+              title="Subtract mode — shapes cut holes">
+        <i data-lucide="minus-square"></i>
+        <span style="font-size:11px;margin-left:3px">Sub</span>
+      </button>
+
+      <div class="subbar-sep"></div>
+
+      <!-- Canvas size -->
+      <label class="layer-item" title="Half-width of the sketch canvas in blocks">
+        <span style="color:var(--text-secondary);font-size:11px">±</span>
+        <input id="ct-canvas-half" class="concept-size-input" type="number"
+               value="256" min="32" max="2048" step="16"/>
+        <span style="font-size:11px;color:var(--text-muted)">blocks</span>
+      </label>
+      <button id="ct-apply-size" class="draw-tool-btn" title="Apply canvas size">
+        <i data-lucide="refresh-cw"></i>
+      </button>
+
+      <div class="canvas-subbar-right">
+        <span id="ct-coords" class="concept-coords"></span>
+      </div>
+    </div>
+
+    <!-- SVG area -->
+    <div id="concept-svg-area">
+      <svg id="concept-svg"></svg>
+    </div>
+
+  </div><!-- /canvas-col -->
+
+  <div class="sidebar-handle"></div>
+
+  <!-- ── Right sidebar: island groups ── -->
+  <div id="concept-inspector">
+    <div class="section-header section-header--list" style="justify-content:space-between">
+      <span class="section-title">Islands</span>
+      <button id="ct-new-island" class="action-btn" style="font-size:11px;padding:2px 8px">+ Island</button>
+    </div>
+
+    <div id="ct-island-list" class="concept-island-list"></div>
+
+    <div class="panel-divider"></div>
+
+    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+      <button id="ct-compute-all" class="action-btn action-btn--primary" style="width:100%">
+        Compute All Islands
+      </button>
+      <p class="concept-hint">
+        Compute unifies ADD shapes and subtracts SUB shapes per island, producing
+        a polygon with outline and holes in the same format as layer extraction.
+      </p>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script type="module" src="{{ url_for('static', filename='concept.js') }}"></script>
+</body>
+</html>

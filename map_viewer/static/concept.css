@@ -1,0 +1,143 @@
+/*
+ * concept.css — styles specific to the layout concepting tool.
+ * Shares tokens and base components from viewer.css / components.css.
+ */
+
+/* ── page layout ── */
+#concept-layers {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+#concept-canvas-col {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+
+#concept-svg-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; padding: 12px; background: var(--bg-deep);
+}
+#concept-svg { display: block; cursor: default; }
+
+#concept-inspector {
+  width: 280px; flex-shrink: 0;
+  background: var(--bg-panel);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ── shape list (left panel) ── */
+.concept-shape-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0;
+}
+
+.concept-empty {
+  font-size: 12px; color: var(--text-muted);
+  padding: 12px 14px; line-height: 1.5;
+}
+
+.concept-shape-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px; min-height: 30px;
+  cursor: pointer; user-select: none;
+}
+.concept-shape-row:hover { background: var(--bg-vis-hover); }
+.concept-shape-row.list-row--selected { background: var(--bg-selected); }
+
+.concept-op-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; border-radius: 3px;
+  padding: 1px 4px; flex-shrink: 0;
+}
+.concept-op-badge--add { background: #0d948833; color: #2dd4bf; }
+.concept-op-badge--sub { background: #dc262633; color: #f87171; }
+
+.concept-shape-icon {
+  font-size: 13px; color: var(--text-secondary); flex-shrink: 0;
+}
+.concept-shape-label {
+  font-size: 12px; color: var(--text-primary); flex: 1; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+
+.concept-island-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; display: inline-block;
+}
+
+.btn-remove {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 14px; line-height: 1;
+  padding: 0 2px; flex-shrink: 0; opacity: 0;
+  transition: color 0.1s, opacity 0.1s;
+}
+.concept-shape-row:hover .btn-remove,
+.concept-island-card:hover .btn-remove { opacity: 1; }
+.btn-remove:hover { color: var(--color-error); }
+
+/* island–shape assignment row */
+.concept-assign-row {
+  padding: 6px 10px 10px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+/* ── island list (right panel) ── */
+.concept-island-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0;
+}
+
+.concept-island-card {
+  margin: 4px 8px; padding: 8px 10px;
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 5px; display: flex; flex-direction: column; gap: 5px;
+}
+.concept-island-card--active {
+  border-color: var(--accent);
+}
+
+.concept-island-header {
+  display: flex; align-items: center; gap: 7px;
+}
+.concept-island-name {
+  flex: 1; padding: 2px 6px; font-size: 12px; height: 24px;
+}
+.concept-island-del { font-size: 14px; }
+
+.concept-island-meta {
+  font-size: 11px; color: var(--text-muted); padding-left: 15px;
+}
+.concept-island-meta em { font-style: normal; color: var(--text-secondary); }
+
+.concept-island-actions {
+  display: flex; gap: 6px;
+}
+.concept-island-active-btn,
+.concept-island-compute-btn {
+  font-size: 11px; padding: 2px 8px;
+}
+
+/* ── toolbar extras ── */
+.concept-size-input {
+  width: 54px; background: var(--bg-base); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 2px 5px; font-size: 11px; font-family: inherit;
+  text-align: right;
+}
+.concept-size-input:focus { outline: 1px solid var(--accent); }
+
+.concept-coords {
+  font-size: 11px; color: var(--text-muted); min-width: 100px;
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+
+/* ── compute hint ── */
+.concept-hint {
+  font-size: 11px; color: var(--text-muted); line-height: 1.5;
+}
+
+/* ── canvas SVG selection highlight ── */
+.concept-shape--selected > * {
+  stroke-width: 2 !important;
+  filter: drop-shadow(0 0 3px rgba(99,102,241,.6));
+}

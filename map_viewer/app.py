@@ -9,6 +9,7 @@ matplotlib.use("Agg")  # non-interactive backend; must be set before pyplot is i
 from flask import Flask
 
 from map_viewer.routes import (
+    concept,
     config,
     layout_config,
     map_data,
@@ -26,6 +27,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
 
     app.register_blueprint(pages.bp)
+    app.register_blueprint(concept.bp)
     app.register_blueprint(config.bp)
     app.register_blueprint(layout_config.bp)
     app.register_blueprint(source_maps.bp)
