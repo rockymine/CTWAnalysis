@@ -103,6 +103,59 @@ After each boolean recompute, every primitive shape is assigned to one or more i
 
 ---
 
+## Symmetry
+
+### Motivation
+
+CTW maps are always symmetric to some degree — teams must face equivalent challenges. The concept tool lets the author design one sector and have the rest of the map follow automatically, with the ability to break symmetry deliberately on specific axes when variation is wanted.
+
+### Axis origin
+
+All symmetry operations pivot around the **center point** defined in the Overview panel (Map Space → Center). This is the same center the pipeline uses when detecting symmetry on real maps.
+
+### Two tiers of symmetry
+
+Symmetry is organised in two tiers that compose on top of each other:
+
+**Tier 1 — Main symmetry axis (required)**
+
+The main axis defines the inter-team relationship and must be set before authoring begins. It determines how many team sectors exist and how they relate:
+
+| Setting | Use case |
+|---|---|
+| Mirror X | 2-team map mirrored across Z = center_z |
+| Mirror Z | 2-team map mirrored across X = center_x |
+| Rotate 180° | 2-team map with 180° rotational symmetry around the center |
+| Rotate 90° | 4-team map — only valid option for four teams |
+
+This matches the `global_symmetry` value the pipeline detects on real maps.
+
+**Tier 2 — Intra-team axes (optional, independently toggleable)**
+
+These axes operate *within* the authored sector to produce symmetry inside a single team's portion of the map. The pipeline calls this intra-team symmetry. Available options are mirror X (within the sector) and mirror Z (within the sector) — the same four axis-aligned types, but scoped to one team's half rather than the full map.
+
+Because intra-team axes are secondary to the main axis, the composed result is: shapes authored in the primary sector → apply intra-team axis → replicate the whole result via the main axis. Both team sides always see the same intra-team structure.
+
+### Custom symmetry axis *(later stage)*
+
+In addition to the axis-aligned options, the user can define an arbitrary line by placing two points on the canvas. That line acts as a mirror axis and can be toggled on or off independently. A custom axis is also a tier-2 (intra-team) axis: once enabled, it is replicated across the main symmetry axis to all other team sectors automatically. Multiple custom axes can coexist, each toggled separately.
+
+This feature is intentionally deferred — it requires more UI surface (point placement, axis management) and is only needed for creative layouts that don't fit the standard axis-aligned options. Document it here so the architecture accounts for it.
+
+### Live preview, not stored copies
+
+When any symmetry axis is active, the canvas shows mirrored/rotated copies as a **live overlay** computed in real time from the authored shapes. These copies are not stored as primitives and do not appear in the shape list. Only the shapes the user actually drew are primary. This keeps the authoring surface unambiguous and the shape list readable.
+
+### Per-axis toggle and deliberate asymmetry
+
+Every axis — main and intra-team — can be toggled on and off at any point. This is the core authoring affordance: start with all required symmetry active to establish the base layout, then disable specific axes to introduce controlled variation.
+
+**Example:** A team's two lanes should be symmetric (intra-team mirror Z active), but one lane should curve slightly more. The author designs the base layout with mirror Z on, then disables it and adjusts one lane's primitives. The other lane keeps its shape from when the axis was active. The result is mostly symmetric but with deliberate variation on one side. The main axis is still active throughout, so the opposing team sector always mirrors the result.
+
+This maps directly onto what the pipeline detects: global symmetry present, intra-team symmetry partially broken.
+
+---
+
 ## Shape-specific notes
 
 - **Circle primitives**: The drawn circle outline snaps to block boundaries (integer coordinates). Stored as a polygon approximation at block resolution.
