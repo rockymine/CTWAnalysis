@@ -80,13 +80,15 @@ export class ConceptActivity {
       lasso:     btnLasso,
     });
 
-    // Button click handlers
+    // Button click handlers — draw tools toggle back to select when clicked while active
+    const setOrToggle = (tool) =>
+      this.#tools.setTool(this.#tools.activeTool === tool ? null : tool);
     btnMove.addEventListener("click",   () => this.#tools.setTool("move"));
     btnSelect.addEventListener("click", () => this.#tools.setTool(null));
-    btnRect.addEventListener("click",   () => this.#tools.setTool("rectangle"));
-    btnCirc.addEventListener("click",   () => this.#tools.setTool("circle"));
-    btnPoly.addEventListener("click",   () => this.#tools.setTool("polygon"));
-    btnLasso.addEventListener("click",  () => this.#tools.setTool("lasso"));
+    btnRect.addEventListener("click",   () => setOrToggle("rectangle"));
+    btnCirc.addEventListener("click",   () => setOrToggle("circle"));
+    btnPoly.addEventListener("click",   () => setOrToggle("polygon"));
+    btnLasso.addEventListener("click",  () => setOrToggle("lasso"));
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
