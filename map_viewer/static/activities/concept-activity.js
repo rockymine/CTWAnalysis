@@ -7,6 +7,7 @@
 
 import { ConceptCanvas } from "../canvas/concept-canvas.js";
 import { ToolManager }   from "../shared/tool-manager.js";
+import * as api          from "../api.js";
 
 const ISLAND_COLORS = [
   "#4ade80", "#60a5fa", "#f472b6", "#fb923c",
@@ -169,7 +170,7 @@ export class ConceptActivity {
     });
 
     document.getElementById("ct-add-author").addEventListener("click", () => {
-      this.#meta.authors.push({ name: "" });
+      this.#meta.authors.push({ name: "", uuid: "", contribution: "" });
       this.#renderAuthors();
     });
 
@@ -192,13 +193,45 @@ export class ConceptActivity {
     this.#meta.authors.forEach((author, idx) => {
       const row = document.createElement("div");
       row.className = "author-row";
+      row.dataset.uuid = author.uuid ?? "";
+
+      const avatarSrc = author.uuid ? _avatarUrl(author.uuid) : _AVATAR_EMPTY;
       row.innerHTML = `
+        <img class="author-avatar" src="${_esc(avatarSrc)}" width="16" height="16" alt=""/>
         <input class="field-input author-name" type="text"
-               placeholder="Minecraft username" value="${_esc(author.name)}"/>
+               placeholder="Minecraft username" value="${_esc(author.name ?? "")}"/>
+        <input class="field-input author-contribution" type="text"
+               placeholder="Contribution (optional)" value="${_esc(author.contribution ?? "")}"/>
         <button class="btn-remove" title="Remove">×</button>
       `;
-      row.querySelector(".author-name").addEventListener("input",
-        (e) => { author.name = e.target.value; });
+
+      const avatarImg    = row.querySelector(".author-avatar");
+      const nameInput    = row.querySelector(".author-name");
+      const contribInput = row.querySelector(".author-contribution");
+
+      nameInput.addEventListener("input",    (e) => { author.name         = e.target.value; });
+      contribInput.addEventListener("input", (e) => { author.contribution = e.target.value; });
+
+      nameInput.addEventListener("blur", async () => {
+        const val = nameInput.value.trim();
+        if (!val || val === author.uuid || val === author.name) return;
+        try {
+          const player   = await api.fetchMinecraftPlayer(val);
+          author.uuid    = player.uuid;
+          author.name    = player.name;
+          row.dataset.uuid    = player.uuid;
+          nameInput.value     = player.name;
+          nameInput.title     = player.uuid;
+          avatarImg.src       = _avatarUrl(player.uuid);
+          nameInput.classList.remove("author-name--error");
+        } catch {
+          author.uuid   = "";
+          avatarImg.src = _AVATAR_EMPTY;
+          nameInput.classList.add("author-name--error");
+          nameInput.title = "Player not found";
+        }
+      });
+
       row.querySelector(".btn-remove").addEventListener("click", () => {
         this.#meta.authors.splice(idx, 1);
         this.#renderAuthors();
@@ -485,7 +518,13 @@ export class ConceptActivity {
     const payload = {
       map_name:     this.#meta.name    || "Unnamed Map",
       map_version:  this.#meta.version || "0.1.0",
-      authors:      this.#meta.authors.filter(a => a.name.trim()),
+      authors:      this.#meta.authors
+                      .filter(a => a.name?.trim())
+                      .map(a => ({
+                        name:         a.name,
+                        ...(a.uuid         && { uuid:         a.uuid }),
+                        ...(a.contribution && { contribution: a.contribution }),
+                      })),
       bounding_box: [
         this.#meta.bboxMinX, this.#meta.bboxMaxX,
         this.#meta.bboxMinZ, this.#meta.bboxMaxZ,
@@ -519,6 +558,11 @@ export class ConceptActivity {
 
 function _esc(str) {
   return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+const _AVATAR_EMPTY = "data:image/gif;base64,R0lGODlhEAAQAAAAACwAAAAAEAAQAAABEIQBADs=";
+function _avatarUrl(uuid) {
+  return `https://mc-heads.net/avatar/${encodeURIComponent(uuid)}/16`;
 }
 
 function _typeIcon(type) {

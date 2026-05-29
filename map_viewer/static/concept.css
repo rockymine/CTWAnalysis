@@ -65,15 +65,15 @@
   flex-shrink: 0; display: inline-block;
 }
 
-.btn-remove {
-  background: transparent; border: none; cursor: pointer;
-  color: var(--text-muted); font-size: 14px; line-height: 1;
-  padding: 0 2px; flex-shrink: 0; opacity: 0;
-  transition: color 0.1s, opacity 0.1s;
+/* Shape list and island card remove buttons are hover-only and compact.
+   Author row uses the components.css default (always visible). */
+.concept-shape-row .btn-remove,
+.concept-island-card .btn-remove {
+  font-size: 14px; line-height: 1; padding: 0 2px;
+  opacity: 0; transition: color 0.1s, opacity 0.1s;
 }
 .concept-shape-row:hover .btn-remove,
 .concept-island-card:hover .btn-remove { opacity: 1; }
-.btn-remove:hover { color: var(--color-error); }
 
 /* island–shape assignment row */
 .concept-assign-row {
