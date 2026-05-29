@@ -104,7 +104,7 @@ def _encode_coords(region: dict) -> dict | None:
 # Polygon_2d computation (Shapely-backed, optional)
 # ---------------------------------------------------------------------------
 
-_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect", "negative"})
+_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect", "negative", "mirror", "translate"})
 
 
 def _half_to_shapely(origin_x, origin_z, normal_x, normal_z, bounds):
