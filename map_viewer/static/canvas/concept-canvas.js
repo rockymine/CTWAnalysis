@@ -91,6 +91,10 @@ export class ConceptCanvas {
   #rectResizeState  = null;  // { shapeId, xf, zf }
   #vertexDragState  = null;  // { shapeId, vertexIdx }
 
+  // ── center marker ──────────────────────────────────────────────────────────
+  #centerX = 0;
+  #centerZ = 0;
+
   // ── SVG layers ─────────────────────────────────────────────────────────────
   #viewportG      = null;
   #gridLayerEl    = null;
@@ -98,6 +102,7 @@ export class ConceptCanvas {
   #resultLayerEl  = null;
   #drawLayerEl    = null;
   #handlesLayerEl = null;  // outside viewport — screen-space handles
+  #centerLayerEl  = null;  // outside viewport — center crosshair marker
   #overlayLayerEl = null;  // outside viewport — coord label etc.
 
   constructor(svgElement, wrapElement, callbacks = {}) {
@@ -123,6 +128,12 @@ export class ConceptCanvas {
     this.#scale = 1; this.#panX = 0; this.#panY = 0;
     this.#repaint();
     this.#reshapeAll();
+  }
+
+  setCenter(x, z) {
+    this.#centerX = x;
+    this.#centerZ = z;
+    this.#refreshCenterMarker();
   }
 
   addShape(shape) {
@@ -202,13 +213,17 @@ export class ConceptCanvas {
     viewport.appendChild(this.#resultLayerEl);
     viewport.appendChild(this.#drawLayerEl);
 
-    // Handles and overlay live outside the viewport so they stay fixed-size
+    // Handles, center marker, and overlay live outside the viewport so they
+    // stay fixed-size regardless of zoom level.
     this.#handlesLayerEl = svgEl("g", { id: "layer-concept-handles" });
+    this.#centerLayerEl  = svgEl("g", { id: "layer-concept-center", "pointer-events": "none" });
     this.#overlayLayerEl = svgEl("g", { id: "layer-concept-overlay" });
 
     this.#svg.appendChild(viewport);
     this.#svg.appendChild(this.#handlesLayerEl);
+    this.#svg.appendChild(this.#centerLayerEl);
     this.#svg.appendChild(this.#overlayLayerEl);
+    this.#refreshCenterMarker();
   }
 
   #reshapeAll() {
@@ -222,6 +237,7 @@ export class ConceptCanvas {
     }
     this.#rebuildResultLayer();
     this.#refreshHandles();
+    this.#refreshCenterMarker();
   }
 
   #buildGridLayer() {
@@ -617,6 +633,32 @@ export class ConceptCanvas {
       "transform", `matrix(${this.#scale},0,0,${this.#scale},${this.#panX},${this.#panY})`
     );
     this.#refreshHandles();
+    this.#refreshCenterMarker();
+  }
+
+  #refreshCenterMarker() {
+    if (!this.#centerLayerEl || !this.#toSvg) return;
+    while (this.#centerLayerEl.firstChild)
+      this.#centerLayerEl.removeChild(this.#centerLayerEl.firstChild);
+
+    const svgPt = this.#toSvg(this.#centerX, this.#centerZ);
+    const sx    = svgPt.x * this.#scale + this.#panX;
+    const sy    = svgPt.y * this.#scale + this.#panY;
+    const arm   = 10;
+    const color = "#a78bfa";
+
+    this.#centerLayerEl.appendChild(svgEl("line", {
+      x1: sx - arm, y1: sy, x2: sx + arm, y2: sy,
+      stroke: color, "stroke-width": "1",
+    }));
+    this.#centerLayerEl.appendChild(svgEl("line", {
+      x1: sx, y1: sy - arm, x2: sx, y2: sy + arm,
+      stroke: color, "stroke-width": "1",
+    }));
+    this.#centerLayerEl.appendChild(svgEl("circle", {
+      cx: sx, cy: sy, r: 4,
+      fill: "none", stroke: color, "stroke-width": "1.5",
+    }));
   }
 
   #clientToSvg(clientX, clientY) {

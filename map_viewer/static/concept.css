@@ -82,9 +82,19 @@
   display: flex; flex-direction: column; gap: 4px;
 }
 
+/* ── inspector scroll container ── */
+#concept-inspector-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+}
+
+.concept-panel-body {
+  padding: 8px 12px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
 /* ── island list (right panel) ── */
 .concept-island-list {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0;
+  padding: 6px 0;
 }
 
 .concept-island-card {

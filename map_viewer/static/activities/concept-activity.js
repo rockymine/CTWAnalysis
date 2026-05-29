@@ -24,10 +24,24 @@ export class ConceptActivity {
   #tools       = null;
   #activeIslandId = null;
 
+  #meta = {
+    name:     "",
+    version:  "0.1.0",
+    authors:  [],
+    bboxMinX: -256,
+    bboxMaxX:  256,
+    bboxMinZ: -256,
+    bboxMaxZ:  256,
+    centerX:   0,
+    centerZ:   0,
+  };
+  #centerIsAutomatic = true;
+
   constructor() {
     this.#initCanvas();
     this.#initToolbar();
     this.#initSidebars();
+    this.#initMetaPanel();
     this.#newIsland("Island 1");   // default island
     window.addEventListener("resize", () => this.#canvas.resize());
   }
@@ -95,12 +109,95 @@ export class ConceptActivity {
     btnSub.addEventListener("click", () => setOp("subtract"));
     setOp("add");
 
-    // Canvas size controls
-    document.getElementById("ct-apply-size").addEventListener("click", () => {
-      const half = Math.max(32, Math.min(2048,
-        parseInt(document.getElementById("ct-canvas-half").value, 10) || 256));
-      document.getElementById("ct-canvas-half").value = half;
-      this.#canvas.setBBox(-half, half, -half, half);
+  }
+
+  // ── meta panel ─────────────────────────────────────────────────────────────
+
+  #initMetaPanel() {
+    const nameEl    = document.getElementById("ct-map-name");
+    const versionEl = document.getElementById("ct-map-version");
+    const bboxMinX  = document.getElementById("ct-bbox-minx");
+    const bboxMaxX  = document.getElementById("ct-bbox-maxx");
+    const bboxMinZ  = document.getElementById("ct-bbox-minz");
+    const bboxMaxZ  = document.getElementById("ct-bbox-maxz");
+    const centerXEl = document.getElementById("ct-center-x");
+    const centerZEl = document.getElementById("ct-center-z");
+
+    nameEl.addEventListener("input",    () => { this.#meta.name    = nameEl.value; });
+    versionEl.addEventListener("input", () => { this.#meta.version = versionEl.value; });
+
+    const applyBBox = () => {
+      const minX = parseInt(bboxMinX.value, 10);
+      const maxX = parseInt(bboxMaxX.value, 10);
+      const minZ = parseInt(bboxMinZ.value, 10);
+      const maxZ = parseInt(bboxMaxZ.value, 10);
+      if ([minX, maxX, minZ, maxZ].some(isNaN)) return;
+      if (minX >= maxX || minZ >= maxZ) return;
+      this.#meta.bboxMinX = minX; this.#meta.bboxMaxX = maxX;
+      this.#meta.bboxMinZ = minZ; this.#meta.bboxMaxZ = maxZ;
+      this.#canvas.setBBox(minX, maxX, minZ, maxZ);
+      if (this.#centerIsAutomatic) this.#resetCenter();
+    };
+
+    const applyCenter = () => {
+      const cx = parseFloat(centerXEl.value), cz = parseFloat(centerZEl.value);
+      if (isNaN(cx) || isNaN(cz)) return;
+      this.#meta.centerX = cx; this.#meta.centerZ = cz;
+      this.#canvas.setCenter(cx, cz);
+    };
+
+    for (const el of [bboxMinX, bboxMaxX, bboxMinZ, bboxMaxZ]) {
+      el.addEventListener("blur", applyBBox);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") applyBBox(); });
+    }
+    for (const el of [centerXEl, centerZEl]) {
+      el.addEventListener("blur",    () => { this.#centerIsAutomatic = false; applyCenter(); });
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { this.#centerIsAutomatic = false; applyCenter(); }
+      });
+    }
+
+    document.getElementById("ct-center-reset").addEventListener("click", () => {
+      this.#centerIsAutomatic = true;
+      this.#resetCenter();
+    });
+
+    document.getElementById("ct-add-author").addEventListener("click", () => {
+      this.#meta.authors.push({ name: "" });
+      this.#renderAuthors();
+    });
+
+    // Prime canvas with the initial default center
+    this.#canvas.setCenter(this.#meta.centerX, this.#meta.centerZ);
+  }
+
+  #resetCenter() {
+    const cx = (this.#meta.bboxMinX + this.#meta.bboxMaxX) / 2;
+    const cz = (this.#meta.bboxMinZ + this.#meta.bboxMaxZ) / 2;
+    this.#meta.centerX = cx; this.#meta.centerZ = cz;
+    document.getElementById("ct-center-x").value = cx;
+    document.getElementById("ct-center-z").value = cz;
+    this.#canvas.setCenter(cx, cz);
+  }
+
+  #renderAuthors() {
+    const list = document.getElementById("ct-authors-list");
+    list.innerHTML = "";
+    this.#meta.authors.forEach((author, idx) => {
+      const row = document.createElement("div");
+      row.className = "author-row";
+      row.innerHTML = `
+        <input class="field-input author-name" type="text"
+               placeholder="Minecraft username" value="${_esc(author.name)}"/>
+        <button class="btn-remove" title="Remove">×</button>
+      `;
+      row.querySelector(".author-name").addEventListener("input",
+        (e) => { author.name = e.target.value; });
+      row.querySelector(".btn-remove").addEventListener("click", () => {
+        this.#meta.authors.splice(idx, 1);
+        this.#renderAuthors();
+      });
+      list.appendChild(row);
     });
   }
 
@@ -378,10 +475,20 @@ export class ConceptActivity {
   // ── export ─────────────────────────────────────────────────────────────────
 
   #exportJSON() {
-    const payload = [...this.#islands.values()].map(isl => ({
-      name:    isl.name,
-      polygon: isl.result ?? null,
-    }));
+    const payload = {
+      map_name:     this.#meta.name    || "Unnamed Map",
+      map_version:  this.#meta.version || "0.1.0",
+      authors:      this.#meta.authors.filter(a => a.name.trim()),
+      bounding_box: [
+        this.#meta.bboxMinX, this.#meta.bboxMaxX,
+        this.#meta.bboxMinZ, this.#meta.bboxMaxZ,
+      ],
+      map_center:  [this.#meta.centerX, this.#meta.centerZ],
+      islands:     [...this.#islands.values()].map(isl => ({
+        name:    isl.name,
+        polygon: isl.result ?? null,
+      })),
+    };
     const json = JSON.stringify(payload, null, 2);
     const a    = document.createElement("a");
     a.href     = `data:application/json,${encodeURIComponent(json)}`;
