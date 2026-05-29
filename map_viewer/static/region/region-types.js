@@ -13,6 +13,7 @@ export const TYPE_ICON = {
   reference:  lucide.SquareArrowOutUpRight,
   mirror:     lucide.SquareSplitHorizontal,
   half:       lucide.ArrowsUpFromLine,
+  translate:  lucide.Move3d,
 };
 
 /**
