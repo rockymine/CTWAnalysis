@@ -50,23 +50,26 @@ export class ConceptActivity {
   // ── toolbar ────────────────────────────────────────────────────────────────
 
   #initToolbar() {
-    const btnMove = document.getElementById("ct-tool-move");
-    const btnRect = document.getElementById("ct-tool-rect");
-    const btnCirc = document.getElementById("ct-tool-circ");
-    const btnPoly = document.getElementById("ct-tool-poly");
+    const btnMove  = document.getElementById("ct-tool-move");
+    const btnRect  = document.getElementById("ct-tool-rect");
+    const btnCirc  = document.getElementById("ct-tool-circ");
+    const btnPoly  = document.getElementById("ct-tool-poly");
+    const btnLasso = document.getElementById("ct-tool-lasso");
 
     this.#tools = new ToolManager(this.#canvas, {
       select:    btnMove,
       rectangle: btnRect,
       circle:    btnCirc,
       polygon:   btnPoly,
+      lasso:     btnLasso,
     });
 
     // Button click handlers
-    btnMove.addEventListener("click", () => this.#tools.setTool(null));
-    btnRect.addEventListener("click", () => this.#tools.setTool("rectangle"));
-    btnCirc.addEventListener("click", () => this.#tools.setTool("circle"));
-    btnPoly.addEventListener("click", () => this.#tools.setTool("polygon"));
+    btnMove.addEventListener("click",  () => this.#tools.setTool(null));
+    btnRect.addEventListener("click",  () => this.#tools.setTool("rectangle"));
+    btnCirc.addEventListener("click",  () => this.#tools.setTool("circle"));
+    btnPoly.addEventListener("click",  () => this.#tools.setTool("polygon"));
+    btnLasso.addEventListener("click", () => this.#tools.setTool("lasso"));
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
@@ -75,6 +78,7 @@ export class ConceptActivity {
       if (e.key === "r" || e.key === "R") this.#tools.setTool("rectangle");
       if (e.key === "o" || e.key === "O") this.#tools.setTool("circle");
       if (e.key === "p" || e.key === "P") this.#tools.setTool("polygon");
+      if (e.key === "l" || e.key === "L") this.#tools.setTool("lasso");
     });
 
     this.#tools.setTool(null);

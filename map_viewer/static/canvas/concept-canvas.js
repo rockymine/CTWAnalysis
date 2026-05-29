@@ -2,11 +2,13 @@
  * ConceptCanvas — SVG canvas for the map layout concepting tool.
  *
  * Shares transform utilities with MapCanvas but is purpose-built for
- * free-form island sketching.  Supports three draw tools:
+ * free-form island sketching.  Supports four draw tools:
  *   rectangle  — drag to draw, 8-handle resize after placement
  *   circle     — two-click radial, center then radius
  *   polygon    — click vertices, double-click or first-vertex-click to close;
  *                drag vertex handles to adjust after placement
+ *   lasso      — hold mouse button and drag to trace a freeform outline;
+ *                release to auto-close the polygon
  *
  * All coordinates snap to integer block positions.
  *
@@ -83,6 +85,7 @@ export class ConceptCanvas {
   // rectangle: { startBx, startBz, currentBx, currentBz, previewRect }
   // circle:    { centerX, centerZ, currentRadius, previewCircle, dot }
   // polygon:   { vertices:[[x,z],...], dots:[SVGEl,...], lines:[SVGEl,...], previewLine:SVGEl }
+  // lasso:     { vertices:[[x,z],...], previewPath:SVGEl }
 
   // ── edit drag state ────────────────────────────────────────────────────────
   #rectResizeState  = null;  // { shapeId, xf, zf }
@@ -553,11 +556,55 @@ export class ConceptCanvas {
     });
   }
 
+  // Lasso ─────────────────────────────────────────────────────────────────────
+
+  #startLassoDraw(bx, bz) {
+    const previewPath = svgEl("path", {
+      fill: this.#opFill(), stroke: this.#opStroke(),
+      "stroke-width": "1", "fill-opacity": "0.22",
+      "stroke-dasharray": "5 3",
+      "fill-rule": "evenodd",
+      "vector-effect": "non-scaling-stroke",
+    });
+    this.#drawLayerEl.appendChild(previewPath);
+    this.#drawState = { type: "lasso", vertices: [[bx, bz]], previewPath };
+  }
+
+  #addLassoPoint(bx, bz) {
+    const { vertices } = this.#drawState;
+    const last = vertices[vertices.length - 1];
+    if (bx === last[0] && bz === last[1]) return;  // same block — skip
+    vertices.push([bx, bz]);
+    this.#updateLassoPreview();
+  }
+
+  #updateLassoPreview() {
+    const { vertices, previewPath } = this.#drawState;
+    if (vertices.length < 2) return;
+    const d = vertices.map(([x, z], i) => {
+      const p = this.#toSvg(x, z);
+      return (i === 0 ? "M" : "L") + `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    }).join(" ") + " Z";
+    previewPath.setAttribute("d", d);
+  }
+
+  #completeLassoDraw() {
+    const { vertices, previewPath } = this.#drawState;
+    previewPath?.parentNode?.removeChild(previewPath);
+    this.#drawState = null;
+    if (vertices.length < 3) return;
+    this.#callbacks.onShapeCreated?.({
+      type: "polygon", operation: this.#activeOperation,
+      vertices,
+    });
+  }
+
   #cancelDraw() {
     if (!this.#drawState) return;
     const ds = this.#drawState;
     this.#drawState = null;
-    for (const el of [ds.preview, ds.previewLine, ds.dot, ...(ds.dots || []), ...(ds.lines || [])]) {
+    for (const el of [ds.preview, ds.previewPath, ds.previewLine, ds.dot,
+                      ...(ds.dots || []), ...(ds.lines || [])]) {
       el?.parentNode?.removeChild(el);
     }
   }
@@ -630,6 +677,12 @@ export class ConceptCanvas {
 
       if (this.#activeTool === "rectangle") {
         this.#startRectDraw(bx, bz);
+        this.#clickWasDrag = true;
+        return;
+      }
+
+      if (this.#activeTool === "lasso") {
+        this.#startLassoDraw(bx, bz);
         this.#clickWasDrag = true;
         return;
       }
@@ -716,6 +769,7 @@ export class ConceptCanvas {
       if (this.#drawState?.type === "rectangle") this.#updateRectPreview(bx, bz);
       if (this.#drawState?.type === "circle")    this.#updateCirclePreview(bx, bz);
       if (this.#drawState?.type === "polygon")   this.#updatePolygonPreview(bx, bz);
+      if (this.#drawState?.type === "lasso")     this.#addLassoPoint(bx, bz);
 
       this.#callbacks.onCoords?.(bx, bz);
     });
@@ -732,6 +786,11 @@ export class ConceptCanvas {
         return;
       }
       if (e.button !== 0) return;
+
+      if (this.#drawState?.type === "lasso") {
+        this.#completeLassoDraw();
+        return;
+      }
 
       if (this.#activeTool === "rectangle" && this.#drawState) {
         this.#completeRectDraw();
@@ -762,12 +821,18 @@ export class ConceptCanvas {
       this.#refreshCursor();
     });
 
-    // Window mousemove — handles vertex drag and rect resize even when outside SVG
+    // Window mousemove — lasso tracking + vertex drag + rect resize outside SVG
     window.addEventListener("mousemove", (e) => {
-      if (!this.#rectResizeState && !this.#vertexDragState) return;
+      if (!this.#rectResizeState && !this.#vertexDragState
+          && this.#drawState?.type !== "lasso") return;
       const blk = this.#clientToBlock(e.clientX, e.clientY);
       if (!blk) return;
       const { bx, bz } = blk;
+
+      if (this.#drawState?.type === "lasso") {
+        this.#addLassoPoint(bx, bz);
+        return;
+      }
 
       if (this.#vertexDragState) {
         const { shapeId, vertexIdx } = this.#vertexDragState;
