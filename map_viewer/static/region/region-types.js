@@ -12,7 +12,7 @@ export const TYPE_ICON = {
   intersect:  lucide.SquaresIntersect,
   reference:  lucide.SquareArrowOutUpRight,
   mirror:     lucide.SquareSplitHorizontal,
-  half:       lucide.SquareSplitVertical,
+  half:       lucide.ArrowsUpFromLine,
 };
 
 /**
