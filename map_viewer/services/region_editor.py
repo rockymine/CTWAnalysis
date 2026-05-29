@@ -105,6 +105,47 @@ def group_regions(data: dict, payload: dict) -> dict:
     }
 
 
+def ungroup_region(data: dict, payload: dict) -> dict:
+    """Dissolve a union: remove it and expose its children as top-level regions.
+
+    Returns {"child_ids": [...]}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    region_id = str(payload.get("region_id", "")).strip()
+    if not region_id:
+        raise InvalidRegionPayload("region_id required")
+
+    regions = data.get("regions", {})
+    if region_id not in regions:
+        raise RegionNotFound(f"region {region_id!r} not found")
+
+    union = regions[region_id]
+    if union.get("type") != "union":
+        raise InvalidRegionPayload(f"region {region_id!r} is not a union")
+
+    children = union.get("children", [])
+    child_ids = []
+    for child in children:
+        child_id = (child.get("id") or "").strip()
+        if not child_id:
+            i = 1
+            while f"region_{i}" in regions:
+                i += 1
+            child_id = f"region_{i}"
+            child["id"] = child_id
+        if child_id not in regions:
+            regions[child_id] = child
+        child_ids.append(child_id)
+
+    del regions[region_id]
+    for cat_list in data.get("region_categories", {}).values():
+        if region_id in cat_list:
+            cat_list.remove(region_id)
+            break
+
+    return {"child_ids": child_ids}
+
+
 def delete_region(data: dict, region_id: str) -> dict:
     """Remove a region (top-level or inline child) from data.
 

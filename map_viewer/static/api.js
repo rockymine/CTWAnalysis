@@ -343,6 +343,22 @@ export async function fetchWoolRoomStatus(mapName, teamId, color) {
   return r.json();
 }
 
+export async function ungroupRegion(mapName, regionId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/regions/ungroup`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ region_id: regionId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Ungroup failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,

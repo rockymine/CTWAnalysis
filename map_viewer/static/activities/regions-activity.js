@@ -312,7 +312,11 @@ export class RegionsActivity {
       }
       if ((e.key === "g" || e.key === "G") && e.ctrlKey && this.#mapName) {
         e.preventDefault();
-        this.#groupSelected();
+        if (this.#multiSelected.size === 0 && this.#selectedNode?.type === "union") {
+          this.#ungroupSelected();
+        } else {
+          this.#groupSelected();
+        }
       }
     });
   }
@@ -404,6 +408,18 @@ export class RegionsActivity {
       this.#setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
     } catch (err) {
       this.#setStatus(`Group failed: ${err.message}`);
+    }
+  }
+
+  async #ungroupSelected() {
+    const node = this.#selectedNode;
+    if (!node || node.type !== "union") return;
+    try {
+      const { child_ids: childIds } = await api.ungroupRegion(this.#mapName, node.id);
+      await this.#reloadRegions();
+      this.#setStatus(`Ungrouped "${node.id}" into ${childIds.length} region(s).`);
+    } catch (err) {
+      this.#setStatus(`Ungroup failed: ${err.message}`);
     }
   }
 
