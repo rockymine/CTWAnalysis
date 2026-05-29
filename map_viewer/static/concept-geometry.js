@@ -133,36 +133,62 @@ export function pointInIsland(px, pz, island) {
  *   }
  */
 export function computeIslands(shapes) {
-  const addShapes = shapes.filter(s => s.operation !== "subtract");
-  const subShapes = shapes.filter(s => s.operation === "subtract");
+  const normalAddShapes    = shapes.filter(s => s.operation !== "subtract" && !s.override);
+  const overrideAddShapes  = shapes.filter(s => s.operation !== "subtract" && s.override);
+  const normalSubShapes    = shapes.filter(s => s.operation === "subtract" && !s.override);
+  const overrideSubShapes  = shapes.filter(s => s.operation === "subtract" && s.override);
 
-  if (addShapes.length === 0) {
-    return { islands: [], addUnion: [], newIslandCount: 0 };
+  if (normalAddShapes.length === 0 && overrideAddShapes.length === 0) {
+    return { islands: [], addUnion: [], overrideAddUnion: [], newIslandCount: 0 };
   }
 
-  // Union all add shapes
-  let addUnion;
-  try {
-    const addPolys = addShapes.map(shapeToMultiPoly);
-    addUnion = polygonClipping.union(addPolys[0], ...addPolys.slice(1));
-  } catch (err) {
-    console.warn("polygon-clipping union error:", err);
-    return { islands: [], addUnion: [], newIslandCount: 0 };
-  }
-
-  // Subtract all subtract shapes from the union
-  let result = addUnion;
-  if (subShapes.length > 0) {
+  // Step 1: union normal add shapes.
+  let normalUnion = [];
+  if (normalAddShapes.length > 0) {
     try {
-      const subPolys = subShapes.map(shapeToMultiPoly);
-      result = polygonClipping.difference(addUnion, ...subPolys);
+      const polys = normalAddShapes.map(shapeToMultiPoly);
+      normalUnion = polygonClipping.union(polys[0], ...polys.slice(1));
     } catch (err) {
-      console.warn("polygon-clipping difference error:", err);
-      // Keep the union — subtraction failed, ignore it
+      console.warn("polygon-clipping union error:", err);
     }
   }
 
-  // Each polygon in the MultiPolygon is a separate connected island
+  // Step 2: normal subtract shapes carve into the normal union only.
+  let afterNormalSub = normalUnion;
+  if (normalSubShapes.length > 0 && normalUnion.length > 0) {
+    try {
+      const subPolys = normalSubShapes.map(shapeToMultiPoly);
+      afterNormalSub = polygonClipping.difference(normalUnion, ...subPolys);
+    } catch (err) {
+      console.warn("polygon-clipping difference error:", err);
+    }
+  }
+
+  // Step 3: override add shapes union in after normal subtraction — immune to normal subtracts.
+  let afterOverrideAdd = afterNormalSub;
+  if (overrideAddShapes.length > 0) {
+    try {
+      const overridePolys = overrideAddShapes.map(shapeToMultiPoly);
+      afterOverrideAdd = afterNormalSub.length > 0
+        ? polygonClipping.union(afterNormalSub, ...overridePolys)
+        : polygonClipping.union(overridePolys[0], ...overridePolys.slice(1));
+    } catch (err) {
+      console.warn("polygon-clipping override-add union error:", err);
+    }
+  }
+
+  // Step 4: override subtract shapes cut last — they carve through everything,
+  // including override add shapes.
+  let result = afterOverrideAdd;
+  if (overrideSubShapes.length > 0 && afterOverrideAdd.length > 0) {
+    try {
+      const overrideSubPolys = overrideSubShapes.map(shapeToMultiPoly);
+      result = polygonClipping.difference(afterOverrideAdd, ...overrideSubPolys);
+    } catch (err) {
+      console.warn("polygon-clipping override-subtract difference error:", err);
+    }
+  }
+
   const islands = result.map((poly, i) => ({
     id:       `isl_${i}`,
     name:     `Island ${i + 1}`,
@@ -172,55 +198,127 @@ export function computeIslands(shapes) {
     shapeIds: [],
   }));
 
-  return { islands, addUnion, newIslandCount: islands.length };
+  return {
+    islands,
+    addUnion:         normalUnion,      // normal-add union — for normal shape assignment
+    overrideAddUnion: afterOverrideAdd, // state before override subtracts — for override subtract assignment
+    newIslandCount:   islands.length,
+  };
+}
+
+/** Centroid of a polygon ring [[x,z],...] (last point == first). */
+function ringCentroid(ring) {
+  const n = ring.length - 1;
+  let sumX = 0, sumZ = 0;
+  for (let i = 0; i < n; i++) { sumX += ring[i][0]; sumZ += ring[i][1]; }
+  return [sumX / n, sumZ / n];
 }
 
 /**
- * Assign each shape to an island and populate island.shapeIds.
+ * Assign each shape to island(s) and populate island.shapeIds.
  *
- * Add shapes: centroid tested against final computed islands.
- * Subtract shapes: centroid tested against the add-only union polygons.
+ * Uses polygon intersection rather than centroid tests so that:
+ * - Add shapes whose centroid falls in a carved void are still correctly placed.
+ * - Subtract shapes that span multiple islands appear under all affected islands.
+ * - Override add shapes (immune to subtract) are placed via direct final-island
+ *   intersection rather than via the normal add-union component map.
+ *
+ * Strategy:
+ *   1. Map each final island back to the normal-add-union component it came from.
+ *   2. For normal add shapes: find the one normal-add-union component they intersect;
+ *      assign to the matching final island(s).  If a subtract split one component into
+ *      several final islands, use a secondary intersection check to pick the right one(s).
+ *   3. For subtract shapes: find every normal-add-union component they intersect; assign
+ *      to all corresponding final islands.
+ *   4. For override add shapes: intersect directly against the final island polygons
+ *      (they were unioned in after normal subtraction, so the normal-add-union map doesn't apply).
+ *   5. For override subtract shapes: intersect against the overrideAddUnion (the state after
+ *      step 3, before override subtracts) to find which islands they carved from.
  */
-export function assignShapesToIslands(shapes, islands, addUnion) {
-  // Build add-union islands (temporary, for subtract assignment)
-  const addIslands = addUnion.map((poly, i) => ({
-    id: `add_${i}`, exterior: poly[0], holes: poly.slice(1),
-  }));
+export function assignShapesToIslands(shapes, islands, addUnion, overrideAddUnion) {
+  if (islands.length === 0) return;
+
+  // Pre-build island MultiPolygons for intersection tests.
+  const islandPolys = islands.map(isl => [[isl.exterior, ...isl.holes]]);
+
+  // Map final islands to their source normal-add-union component (−1 if none).
+  const islandToNormalIdx = islands.map(isl => {
+    if (addUnion.length === 0) return -1;
+    const [cx, cz] = ringCentroid(isl.exterior);
+    for (let j = 0; j < addUnion.length; j++) {
+      if (pointInRing(cx, cz, addUnion[j][0])) return j;
+    }
+    return -1;
+  });
+
+  // Map final islands to their source override-add-union component (−1 if none).
+  const islandToOverrideAddIdx = islands.map(isl => {
+    if (!overrideAddUnion?.length) return -1;
+    const [cx, cz] = ringCentroid(isl.exterior);
+    for (let j = 0; j < overrideAddUnion.length; j++) {
+      if (pointInRing(cx, cz, overrideAddUnion[j][0])) return j;
+    }
+    return -1;
+  });
 
   for (const shape of shapes) {
-    const [cx, cz] = shapeCentroid(shape);
+    const shapePoly = shapeToMultiPoly(shape);
+    const toAssign  = new Set();
 
-    if (shape.operation !== "subtract") {
-      // Use exterior-only check: a shape whose centroid falls inside the exterior
-      // contributed to that island even if a hole was later carved through it.
-      for (const island of islands) {
-        if (pointInRing(cx, cz, island.exterior)) {
-          island.shapeIds.push(shape.id);
-          break;
+    if (shape.operation === "subtract" && !shape.override) {
+      // Normal subtract: assign to islands from normal-add-union components it touches.
+      for (let j = 0; j < addUnion.length; j++) {
+        let hits = false;
+        try { hits = polygonClipping.intersection(shapePoly, [addUnion[j]]).length > 0; } catch { /* skip */ }
+        if (!hits) continue;
+        for (let i = 0; i < islands.length; i++) {
+          if (islandToNormalIdx[i] === j) toAssign.add(i);
         }
+      }
+    } else if (shape.operation === "subtract" && shape.override) {
+      // Override subtract: cuts last — assign to islands from override-add-union components it touches.
+      for (let j = 0; j < (overrideAddUnion?.length ?? 0); j++) {
+        let hits = false;
+        try { hits = polygonClipping.intersection(shapePoly, [overrideAddUnion[j]]).length > 0; } catch { /* skip */ }
+        if (!hits) continue;
+        for (let i = 0; i < islands.length; i++) {
+          if (islandToOverrideAddIdx[i] === j) toAssign.add(i);
+        }
+      }
+    } else if (shape.override) {
+      // Override add: unioned in after normal subtraction — intersect directly against final islands.
+      for (let i = 0; i < islands.length; i++) {
+        let hits = false;
+        try { hits = polygonClipping.intersection(shapePoly, islandPolys[i]).length > 0; } catch { /* skip */ }
+        if (hits) toAssign.add(i);
       }
     } else {
-      // Subtract shapes: their centroid may be inside the hole they carved.
-      // Check the final island exterior only (ignoring holes) so we still
-      // assign them to the island they subtracted from.
-      let assigned = false;
-      for (const island of islands) {
-        if (pointInRing(cx, cz, island.exterior)) {
-          island.shapeIds.push(shape.id);
-          assigned = true;
-          break;
-        }
-      }
-      // Fallback: check add-union exterior in case the subtract shape is
-      // entirely outside the final islands (e.g. it subtracted everything away).
-      if (!assigned) {
-        for (let i = 0; i < addIslands.length; i++) {
-          if (pointInRing(cx, cz, addIslands[i].exterior) && i < islands.length) {
-            islands[i].shapeIds.push(shape.id);
-            break;
+      // Normal add: find the one normal-add-union component it overlaps.
+      for (let j = 0; j < addUnion.length; j++) {
+        let hits = false;
+        try { hits = polygonClipping.intersection(shapePoly, [addUnion[j]]).length > 0; } catch { /* skip */ }
+        if (!hits) continue;
+
+        const peers = islands.reduce((acc, _, i) => {
+          if (islandToNormalIdx[i] === j) acc.push(i);
+          return acc;
+        }, []);
+
+        if (peers.length === 1) {
+          toAssign.add(peers[0]);
+        } else {
+          // A subtract split this component into multiple final islands —
+          // check which ones this add shape actually overlaps.
+          for (const i of peers) {
+            let sub = false;
+            try { sub = polygonClipping.intersection(shapePoly, islandPolys[i]).length > 0; } catch { /* skip */ }
+            if (sub) toAssign.add(i);
           }
         }
+        break;
       }
     }
+
+    for (const i of toAssign) islands[i].shapeIds.push(shape.id);
   }
 }

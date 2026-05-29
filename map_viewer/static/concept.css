@@ -188,6 +188,20 @@
   opacity: 1; transform: translateX(-50%) translateY(0);
 }
 
+/* ── override button (add shapes only) ── */
+.concept-override-btn {
+  background: none; border: none; cursor: pointer;
+  padding: 0 2px; flex-shrink: 0;
+  display: flex; align-items: center;
+  color: var(--text-muted);
+  opacity: 0; transition: color 0.1s, opacity 0.1s;
+}
+.concept-shape-child:hover .concept-override-btn { opacity: 1; }
+.concept-override-btn--active { opacity: 1 !important; }
+.concept-override-btn--active-add { color: #2dd4bf; }
+.concept-override-btn--active-sub { color: #f87171; }
+.concept-override-btn:hover:not(.concept-override-btn--active) { color: var(--text-secondary); }
+
 /* ── canvas SVG selection highlight ── */
 .concept-shape--selected > * {
   stroke-width: 2 !important;

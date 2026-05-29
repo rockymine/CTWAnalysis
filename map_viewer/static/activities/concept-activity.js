@@ -89,6 +89,10 @@ export class ConceptActivity {
     document.getElementById("concept-right-handle").hidden  = isOverview;
 
     this.#setToolbarMode(isOverview ? "overview" : "layout");
+
+    // Resize after DOM layout changes (right panel appears/disappears),
+    // otherwise the SVG keeps stale dimensions and coordinate mapping drifts.
+    requestAnimationFrame(() => this.#canvas.resize());
   }
 
   #setToolbarMode(mode) {
@@ -298,9 +302,9 @@ export class ConceptActivity {
 
   #recompute(addedShapeId = null) {
     const shapes = [...this.#shapes.values()];
-    const { islands, addUnion, newIslandCount } = computeIslands(shapes);
+    const { islands, addUnion, overrideAddUnion, newIslandCount } = computeIslands(shapes);
 
-    assignShapesToIslands(shapes, islands, addUnion);
+    assignShapesToIslands(shapes, islands, addUnion, overrideAddUnion);
 
     // Warn if a new add shape caused a new disconnected island
     if (addedShapeId) {
@@ -361,6 +365,8 @@ export class ConceptActivity {
       section.appendChild(children);
       list.appendChild(section);
     }
+
+    lucide.createIcons({ nodes: [list], attrs: { "stroke-width": "1.5", width: "11", height: "11" } });
   }
 
   #buildIslandGroup(island) {
@@ -400,11 +406,18 @@ export class ConceptActivity {
       <span class="concept-op-badge concept-op-badge--${isAdd ? "add" : "sub"}">${isAdd ? "add" : "sub"}</span>
       <span class="concept-shape-icon">${_typeIcon(shape.type)}</span>
       <span class="concept-shape-label">${this.#shapeLabel(shape)}</span>
+      <button class="concept-override-btn${shape.override ? ` concept-override-btn--active concept-override-btn--active-${isAdd ? "add" : "sub"}` : ""}"
+              title="${isAdd ? "Override subtract — fills area even inside subtract zones" : "Override add — cuts through override add shapes"}"
+      ><i data-lucide="shield"></i></button>
       <button class="btn-remove" title="Delete shape">×</button>
     `;
     row.addEventListener("click", (e) => {
-      if (e.target.classList.contains("btn-remove")) return;
+      if (e.target.closest(".btn-remove, .concept-override-btn")) return;
       this.#selectShape(shape.id);
+    });
+    row.querySelector(".concept-override-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.#toggleShapeOverride(shape.id);
     });
     row.querySelector(".btn-remove").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -413,11 +426,18 @@ export class ConceptActivity {
     return row;
   }
 
+  #toggleShapeOverride(id) {
+    const shape = this.#shapes.get(id);
+    if (!shape) return;
+    shape.override = !shape.override;
+    this.#recompute();
+  }
+
   // ── shape management ───────────────────────────────────────────────────────
 
   #addShape(partial) {
     const id = `s${++this.#shapeSeq}`;
-    const shape = { ...partial, id };
+    const shape = { ...partial, id, override: false };
     this.#shapes.set(id, shape);
 
     if (this.#primitivesVisible) {

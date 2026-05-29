@@ -72,6 +72,37 @@ The left sidebar is a **2-level tree**:
 
 ---
 
+## Override mode
+
+The default boolean order is subtract-wins-over-add. Both add and subtract shapes have an **Override** toggle (shield icon in the sidebar, hover to reveal) that shifts them to a later evaluation step:
+
+```
+1. union(normal adds)
+2. − union(normal subtracts)
+3. ∪ union(override adds)
+4. − union(override subtracts)
+```
+
+**Override add** shapes are immune to normal subtract shapes — they are unioned in after step 2. Use this for a bridge or fill that must exist regardless of surrounding cuts.
+
+**Override subtract** shapes cut last — they carve through everything, including override add shapes. Use this when a cut must win unconditionally.
+
+Both toggles are escape hatches from the default ordering; use them only when the geometry genuinely requires it. The shield icon shows in teal when active on an add shape, red on a subtract shape.
+
+---
+
+## Shape-to-island assignment
+
+After each boolean recompute, every primitive shape is assigned to one or more islands for display in the sidebar. Assignment is **intersection-based**.
+
+1. Each final island is mapped back to the add-union component it came from (the union of all add shapes, which may consist of multiple disconnected components before subtraction).
+
+2. **Add shapes** are assigned by intersecting the shape's polygon against each add-union component. A shape belongs to the component it geometrically overlaps (always exactly one). If a subtract subsequently split that component into multiple final islands, a secondary intersection check against each sub-island resolves which one(s) the add shape contributes to.
+
+3. **Subtract shapes** are assigned by intersecting the shape's polygon against all add-union components. A subtract shape appears under every island whose source component it touches — so a subtract spanning two disconnected islands correctly shows up in both island groups in the sidebar.
+
+---
+
 ## Shape-specific notes
 
 - **Circle primitives**: The drawn circle outline snaps to block boundaries (integer coordinates). Stored as a polygon approximation at block resolution.
