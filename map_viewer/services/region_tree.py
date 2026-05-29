@@ -100,7 +100,223 @@ def _encode_coords(region: dict) -> dict | None:
     return None
 
 
-def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
+# ---------------------------------------------------------------------------
+# Polygon_2d computation (Shapely-backed, optional)
+# ---------------------------------------------------------------------------
+
+_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect"})
+
+
+def _half_to_shapely(origin_x, origin_z, normal_x, normal_z, bounds):
+    """Sutherland-Hodgman clip of the map bbox against a half-plane."""
+    from shapely.geometry import Polygon
+    nx, nz = normal_x, normal_z
+    ox, oz = origin_x, origin_z
+    if nx == 0 and nz == 0:
+        return None
+    min_x, min_z, max_x, max_z = bounds
+    poly = [(min_x, min_z), (max_x, min_z), (max_x, max_z), (min_x, max_z)]
+
+    def dist(x, z):
+        return nx * (x - ox) + nz * (z - oz)
+
+    def cross_pt(p1, p2):
+        d1, d2 = dist(*p1), dist(*p2)
+        if abs(d1 - d2) < 1e-10:
+            return p1
+        t = d1 / (d1 - d2)
+        return (p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1]))
+
+    out = []
+    n = len(poly)
+    for i in range(n):
+        curr, prev = poly[i], poly[(i - 1) % n]
+        curr_in = dist(*curr) >= 0
+        prev_in = dist(*prev) >= 0
+        if curr_in:
+            if not prev_in:
+                out.append(cross_pt(prev, curr))
+            out.append(curr)
+        elif prev_in:
+            out.append(cross_pt(prev, curr))
+
+    if len(out) < 3:
+        return None
+    return Polygon(out)
+
+
+def _dict_to_shapely(region: dict, bounds: tuple, registry: dict | None = None):
+    """Convert a raw region dict to a Shapely 2D geometry.
+
+    bounds: (min_x, min_z, max_x, max_z) Shapely XZ coordinate order.
+    registry: top-level region dict keyed by id, for resolving ref_region_id.
+    Returns a Shapely geometry or None on any failure.
+    """
+    try:
+        from shapely.geometry import box, Point, Polygon
+        from shapely.ops import unary_union
+        from shapely.affinity import scale, translate
+    except ImportError:
+        return None
+
+    t = region.get("type")
+
+    if t in ("rectangle", "cuboid"):
+        mn_x = region.get("min_x", 0)
+        mn_z = region.get("min_z", 0)
+        mx_x = region.get("max_x", 0)
+        mx_z = region.get("max_z", 0)
+        if any(isinstance(v, str) for v in (mn_x, mn_z, mx_x, mx_z)):
+            return None
+        return box(min(mn_x, mx_x), min(mn_z, mx_z), max(mn_x, mx_x), max(mn_z, mx_z))
+
+    if t == "cylinder":
+        base = region.get("base") or {}
+        bx, bz = base.get("x", 0), base.get("z", 0)
+        r = region.get("radius", 0)
+        if isinstance(r, str) or r <= 0:
+            return None
+        return Point(bx, bz).buffer(r, resolution=32)
+
+    if t == "circle":
+        center = region.get("center") or {}
+        cx, cz = center.get("x", 0), center.get("z", 0)
+        r = region.get("radius", 0)
+        if isinstance(r, str) or r <= 0:
+            return None
+        return Point(cx, cz).buffer(r, resolution=32)
+
+    if t == "sphere":
+        origin = region.get("origin") or {}
+        ox, oz = origin.get("x", 0), origin.get("z", 0)
+        r = region.get("radius", 0)
+        if isinstance(r, str) or r <= 0:
+            return None
+        return Point(ox, oz).buffer(r, resolution=32)
+
+    if t == "block":
+        pos = region.get("position") or {}
+        x, z = pos.get("x", 0), pos.get("z", 0)
+        return box(x, z, x + 1, z + 1)
+
+    if t == "point":
+        pos = region.get("position") or {}
+        x, z = pos.get("x", 0), pos.get("z", 0)
+        return box(x - 0.5, z - 0.5, x + 0.5, z + 0.5)
+
+    if t == "half":
+        origin = region.get("origin") or {}
+        normal = region.get("normal") or {}
+        return _half_to_shapely(
+            origin.get("x", 0), origin.get("z", 0),
+            normal.get("x", 0), normal.get("z", 0),
+            bounds,
+        )
+
+    if t in ("complement", "union", "intersect"):
+        children = region.get("children", [])
+        child_geoms = [_dict_to_shapely(c, bounds, registry) for c in children]
+
+        if t == "union":
+            valid = [g for g in child_geoms if g is not None and not g.is_empty]
+            return unary_union(valid) if valid else None
+
+        if t == "complement":
+            if not child_geoms or child_geoms[0] is None or child_geoms[0].is_empty:
+                return None
+            base = child_geoms[0]
+            rest = [g for g in child_geoms[1:] if g is not None and not g.is_empty]
+            if rest:
+                subtract = unary_union(rest)
+                base = base.difference(subtract)
+                if not base.is_valid:
+                    try:
+                        from shapely.validation import make_valid
+                        base = make_valid(base)
+                    except Exception:
+                        pass
+            return base if not base.is_empty else None
+
+        if t == "intersect":
+            if not child_geoms or child_geoms[0] is None:
+                return None
+            result = child_geoms[0]
+            for g in child_geoms[1:]:
+                if g is not None and not g.is_empty:
+                    result = result.intersection(g)
+            return result if result is not None and not result.is_empty else None
+
+    if t == "mirror":
+        source = region.get("source")
+        if source is None:
+            ref_id = region.get("ref_region_id", "")
+            if ref_id and registry:
+                source = registry.get(ref_id)
+        if source is None:
+            return None
+        src_geom = _dict_to_shapely(source, bounds, registry)
+        if src_geom is None or src_geom.is_empty:
+            return None
+        origin = region.get("origin") or {}
+        normal = region.get("normal") or {}
+        nx, nz = normal.get("x", 0), normal.get("z", 0)
+        ox, oz = origin.get("x", 0), origin.get("z", 0)
+        xfact = -1 if nx != 0 else 1
+        zfact = -1 if nz != 0 else 1
+        return scale(src_geom, xfact=xfact, yfact=zfact, origin=(ox, oz))
+
+    if t == "translate":
+        source = region.get("source")
+        if source is None:
+            ref_id = region.get("ref_region_id", "")
+            if ref_id and registry:
+                source = registry.get(ref_id)
+        if source is None:
+            return None
+        src_geom = _dict_to_shapely(source, bounds, registry)
+        if src_geom is None or src_geom.is_empty:
+            return None
+        offset = region.get("offset") or {}
+        return translate(src_geom, xoff=offset.get("x", 0), yoff=offset.get("z", 0))
+
+    if t == "reference":
+        ref_id = region.get("ref_id", "")
+        if ref_id and registry and ref_id in registry:
+            return _dict_to_shapely(registry[ref_id], bounds, registry)
+        return None
+
+    return None
+
+
+def _shapely_to_polygon_2d(geom) -> dict | None:
+    """Serialize a Shapely geometry to {exterior: [[x,z],...], holes: [...]}."""
+    if geom is None or geom.is_empty:
+        return None
+    if hasattr(geom, "geoms"):
+        polys = [g for g in geom.geoms if hasattr(g, "exterior") and not g.is_empty]
+        if not polys:
+            return None
+        geom = max(polys, key=lambda p: p.area)
+    if not hasattr(geom, "exterior"):
+        return None
+    exterior = [[round(x, 2), round(y, 2)] for x, y in geom.exterior.coords]
+    holes = [[[round(x, 2), round(y, 2)] for x, y in h.coords] for h in geom.interiors]
+    return {"exterior": exterior, "holes": holes}
+
+
+def _compute_polygon_2d(region: dict, bounds: tuple, registry: dict | None) -> dict | None:
+    """Return polygon_2d for a region dict, or None on any failure."""
+    try:
+        geom = _dict_to_shapely(region, bounds, registry)
+        return _shapely_to_polygon_2d(geom)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+
+def _encode_node(region: dict, parent_id: str = "", index: int = 0,
+                 bounds: tuple | None = None, registry: dict | None = None) -> dict:
     xml_id = region.get("id") or ""
     region_type = region.get("type", "unknown")
     region_id = xml_id
@@ -108,12 +324,12 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
     if region_type == "reference":
         label = f"→ {region.get('ref_id', '?')}"
     children = [
-        _encode_node(child, parent_id=region_id, index=i)
+        _encode_node(child, parent_id=region_id, index=i, bounds=bounds, registry=registry)
         for i, child in enumerate(region.get("children", []))
     ]
     raw_source = region.get("source")
-    source_node = _encode_node(raw_source) if raw_source else None
-    return {
+    source_node = _encode_node(raw_source, bounds=bounds, registry=registry) if raw_source else None
+    node: dict = {
         "id": region_id,
         "type": region_type,
         "label": label,
@@ -125,13 +341,28 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0) -> dict:
         "children": children,
         "source": source_node,
     }
+    if bounds is not None and region_type in _POLYGON_TYPES:
+        polygon_2d = _compute_polygon_2d(region, bounds, registry)
+        if polygon_2d is not None:
+            node["polygon_2d"] = polygon_2d
+    return node
 
 
 def encode_region_tree_categorized(
     regions_dict: dict,
     categories_dict: dict,
+    bounding_box: list | None = None,
 ) -> list[dict]:
     """Return root regions grouped into thematic categories for the browser."""
+    # Convert bounding_box [min_x, max_x, min_z, max_z] → Shapely (min_x, min_z, max_x, max_z)
+    bounds: tuple | None = None
+    if bounding_box is not None:
+        try:
+            min_x, max_x, min_z, max_z = bounding_box
+            bounds = (float(min_x), float(min_z), float(max_x), float(max_z))
+        except (TypeError, ValueError):
+            bounds = None
+
     id_to_category: dict[str, str] = {}
     for cat in _CATEGORY_ORDER:
         for region_id in categories_dict.get(cat, []):
@@ -145,7 +376,7 @@ def encode_region_tree_categorized(
         collect_named_child_ids(region, named_child_ids)
 
     root_nodes = [
-        _encode_node(region)
+        _encode_node(region, bounds=bounds, registry=regions_dict)
         for region_id, region in regions_dict.items()
         if region_id not in named_child_ids
     ]

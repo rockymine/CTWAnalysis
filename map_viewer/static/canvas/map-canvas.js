@@ -906,7 +906,10 @@ export class MapCanvas {
     title.textContent = `${id} (${type})`;
     g.appendChild(title);
 
-    if (region.is_negative) {
+    if (region.polygon_2d) {
+      const shape = this.#polygonShape(region, color);
+      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
+    } else if (region.is_negative) {
       g.appendChild(this.#negativeShape(region, color));
       g.appendChild(this.#label(id, this.#mapCenter(), color, "0.75"));
     } else if (type === "cylinder" || type === "circle" || type === "sphere") {
@@ -937,15 +940,22 @@ export class MapCanvas {
     return g;
   }
 
-  #halfPolyAttrs(color) {
+  #polyAttrs(color) {
     return {
       fill: color, "fill-opacity": "0.20",
       stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "4,2",
-      "vector-effect": "non-scaling-stroke",
+      "vector-effect": "non-scaling-stroke", "fill-rule": "evenodd",
     };
   }
 
-  /** Render a standalone half-plane clipped to the map bounding box. */
+  /** Render a server-computed polygon_2d field as an SVG path. */
+  #polygonShape(region, color) {
+    const poly = region.polygon_2d;
+    if (!poly?.exterior?.length) return null;
+    return svgEl("path", { d: polyToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
+  }
+
+  /** Fallback: render a standalone half-plane clipped to the map bounding box. */
   #halfShape(region, color) {
     const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = region.coords ?? {};
     if (ox == null || nx == null) return null;
@@ -955,12 +965,10 @@ export class MapCanvas {
       ox, oz, nx, nz,
     );
     if (poly.length < 3) return null;
-    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#halfPolyAttrs(color) });
+    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
   }
 
-  /** Render a complement whose subtracted children are half-planes.
-   *  Clips the first child's bounding rectangle against the negated normal of
-   *  each half child in sequence, producing the cut polygon. */
+  /** Fallback: complement with half children — client-side polygon clipping. */
   #complementHalfShape(region, color) {
     const base = (region.children || [])[0];
     if (!base?.bounds) return null;
@@ -970,11 +978,10 @@ export class MapCanvas {
       if (child.type !== "half") continue;
       const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = child.coords ?? {};
       if (ox == null || nx == null) continue;
-      // Complement subtracts the half → keep the side where dot(P-O, N) < 0
       poly = clipHalfPlane(poly, ox, oz, -nx, -nz);
     }
     if (poly.length < 3) return null;
-    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#halfPolyAttrs(color) });
+    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
   }
 
   #negativeShape(region, color) {
@@ -1268,8 +1275,13 @@ export class MapCanvas {
     for (const item of groupsOrNodes) {
       if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
 
-      // A complement whose subtracted children include at least one half-plane
-      // is rendered as a single clipped polygon — don't recurse into children.
+      // Server-computed polygon: render as resolved shape, skip child recursion.
+      if (item.id && item.polygon_2d) {
+        out.push(item);
+        continue;
+      }
+
+      // Fallback: complement with half child — client-side polygon clipping.
       if (item.id && item.type === "complement" && item.bounds &&
           (item.children || []).some(c => c.type === "half")) {
         out.push(item);
