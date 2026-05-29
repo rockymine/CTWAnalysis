@@ -110,46 +110,82 @@
   display: flex; flex-direction: column; gap: 10px;
 }
 
-/* ── island list (right panel) ── */
+/* ── primitives toggle (right panel header) ── */
+.concept-primitives-label {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-secondary);
+  cursor: pointer; user-select: none;
+}
+.concept-primitives-label input { cursor: pointer; }
+
+/* ── island list — 2-level tree ── */
 .concept-island-list {
-  padding: 6px 0;
+  padding: 4px 0;
 }
 
-.concept-island-card {
-  margin: 4px 8px; padding: 8px 10px;
-  background: var(--bg-base); border: 1px solid var(--border);
-  border-radius: 5px; display: flex; flex-direction: column; gap: 5px;
+.concept-island-group {
+  margin: 2px 0;
 }
-.concept-island-card--active {
-  border-color: var(--accent);
+.concept-island-group--unassigned .concept-island-header {
+  opacity: 0.6;
 }
 
 .concept-island-header {
   display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px 4px; min-height: 28px;
 }
 .concept-island-name {
-  flex: 1; padding: 2px 6px; font-size: 12px; height: 24px;
+  flex: 1; padding: 1px 5px; font-size: 12px; height: 22px;
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
 }
-.concept-island-del { font-size: 14px; }
+.concept-island-name:hover, .concept-island-name:focus {
+  background: var(--bg-base); border-color: var(--border);
+}
+.concept-island-label {
+  flex: 1; font-size: 12px; color: var(--text-secondary);
+}
+.concept-island-count {
+  font-size: 10px; color: var(--text-muted); flex-shrink: 0;
+}
 
-.concept-island-meta {
-  font-size: 11px; color: var(--text-muted); padding-left: 15px;
+/* ── shape children inside an island group ── */
+.concept-island-children {
+  padding-left: 16px;
 }
-.concept-island-meta em { font-style: normal; color: var(--text-secondary); }
 
-.concept-island-actions {
-  display: flex; gap: 6px;
+.concept-shape-child {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 10px 3px 4px; min-height: 26px;
+  cursor: pointer; user-select: none; border-radius: 3px;
 }
-.concept-island-active-btn,
-.concept-island-compute-btn {
-  font-size: 11px; padding: 2px 8px;
+.concept-shape-child:hover { background: var(--bg-vis-hover); }
+.concept-shape-child.list-row--selected { background: var(--bg-selected); }
+
+.concept-shape-child .btn-remove {
+  font-size: 14px; line-height: 1; padding: 0 2px;
+  opacity: 0; transition: opacity 0.1s;
 }
+.concept-shape-child:hover .btn-remove { opacity: 1; }
 
 /* ── toolbar extras ── */
 
 /* ── compute hint ── */
 .concept-hint {
   font-size: 11px; color: var(--text-muted); line-height: 1.5;
+}
+
+/* ── toast notifications ── */
+.concept-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(12px);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  color: var(--text-primary); font-size: 12px;
+  padding: 8px 16px; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  opacity: 0; transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none; z-index: 9999;
+}
+.concept-toast--visible {
+  opacity: 1; transform: translateX(-50%) translateY(0);
 }
 
 /* ── canvas SVG selection highlight ── */

@@ -1,30 +1,27 @@
 /**
  * ConceptActivity — layout concepting and sketching tool.
  *
- * Manages the full concept page: canvas, shape list, island groups, compute,
- * and JSON export.  Instantiated once by concept.js.
+ * Islands are topology-driven: adding/removing shapes triggers an automatic
+ * boolean recompute (union of add shapes − union of subtract shapes).  Each
+ * connected component of the result becomes a separate island.
  */
 
-import { ConceptCanvas } from "../canvas/concept-canvas.js";
-import { ToolManager }   from "../shared/tool-manager.js";
-import * as api          from "../api.js";
-
-const ISLAND_COLORS = [
-  "#4ade80", "#60a5fa", "#f472b6", "#fb923c",
-  "#a78bfa", "#34d399", "#facc15", "#f87171",
-];
+import { ConceptCanvas }                              from "../canvas/concept-canvas.js";
+import { ToolManager }                                from "../shared/tool-manager.js";
+import { computeIslands, assignShapesToIslands }      from "../concept-geometry.js";
+import * as api                                       from "../api.js";
 
 export class ConceptActivity {
   // ── state ──────────────────────────────────────────────────────────────────
-  #shapes    = new Map();   // id → shape object
-  #islands   = new Map();   // id → { id, name, color }
-  #shapeSeq  = 0;
-  #islandSeq = 0;
+  #shapes   = new Map();   // id → shape object
+  #shapeSeq = 0;
 
-  #canvas      = null;
-  #tools       = null;
-  #activeIslandId  = null;
-  #activeActivity  = "overview";
+  #computedIslands  = [];   // [{ id, name, color, exterior, holes, shapeIds }]
+  #prevIslandCount  = 0;    // used to detect newly disconnected islands
+  #primitivesVisible = false;
+
+  #canvas = null;
+  #tools  = null;
 
   #meta = {
     name:     "",
@@ -39,12 +36,13 @@ export class ConceptActivity {
   };
   #centerIsAutomatic = true;
 
+  #activeActivity = "overview";
+
   constructor() {
     this.#initCanvas();
     this.#initToolbar();
     this.#initSidebars();
     this.#initMetaPanel();
-    this.#newIsland("Island 1");   // default island
     this.#initActivityRail();
     this.#switchActivity("overview");
     window.addEventListener("resize", () => this.#canvas.resize());
@@ -57,7 +55,7 @@ export class ConceptActivity {
     const wrap = document.getElementById("concept-svg-area");
 
     this.#canvas = new ConceptCanvas(svg, wrap, {
-      onCoords: (x, z)  => this.#updateCoords(x, z),
+      onCoords: (x, z) => this.#updateCoords(x, z),
       onZoom:   (scale) => {
         const el = document.getElementById("ct-zoom-level");
         if (el) el.textContent = `${Math.round(scale * 100)}%`;
@@ -119,14 +117,13 @@ export class ConceptActivity {
 
     this.#tools = new ToolManager(this.#canvas, {
       move:      btnMove,
-      select:    btnSelect,   // "select" key → null in ToolManager
+      select:    btnSelect,
       rectangle: btnRect,
       circle:    btnCirc,
       polygon:   btnPoly,
       lasso:     btnLasso,
     });
 
-    // Button click handlers — draw tools toggle back to select when clicked while active
     const setOrToggle = (tool) =>
       this.#tools.setTool(this.#tools.activeTool === tool ? null : tool);
     btnMove.addEventListener("click",   () => this.#tools.setTool("move"));
@@ -136,7 +133,6 @@ export class ConceptActivity {
     btnPoly.addEventListener("click",   () => setOrToggle("polygon"));
     btnLasso.addEventListener("click",  () => setOrToggle("lasso"));
 
-    // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       if (e.key === "m" || e.key === "M") this.#tools.setTool("move");
@@ -148,9 +144,8 @@ export class ConceptActivity {
       if (e.key === "l" || e.key === "L") this.#tools.setTool("lasso");
     });
 
-    this.#tools.setTool(null);   // start in select mode
+    this.#tools.setTool(null);
 
-    // Add / subtract toggle
     const btnAdd = document.getElementById("ct-op-add");
     const btnSub = document.getElementById("ct-op-sub");
     const setOp = (op) => {
@@ -161,10 +156,9 @@ export class ConceptActivity {
     btnAdd.addEventListener("click", () => setOp("add"));
     btnSub.addEventListener("click", () => setOp("subtract"));
     setOp("add");
-
   }
 
-  // ── meta panel ─────────────────────────────────────────────────────────────
+  // ── meta panel (Overview left) ─────────────────────────────────────────────
 
   #initMetaPanel() {
     const nameEl    = document.getElementById("ct-map-name");
@@ -189,10 +183,8 @@ export class ConceptActivity {
     };
 
     const applyBBox = () => {
-      const minX = parseInt(bboxMinX.value, 10);
-      const maxX = parseInt(bboxMaxX.value, 10);
-      const minZ = parseInt(bboxMinZ.value, 10);
-      const maxZ = parseInt(bboxMaxZ.value, 10);
+      const minX = parseInt(bboxMinX.value, 10), maxX = parseInt(bboxMaxX.value, 10);
+      const minZ = parseInt(bboxMinZ.value, 10), maxZ = parseInt(bboxMaxZ.value, 10);
       if ([minX, maxX, minZ, maxZ].some(isNaN)) return;
       if (minX >= maxX || minZ >= maxZ) return;
       this.#meta.bboxMinX = minX; this.#meta.bboxMaxX = maxX;
@@ -225,7 +217,6 @@ export class ConceptActivity {
       this.#renderAuthors();
     });
 
-    // Prime canvas with the initial default center
     this.#canvas.setCenter(this.#meta.centerX, this.#meta.centerZ);
   }
 
@@ -267,13 +258,13 @@ export class ConceptActivity {
         const val = nameInput.value.trim();
         if (!val || val === author.uuid) return;
         try {
-          const player   = await api.fetchMinecraftPlayer(val);
-          author.uuid    = player.uuid;
-          author.name    = player.name;
-          row.dataset.uuid    = player.uuid;
-          nameInput.value     = player.name;
-          nameInput.title     = player.uuid;
-          avatarImg.src       = _avatarUrl(player.uuid);
+          const player    = await api.fetchMinecraftPlayer(val);
+          author.uuid     = player.uuid;
+          author.name     = player.name;
+          row.dataset.uuid     = player.uuid;
+          nameInput.value      = player.name;
+          nameInput.title      = player.uuid;
+          avatarImg.src        = _avatarUrl(player.uuid);
           nameInput.classList.remove("author-name--error");
         } catch {
           author.uuid   = "";
@@ -291,153 +282,172 @@ export class ConceptActivity {
     });
   }
 
-  // ── sidebar wiring ─────────────────────────────────────────────────────────
+  // ── right panel sidebars (Layout activity) ─────────────────────────────────
 
   #initSidebars() {
-    document.getElementById("ct-new-island").addEventListener("click",
-      () => this.#newIsland(`Island ${this.#islandSeq + 1}`));
-    document.getElementById("ct-compute-all").addEventListener("click",
-      () => this.#computeAll());
-    document.getElementById("ct-export").addEventListener("click",
-      () => this.#exportJSON());
+    // Primitives visibility toggle
+    document.getElementById("ct-primitives-toggle").addEventListener("change", (e) => {
+      this.#primitivesVisible = e.target.checked;
+      this.#canvas.setShapesVisible(this.#primitivesVisible);
+    });
+
+    document.getElementById("ct-export").addEventListener("click", () => this.#exportJSON());
   }
 
-  // ── island management ─────────────────────────────────────────────────────
+  // ── island recomputation ───────────────────────────────────────────────────
 
-  #newIsland(name) {
-    const id    = `i${++this.#islandSeq}`;
-    const color = ISLAND_COLORS[(this.#islandSeq - 1) % ISLAND_COLORS.length];
-    this.#islands.set(id, { id, name, color, result: null });
-    if (!this.#activeIslandId) this.#activeIslandId = id;
-    this.#renderIslandList();
-    this.#renderIslandSelect();
-    return id;
-  }
+  #recompute(addedShapeId = null) {
+    const shapes = [...this.#shapes.values()];
+    const { islands, addUnion, newIslandCount } = computeIslands(shapes);
 
-  #renderIslandList() {
-    const list = document.getElementById("ct-island-list");
-    list.innerHTML = "";
-    for (const isl of this.#islands.values()) {
-      const card = document.createElement("div");
-      card.className = "concept-island-card" + (isl.id === this.#activeIslandId ? " concept-island-card--active" : "");
-      card.dataset.id = isl.id;
+    assignShapesToIslands(shapes, islands, addUnion);
 
-      const shapeCount = [...this.#shapes.values()].filter(s => s.island_id === isl.id).length;
-      const resultSummary = isl.result
-        ? `${isl.result.exterior.length} exterior pts · ${isl.result.holes.length} hole(s)`
-        : "no result";
-
-      card.innerHTML = `
-        <div class="concept-island-header">
-          <span class="concept-island-dot" style="background:${isl.color}"></span>
-          <input class="concept-island-name field-input" value="${_esc(isl.name)}" spellcheck="false"/>
-          <button class="btn-remove concept-island-del" title="Delete island">×</button>
-        </div>
-        <div class="concept-island-meta">${shapeCount} shape(s) · <em>${resultSummary}</em></div>
-        <div class="concept-island-actions">
-          <button class="action-btn concept-island-active-btn" title="Set as active island for new shapes">
-            ${isl.id === this.#activeIslandId ? "Active" : "Set active"}
-          </button>
-          <button class="action-btn action-btn--primary concept-island-compute-btn">Compute</button>
-        </div>
-      `;
-
-      card.querySelector(".concept-island-name").addEventListener("change", (e) => {
-        isl.name = e.target.value.trim() || isl.name;
-        this.#renderShapeList();
-      });
-      card.querySelector(".concept-island-del").addEventListener("click", () => {
-        this.#deleteIsland(isl.id);
-      });
-      card.querySelector(".concept-island-active-btn").addEventListener("click", () => {
-        this.#activeIslandId = isl.id;
-        this.#renderIslandList();
-        this.#renderIslandSelect();
-      });
-      card.querySelector(".concept-island-compute-btn").addEventListener("click", () => {
-        this.#computeIsland(isl.id);
-      });
-
-      list.appendChild(card);
-    }
-  }
-
-  #deleteIsland(id) {
-    if (this.#islands.size <= 1) return;  // keep at least one
-    // Reassign shapes to the first remaining island
-    const fallback = [...this.#islands.keys()].find(k => k !== id);
-    for (const shape of this.#shapes.values()) {
-      if (shape.island_id === id) {
-        shape.island_id = fallback;
-        this.#canvas.updateShape(shape);
+    // Warn if a new add shape caused a new disconnected island
+    if (addedShapeId) {
+      const shape = this.#shapes.get(addedShapeId);
+      if (shape?.operation !== "subtract" && newIslandCount > this.#prevIslandCount) {
+        this.#showToast("New disconnected mass — created a separate island");
       }
     }
-    this.#islands.delete(id);
-    if (this.#activeIslandId === id) this.#activeIslandId = fallback;
-    this.#renderIslandList();
-    this.#renderIslandSelect();
-    this.#renderShapeList();
+    this.#prevIslandCount = newIslandCount;
+
+    // Preserve user-assigned names across recomputes by matching by color index
+    for (let i = 0; i < islands.length; i++) {
+      const prev = this.#computedIslands[i];
+      if (prev?.name && prev.name !== `Island ${i + 1}`) {
+        islands[i].name = prev.name;
+      }
+    }
+    this.#computedIslands = islands;
+
+    this.#canvas.setResultPolygons(
+      islands.map(isl => ({ exterior: isl.exterior, holes: isl.holes }))
+    );
+    this.#renderLayoutSidebar();
   }
 
-  #renderIslandSelect() {
-    const sel = document.getElementById("ct-island-select");
-    if (!sel) return;
-    const prev = sel.value;
-    sel.innerHTML = "";
-    for (const isl of this.#islands.values()) {
-      const opt = document.createElement("option");
-      opt.value = isl.id;
-      opt.textContent = isl.name;
-      sel.appendChild(opt);
+  // ── sidebar rendering (Layout activity) ───────────────────────────────────
+
+  #renderLayoutSidebar() {
+    const list = document.getElementById("ct-shape-list");
+    list.innerHTML = "";
+
+    if (this.#computedIslands.length === 0) {
+      list.innerHTML = '<div class="concept-empty">Draw shapes to create islands.</div>';
+      return;
     }
-    sel.value = this.#islands.has(prev) ? prev : (this.#activeIslandId ?? "");
+
+    // Shapes not assigned to any island (e.g. floating subtract shapes)
+    const assignedIds = new Set(this.#computedIslands.flatMap(isl => isl.shapeIds));
+    const unassigned  = [...this.#shapes.values()].filter(s => !assignedIds.has(s.id));
+
+    for (const island of this.#computedIslands) {
+      list.appendChild(this.#buildIslandGroup(island));
+    }
+
+    if (unassigned.length > 0) {
+      const section = document.createElement("div");
+      section.className = "concept-island-group concept-island-group--unassigned";
+      section.innerHTML = `
+        <div class="concept-island-header">
+          <span class="concept-island-label">Unassigned shapes</span>
+        </div>
+      `;
+      const children = document.createElement("div");
+      children.className = "concept-island-children";
+      for (const shape of unassigned) {
+        children.appendChild(this.#buildShapeChild(shape));
+      }
+      section.appendChild(children);
+      list.appendChild(section);
+    }
+  }
+
+  #buildIslandGroup(island) {
+    const group = document.createElement("div");
+    group.className = "concept-island-group";
+    group.dataset.islandId = island.id;
+
+    const header = document.createElement("div");
+    header.className = "concept-island-header";
+    header.innerHTML = `
+      <span class="concept-island-dot" style="background:${island.color}"></span>
+      <input class="concept-island-name field-input" value="${_esc(island.name)}" spellcheck="false"/>
+      <span class="concept-island-count">${island.shapeIds.length} shape${island.shapeIds.length !== 1 ? "s" : ""}</span>
+    `;
+    header.querySelector(".concept-island-name").addEventListener("change", (e) => {
+      island.name = e.target.value.trim() || island.name;
+    });
+
+    const children = document.createElement("div");
+    children.className = "concept-island-children";
+    for (const shapeId of island.shapeIds) {
+      const shape = this.#shapes.get(shapeId);
+      if (shape) children.appendChild(this.#buildShapeChild(shape));
+    }
+
+    group.appendChild(header);
+    group.appendChild(children);
+    return group;
+  }
+
+  #buildShapeChild(shape) {
+    const isAdd = shape.operation !== "subtract";
+    const row = document.createElement("div");
+    row.className = "concept-shape-child";
+    row.dataset.shapeId = shape.id;
+    row.innerHTML = `
+      <span class="concept-op-badge concept-op-badge--${isAdd ? "add" : "sub"}">${isAdd ? "add" : "sub"}</span>
+      <span class="concept-shape-icon">${_typeIcon(shape.type)}</span>
+      <span class="concept-shape-label">${this.#shapeLabel(shape)}</span>
+      <button class="btn-remove" title="Delete shape">×</button>
+    `;
+    row.addEventListener("click", (e) => {
+      if (e.target.classList.contains("btn-remove")) return;
+      this.#selectShape(shape.id);
+    });
+    row.querySelector(".btn-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.#deleteShape(shape.id);
+    });
+    return row;
   }
 
   // ── shape management ───────────────────────────────────────────────────────
 
   #addShape(partial) {
     const id = `s${++this.#shapeSeq}`;
-    const shape = {
-      ...partial,
-      id,
-      island_id: this.#activeIslandId ?? [...this.#islands.keys()][0],
-    };
+    const shape = { ...partial, id };
     this.#shapes.set(id, shape);
-    this.#canvas.addShape(shape);
-    this.#tools.setTool(null);   // return to select after completing a shape
+
+    if (this.#primitivesVisible) {
+      this.#canvas.addShape(shape);
+    } else {
+      // Store in canvas state but keep shapes layer hidden
+      this.#canvas.addShape(shape);
+    }
+
+    this.#tools.setTool(null);
+    this.#recompute(id);
     this.#selectShape(id);
-    this.#renderShapeList();
-    this.#renderIslandList();
   }
 
   #onShapeUpdated(shape) {
     this.#shapes.set(shape.id, shape);
-    // Shape list label might need updating (e.g., size display)
-    const row = document.querySelector(`[data-shape-id="${shape.id}"]`);
-    if (row) {
-      const lbl = row.querySelector(".concept-shape-label");
-      if (lbl) lbl.textContent = this.#shapeLabel(shape);
-    }
+    this.#recompute();
   }
 
   #selectShape(id) {
     this.#canvas.selectShape(id);
-    document.querySelectorAll(".concept-shape-row").forEach(r => {
+    document.querySelectorAll(".concept-shape-child").forEach(r => {
       r.classList.toggle("list-row--selected", r.dataset.shapeId === id);
     });
-    // Sync island select dropdown to match the selected shape's island
-    if (id) {
-      const shape = this.#shapes.get(id);
-      const sel = document.getElementById("ct-island-select");
-      if (sel && shape) sel.value = shape.island_id;
-    }
   }
 
   #deleteShape(id) {
     this.#shapes.delete(id);
     this.#canvas.removeShape(id);
-    this.#renderShapeList();
-    this.#renderIslandList();
+    this.#recompute();
   }
 
   #shapeLabel(shape) {
@@ -450,117 +460,18 @@ export class ConceptActivity {
     return shape.type;
   }
 
-  #renderShapeList() {
-    const list = document.getElementById("ct-shape-list");
-    list.innerHTML = "";
-    if (this.#shapes.size === 0) {
-      list.innerHTML = '<div class="concept-empty">No shapes yet. Draw with the tools above.</div>';
-      return;
-    }
-    for (const shape of this.#shapes.values()) {
-      const isl   = this.#islands.get(shape.island_id);
-      const isAdd = shape.operation !== "subtract";
-      const row   = document.createElement("div");
-      row.className = "list-row list-row--compact concept-shape-row";
-      row.dataset.shapeId = shape.id;
-      row.innerHTML = `
-        <span class="concept-op-badge concept-op-badge--${isAdd ? "add" : "sub"}">${isAdd ? "add" : "sub"}</span>
-        <span class="concept-shape-icon">${_typeIcon(shape.type)}</span>
-        <span class="concept-shape-label">${this.#shapeLabel(shape)}</span>
-        <span class="concept-island-dot" style="background:${isl?.color ?? "#475569"}" title="${_esc(isl?.name ?? "")}"></span>
-        <button class="btn-remove" title="Delete shape">×</button>
-      `;
-      row.addEventListener("click", (e) => {
-        if (e.target.classList.contains("btn-remove")) return;
-        this.#selectShape(shape.id);
-      });
-      row.querySelector(".btn-remove").addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.#deleteShape(shape.id);
-      });
-      list.appendChild(row);
-    }
+  // ── toast notifications ────────────────────────────────────────────────────
 
-    // Island-select row (below list, for selected shape)
-    const assignRow = document.createElement("div");
-    assignRow.id = "ct-assign-row";
-    assignRow.className = "concept-assign-row";
-    assignRow.innerHTML = `
-      <label class="field-label">Assign to island</label>
-      <select id="ct-island-select" class="field-input"></select>
-    `;
-    assignRow.querySelector("select").addEventListener("change", (e) => {
-      const selRow = document.querySelector(".concept-shape-row.list-row--selected");
-      if (!selRow) return;
-      const sid = selRow.dataset.shapeId;
-      const shape = this.#shapes.get(sid);
-      if (!shape) return;
-      shape.island_id = e.target.value;
-      this.#renderShapeList();
-      this.#renderIslandList();
-      this.#selectShape(sid);
-    });
-    list.appendChild(assignRow);
-    this.#renderIslandSelect();
-  }
-
-  // ── compute ────────────────────────────────────────────────────────────────
-
-  async #computeIsland(islandId) {
-    this.#setStatus("Computing…");
-    try {
-      const isl    = this.#islands.get(islandId);
-      const shapes = [...this.#shapes.values()].filter(s => s.island_id === islandId);
-      const res    = await fetch("/api/concept/compute", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          shapes,
-          islands: [{ id: islandId, name: isl.name, shape_ids: shapes.map(s => s.id) }],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const resultIsland = data.islands?.[0];
-      isl.result = resultIsland?.polygon ?? null;
-      this.#canvas.setResultPolygons(
-        [...this.#islands.values()].map(i => i.result).filter(Boolean)
-      );
-      this.#renderIslandList();
-      this.#setStatus(isl.result ? "Computed." : "No geometry produced.");
-    } catch (err) {
-      this.#setStatus(`Error: ${err.message}`);
-    }
-  }
-
-  async #computeAll() {
-    this.#setStatus("Computing all islands…");
-    try {
-      const shapes  = [...this.#shapes.values()];
-      const islands = [...this.#islands.values()].map(isl => ({
-        id:        isl.id,
-        name:      isl.name,
-        shape_ids: shapes.filter(s => s.island_id === isl.id).map(s => s.id),
-      }));
-      const res = await fetch("/api/concept/compute", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ shapes, islands }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      for (const ri of (data.islands || [])) {
-        const isl = this.#islands.get(ri.id);
-        if (isl) isl.result = ri.polygon ?? null;
-      }
-      this.#canvas.setResultPolygons(
-        [...this.#islands.values()].map(i => i.result).filter(Boolean)
-      );
-      this.#renderIslandList();
-      this.#setStatus("All islands computed.");
-    } catch (err) {
-      this.#setStatus(`Error: ${err.message}`);
-    }
+  #showToast(message) {
+    const toast = document.createElement("div");
+    toast.className = "concept-toast";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("concept-toast--visible"));
+    setTimeout(() => {
+      toast.classList.remove("concept-toast--visible");
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    }, 3000);
   }
 
   // ── export ─────────────────────────────────────────────────────────────────
@@ -580,10 +491,15 @@ export class ConceptActivity {
         this.#meta.bboxMinX, this.#meta.bboxMaxX,
         this.#meta.bboxMinZ, this.#meta.bboxMaxZ,
       ],
-      map_center:  [this.#meta.centerX, this.#meta.centerZ],
-      islands:     [...this.#islands.values()].map(isl => ({
-        name:    isl.name,
-        polygon: isl.result ?? null,
+      map_center: [this.#meta.centerX, this.#meta.centerZ],
+      islands:    this.#computedIslands.map(isl => ({
+        name:     isl.name,
+        exterior: isl.exterior,
+        holes:    isl.holes,
+        shapes:   isl.shapeIds.map(id => {
+          const s = this.#shapes.get(id);
+          return s ? { type: s.type, operation: s.operation, ...s } : null;
+        }).filter(Boolean),
       })),
     };
     const json = JSON.stringify(payload, null, 2);
@@ -599,11 +515,6 @@ export class ConceptActivity {
     const el = document.getElementById("ct-cursor-coords");
     if (!el) return;
     el.textContent = (x === null) ? "" : `X ${x}  Z ${z}`;
-  }
-
-  #setStatus(msg) {
-    const el = document.getElementById("status");
-    if (el) el.textContent = msg;
   }
 }
 

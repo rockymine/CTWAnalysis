@@ -71,8 +71,9 @@ export class ConceptCanvas {
   #clickWasDrag = false;
 
   // ── shapes ─────────────────────────────────────────────────────────────────
-  #shapes     = new Map();   // id → shape
-  #resultPolys = [];         // [{exterior,holes}] from compute
+  #shapes        = new Map();   // id → shape
+  #resultPolys   = [];          // [{exterior,holes}] from compute
+  #shapesVisible = false;       // primitives layer visibility
   #selectedId  = null;
   #shapeElMap  = new Map();  // id → SVG <g> element
 
@@ -173,6 +174,13 @@ export class ConceptCanvas {
     this.#rebuildResultLayer();
   }
 
+  setShapesVisible(visible) {
+    this.#shapesVisible = visible;
+    if (this.#shapesLayerEl) {
+      this.#shapesLayerEl.style.display = visible ? "" : "none";
+    }
+  }
+
   selectShape(id) {
     this.#selectedId = id;
     for (const [sid, g] of this.#shapeElMap) {
@@ -206,6 +214,7 @@ export class ConceptCanvas {
 
     this.#gridLayerEl   = this.#buildGridLayer();
     this.#shapesLayerEl = svgEl("g", { id: "layer-concept-shapes" });
+    if (!this.#shapesVisible) this.#shapesLayerEl.style.display = "none";
     this.#resultLayerEl = svgEl("g", { id: "layer-concept-result" });
     this.#drawLayerEl   = svgEl("g", { id: "layer-concept-draw" });
     viewport.appendChild(this.#gridLayerEl);
