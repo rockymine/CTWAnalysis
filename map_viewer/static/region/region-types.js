@@ -65,6 +65,11 @@ export function deriveBoundsFromCoords(type, coords) {
  *   4. A circle case in app.py create_region (backend)
  *   5. An HTML button with id="tool-<type>"
  */
+export const COMPOUND_TYPES = new Set([
+  "union", "complement", "intersect", "negative",
+  "mirror", "translate", "half",
+]);
+
 export const DRAW_TOOLS = {
   rectangle: { key: "r", toggleOff: true,  drawMode: "drag"   },
   cuboid:    { key: "c", toggleOff: false, drawMode: "drag"   },

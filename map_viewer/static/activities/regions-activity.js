@@ -18,7 +18,7 @@ import { RegionSidebar }      from "../panels/region-sidebar.js";
 import { RegionRegistry }     from "../region/region-registry.js";
 import { RegionDetail }       from "../panels/region-detail.js";
 import { DeletedRegionHistory } from "../region/deleted-region-history.js";
-import { DRAW_TOOLS, deriveBoundsFromCoords } from "../region/region-types.js";
+import { COMPOUND_TYPES, DRAW_TOOLS, deriveBoundsFromCoords } from "../region/region-types.js";
 import { createRegionHandlers }  from "../region/region-handlers.js";
 import { isEditableTarget }   from "../shared/ui-helpers.js";
 import { ToolManager }        from "../shared/tool-manager.js";
@@ -302,7 +302,7 @@ export class RegionsActivity {
     const canGroup          = this.#multiSelected.size >= 2;
     const isUnion           = node.type === "union";
     const canSetBase        = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
-    const canRemoveFromGroup = parentType === "union";
+    const canRemoveFromGroup = COMPOUND_TYPES.has(parentType);
 
     if (canSetBase) {
       menu.appendChild(item("Set as base", null, () => this.#setBaseChild(parentId, node.id)));

@@ -119,12 +119,12 @@ def remove_from_group(data: dict, region_id: str, payload: dict) -> dict:
     region = regions.get(region_id)
     if region is None:
         raise RegionNotFound(f"region {region_id!r} not found")
-    if region.get("type") != "union":
-        raise InvalidRegionPayload(f"region {region_id!r} is not a union")
-    children = region.get("children", [])
+    children = region.get("children")
+    if children is None:
+        raise InvalidRegionPayload(f"region {region_id!r} has no children")
     idx = next((i for i, c in enumerate(children) if c.get("id") == child_id), None)
     if idx is None:
-        raise RegionNotFound(f"child {child_id!r} not found in union {region_id!r}")
+        raise RegionNotFound(f"child {child_id!r} not found in {region_id!r}")
     children.pop(idx)
     # Ensure the child is visible as a root in case it was never in region_categories
     cats = data.get("region_categories", {})
