@@ -320,7 +320,11 @@ export class RegionsActivity {
     if (canGroup) {
       menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
     }
-    if ((canSetBase || canRemoveFromGroup || isCompound || isUnion || canGroup) && !node.synthetic_id) {
+    const hasFocus = node.bounds || node.polygon_2d?.exterior?.length;
+    if (hasFocus) {
+      menu.appendChild(item("Focus", null, () => this.#canvas.focusRegion(node)));
+    }
+    if ((canSetBase || canRemoveFromGroup || isCompound || isUnion || canGroup || hasFocus) && !node.synthetic_id) {
       const sep = document.createElement("div");
       sep.className = "ctx-sep";
       menu.appendChild(sep);

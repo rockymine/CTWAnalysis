@@ -170,6 +170,42 @@ export class MapCanvas {
     this.refreshRegions(this.#groups);
   }
 
+  /** Pan and zoom to fit a region's bounds in the viewport. */
+  focusRegion(node) {
+    if (!this.#toSvg) return;
+
+    let min_x, max_x, min_z, max_z;
+    if (node.bounds) {
+      ({ min_x, max_x, min_z, max_z } = node.bounds);
+    } else if (node.polygon_2d?.exterior?.length) {
+      const xs = node.polygon_2d.exterior.map(([x]) => x);
+      const zs = node.polygon_2d.exterior.map(([, z]) => z);
+      min_x = Math.min(...xs); max_x = Math.max(...xs);
+      min_z = Math.min(...zs); max_z = Math.max(...zs);
+    } else {
+      return;
+    }
+
+    const w = this.#wrap.clientWidth  - 24;
+    const h = this.#wrap.clientHeight - 24;
+    const p1 = this.#toSvg(min_x, min_z);
+    const p2 = this.#toSvg(max_x, max_z);
+    const sx1 = Math.min(p1.x, p2.x), sx2 = Math.max(p1.x, p2.x);
+    const sy1 = Math.min(p1.y, p2.y), sy2 = Math.max(p1.y, p2.y);
+    const bw  = sx2 - sx1, bh = sy2 - sy1;
+
+    const newScale = (bw > 0 || bh > 0)
+      ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX,
+          Math.min(bw > 0 ? w / bw : Infinity, bh > 0 ? h / bh : Infinity) * 0.75))
+      : this.#scale;
+
+    this.#scale = newScale;
+    this.#panX  = w / 2 - ((sx1 + sx2) / 2) * newScale;
+    this.#panY  = h / 2 - ((sy1 + sy2) / 2) * newScale;
+    this.#applyViewportTransform();
+    this.#callbacks.onZoom?.(this.#scale);
+  }
+
   setBlocksVisible(v) {
     this.#showBlocks = v;
     if (this.#blockLayerEl) this.#blockLayerEl.style.display = v ? "" : "none";
