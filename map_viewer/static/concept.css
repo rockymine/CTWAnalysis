@@ -87,6 +87,12 @@
   flex: 1; min-height: 0; overflow-y: auto;
 }
 
+/* Right-panel section headers sit outside concept-panel-body, so they need
+   their own left/right padding to align with the content below. */
+#concept-inspector .section-header--ruled {
+  padding: 10px 12px 8px;
+}
+
 .concept-panel-body {
   padding: 8px 12px 12px;
   display: flex; flex-direction: column; gap: 10px;

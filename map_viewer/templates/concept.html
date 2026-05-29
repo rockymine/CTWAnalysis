@@ -112,74 +112,74 @@
     <div id="concept-inspector-scroll">
 
       <!-- Map Info -->
-      <div class="section-header section-header--list">
+      <div class="section-header section-header--ruled">
         <span class="section-title">Map Info</span>
       </div>
       <div class="concept-panel-body">
-        <div class="panel-section">
-          <div class="field">
-            <label class="field-label" for="ct-map-name">Name</label>
-            <input id="ct-map-name" class="field-input" type="text" placeholder="My CTW Map"/>
-          </div>
-          <div class="field">
-            <label class="field-label" for="ct-map-version">Version</label>
-            <input id="ct-map-version" class="field-input" type="text" placeholder="0.1.0"/>
-          </div>
+        <div class="field">
+          <label class="field-label" for="ct-map-name">Name</label>
+          <input id="ct-map-name" class="field-input" type="text" placeholder="My CTW Map"/>
         </div>
-        <div class="section-header" style="padding:8px 0 4px">
-          <span class="section-title">Authors</span>
-          <button id="ct-add-author" class="action-btn" style="font-size:11px;padding:2px 8px">+ Add</button>
+        <div class="field">
+          <label class="field-label" for="ct-map-version">Version</label>
+          <input id="ct-map-version" class="field-input" type="text" placeholder="0.1.0"/>
         </div>
+      </div>
+
+      <!-- Authors -->
+      <div class="section-header section-header--ruled">
+        <span class="section-title">Authors</span>
+      </div>
+      <div class="concept-panel-body">
         <div id="ct-authors-list"></div>
+        <button id="ct-add-author" class="action-btn">+ Add author</button>
       </div>
 
       <div class="panel-divider"></div>
 
       <!-- Map Space -->
-      <div class="section-header section-header--list">
+      <div class="section-header section-header--ruled">
         <span class="section-title">Map Space</span>
       </div>
       <div class="concept-panel-body">
-        <div class="panel-section">
-          <div>
-            <span class="field-label">Bounding Box</span>
-            <div class="detail-group-row" style="margin-top:6px">
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">min X</span>
-                <input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/>
-              </div>
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">max X</span>
-                <input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/>
-              </div>
+        <div class="field">
+          <span class="field-label">Bounding Box</span>
+          <div class="detail-group-row">
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">min X</span>
+              <input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/>
             </div>
-            <div class="detail-group-row" style="margin-top:4px">
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">min Z</span>
-                <input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/>
-              </div>
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">max Z</span>
-                <input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/>
-              </div>
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">max X</span>
+              <input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/>
             </div>
           </div>
-          <div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
-              <span class="field-label">Center</span>
-              <button id="ct-center-reset" class="action-btn"
-                      title="Reset to bounding box midpoint"
-                      style="font-size:11px;padding:2px 6px">↺ midpoint</button>
+          <div class="detail-group-row">
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">min Z</span>
+              <input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/>
             </div>
-            <div class="detail-group-row" style="margin-top:6px">
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">X</span>
-                <input id="ct-center-x" class="detail-bounds-input" type="number" step="0.5" value="0"/>
-              </div>
-              <div class="detail-prefixed-field">
-                <span class="detail-prefix">Z</span>
-                <input id="ct-center-z" class="detail-bounds-input" type="number" step="0.5" value="0"/>
-              </div>
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">max Z</span>
+              <input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <div class="section-header">
+            <span class="field-label">Center</span>
+            <button id="ct-center-reset" class="action-btn"
+                    title="Reset to bounding box midpoint"
+                    style="font-size:11px;padding:2px 6px">↺ midpoint</button>
+          </div>
+          <div class="detail-group-row">
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">X</span>
+              <input id="ct-center-x" class="detail-bounds-input" type="number" step="0.5" value="0"/>
+            </div>
+            <div class="detail-prefixed-field">
+              <span class="detail-prefix">Z</span>
+              <input id="ct-center-z" class="detail-bounds-input" type="number" step="0.5" value="0"/>
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@
       <div class="panel-divider"></div>
 
       <!-- Islands -->
-      <div class="section-header section-header--list" style="justify-content:space-between">
+      <div class="section-header section-header--ruled">
         <span class="section-title">Islands</span>
         <button id="ct-new-island" class="action-btn" style="font-size:11px;padding:2px 8px">+ Island</button>
       </div>
