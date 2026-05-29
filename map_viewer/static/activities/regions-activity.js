@@ -190,7 +190,7 @@ export class RegionsActivity {
             this.#registry.deselect();
           }
         },
-        onContextMenu: (node, pos) => this.#showContextMenu(node, pos),
+        onContextMenu: (node, pos, ctx) => this.#showContextMenu(node, pos, ctx),
       },
     );
 
@@ -276,7 +276,7 @@ export class RegionsActivity {
     }, true);
   }
 
-  #showContextMenu(node, { x, y }) {
+  #showContextMenu(node, { x, y }, { parentId = null, parentType = null, childIndex = 0, siblingCount = 0 } = {}) {
     const menu = this.#ctxMenu;
     menu.innerHTML = "";
 
@@ -299,16 +299,20 @@ export class RegionsActivity {
       return el;
     };
 
-    const canGroup = this.#multiSelected.size >= 2;
-    const isUnion  = node.type === "union";
+    const canGroup    = this.#multiSelected.size >= 2;
+    const isUnion     = node.type === "union";
+    const canSetBase  = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
 
+    if (canSetBase) {
+      menu.appendChild(item("Set as base", null, () => this.#setBaseChild(parentId, node.id)));
+    }
     if (canGroup) {
       menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
     }
     if (isUnion) {
       menu.appendChild(item("Ungroup", "Ctrl+G", () => this.#ungroupSelected()));
     }
-    if ((canGroup || isUnion) && !node.synthetic_id) {
+    if ((canSetBase || canGroup || isUnion) && !node.synthetic_id) {
       const sep = document.createElement("div");
       sep.className = "ctx-sep";
       menu.appendChild(sep);
@@ -481,6 +485,16 @@ export class RegionsActivity {
       this.#setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
     } catch (err) {
       this.#setStatus(`Group failed: ${err.message}`);
+    }
+  }
+
+  async #setBaseChild(parentId, childId) {
+    try {
+      await api.setBaseChild(this.#mapName, parentId, childId);
+      await this.#reloadRegions();
+      this.#setStatus(`"${childId}" is now the base of "${parentId}".`);
+    } catch (err) {
+      this.#setStatus(`Set base failed: ${err.message}`);
     }
   }
 

@@ -343,6 +343,22 @@ export async function fetchWoolRoomStatus(mapName, teamId, color) {
   return r.json();
 }
 
+export async function setBaseChild(mapName, regionId, childId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/set-base-child`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child_id: childId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Set base child failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function ungroupRegion(mapName, regionId) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/ungroup`,

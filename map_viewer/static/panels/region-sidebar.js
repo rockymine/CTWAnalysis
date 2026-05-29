@@ -161,17 +161,18 @@ export class RegionSidebar {
     return el;
   }
 
-  #appendTree(nodes, container, depth, parentId) {
-    for (const node of nodes) {
+  #appendTree(nodes, container, depth, parentId, parentType = null) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
       this.#parentMap.set(node.id, parentId);
-      container.appendChild(this.#regionRow(node, depth));
+      container.appendChild(this.#regionRow(node, depth, parentType, i, nodes.length, parentId));
       if ((node.children || []).length > 0) {
-        this.#appendTree(node.children, container, depth + 1, node.id);
+        this.#appendTree(node.children, container, depth + 1, node.id, node.type);
       }
     }
   }
 
-  #regionRow(node, depth) {
+  #regionRow(node, depth, parentType = null, childIndex = 0, siblingCount = 0, parentId = null) {
     const row = document.createElement("div");
     row.className = "region-row";
     row.dataset.regionId = node.id;
@@ -180,6 +181,12 @@ export class RegionSidebar {
     row.appendChild(this.#chevronBtn(node));
     row.appendChild(this.#typeIcon(node));
     row.appendChild(this.#label(node));
+    if (parentType === "complement" && childIndex === 0) {
+      const tag = document.createElement("span");
+      tag.className = "complement-base-tag";
+      tag.textContent = "base";
+      row.appendChild(tag);
+    }
     row.appendChild(this.#visBtn(node.id));
 
     row.addEventListener("click", (e) => {
@@ -188,7 +195,8 @@ export class RegionSidebar {
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (this.#onSelect) this.#onSelect(node, false);
-      if (this.#onContextMenu) this.#onContextMenu(node, { x: e.clientX, y: e.clientY });
+      if (this.#onContextMenu) this.#onContextMenu(node, { x: e.clientX, y: e.clientY },
+        { parentId, parentType, childIndex, siblingCount });
     });
 
     this.#rowMap.set(node.id, row);

@@ -105,6 +105,30 @@ def group_regions(data: dict, payload: dict) -> dict:
     }
 
 
+def set_base_child(data: dict, region_id: str, payload: dict) -> dict:
+    """Move a named child to index 0 of a complement's children array.
+
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    child_id = str(payload.get("child_id", "")).strip()
+    if not child_id:
+        raise InvalidRegionPayload("child_id required")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    if region.get("type") != "complement":
+        raise InvalidRegionPayload(f"region {region_id!r} is not a complement")
+    children = region.get("children", [])
+    idx = next((i for i, c in enumerate(children) if c.get("id") == child_id), None)
+    if idx is None:
+        raise RegionNotFound(f"child {child_id!r} not found in complement {region_id!r}")
+    if idx != 0:
+        children.insert(0, children.pop(idx))
+    return {}
+
+
 def ungroup_region(data: dict, payload: dict) -> dict:
     """Dissolve a union: remove it and expose its children as top-level regions.
 
