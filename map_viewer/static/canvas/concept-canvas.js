@@ -756,11 +756,13 @@ export class ConceptCanvas {
         return;
       }
 
-      // Pan / select
+      // Pan (move tool only) / select
       this.#clickWasDrag = false;
-      this.#isPanning  = true;
-      this.#didPan     = false;
-      this.#panAnchor  = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
+      if (this.#activeTool === "move") {
+        this.#isPanning = true;
+        this.#didPan    = false;
+        this.#panAnchor = { x: e.clientX, y: e.clientY, panX: this.#panX, panY: this.#panY };
+      }
     });
 
     // Double-click to close polygon
