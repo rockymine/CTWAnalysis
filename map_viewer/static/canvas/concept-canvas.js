@@ -303,10 +303,9 @@ export class ConceptCanvas {
     }
 
     g.style.cursor = "pointer";
-    g.addEventListener("mousedown", (e) => {
-      if (e.button !== 0 || this.#activeTool !== null) return;
-      e.stopPropagation();
-      this.#clickWasDrag = true;
+    g.addEventListener("click", (e) => {
+      if (this.#activeTool !== null) return;
+      e.stopPropagation();   // prevent canvas click from deselecting immediately after
       this.#callbacks.onShapeSelected?.(shape.id);
     });
 
@@ -859,7 +858,7 @@ export class ConceptCanvas {
         return;
       }
 
-      this.#clickWasDrag = this.#didPan;
+      if (this.#isPanning) this.#clickWasDrag = this.#didPan;
       this.#isPanning = false;
       this.#didPan    = false;
       this.#refreshCursor();
