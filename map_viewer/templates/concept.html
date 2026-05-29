@@ -144,26 +144,27 @@
       <div class="concept-panel-body">
         <div class="field">
           <span class="field-label">Bounding Box</span>
-          <div class="detail-group-row">
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">min X</span>
-              <input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/>
-            </div>
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">max X</span>
-              <input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/>
-            </div>
-          </div>
-          <div class="detail-group-row">
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">min Z</span>
-              <input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/>
-            </div>
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">max Z</span>
-              <input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/>
-            </div>
-          </div>
+          <table class="detail-table">
+            <thead>
+              <tr>
+                <th></th><th>MIN</th><th>MAX</th><th>SIZE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="detail-axis">X</td>
+                <td class="detail-val"><input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                <td class="detail-val"><input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                <td class="detail-size" id="ct-bbox-size-x">512</td>
+              </tr>
+              <tr>
+                <td class="detail-axis">Z</td>
+                <td class="detail-val"><input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                <td class="detail-val"><input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                <td class="detail-size" id="ct-bbox-size-z">512</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         <div class="field">
           <div class="section-header">

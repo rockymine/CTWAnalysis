@@ -127,11 +127,20 @@ export class ConceptActivity {
     const bboxMaxX  = document.getElementById("ct-bbox-maxx");
     const bboxMinZ  = document.getElementById("ct-bbox-minz");
     const bboxMaxZ  = document.getElementById("ct-bbox-maxz");
+    const sizeXEl   = document.getElementById("ct-bbox-size-x");
+    const sizeZEl   = document.getElementById("ct-bbox-size-z");
     const centerXEl = document.getElementById("ct-center-x");
     const centerZEl = document.getElementById("ct-center-z");
 
     nameEl.addEventListener("input",    () => { this.#meta.name    = nameEl.value; });
     versionEl.addEventListener("input", () => { this.#meta.version = versionEl.value; });
+
+    const refreshSizes = () => {
+      const minX = parseInt(bboxMinX.value, 10), maxX = parseInt(bboxMaxX.value, 10);
+      const minZ = parseInt(bboxMinZ.value, 10), maxZ = parseInt(bboxMaxZ.value, 10);
+      if (!isNaN(minX) && !isNaN(maxX)) sizeXEl.textContent = String(maxX - minX);
+      if (!isNaN(minZ) && !isNaN(maxZ)) sizeZEl.textContent = String(maxZ - minZ);
+    };
 
     const applyBBox = () => {
       const minX = parseInt(bboxMinX.value, 10);
@@ -154,6 +163,7 @@ export class ConceptActivity {
     };
 
     for (const el of [bboxMinX, bboxMaxX, bboxMinZ, bboxMaxZ]) {
+      el.addEventListener("input", refreshSizes);
       el.addEventListener("blur", applyBBox);
       el.addEventListener("keydown", (e) => { if (e.key === "Enter") applyBBox(); });
     }
