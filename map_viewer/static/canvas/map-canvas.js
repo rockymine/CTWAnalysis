@@ -98,6 +98,7 @@ export class MapCanvas {
   // ── region visibility / selection ─────────────────────────────────────────
   #visibilityMap      = new Map();  // id → false means hidden; absent = visible
   #currentSelectedIds = new Set();
+  #resolvedMode       = false;      // when true, render polygon_2d for composites
 
   // ── layer visibility state (persists across resize) ───────────────────────
   #showPois     = false;
@@ -162,6 +163,11 @@ export class MapCanvas {
   setBuildVisible(v) {
     this.#showBuild = v;
     if (this.#buildLayerEl) this.#buildLayerEl.style.display = v ? "" : "none";
+  }
+
+  setResolvedMode(v) {
+    this.#resolvedMode = v;
+    this.refreshRegions(this.#groups);
   }
 
   setBlocksVisible(v) {
@@ -1225,8 +1231,8 @@ export class MapCanvas {
     for (const item of groupsOrNodes) {
       if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
 
-      // Composite/half regions render via server-computed polygon_2d.
-      if (item.id && item.polygon_2d) {
+      // Resolved mode: render composite/half as server-computed polygon_2d.
+      if (this.#resolvedMode && item.id && item.polygon_2d) {
         out.push(item);
         continue;
       }

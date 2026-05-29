@@ -232,6 +232,8 @@ export class RegionsActivity {
   // ── layer toggles ──────────────────────────────────────────────────────────
 
   #initLayerToggles() {
+    document.getElementById("toggle-resolved").addEventListener("change",
+      (e) => this.#canvas.setResolvedMode(e.target.checked));
     document.getElementById("toggle-pois").addEventListener("change",
       (e) => this.#canvas.setPoisVisible(e.target.checked));
     document.getElementById("toggle-build").addEventListener("change",
