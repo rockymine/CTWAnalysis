@@ -64,14 +64,16 @@ export class ConceptActivity {
   // ── toolbar ────────────────────────────────────────────────────────────────
 
   #initToolbar() {
-    const btnMove  = document.getElementById("ct-tool-move");
-    const btnRect  = document.getElementById("ct-tool-rect");
-    const btnCirc  = document.getElementById("ct-tool-circ");
-    const btnPoly  = document.getElementById("ct-tool-poly");
-    const btnLasso = document.getElementById("ct-tool-lasso");
+    const btnMove   = document.getElementById("ct-tool-move");
+    const btnSelect = document.getElementById("ct-tool-select");
+    const btnRect   = document.getElementById("ct-tool-rect");
+    const btnCirc   = document.getElementById("ct-tool-circ");
+    const btnPoly   = document.getElementById("ct-tool-poly");
+    const btnLasso  = document.getElementById("ct-tool-lasso");
 
     this.#tools = new ToolManager(this.#canvas, {
-      select:    btnMove,
+      move:      btnMove,
+      select:    btnSelect,   // "select" key → null in ToolManager
       rectangle: btnRect,
       circle:    btnCirc,
       polygon:   btnPoly,
@@ -79,23 +81,25 @@ export class ConceptActivity {
     });
 
     // Button click handlers
-    btnMove.addEventListener("click",  () => this.#tools.setTool(null));
-    btnRect.addEventListener("click",  () => this.#tools.setTool("rectangle"));
-    btnCirc.addEventListener("click",  () => this.#tools.setTool("circle"));
-    btnPoly.addEventListener("click",  () => this.#tools.setTool("polygon"));
-    btnLasso.addEventListener("click", () => this.#tools.setTool("lasso"));
+    btnMove.addEventListener("click",   () => this.#tools.setTool("move"));
+    btnSelect.addEventListener("click", () => this.#tools.setTool(null));
+    btnRect.addEventListener("click",   () => this.#tools.setTool("rectangle"));
+    btnCirc.addEventListener("click",   () => this.#tools.setTool("circle"));
+    btnPoly.addEventListener("click",   () => this.#tools.setTool("polygon"));
+    btnLasso.addEventListener("click",  () => this.#tools.setTool("lasso"));
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
-      if (e.key === "m" || e.key === "M") this.#tools.setTool(null);
+      if (e.key === "m" || e.key === "M") this.#tools.setTool("move");
+      if (e.key === "s" || e.key === "S") this.#tools.setTool(null);
       if (e.key === "r" || e.key === "R") this.#tools.setTool("rectangle");
       if (e.key === "o" || e.key === "O") this.#tools.setTool("circle");
       if (e.key === "p" || e.key === "P") this.#tools.setTool("polygon");
       if (e.key === "l" || e.key === "L") this.#tools.setTool("lasso");
     });
 
-    this.#tools.setTool(null);
+    this.#tools.setTool(null);   // start in select mode
 
     // Add / subtract toggle
     const btnAdd = document.getElementById("ct-op-add");
@@ -314,6 +318,7 @@ export class ConceptActivity {
     };
     this.#shapes.set(id, shape);
     this.#canvas.addShape(shape);
+    this.#tools.setTool(null);   // return to select after completing a shape
     this.#selectShape(id);
     this.#renderShapeList();
     this.#renderIslandList();
