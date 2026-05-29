@@ -19,7 +19,7 @@
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
-         ringToPath, polyToPath, boundsToRingPath, clipHalfPlane } from "./transform.js";
+         polyToPath } from "./transform.js";
 import { chatColorHex, dyeColorHex } from "../shared/game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
@@ -909,9 +909,6 @@ export class MapCanvas {
     if (region.polygon_2d) {
       const shape = this.#polygonShape(region, color);
       if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
-    } else if (region.is_negative) {
-      g.appendChild(this.#negativeShape(region, color));
-      g.appendChild(this.#label(id, this.#mapCenter(), color, "0.75"));
     } else if (type === "cylinder" || type === "circle" || type === "sphere") {
       const shape = svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
@@ -921,12 +918,6 @@ export class MapCanvas {
       });
       g.appendChild(shape);
       this.#shapeMap.set(id, { shape, type });
-    } else if (type === "half") {
-      const shape = this.#halfShape(region, color);
-      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
-    } else if (type === "complement" && (region.children || []).some(c => c.type === "half")) {
-      const shape = this.#complementHalfShape(region, color);
-      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
     } else {
       const shape = svgEl("rect", {
         x: rx, y: ry, width: rw, height: rh,
@@ -955,47 +946,6 @@ export class MapCanvas {
     return svgEl("path", { d: polyToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
   }
 
-  /** Fallback: render a standalone half-plane clipped to the map bounding box. */
-  #halfShape(region, color) {
-    const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = region.coords ?? {};
-    if (ox == null || nx == null) return null;
-    const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
-    const poly = clipHalfPlane(
-      [[minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ]],
-      ox, oz, nx, nz,
-    );
-    if (poly.length < 3) return null;
-    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
-  }
-
-  /** Fallback: complement with half children — client-side polygon clipping. */
-  #complementHalfShape(region, color) {
-    const base = (region.children || [])[0];
-    if (!base?.bounds) return null;
-    const { min_x, min_z, max_x, max_z } = base.bounds;
-    let poly = [[min_x, min_z], [max_x, min_z], [max_x, max_z], [min_x, max_z]];
-    for (const child of (region.children || []).slice(1)) {
-      if (child.type !== "half") continue;
-      const { origin_x: ox, origin_z: oz, normal_x: nx, normal_z: nz } = child.coords ?? {};
-      if (ox == null || nx == null) continue;
-      poly = clipHalfPlane(poly, ox, oz, -nx, -nz);
-    }
-    if (poly.length < 3) return null;
-    return svgEl("path", { d: ringToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
-  }
-
-  #negativeShape(region, color) {
-    const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
-    let d = boundsToRingPath({ min_x: minX, min_z: minZ, max_x: maxX, max_z: maxZ }, this.#toSvg);
-    for (const child of (region.children || [])) {
-      if (child.bounds) d += " " + boundsToRingPath(child.bounds, this.#toSvg);
-    }
-    return svgEl("path", {
-      d, fill: color, "fill-opacity": "0.12",
-      stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "6,3",
-      "fill-rule": "evenodd", "vector-effect": "non-scaling-stroke",
-    });
-  }
 
   #mapCenter() {
     const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
@@ -1275,20 +1225,13 @@ export class MapCanvas {
     for (const item of groupsOrNodes) {
       if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
 
-      // Server-computed polygon: render as resolved shape, skip child recursion.
+      // Composite/half regions render via server-computed polygon_2d.
       if (item.id && item.polygon_2d) {
         out.push(item);
         continue;
       }
 
-      // Fallback: complement with half child — client-side polygon clipping.
-      if (item.id && item.type === "complement" && item.bounds &&
-          (item.children || []).some(c => c.type === "half")) {
-        out.push(item);
-        continue;
-      }
-
-      if (item.id && !COMPOSITE_TYPES.has(item.type) && (item.bounds || item.type === "half")) {
+      if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) {
         out.push(item);
       }
       this.#flattenNamed(item.children || [], out);

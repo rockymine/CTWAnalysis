@@ -104,7 +104,7 @@ def _encode_coords(region: dict) -> dict | None:
 # Polygon_2d computation (Shapely-backed, optional)
 # ---------------------------------------------------------------------------
 
-_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect"})
+_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect", "negative"})
 
 
 def _half_to_shapely(origin_x, origin_z, normal_x, normal_z, bounds):
@@ -213,7 +213,7 @@ def _dict_to_shapely(region: dict, bounds: tuple, registry: dict | None = None):
             bounds,
         )
 
-    if t in ("complement", "union", "intersect"):
+    if t in ("complement", "union", "intersect", "negative"):
         children = region.get("children", [])
         child_geoms = [_dict_to_shapely(c, bounds, registry) for c in children]
 
@@ -245,6 +245,14 @@ def _dict_to_shapely(region: dict, bounds: tuple, registry: dict | None = None):
                 if g is not None and not g.is_empty:
                     result = result.intersection(g)
             return result if result is not None and not result.is_empty else None
+
+        if t == "negative":
+            from shapely.geometry import box as _shp_box
+            min_x, min_z, max_x, max_z = bounds
+            map_box = _shp_box(min_x, min_z, max_x, max_z)
+            valid = [g for g in child_geoms if g is not None and not g.is_empty]
+            result = map_box.difference(unary_union(valid)) if valid else map_box
+            return result if not result.is_empty else None
 
     if t == "mirror":
         source = region.get("source")
