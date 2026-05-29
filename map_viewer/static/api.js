@@ -343,6 +343,22 @@ export async function fetchWoolRoomStatus(mapName, teamId, color) {
   return r.json();
 }
 
+export async function removeFromGroup(mapName, regionId, childId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/remove-from-group`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child_id: childId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Remove from group failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function setBaseChild(mapName, regionId, childId) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/set-base-child`,

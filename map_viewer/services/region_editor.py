@@ -105,6 +105,34 @@ def group_regions(data: dict, payload: dict) -> dict:
     }
 
 
+def remove_from_group(data: dict, region_id: str, payload: dict) -> dict:
+    """Remove one child from a union without deleting it.
+
+    The child stays in the top-level regions dict and becomes a visible root.
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    child_id = str(payload.get("child_id", "")).strip()
+    if not child_id:
+        raise InvalidRegionPayload("child_id required")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    if region.get("type") != "union":
+        raise InvalidRegionPayload(f"region {region_id!r} is not a union")
+    children = region.get("children", [])
+    idx = next((i for i, c in enumerate(children) if c.get("id") == child_id), None)
+    if idx is None:
+        raise RegionNotFound(f"child {child_id!r} not found in union {region_id!r}")
+    children.pop(idx)
+    # Ensure the child is visible as a root in case it was never in region_categories
+    cats = data.get("region_categories", {})
+    if not any(child_id in cat_list for cat_list in cats.values()):
+        cats.setdefault("other", []).append(child_id)
+    return {}
+
+
 def set_base_child(data: dict, region_id: str, payload: dict) -> dict:
     """Move a named child to index 0 of a complement's children array.
 

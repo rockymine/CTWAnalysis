@@ -39,6 +39,20 @@ def group_regions(name: str):
     return jsonify({"ok": True, **result}), 201
 
 
+@bp.route("/<name>/region/<region_id>/remove-from-group", methods=["POST"])
+def remove_from_group(name: str, region_id: str):
+    body = request.get_json(silent=True) or {}
+    data, data_path = load_map_data(name)
+    try:
+        result = region_editor.remove_from_group(data, region_id, body)
+    except InvalidRegionPayload as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RegionNotFound as exc:
+        return jsonify({"error": str(exc)}), 404
+    save_map_data(data, data_path)
+    return jsonify({"ok": True, **result})
+
+
 @bp.route("/<name>/region/<region_id>/set-base-child", methods=["POST"])
 def set_base_child(name: str, region_id: str):
     body = request.get_json(silent=True) or {}

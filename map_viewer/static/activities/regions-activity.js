@@ -299,12 +299,16 @@ export class RegionsActivity {
       return el;
     };
 
-    const canGroup    = this.#multiSelected.size >= 2;
-    const isUnion     = node.type === "union";
-    const canSetBase  = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
+    const canGroup          = this.#multiSelected.size >= 2;
+    const isUnion           = node.type === "union";
+    const canSetBase        = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
+    const canRemoveFromGroup = parentType === "union";
 
     if (canSetBase) {
       menu.appendChild(item("Set as base", null, () => this.#setBaseChild(parentId, node.id)));
+    }
+    if (canRemoveFromGroup) {
+      menu.appendChild(item("Remove from group", null, () => this.#removeFromGroup(parentId, node.id)));
     }
     if (canGroup) {
       menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
@@ -312,7 +316,7 @@ export class RegionsActivity {
     if (isUnion) {
       menu.appendChild(item("Ungroup", "Ctrl+G", () => this.#ungroupSelected()));
     }
-    if ((canSetBase || canGroup || isUnion) && !node.synthetic_id) {
+    if ((canSetBase || canRemoveFromGroup || canGroup || isUnion) && !node.synthetic_id) {
       const sep = document.createElement("div");
       sep.className = "ctx-sep";
       menu.appendChild(sep);
@@ -485,6 +489,16 @@ export class RegionsActivity {
       this.#setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
     } catch (err) {
       this.#setStatus(`Group failed: ${err.message}`);
+    }
+  }
+
+  async #removeFromGroup(parentId, childId) {
+    try {
+      await api.removeFromGroup(this.#mapName, parentId, childId);
+      await this.#reloadRegions();
+      this.#setStatus(`"${childId}" removed from "${parentId}".`);
+    } catch (err) {
+      this.#setStatus(`Remove from group failed: ${err.message}`);
     }
   }
 
