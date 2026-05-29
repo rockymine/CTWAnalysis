@@ -24,19 +24,112 @@
 
 <div id="main">
 
-  <!-- ── Left sidebar: shape list ── -->
-  <div id="concept-layers">
-    <div class="section-header section-header--list">
-      <span class="section-title">Shapes</span>
+  <!-- ── Activity Rail ── -->
+  <nav id="activity-rail">
+    <div class="activity-logo">
+      <div class="activity-logo-box">
+        <span class="activity-logo-ctw">ctw</span>
+        <span class="activity-logo-sub">Concept</span>
+      </div>
     </div>
-    <div id="ct-shape-list" class="concept-shape-list">
-      <div class="concept-empty">No shapes yet. Draw with the tools above.</div>
+    <button class="activity-btn active" id="ct-activity-overview" title="Overview" data-status="">
+      <i data-lucide="book-open-text"></i>
+    </button>
+    <button class="activity-btn" id="ct-activity-layout" title="Layout" data-status="">
+      <i data-lucide="pentagon"></i>
+    </button>
+  </nav>
+
+  <!-- ── Left panel area (switches between overview and layout panels) ── -->
+  <div id="concept-left-area">
+
+    <!-- Overview left: Map Identity + Authors + Map Space -->
+    <div id="concept-overview-left">
+      <div id="concept-overview-scroll">
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Map Identity</h2>
+          </div>
+          <div class="field">
+            <label class="field-label" for="ct-map-name">Map Name</label>
+            <input id="ct-map-name" class="field-input" type="text" placeholder="My CTW Map"/>
+          </div>
+          <div class="field">
+            <label class="field-label" for="ct-map-version">Version</label>
+            <input id="ct-map-version" class="field-input" type="text" placeholder="0.1.0"/>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Authors</h2>
+          </div>
+          <div id="ct-authors-list"></div>
+          <button id="ct-add-author" class="action-btn">+ Add author</button>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Map Space</h2>
+          </div>
+          <div class="field">
+            <span class="field-label">Bounding Box</span>
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th></th><th>MIN</th><th>MAX</th><th>SIZE</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="detail-axis">X</td>
+                  <td class="detail-val"><input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                  <td class="detail-val"><input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                  <td class="detail-size" id="ct-bbox-size-x">512</td>
+                </tr>
+                <tr>
+                  <td class="detail-axis">Z</td>
+                  <td class="detail-val"><input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                  <td class="detail-val"><input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                  <td class="detail-size" id="ct-bbox-size-z">512</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="field">
+            <span class="field-label">Center</span>
+            <div class="detail-group-row">
+              <div class="detail-prefixed-field">
+                <span class="detail-prefix">X</span>
+                <input id="ct-center-x" class="detail-bounds-input" type="number" step="0.5" value="0"/>
+              </div>
+              <div class="detail-prefixed-field">
+                <span class="detail-prefix">Z</span>
+                <input id="ct-center-z" class="detail-bounds-input" type="number" step="0.5" value="0"/>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
     </div>
-  </div>
+
+    <!-- Layout left: Shapes list -->
+    <div id="concept-layout-left" hidden>
+      <div class="section-header section-header--list">
+        <span class="section-title">Shapes</span>
+      </div>
+      <div id="ct-shape-list" class="concept-shape-list">
+        <div class="concept-empty">No shapes yet. Draw with the tools above.</div>
+      </div>
+    </div>
+
+  </div><!-- /concept-left-area -->
 
   <div class="sidebar-handle"></div>
 
-  <!-- ── Canvas column ── -->
+  <!-- ── Canvas column (permanent, shared between activities) ── -->
   <div id="concept-canvas-col">
 
     <!-- Toolbar -->
@@ -66,7 +159,7 @@
         </button>
       </div>
 
-      <div class="subbar-sep"></div>
+      <div id="ct-draw-toolbar-sep" class="subbar-sep"></div>
 
       <!-- Add / subtract operation toggle -->
       <button id="ct-op-add" class="draw-tool-btn draw-tool-btn--active"
@@ -80,21 +173,9 @@
         <span style="font-size:11px;margin-left:3px">Sub</span>
       </button>
 
-      <div class="subbar-sep"></div>
-
-      <!-- Canvas size -->
-      <label class="layer-item" title="Half-width of the sketch canvas in blocks">
-        <span style="color:var(--text-secondary);font-size:11px">±</span>
-        <input id="ct-canvas-half" class="concept-size-input" type="number"
-               value="256" min="32" max="2048" step="16"/>
-        <span style="font-size:11px;color:var(--text-muted)">blocks</span>
-      </label>
-      <button id="ct-apply-size" class="draw-tool-btn" title="Apply canvas size">
-        <i data-lucide="refresh-cw"></i>
-      </button>
-
+      <div id="ct-cursor-coords" class="canvas-cursor"></div>
       <div class="canvas-subbar-right">
-        <span id="ct-coords" class="concept-coords"></span>
+        <span id="ct-zoom-level" class="canvas-zoom">—</span>
       </div>
     </div>
 
@@ -105,88 +186,11 @@
 
   </div><!-- /canvas-col -->
 
-  <div class="sidebar-handle"></div>
+  <div class="sidebar-handle" id="concept-right-handle"></div>
 
-  <!-- ── Right sidebar: map info + space + islands ── -->
-  <div id="concept-inspector">
+  <!-- ── Right panel: Islands + Compute (Layout activity only) ── -->
+  <div id="concept-right-area" hidden>
     <div id="concept-inspector-scroll">
-
-      <!-- Map Info -->
-      <div class="section-header section-header--ruled">
-        <span class="section-title">Map Info</span>
-      </div>
-      <div class="concept-panel-body">
-        <div class="field">
-          <label class="field-label" for="ct-map-name">Name</label>
-          <input id="ct-map-name" class="field-input" type="text" placeholder="My CTW Map"/>
-        </div>
-        <div class="field">
-          <label class="field-label" for="ct-map-version">Version</label>
-          <input id="ct-map-version" class="field-input" type="text" placeholder="0.1.0"/>
-        </div>
-      </div>
-
-      <!-- Authors -->
-      <div class="section-header section-header--ruled">
-        <span class="section-title">Authors</span>
-      </div>
-      <div class="concept-panel-body">
-        <div id="ct-authors-list"></div>
-        <button id="ct-add-author" class="action-btn">+ Add author</button>
-      </div>
-
-      <div class="panel-divider"></div>
-
-      <!-- Map Space -->
-      <div class="section-header section-header--ruled">
-        <span class="section-title">Map Space</span>
-      </div>
-      <div class="concept-panel-body">
-        <div class="field">
-          <span class="field-label">Bounding Box</span>
-          <table class="detail-table">
-            <thead>
-              <tr>
-                <th></th><th>MIN</th><th>MAX</th><th>SIZE</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="detail-axis">X</td>
-                <td class="detail-val"><input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
-                <td class="detail-val"><input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/></td>
-                <td class="detail-size" id="ct-bbox-size-x">512</td>
-              </tr>
-              <tr>
-                <td class="detail-axis">Z</td>
-                <td class="detail-val"><input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
-                <td class="detail-val"><input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/></td>
-                <td class="detail-size" id="ct-bbox-size-z">512</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="field">
-          <div class="section-header">
-            <span class="field-label">Center</span>
-            <button id="ct-center-reset" class="action-btn"
-                    title="Reset to bounding box midpoint"
-                    style="font-size:11px;padding:2px 6px">↺ midpoint</button>
-          </div>
-          <div class="detail-group-row">
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">X</span>
-              <input id="ct-center-x" class="detail-bounds-input" type="number" step="0.5" value="0"/>
-            </div>
-            <div class="detail-prefixed-field">
-              <span class="detail-prefix">Z</span>
-              <input id="ct-center-z" class="detail-bounds-input" type="number" step="0.5" value="0"/>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel-divider"></div>
 
       <!-- Islands -->
       <div class="section-header section-header--ruled">

@@ -23,7 +23,8 @@ export class ConceptActivity {
 
   #canvas      = null;
   #tools       = null;
-  #activeIslandId = null;
+  #activeIslandId  = null;
+  #activeActivity  = "overview";
 
   #meta = {
     name:     "",
@@ -44,6 +45,8 @@ export class ConceptActivity {
     this.#initSidebars();
     this.#initMetaPanel();
     this.#newIsland("Island 1");   // default island
+    this.#initActivityRail();
+    this.#switchActivity("overview");
     window.addEventListener("resize", () => this.#canvas.resize());
   }
 
@@ -54,12 +57,54 @@ export class ConceptActivity {
     const wrap = document.getElementById("concept-svg-area");
 
     this.#canvas = new ConceptCanvas(svg, wrap, {
-      onCoords:        (x, z)  => this.#updateCoords(x, z),
+      onCoords: (x, z)  => this.#updateCoords(x, z),
+      onZoom:   (scale) => {
+        const el = document.getElementById("ct-zoom-level");
+        if (el) el.textContent = `${Math.round(scale * 100)}%`;
+      },
       onShapeCreated:  (partial) => this.#addShape(partial),
       onShapeUpdated:  (shape)   => this.#onShapeUpdated(shape),
       onShapeSelected: (id)      => this.#selectShape(id),
       onShapeDeleted:  (id)      => this.#deleteShape(id),
     });
+  }
+
+  // ── activity rail ──────────────────────────────────────────────────────────
+
+  #initActivityRail() {
+    document.getElementById("ct-activity-overview").addEventListener("click",
+      () => this.#switchActivity("overview"));
+    document.getElementById("ct-activity-layout").addEventListener("click",
+      () => this.#switchActivity("layout"));
+  }
+
+  #switchActivity(id) {
+    this.#activeActivity = id;
+    const isOverview = id === "overview";
+
+    document.getElementById("ct-activity-overview").classList.toggle("active", isOverview);
+    document.getElementById("ct-activity-layout").classList.toggle("active", !isOverview);
+
+    document.getElementById("concept-overview-left").hidden = !isOverview;
+    document.getElementById("concept-layout-left").hidden   = isOverview;
+    document.getElementById("concept-right-area").hidden    = isOverview;
+    document.getElementById("concept-right-handle").hidden  = isOverview;
+
+    this.#setToolbarMode(isOverview ? "overview" : "layout");
+  }
+
+  #setToolbarMode(mode) {
+    const isOverview = mode === "overview";
+    const drawIds = [
+      "ct-tool-select", "ct-tool-rect", "ct-tool-circ",
+      "ct-tool-poly", "ct-tool-lasso",
+      "ct-draw-toolbar-sep", "ct-op-add", "ct-op-sub",
+    ];
+    for (const id of drawIds) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = isOverview;
+    }
+    if (isOverview) this.#tools.setTool("move");
   }
 
   // ── toolbar ────────────────────────────────────────────────────────────────
@@ -95,6 +140,7 @@ export class ConceptActivity {
     document.addEventListener("keydown", (e) => {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
       if (e.key === "m" || e.key === "M") this.#tools.setTool("move");
+      if (this.#activeActivity === "overview") return;
       if (e.key === "s" || e.key === "S") this.#tools.setTool(null);
       if (e.key === "r" || e.key === "R") this.#tools.setTool("rectangle");
       if (e.key === "o" || e.key === "O") this.#tools.setTool("circle");
@@ -174,11 +220,6 @@ export class ConceptActivity {
       });
     }
 
-    document.getElementById("ct-center-reset").addEventListener("click", () => {
-      this.#centerIsAutomatic = true;
-      this.#resetCenter();
-    });
-
     document.getElementById("ct-add-author").addEventListener("click", () => {
       this.#meta.authors.push({ name: "", uuid: "", contribution: "" });
       this.#renderAuthors();
@@ -224,7 +265,7 @@ export class ConceptActivity {
 
       nameInput.addEventListener("blur", async () => {
         const val = nameInput.value.trim();
-        if (!val || val === author.uuid || val === author.name) return;
+        if (!val || val === author.uuid) return;
         try {
           const player   = await api.fetchMinecraftPlayer(val);
           author.uuid    = player.uuid;
@@ -555,9 +596,9 @@ export class ConceptActivity {
   // ── utils ──────────────────────────────────────────────────────────────────
 
   #updateCoords(x, z) {
-    const el = document.getElementById("ct-coords");
+    const el = document.getElementById("ct-cursor-coords");
     if (!el) return;
-    el.textContent = (x === null) ? "" : `x ${x}  z ${z}`;
+    el.textContent = (x === null) ? "" : `X ${x}  Z ${z}`;
   }
 
   #setStatus(msg) {

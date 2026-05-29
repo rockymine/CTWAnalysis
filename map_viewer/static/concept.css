@@ -4,10 +4,22 @@
  */
 
 /* ── page layout ── */
-#concept-layers {
-  width: 240px; flex-shrink: 0;
+#concept-left-area {
+  width: 280px; flex-shrink: 0;
   background: var(--bg-panel);
   display: flex; flex-direction: column; overflow: hidden;
+}
+
+#concept-overview-left,
+#concept-layout-left {
+  display: flex; flex-direction: column;
+  flex: 1; overflow: hidden;
+}
+
+#concept-overview-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 14px;
+  display: flex; flex-direction: column; gap: 20px;
 }
 
 #concept-canvas-col {
@@ -20,7 +32,7 @@
 }
 #concept-svg { display: block; cursor: default; }
 
-#concept-inspector {
+#concept-right-area {
   width: 280px; flex-shrink: 0;
   background: var(--bg-panel);
   display: flex; flex-direction: column; overflow: hidden;
@@ -89,7 +101,7 @@
 
 /* Right-panel section headers sit outside concept-panel-body, so they need
    their own left/right padding to align with the content below. */
-#concept-inspector .section-header--ruled {
+#concept-right-area .section-header--ruled {
   padding: 10px 12px 8px;
 }
 
@@ -134,18 +146,6 @@
 }
 
 /* ── toolbar extras ── */
-.concept-size-input {
-  width: 54px; background: var(--bg-base); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: 3px;
-  padding: 2px 5px; font-size: 11px; font-family: inherit;
-  text-align: right;
-}
-.concept-size-input:focus { outline: 1px solid var(--accent); }
-
-.concept-coords {
-  font-size: 11px; color: var(--text-muted); min-width: 100px;
-  text-align: right; font-variant-numeric: tabular-nums;
-}
 
 /* ── compute hint ── */
 .concept-hint {
