@@ -299,9 +299,10 @@ export class RegionsActivity {
       return el;
     };
 
-    const canGroup          = this.#multiSelected.size >= 2;
-    const isUnion           = node.type === "union";
-    const canSetBase        = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
+    const canGroup           = this.#multiSelected.size >= 2;
+    const isUnion            = node.type === "union";
+    const isCompound         = COMPOUND_TYPES.has(node.type);
+    const canSetBase         = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
     const canRemoveFromGroup = COMPOUND_TYPES.has(parentType);
 
     if (canSetBase) {
@@ -310,13 +311,16 @@ export class RegionsActivity {
     if (canRemoveFromGroup) {
       menu.appendChild(item("Remove from group", null, () => this.#removeFromGroup(parentId, node.id)));
     }
-    if (canGroup) {
-      menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
+    if (isCompound) {
+      menu.appendChild(this.#changeTypeSubmenu(node));
     }
     if (isUnion) {
       menu.appendChild(item("Ungroup", "Ctrl+G", () => this.#ungroupSelected()));
     }
-    if ((canSetBase || canRemoveFromGroup || canGroup || isUnion) && !node.synthetic_id) {
+    if (canGroup) {
+      menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
+    }
+    if ((canSetBase || canRemoveFromGroup || isCompound || isUnion || canGroup) && !node.synthetic_id) {
       const sep = document.createElement("div");
       sep.className = "ctx-sep";
       menu.appendChild(sep);
@@ -499,6 +503,45 @@ export class RegionsActivity {
       this.#setStatus(`"${childId}" removed from "${parentId}".`);
     } catch (err) {
       this.#setStatus(`Remove from group failed: ${err.message}`);
+    }
+  }
+
+  #changeTypeSubmenu(node) {
+    const btn = document.createElement("button");
+    btn.className = "ctx-item ctx-item--sub";
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = "Change type";
+    const arrow = document.createElement("span");
+    arrow.textContent = "▶";
+    arrow.style.cssText = "font-size:9px; color:var(--text-muted)";
+    btn.appendChild(labelSpan);
+    btn.appendChild(arrow);
+
+    const sub = document.createElement("div");
+    sub.className = "ctx-submenu";
+    for (const t of COMPOUND_TYPES) {
+      if (t === node.type) continue;
+      const opt = document.createElement("button");
+      opt.className = "ctx-item";
+      opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#hideContextMenu();
+        this.#changeType(node.id, t);
+      });
+      sub.appendChild(opt);
+    }
+    btn.appendChild(sub);
+    return btn;
+  }
+
+  async #changeType(regionId, newType) {
+    try {
+      await api.changeRegionType(this.#mapName, regionId, newType);
+      await this.#reloadRegions();
+      this.#setStatus(`Changed "${regionId}" to ${newType}.`);
+    } catch (err) {
+      this.#setStatus(`Change type failed: ${err.message}`);
     }
   }
 

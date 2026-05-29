@@ -105,6 +105,33 @@ def group_regions(data: dict, payload: dict) -> dict:
     }
 
 
+_COMPOUND_TYPES = frozenset({
+    "union", "complement", "intersect", "negative",
+    "mirror", "translate", "half",
+})
+
+
+def change_region_type(data: dict, region_id: str, payload: dict) -> dict:
+    """Change the type of a compound region to another compound type.
+
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    new_type = str(payload.get("type", "")).strip()
+    if not new_type:
+        raise InvalidRegionPayload("type required")
+    if new_type not in _COMPOUND_TYPES:
+        raise InvalidRegionPayload(f"{new_type!r} is not a compound type")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    if region.get("type") not in _COMPOUND_TYPES:
+        raise InvalidRegionPayload(f"region {region_id!r} is not a compound type")
+    region["type"] = new_type
+    return {}
+
+
 def remove_from_group(data: dict, region_id: str, payload: dict) -> dict:
     """Remove one child from a union without deleting it.
 

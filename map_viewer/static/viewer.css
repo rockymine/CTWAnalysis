@@ -265,6 +265,21 @@ body {
 }
 .ctx-sep { height: 1px; background: var(--border); margin: 3px 0; }
 
+.ctx-item--sub  { position: relative; }
+.ctx-submenu {
+  display: none; position: absolute;
+  left: calc(100% + 2px); top: -4px;
+  min-width: 140px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #00000066;
+  padding: 4px;
+  flex-direction: column; gap: 1px;
+  z-index: 10000;
+}
+.ctx-item--sub:hover .ctx-submenu { display: flex; }
+
 /* ── region detail (inside #inspector) ── */
 .detail-type-icon {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;

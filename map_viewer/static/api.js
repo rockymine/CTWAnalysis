@@ -343,6 +343,22 @@ export async function fetchWoolRoomStatus(mapName, teamId, color) {
   return r.json();
 }
 
+export async function changeRegionType(mapName, regionId, newType) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/change-type`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: newType }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Change type failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function removeFromGroup(mapName, regionId, childId) {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/remove-from-group`,
