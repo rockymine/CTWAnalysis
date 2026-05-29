@@ -44,6 +44,7 @@ export class RegionsActivity {
   #blockCache   = null;   // Map: mapName → top-surface data
 
   #tools        = null;   // ToolManager — toolbar state + canvas.setActiveTool
+  #ctxMenu      = null;   // floating context-menu element
 
   // ── constructor ────────────────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ export class RegionsActivity {
     this.#blockCache   = new Map();
 
     this.#initComponents();
+    this.#initContextMenu();
     this.#initToolbar();
     this.#initLayerToggles();
     this.#initKeyboard();
@@ -188,6 +190,7 @@ export class RegionsActivity {
             this.#registry.deselect();
           }
         },
+        onContextMenu: (node, pos) => this.#showContextMenu(node, pos),
       },
     );
 
@@ -255,6 +258,76 @@ export class RegionsActivity {
         e.target.checked = false;
       }
     });
+  }
+
+  // ── context menu ──────────────────────────────────────────────────────────
+
+  #initContextMenu() {
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu";
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    this.#ctxMenu = menu;
+
+    document.addEventListener("click",     () => this.#hideContextMenu(), true);
+    document.addEventListener("keydown",   (e) => { if (e.key === "Escape") this.#hideContextMenu(); }, true);
+    document.addEventListener("contextmenu", (e) => {
+      if (!menu.contains(e.target)) this.#hideContextMenu();
+    }, true);
+  }
+
+  #showContextMenu(node, { x, y }) {
+    const menu = this.#ctxMenu;
+    menu.innerHTML = "";
+
+    const item = (label, shortcut, action, danger = false) => {
+      const el = document.createElement("button");
+      el.className = "ctx-item" + (danger ? " ctx-item--danger" : "");
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = label;
+      el.appendChild(labelSpan);
+      if (shortcut) {
+        const kbdEl = document.createElement("kbd");
+        kbdEl.textContent = shortcut;
+        el.appendChild(kbdEl);
+      }
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#hideContextMenu();
+        action();
+      });
+      return el;
+    };
+
+    const canGroup = this.#multiSelected.size >= 2;
+    const isUnion  = node.type === "union";
+
+    if (canGroup) {
+      menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
+    }
+    if (isUnion) {
+      menu.appendChild(item("Ungroup", "Ctrl+G", () => this.#ungroupSelected()));
+    }
+    if ((canGroup || isUnion) && !node.synthetic_id) {
+      const sep = document.createElement("div");
+      sep.className = "ctx-sep";
+      menu.appendChild(sep);
+    }
+    if (!node.synthetic_id) {
+      menu.appendChild(item("Delete", "Del", () => this.#deleteNode(node), true));
+    }
+
+    if (!menu.children.length) return;
+
+    menu.hidden = false;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const mw = 180, mh = menu.offsetHeight || 120;
+    menu.style.left = (x + mw > vw ? vw - mw - 4 : x) + "px";
+    menu.style.top  = (y + mh > vh ? vh - mh - 4 : y) + "px";
+  }
+
+  #hideContextMenu() {
+    if (this.#ctxMenu) this.#ctxMenu.hidden = true;
   }
 
   // ── keyboard shortcuts ─────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export class RegionSidebar {
   #listEl;
   #onSelect;
   #onVisibilityToggle;
+  #onContextMenu;
   #rowMap       = new Map();   // id → rowEl
   #hiddenIds    = new Set();   // ids the user has hidden
   #collapsedIds = new Set();   // ids whose children are collapsed in the sidebar
@@ -26,11 +27,13 @@ export class RegionSidebar {
    * @param {object} [callbacks]
    * @param {function} [callbacks.onSelect]             Called with the node when a row is clicked.
    * @param {function} [callbacks.onVisibilityToggle]   Called with (id, hidden: boolean).
+   * @param {function} [callbacks.onContextMenu]        Called with (node, {x, y}) on right-click.
    */
-  constructor(listEl, { onSelect, onVisibilityToggle } = {}) {
+  constructor(listEl, { onSelect, onVisibilityToggle, onContextMenu } = {}) {
     this.#listEl              = listEl;
     this.#onSelect            = onSelect || null;
     this.#onVisibilityToggle  = onVisibilityToggle || null;
+    this.#onContextMenu       = onContextMenu || null;
   }
 
   /** Rebuild the sidebar for a freshly loaded map. */
@@ -181,6 +184,11 @@ export class RegionSidebar {
 
     row.addEventListener("click", (e) => {
       if (this.#onSelect) this.#onSelect(node, e.ctrlKey);
+    });
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (this.#onSelect) this.#onSelect(node, false);
+      if (this.#onContextMenu) this.#onContextMenu(node, { x: e.clientX, y: e.clientY });
     });
 
     this.#rowMap.set(node.id, row);
