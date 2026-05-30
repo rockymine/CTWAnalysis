@@ -59,4 +59,4 @@ def _run(args: argparse.Namespace) -> None:
     if not args.no_browser:
         _open_browser(url)
 
-    app.run(host="127.0.0.1", port=args.port, debug=False)
+    app.run(host="0.0.0.0", port=args.port, debug=False)
