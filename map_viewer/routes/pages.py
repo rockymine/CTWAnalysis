@@ -15,6 +15,11 @@ def editor():
     return render_template("editor.html")
 
 
+@bp.route("/concept")
+def concept():
+    return render_template("concept.html")
+
+
 @bp.route("/configure")
 def configure():
     from flask import request as req

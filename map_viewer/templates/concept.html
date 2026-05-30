@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CTW Layout Concept</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='components.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='viewer.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='concept.css') }}"/>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+<div id="topbar">
+  <a href="/" class="topbar-breadcrumb-home" title="Back to dashboard">
+    <i data-lucide="folder"></i>
+    <span>Maps</span>
+  </a>
+  <span class="topbar-sep">›</span>
+  <span class="topbar-crumb">Layout Concept</span>
+  <span id="status" style="margin-left:auto; font-size:12px; color:var(--text-secondary)"></span>
+  <button id="ct-export" class="topbar-btn">Export JSON</button>
+</div>
+
+<div id="main">
+
+  <!-- ── Activity Rail ── -->
+  <nav id="activity-rail">
+    <div class="activity-logo">
+      <div class="activity-logo-box">
+        <span class="activity-logo-ctw">ctw</span>
+        <span class="activity-logo-sub">Concept</span>
+      </div>
+    </div>
+    <button class="activity-btn active" id="ct-activity-overview" title="Overview" data-status="">
+      <i data-lucide="book-open-text"></i>
+    </button>
+    <button class="activity-btn" id="ct-activity-layout" title="Layout" data-status="">
+      <i data-lucide="pentagon"></i>
+    </button>
+  </nav>
+
+  <!-- ── Left panel area (switches between overview and layout panels) ── -->
+  <div id="concept-left-area">
+
+    <!-- Overview left: Map Identity + Authors + Map Space -->
+    <div id="concept-overview-left">
+      <div id="concept-overview-scroll">
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Map Identity</h2>
+          </div>
+          <div class="field">
+            <label class="field-label" for="ct-map-name">Map Name</label>
+            <input id="ct-map-name" class="field-input" type="text" placeholder="My CTW Map"/>
+          </div>
+          <div class="field">
+            <label class="field-label" for="ct-map-version">Version</label>
+            <input id="ct-map-version" class="field-input" type="text" placeholder="0.1.0"/>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Authors</h2>
+          </div>
+          <div id="ct-authors-list"></div>
+          <button id="ct-add-author" class="action-btn">+ Add author</button>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-header section-header--ruled">
+            <h2 class="section-title">Map Space</h2>
+          </div>
+          <div class="field">
+            <span class="field-label">Bounding Box</span>
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th></th><th>MIN</th><th>MAX</th><th>SIZE</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="detail-axis">X</td>
+                  <td class="detail-val"><input id="ct-bbox-minx" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                  <td class="detail-val"><input id="ct-bbox-maxx" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                  <td class="detail-size" id="ct-bbox-size-x">512</td>
+                </tr>
+                <tr>
+                  <td class="detail-axis">Z</td>
+                  <td class="detail-val"><input id="ct-bbox-minz" class="detail-bounds-input" type="number" step="1" value="-256"/></td>
+                  <td class="detail-val"><input id="ct-bbox-maxz" class="detail-bounds-input" type="number" step="1" value="256"/></td>
+                  <td class="detail-size" id="ct-bbox-size-z">512</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="field">
+            <span class="field-label">Center</span>
+            <div class="detail-group-row">
+              <div class="detail-prefixed-field">
+                <span class="detail-prefix">X</span>
+                <input id="ct-center-x" class="detail-bounds-input" type="number" step="0.5" value="0"/>
+              </div>
+              <div class="detail-prefixed-field">
+                <span class="detail-prefix">Z</span>
+                <input id="ct-center-z" class="detail-bounds-input" type="number" step="0.5" value="0"/>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Layout left: Islands + shapes (2-level tree) -->
+    <div id="concept-layout-left" hidden>
+      <div class="section-header section-header--list">
+        <span class="section-title">Islands</span>
+      </div>
+      <div id="ct-shape-list" class="concept-shape-list">
+        <div class="concept-empty">No shapes yet. Draw with the tools above.</div>
+      </div>
+    </div>
+
+  </div><!-- /concept-left-area -->
+
+  <div class="sidebar-handle"></div>
+
+  <!-- ── Canvas column (permanent, shared between activities) ── -->
+  <div id="concept-canvas-col">
+
+    <!-- Toolbar -->
+    <div class="canvas-subbar">
+      <div id="draw-toolbar">
+        <button id="ct-tool-move" class="draw-tool-btn"
+                title="Pan (M)">
+          <i data-lucide="hand"></i>
+        </button>
+        <button id="ct-tool-select" class="draw-tool-btn draw-tool-btn--active"
+                title="Select (S)">
+          <i data-lucide="mouse-pointer-2"></i>
+        </button>
+        <button id="ct-tool-rect" class="draw-tool-btn" title="Rectangle (R)">
+          <i data-lucide="square"></i>
+        </button>
+        <button id="ct-tool-circ" class="draw-tool-btn" title="Circle (O)">
+          <i data-lucide="circle"></i>
+        </button>
+        <button id="ct-tool-poly" class="draw-tool-btn"
+                title="Polygon — click vertices, double-click or click first vertex to close (P)">
+          <i data-lucide="pentagon"></i>
+        </button>
+        <button id="ct-tool-lasso" class="draw-tool-btn"
+                title="Lasso — hold mouse and drag to trace a freeform shape (L)">
+          <i data-lucide="lasso"></i>
+        </button>
+      </div>
+
+      <div id="ct-draw-toolbar-sep" class="subbar-sep"></div>
+
+      <!-- Add / subtract operation toggle -->
+      <button id="ct-op-add" class="draw-tool-btn draw-tool-btn--active"
+              title="Add mode — shapes grow the island mass">
+        <i data-lucide="plus-square"></i>
+        <span style="font-size:11px;margin-left:3px">Add</span>
+      </button>
+      <button id="ct-op-sub" class="draw-tool-btn"
+              title="Subtract mode — shapes cut holes">
+        <i data-lucide="minus-square"></i>
+        <span style="font-size:11px;margin-left:3px">Sub</span>
+      </button>
+
+      <div id="ct-cursor-coords" class="canvas-cursor"></div>
+      <div class="canvas-subbar-right">
+        <span id="ct-zoom-level" class="canvas-zoom">—</span>
+      </div>
+    </div>
+
+    <!-- SVG area -->
+    <div id="concept-svg-area">
+      <svg id="concept-svg"></svg>
+    </div>
+
+  </div><!-- /canvas-col -->
+
+  <div class="sidebar-handle" id="concept-right-handle"></div>
+
+  <!-- ── Right panel: Display options (Layout activity only) ── -->
+  <div id="concept-right-area" hidden>
+    <div id="concept-inspector-scroll">
+      <div class="section-header section-header--ruled">
+        <span class="section-title">Display</span>
+        <label class="concept-primitives-label" title="Show individual shapes on canvas">
+          <input type="checkbox" id="ct-primitives-toggle"/>
+          <span>Primitives</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script type="module" src="{{ url_for('static', filename='concept.js') }}"></script>
+</body>
+</html>
