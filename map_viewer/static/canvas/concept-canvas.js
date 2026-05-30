@@ -791,11 +791,13 @@ export class ConceptCanvas {
       this.#closePolygon();
     });
 
-    // Click — deselect if clicking empty canvas
+    // Click — hit-test shapes, or deselect if clicking empty canvas
     this.#svg.addEventListener("click", (e) => {
       if (this.#clickWasDrag) { this.#clickWasDrag = false; return; }
       if (this.#activeTool === null) {
-        this.#callbacks.onShapeSelected?.(null);
+        const blk   = this.#clientToBlock(e.clientX, e.clientY);
+        const hitId = blk ? this.#hitTestShapes(blk.bx + 0.5, blk.bz + 0.5) : null;
+        this.#callbacks.onShapeSelected?.(hitId);
       }
     });
 
@@ -927,4 +929,42 @@ export class ConceptCanvas {
       }
     });
   }
+
+  // ── hit testing ────────────────────────────────────────────────────────────
+
+  /** Return the id of the topmost shape containing world point (wx, wz), or null. */
+  #hitTestShapes(wx, wz) {
+    const ids = [...this.#shapes.keys()];
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const shape = this.#shapes.get(ids[i]);
+      if (this.#shapeContainsPoint(shape, wx, wz)) return shape.id;
+    }
+    return null;
+  }
+
+  #shapeContainsPoint(shape, wx, wz) {
+    if (shape.type === "rectangle") {
+      return wx >= shape.min_x && wx <= shape.max_x && wz >= shape.min_z && wz <= shape.max_z;
+    }
+    if (shape.type === "circle") {
+      const dx = wx - shape.center_x, dz = wz - shape.center_z;
+      return dx * dx + dz * dz <= shape.radius * shape.radius;
+    }
+    if (shape.type === "polygon") {
+      return _pointInPolygon(wx, wz, shape.vertices);
+    }
+    return false;
+  }
+}
+
+function _pointInPolygon(x, z, vertices) {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    const [xi, zi] = vertices[i];
+    const [xj, zj] = vertices[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
