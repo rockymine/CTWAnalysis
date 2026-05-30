@@ -293,7 +293,11 @@ export function assignShapesToIslands(shapes, islands, addUnion, overrideAddUnio
         if (hits) toAssign.add(i);
       }
     } else {
-      // Normal add: find the one normal-add-union component it overlaps.
+      // Normal add: assign to every normal-add-union component it overlaps.
+      // No break — a self-intersecting shape (e.g. figure-eight lasso) is
+      // decomposed into multiple disjoint components by polygon-clipping, so
+      // the shape must be credited to all of them.  For simple shapes this loop
+      // still only ever finds one matching component (components are disjoint).
       for (let j = 0; j < addUnion.length; j++) {
         let hits = false;
         try { hits = polygonClipping.intersection(shapePoly, [addUnion[j]]).length > 0; } catch { /* skip */ }
@@ -315,7 +319,6 @@ export function assignShapesToIslands(shapes, islands, addUnion, overrideAddUnio
             if (sub) toAssign.add(i);
           }
         }
-        break;
       }
     }
 
