@@ -178,8 +178,11 @@ export class MapCanvas {
     if (node.bounds) {
       ({ min_x, max_x, min_z, max_z } = node.bounds);
     } else if (node.polygon_2d?.exterior?.length) {
-      const xs = node.polygon_2d.exterior.map(([x]) => x);
-      const zs = node.polygon_2d.exterior.map(([, z]) => z);
+      const pts = node.polygon_2d.polygons
+        ? node.polygon_2d.polygons.flatMap(p => p.exterior)
+        : node.polygon_2d.exterior;
+      const xs = pts.map(([x]) => x);
+      const zs = pts.map(([, z]) => z);
       min_x = Math.min(...xs); max_x = Math.max(...xs);
       min_z = Math.min(...zs); max_z = Math.max(...zs);
     } else {

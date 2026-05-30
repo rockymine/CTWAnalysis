@@ -106,7 +106,7 @@ def _encode_coords(region: dict) -> dict | None:
 # Polygon_2d computation (Shapely-backed, optional)
 # ---------------------------------------------------------------------------
 
-_POLYGON_TYPES = frozenset({"half", "complement", "union", "intersect", "negative", "mirror", "translate"})
+_POLYGON_TYPES = frozenset({"circle", "half", "complement", "union", "intersect", "negative", "mirror", "translate"})
 
 
 def _half_to_shapely(origin_x, origin_z, normal_x, normal_z, bounds):
@@ -299,19 +299,31 @@ def _dict_to_shapely(region: dict, bounds: tuple, registry: dict | None = None):
 
 
 def _shapely_to_polygon_2d(geom) -> dict | None:
-    """Serialize a Shapely geometry to {exterior: [[x,z],...], holes: [...]}."""
+    """Serialize a Shapely geometry to {polygons: [{exterior, holes}, ...], exterior, holes}.
+
+    exterior/holes at the top level mirror polygons[0] for backward compatibility.
+    Multiple polygons are emitted for disjoint MultiPolygon results (e.g. union of two
+    non-overlapping spawn areas).
+    """
     if geom is None or geom.is_empty:
         return None
     if hasattr(geom, "geoms"):
         polys = [g for g in geom.geoms if hasattr(g, "exterior") and not g.is_empty]
-        if not polys:
-            return None
-        geom = max(polys, key=lambda p: p.area)
-    if not hasattr(geom, "exterior"):
+    elif hasattr(geom, "exterior"):
+        polys = [geom]
+    else:
         return None
-    exterior = [[round(x, 2), round(y, 2)] for x, y in geom.exterior.coords]
-    holes = [[[round(x, 2), round(y, 2)] for x, y in h.coords] for h in geom.interiors]
-    return {"exterior": exterior, "holes": holes}
+    if not polys:
+        return None
+
+    def _ring(coords):
+        return [[round(x, 2), round(y, 2)] for x, y in coords]
+
+    polygons = [
+        {"exterior": _ring(p.exterior.coords), "holes": [_ring(h.coords) for h in p.interiors]}
+        for p in polys
+    ]
+    return {"polygons": polygons, "exterior": polygons[0]["exterior"], "holes": polygons[0]["holes"]}
 
 
 def _compute_polygon_2d(region: dict, bounds: tuple, registry: dict | None) -> dict | None:
@@ -355,6 +367,10 @@ def _encode_node(region: dict, parent_id: str = "", index: int = 0,
         polygon_2d = _compute_polygon_2d(region, bounds, registry)
         if polygon_2d is not None:
             node["polygon_2d"] = polygon_2d
+            if node["bounds"] is None:
+                xs = [p[0] for p in polygon_2d["exterior"]]
+                zs = [p[1] for p in polygon_2d["exterior"]]
+                node["bounds"] = {"min_x": min(xs), "min_z": min(zs), "max_x": max(xs), "max_z": max(zs)}
     return node
 
 

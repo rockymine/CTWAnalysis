@@ -56,8 +56,13 @@ export function ringToPath(ring, toSvg) {
   }).join(" ") + " Z";
 }
 
-/** Convert a polygon {exterior, holes} to a compound SVG path string. */
+/** Convert a polygon {exterior, holes} or multi-polygon {polygons} to a compound SVG path string. */
 export function polyToPath(poly, toSvg) {
+  if (poly.polygons) {
+    return poly.polygons
+      .map(p => ringToPath(p.exterior, toSvg) + (p.holes || []).map(h => " " + ringToPath(h, toSvg)).join(""))
+      .join(" ");
+  }
   let d = ringToPath(poly.exterior, toSvg);
   for (const hole of (poly.holes || [])) d += " " + ringToPath(hole, toSvg);
   return d;
