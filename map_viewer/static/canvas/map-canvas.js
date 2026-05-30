@@ -1270,8 +1270,10 @@ export class MapCanvas {
     for (const item of groupsOrNodes) {
       if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
 
-      // Resolved mode: render composite/half as server-computed polygon_2d.
-      if (this.#resolvedMode && item.id && item.polygon_2d) {
+      // Resolved mode: render as server-computed polygon_2d, but only when visible.
+      // Hidden items fall through so their children can still be individually rendered.
+      if (this.#resolvedMode && item.id && item.polygon_2d
+          && this.#visibilityMap.get(item.id) !== false) {
         out.push(item);
         continue;
       }
