@@ -131,3 +131,6 @@ last_sync.json
 # Executed notebook outputs (generated artifacts)
 notebooks/*_executed.ipynb
 docs/api_index.json
+
+# Node
+node_modules/
