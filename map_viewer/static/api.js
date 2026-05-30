@@ -343,6 +343,70 @@ export async function fetchWoolRoomStatus(mapName, teamId, color) {
   return r.json();
 }
 
+export async function changeRegionType(mapName, regionId, newType) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/change-type`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: newType }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Change type failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function removeFromGroup(mapName, regionId, childId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/remove-from-group`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child_id: childId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Remove from group failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function setBaseChild(mapName, regionId, childId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/region/${encodeURIComponent(regionId)}/set-base-child`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child_id: childId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Set base child failed (${r.status})`);
+  }
+  return r.json();
+}
+
+export async function ungroupRegion(mapName, regionId) {
+  const r = await fetch(
+    `/api/map/${encodeURIComponent(mapName)}/regions/ungroup`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ region_id: regionId }),
+    },
+  );
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Ungroup failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function groupRegions(mapName, childIds, groupId = "") {
   const r = await fetch(
     `/api/map/${encodeURIComponent(mapName)}/regions/group`,

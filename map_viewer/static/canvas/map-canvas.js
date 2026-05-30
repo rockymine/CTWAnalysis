@@ -1278,8 +1278,11 @@ export class MapCanvas {
         continue;
       }
 
-      if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) {
+      if (item.id && !COMPOSITE_TYPES.has(item.type) && (item.bounds || item.polygon_2d)) {
         out.push(item);
+        // polygon_2d-only nodes (mirror, half, translate): skip child/source recursion
+        // so the underlying source isn't also rendered as a separate shape.
+        if (!item.bounds && item.polygon_2d) continue;
       }
       this.#flattenNamed(item.children || [], out);
       // Recurse into anonymous sources (named sources are already top-level nodes)

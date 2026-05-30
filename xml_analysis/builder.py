@@ -17,7 +17,7 @@ from .regions import (
     Region, RectangleRegion, CuboidRegion, CylinderRegion, CircleRegion,
     SphereRegion, BlockRegion, PointRegion, UnionRegion, NegativeRegion,
     ComplementRegion, IntersectRegion, RegionReference, EverywhereRegion, AboveRegion,
-    MirrorRegion, TranslateRegion,
+    MirrorRegion, TranslateRegion, HalfRegion,
 )
 
 
@@ -135,6 +135,9 @@ class MapXMLParser:
 
         # Resolve spawn region references now that regions are available
         self._resolve_spawn_regions(data)
+
+        # Resolve mirror/translate ref_region_id → source now that all regions are parsed
+        self._resolve_transform_regions(data)
 
         # Parse max build height
         data.max_build_height = self._parse_max_build_height()
@@ -425,6 +428,17 @@ class MapXMLParser:
         ):
             data.observer_spawn.region = data.regions[data.observer_spawn.region.ref_id]
 
+    @staticmethod
+    def _resolve_transform_regions(data: MapData):
+        """Resolve ref_region_id → source on mirror/translate regions so that
+        get_bounds_2d() works for the reference form (e.g. <mirror region="id"/>)."""
+        for region in data.regions.values():
+            if isinstance(region, (MirrorRegion, TranslateRegion)):
+                if region.source is None and region.ref_region_id:
+                    resolved = data.regions.get(region.ref_region_id)
+                    if resolved is not None:
+                        region.source = resolved
+
     def _parse_wools(self, regions: dict[str, Region]) -> list[Wool]:
         """Parse wool elements.
 
@@ -705,6 +719,8 @@ class MapXMLParser:
             return EverywhereRegion(id=region_id)
         elif tag == 'above':
             return AboveRegion(id=region_id, y=float(elem.get('y', '0')))
+        elif tag == 'half':
+            return self._parse_half(elem, region_id)
         elif tag == 'mirror':
             return self._parse_mirror(elem, region_id)
         elif tag == 'translate':
@@ -899,6 +915,16 @@ class MapXMLParser:
         return IntersectRegion(
             id=region_id,
             children=children
+        )
+
+    def _parse_half(self, elem: ET.Element, region_id: str) -> HalfRegion:
+        """Parse half region: <half normal="X,Y,Z" origin="X,Y,Z"/>."""
+        origin = self._parse_coords(elem.get('origin', '0,0,0'))
+        normal = self._parse_coords(elem.get('normal', '0,0,0'))
+        return HalfRegion(
+            id=region_id,
+            origin_x=origin[0], origin_y=origin[1], origin_z=origin[2],
+            normal_x=normal[0], normal_y=normal[1], normal_z=normal[2],
         )
 
     def _parse_mirror(self, elem: ET.Element, region_id: str) -> MirrorRegion:

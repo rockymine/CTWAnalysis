@@ -429,6 +429,63 @@ class TranslateRegion(Region):
 
 
 # ---------------------------------------------------------------------------
+# Half-space region
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HalfRegion(Region):
+    """Infinite half-space: all points P where dot(P - origin, normal) >= 0.
+
+    In 2D (XZ projection) this is a half-plane.  The region has no finite
+    bounding box, so get_bounds_2d() returns None.  to_shapely_2d() clips the
+    half-plane against the supplied map-bounds rectangle and returns the
+    resulting polygon.
+    """
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    origin_z: float = 0.0
+    normal_x: float = 0.0
+    normal_y: float = 0.0
+    normal_z: float = 0.0
+    region_type: str = "half"
+
+    def get_bounds_2d(self):
+        return None  # unbounded in 2D
+
+    def to_shapely_2d(self, bounds, registry=None):
+        nx, nz = self.normal_x, self.normal_z
+        if nx == 0 and nz == 0:
+            return _shapely_empty()
+        min_x, min_z, max_x, max_z = bounds
+        poly = [(min_x, min_z), (max_x, min_z), (max_x, max_z), (min_x, max_z)]
+
+        def _dist(x, z):
+            return nx * (x - self.origin_x) + nz * (z - self.origin_z)
+
+        def _intersect(p1, p2):
+            d1, d2 = _dist(*p1), _dist(*p2)
+            t = d1 / (d1 - d2)
+            return (p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1]))
+
+        clipped = []
+        n = len(poly)
+        for i in range(n):
+            curr, prev = poly[i], poly[(i - 1) % n]
+            curr_in, prev_in = _dist(*curr) >= 0, _dist(*prev) >= 0
+            if curr_in:
+                if not prev_in:
+                    clipped.append(_intersect(prev, curr))
+                clipped.append(curr)
+            elif prev_in:
+                clipped.append(_intersect(prev, curr))
+
+        if len(clipped) < 3:
+            return _shapely_empty()
+        from shapely.geometry import Polygon
+        return Polygon(clipped)
+
+
+# ---------------------------------------------------------------------------
 # Reference and special regions
 # ---------------------------------------------------------------------------
 

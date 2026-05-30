@@ -908,6 +908,18 @@
         59,
         0
       ]
+    },
+    "annealing_ii": {
+      "layer": "bedrock",
+      "exclude": [],
+      "skip": false,
+      "exclude_islands": [],
+      "playable_bbox": [
+        -97,
+        -139,
+        97,
+        139
+      ]
     }
   }
 }

@@ -105,6 +105,124 @@ def group_regions(data: dict, payload: dict) -> dict:
     }
 
 
+_COMPOUND_TYPES = frozenset({
+    "union", "complement", "intersect", "negative",
+})
+
+
+def change_region_type(data: dict, region_id: str, payload: dict) -> dict:
+    """Change the type of a compound region to another compound type.
+
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    new_type = str(payload.get("type", "")).strip()
+    if not new_type:
+        raise InvalidRegionPayload("type required")
+    if new_type not in _COMPOUND_TYPES:
+        raise InvalidRegionPayload(f"{new_type!r} is not a compound type")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    if region.get("type") not in _COMPOUND_TYPES:
+        raise InvalidRegionPayload(f"region {region_id!r} is not a compound type")
+    region["type"] = new_type
+    return {}
+
+
+def remove_from_group(data: dict, region_id: str, payload: dict) -> dict:
+    """Remove one child from a union without deleting it.
+
+    The child stays in the top-level regions dict and becomes a visible root.
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    child_id = str(payload.get("child_id", "")).strip()
+    if not child_id:
+        raise InvalidRegionPayload("child_id required")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    children = region.get("children")
+    if children is None:
+        raise InvalidRegionPayload(f"region {region_id!r} has no children")
+    idx = next((i for i, c in enumerate(children) if c.get("id") == child_id), None)
+    if idx is None:
+        raise RegionNotFound(f"child {child_id!r} not found in {region_id!r}")
+    children.pop(idx)
+    cats = data.get("region_categories", {})
+    if not any(child_id in cat_list for cat_list in cats.values()):
+        cats.setdefault("other", []).append(child_id)
+    return {}
+
+
+def set_base_child(data: dict, region_id: str, payload: dict) -> dict:
+    """Move a named child to index 0 of a complement's children array.
+
+    Returns {}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    child_id = str(payload.get("child_id", "")).strip()
+    if not child_id:
+        raise InvalidRegionPayload("child_id required")
+    regions = data.get("regions", {})
+    region = regions.get(region_id)
+    if region is None:
+        raise RegionNotFound(f"region {region_id!r} not found")
+    if region.get("type") != "complement":
+        raise InvalidRegionPayload(f"region {region_id!r} is not a complement")
+    children = region.get("children", [])
+    idx = next((i for i, c in enumerate(children) if c.get("id") == child_id), None)
+    if idx is None:
+        raise RegionNotFound(f"child {child_id!r} not found in complement {region_id!r}")
+    if idx != 0:
+        children.insert(0, children.pop(idx))
+    return {}
+
+
+def ungroup_region(data: dict, payload: dict) -> dict:
+    """Dissolve a union: remove it and expose its children as top-level regions.
+
+    Returns {"child_ids": [...]}.
+    Raises InvalidRegionPayload, RegionNotFound.
+    """
+    region_id = str(payload.get("region_id", "")).strip()
+    if not region_id:
+        raise InvalidRegionPayload("region_id required")
+
+    regions = data.get("regions", {})
+    if region_id not in regions:
+        raise RegionNotFound(f"region {region_id!r} not found")
+
+    union = regions[region_id]
+    if union.get("type") != "union":
+        raise InvalidRegionPayload(f"region {region_id!r} is not a union")
+
+    children = union.get("children", [])
+    child_ids = []
+    for child in children:
+        child_id = (child.get("id") or "").strip()
+        if not child_id:
+            i = 1
+            while f"region_{i}" in regions:
+                i += 1
+            child_id = f"region_{i}"
+            child["id"] = child_id
+        if child_id not in regions:
+            regions[child_id] = child
+        child_ids.append(child_id)
+
+    del regions[region_id]
+    for cat_list in data.get("region_categories", {}).values():
+        if region_id in cat_list:
+            cat_list.remove(region_id)
+            break
+
+    return {"child_ids": child_ids}
+
+
 def delete_region(data: dict, region_id: str) -> dict:
     """Remove a region (top-level or inline child) from data.
 

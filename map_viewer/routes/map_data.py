@@ -68,9 +68,15 @@ def map_context(name: str):
 @bp.route("/map/<name>/regions")
 def map_regions(name: str):
     data, _ = load_map_data(name)
+    ctx_path = get_output_root() / name / "map_context.json"
+    bounding_box = None
+    if ctx_path.exists():
+        ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+        bounding_box = ctx.get("bounding_box")
     groups = encode_region_tree_categorized(
         data.get("regions", {}),
         data.get("region_categories", {}),
+        bounding_box=bounding_box,
     )
     return jsonify(groups)
 

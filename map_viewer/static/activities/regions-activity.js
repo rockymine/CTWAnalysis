@@ -18,7 +18,7 @@ import { RegionSidebar }      from "../panels/region-sidebar.js";
 import { RegionRegistry }     from "../region/region-registry.js";
 import { RegionDetail }       from "../panels/region-detail.js";
 import { DeletedRegionHistory } from "../region/deleted-region-history.js";
-import { DRAW_TOOLS, deriveBoundsFromCoords } from "../region/region-types.js";
+import { COMPOUND_TYPES, DRAW_TOOLS, deriveBoundsFromCoords } from "../region/region-types.js";
 import { createRegionHandlers }  from "../region/region-handlers.js";
 import { isEditableTarget }   from "../shared/ui-helpers.js";
 import { ToolManager }        from "../shared/tool-manager.js";
@@ -44,6 +44,7 @@ export class RegionsActivity {
   #blockCache   = null;   // Map: mapName → top-surface data
 
   #tools        = null;   // ToolManager — toolbar state + canvas.setActiveTool
+  #ctxMenu      = null;   // floating context-menu element
 
   // ── constructor ────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export class RegionsActivity {
     this.#initComponents();
     this.#initToolbar();
     this.#initLayerToggles();
+    this.#initContextMenu();
     this.#initKeyboard();
     this.#renderHistory();  // prime the history panel with "no history"
   }
@@ -188,6 +190,7 @@ export class RegionsActivity {
             this.#registry.deselect();
           }
         },
+        onContextMenu: (node, pos, ctx) => this.#showContextMenu(node, pos, ctx),
       },
     );
 
@@ -232,6 +235,8 @@ export class RegionsActivity {
   // ── layer toggles ──────────────────────────────────────────────────────────
 
   #initLayerToggles() {
+    document.getElementById("toggle-resolved").addEventListener("change",
+      (e) => this.#canvas.setResolvedMode(e.target.checked));
     document.getElementById("toggle-pois").addEventListener("change",
       (e) => this.#canvas.setPoisVisible(e.target.checked));
     document.getElementById("toggle-build").addEventListener("change",
@@ -253,6 +258,92 @@ export class RegionsActivity {
         e.target.checked = false;
       }
     });
+  }
+
+  // ── context menu ──────────────────────────────────────────────────────────
+
+  #initContextMenu() {
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu";
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    this.#ctxMenu = menu;
+
+    document.addEventListener("click",     () => this.#hideContextMenu(), true);
+    document.addEventListener("keydown",   (e) => { if (e.key === "Escape") this.#hideContextMenu(); }, true);
+    document.addEventListener("contextmenu", (e) => {
+      if (!menu.contains(e.target)) this.#hideContextMenu();
+    }, true);
+  }
+
+  #showContextMenu(node, { x, y }, { parentId = null, parentType = null, childIndex = 0, siblingCount = 0 } = {}) {
+    const menu = this.#ctxMenu;
+    menu.innerHTML = "";
+
+    const item = (label, shortcut, action, danger = false) => {
+      const el = document.createElement("button");
+      el.className = "ctx-item" + (danger ? " ctx-item--danger" : "");
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = label;
+      el.appendChild(labelSpan);
+      if (shortcut) {
+        const kbdEl = document.createElement("kbd");
+        kbdEl.textContent = shortcut;
+        el.appendChild(kbdEl);
+      }
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#hideContextMenu();
+        action();
+      });
+      return el;
+    };
+
+    const canGroup           = this.#multiSelected.size >= 2;
+    const isUnion            = node.type === "union";
+    const isCompound         = COMPOUND_TYPES.has(node.type);
+    const canSetBase         = parentType === "complement" && childIndex > 0 && siblingCount >= 2;
+    const canRemoveFromGroup = COMPOUND_TYPES.has(parentType);
+
+    if (canSetBase) {
+      menu.appendChild(item("Set as base", null, () => this.#setBaseChild(parentId, node.id)));
+    }
+    if (canRemoveFromGroup) {
+      menu.appendChild(item("Remove from group", null, () => this.#removeFromGroup(parentId, node.id)));
+    }
+    if (isCompound) {
+      menu.appendChild(this.#changeTypeSubmenu(node));
+    }
+    if (isUnion) {
+      menu.appendChild(item("Ungroup", "Ctrl+G", () => this.#ungroupSelected()));
+    }
+    if (canGroup) {
+      menu.appendChild(item("Group", "Ctrl+G", () => this.#groupSelected()));
+    }
+    const hasFocus = node.bounds || node.polygon_2d?.exterior?.length;
+    if (hasFocus) {
+      menu.appendChild(item("Focus", null, () => this.#canvas.focusRegion(node)));
+    }
+    if ((canSetBase || canRemoveFromGroup || isCompound || isUnion || canGroup || hasFocus) && !node.synthetic_id) {
+      const sep = document.createElement("div");
+      sep.className = "ctx-sep";
+      menu.appendChild(sep);
+    }
+    if (!node.synthetic_id) {
+      menu.appendChild(item("Delete", "Del", () => this.#deleteNode(node), true));
+    }
+
+    if (!menu.children.length) return;
+
+    menu.hidden = false;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const mw = 180, mh = menu.offsetHeight || 120;
+    menu.style.left = (x + mw > vw ? vw - mw - 4 : x) + "px";
+    menu.style.top  = (y + mh > vh ? vh - mh - 4 : y) + "px";
+  }
+
+  #hideContextMenu() {
+    if (this.#ctxMenu) this.#ctxMenu.hidden = true;
   }
 
   // ── keyboard shortcuts ─────────────────────────────────────────────────────
@@ -310,7 +401,11 @@ export class RegionsActivity {
       }
       if ((e.key === "g" || e.key === "G") && e.ctrlKey && this.#mapName) {
         e.preventDefault();
-        this.#groupSelected();
+        if (this.#selectedNode?.type === "union" && this.#multiSelected.size < 2) {
+          this.#ungroupSelected();
+        } else {
+          this.#groupSelected();
+        }
       }
     });
   }
@@ -402,6 +497,77 @@ export class RegionsActivity {
       this.#setStatus(`Grouped ${childIds.length} regions into "${newId}".`);
     } catch (err) {
       this.#setStatus(`Group failed: ${err.message}`);
+    }
+  }
+
+  async #removeFromGroup(parentId, childId) {
+    try {
+      await api.removeFromGroup(this.#mapName, parentId, childId);
+      await this.#reloadRegions();
+      this.#setStatus(`"${childId}" removed from "${parentId}".`);
+    } catch (err) {
+      this.#setStatus(`Remove from group failed: ${err.message}`);
+    }
+  }
+
+  #changeTypeSubmenu(node) {
+    const btn = document.createElement("button");
+    btn.className = "ctx-item ctx-item--sub";
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = "Change type";
+    const arrow = document.createElement("span");
+    arrow.textContent = "▶";
+    arrow.style.cssText = "font-size:9px; color:var(--text-muted)";
+    btn.appendChild(labelSpan);
+    btn.appendChild(arrow);
+
+    const sub = document.createElement("div");
+    sub.className = "ctx-submenu";
+    for (const t of COMPOUND_TYPES) {
+      if (t === node.type) continue;
+      const opt = document.createElement("button");
+      opt.className = "ctx-item";
+      opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.#hideContextMenu();
+        this.#changeType(node.id, t);
+      });
+      sub.appendChild(opt);
+    }
+    btn.appendChild(sub);
+    return btn;
+  }
+
+  async #changeType(regionId, newType) {
+    try {
+      await api.changeRegionType(this.#mapName, regionId, newType);
+      await this.#reloadRegions();
+      this.#setStatus(`Changed "${regionId}" to ${newType}.`);
+    } catch (err) {
+      this.#setStatus(`Change type failed: ${err.message}`);
+    }
+  }
+
+  async #setBaseChild(parentId, childId) {
+    try {
+      await api.setBaseChild(this.#mapName, parentId, childId);
+      await this.#reloadRegions();
+      this.#setStatus(`"${childId}" is now the base of "${parentId}".`);
+    } catch (err) {
+      this.#setStatus(`Set base failed: ${err.message}`);
+    }
+  }
+
+  async #ungroupSelected() {
+    const node = this.#selectedNode;
+    if (!node || node.type !== "union") return;
+    try {
+      const { child_ids: childIds } = await api.ungroupRegion(this.#mapName, node.id);
+      await this.#reloadRegions();
+      this.#setStatus(`Ungrouped "${node.id}" into ${childIds.length} region(s).`);
+    } catch (err) {
+      this.#setStatus(`Ungroup failed: ${err.message}`);
     }
   }
 
