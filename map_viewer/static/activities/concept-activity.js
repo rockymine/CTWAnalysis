@@ -404,7 +404,7 @@ export class ConceptActivity {
     row.className = "concept-shape-child";
     row.dataset.shapeId = shape.id;
     row.innerHTML = `
-      <span class="concept-op-badge concept-op-badge--${isAdd ? "add" : "sub"}">${isAdd ? "add" : "sub"}</span>
+      <button class="concept-op-badge concept-op-badge--${isAdd ? "add" : "sub"}" title="Toggle add/subtract">${isAdd ? "add" : "sub"}</button>
       <span class="concept-shape-icon">${_typeIcon(shape.type)}</span>
       <span class="concept-shape-label">${this.#shapeLabel(shape)}</span>
       <button class="concept-override-btn${shape.override ? ` concept-override-btn--active concept-override-btn--active-${isAdd ? "add" : "sub"}` : ""}"
@@ -413,8 +413,12 @@ export class ConceptActivity {
       <button class="btn-remove" title="Delete shape">×</button>
     `;
     row.addEventListener("click", (e) => {
-      if (e.target.closest(".btn-remove, .concept-override-btn")) return;
+      if (e.target.closest(".btn-remove, .concept-override-btn, .concept-op-badge")) return;
       this.#selectShape(shape.id);
+    });
+    row.querySelector(".concept-op-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.#toggleShapeOperation(shape.id);
     });
     row.querySelector(".concept-override-btn").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -425,6 +429,14 @@ export class ConceptActivity {
       this.#deleteShape(shape.id);
     });
     return row;
+  }
+
+  #toggleShapeOperation(id) {
+    const shape = this.#shapes.get(id);
+    if (!shape) return;
+    shape.operation = shape.operation === "subtract" ? "add" : "subtract";
+    this.#canvas.updateShape(shape);
+    this.#recompute();
   }
 
   #toggleShapeOverride(id) {

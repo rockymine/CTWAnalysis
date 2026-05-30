@@ -60,6 +60,7 @@
   font-size: 9px; font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; border-radius: 3px;
   padding: 1px 4px; flex-shrink: 0;
+  border: none; cursor: pointer; font-family: inherit;
 }
 .concept-op-badge--add { background: #0d948833; color: #2dd4bf; }
 .concept-op-badge--sub { background: #dc262633; color: #f87171; }
