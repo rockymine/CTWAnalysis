@@ -88,6 +88,7 @@ export class ConceptActivity {
     document.getElementById("concept-right-area").hidden    = isOverview;
     document.getElementById("concept-right-handle").hidden  = isOverview;
 
+    if (isOverview) this.#selectShape(null);
     this.#setToolbarMode(isOverview ? "overview" : "layout");
 
     // Resize after DOM layout changes (right panel appears/disappears),
