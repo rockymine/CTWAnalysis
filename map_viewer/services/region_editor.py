@@ -107,7 +107,6 @@ def group_regions(data: dict, payload: dict) -> dict:
 
 _COMPOUND_TYPES = frozenset({
     "union", "complement", "intersect", "negative",
-    "mirror", "translate", "half",
 })
 
 
