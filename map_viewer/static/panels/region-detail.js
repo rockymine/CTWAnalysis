@@ -75,6 +75,7 @@ const GEOMETRY_SCHEMA = {
     ]},
   ],
   mirror: [
+    { type: "scalar", label: "REF REGION", key: null, display: n => n.coords?.ref_region_id || "—" },
     { type: "group", label: "ORIGIN", axes: [
       { axis: "X", key: null, display: n => fmt(n.coords?.origin_x) },
       { axis: "Y", key: null, display: n => fmt(n.coords?.origin_y) },
@@ -149,6 +150,19 @@ function nodeToXml(node, depth = 0) {
 
   if (t === "reference") {
     return `${indent}<region id="${c.ref_id ?? "?"}"/>`;
+  }
+
+  if (t === "mirror") {
+    const ox = c.origin_x ?? "?", oy = c.origin_y ?? "?", oz = c.origin_z ?? "?";
+    const nx = c.normal_x ?? "?", ny = c.normal_y ?? "?", nz = c.normal_z ?? "?";
+    const ref = c.ref_region_id || "?";
+    attr = ` normal="${nx},${ny},${nz}" origin="${ox},${oy},${oz}" region="${ref}"`;
+  }
+
+  if (t === "translate") {
+    const ox = c.offset_x ?? "?", oy = c.offset_y ?? "?", oz = c.offset_z ?? "?";
+    const ref = c.ref_region_id || "?";
+    attr = ` offset="${ox},${oy},${oz}" region="${ref}"`;
   }
 
   return attr

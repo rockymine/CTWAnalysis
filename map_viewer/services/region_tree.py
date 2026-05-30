@@ -89,12 +89,14 @@ def _encode_coords(region: dict) -> dict | None:
         origin = region.get("origin") or {}
         normal = region.get("normal") or {}
         return {
+            "ref_region_id": region.get("ref_region_id", "") or "",
             "origin_x": origin.get("x"), "origin_y": origin.get("y"), "origin_z": origin.get("z"),
             "normal_x": normal.get("x"), "normal_y": normal.get("y"), "normal_z": normal.get("z"),
         }
     if region_type == "translate":
         offset = region.get("offset") or {}
         return {
+            "ref_region_id": region.get("ref_region_id", "") or "",
             "offset_x": offset.get("x"), "offset_y": offset.get("y"), "offset_z": offset.get("z"),
         }
     return None
