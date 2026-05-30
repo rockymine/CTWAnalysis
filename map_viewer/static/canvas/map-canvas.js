@@ -19,7 +19,7 @@
  */
 
 import { buildTransform, buildInverseTransform, svgEl,
-         ringToPath, polyToPath, boundsToRingPath } from "./transform.js";
+         polyToPath } from "./transform.js";
 import { chatColorHex, dyeColorHex } from "../shared/game-colors.js";
 
 const ZOOM_FACTOR = 1.15;
@@ -98,6 +98,7 @@ export class MapCanvas {
   // ── region visibility / selection ─────────────────────────────────────────
   #visibilityMap      = new Map();  // id → false means hidden; absent = visible
   #currentSelectedIds = new Set();
+  #resolvedMode       = false;      // when true, render polygon_2d for composites
 
   // ── layer visibility state (persists across resize) ───────────────────────
   #showPois     = false;
@@ -162,6 +163,50 @@ export class MapCanvas {
   setBuildVisible(v) {
     this.#showBuild = v;
     if (this.#buildLayerEl) this.#buildLayerEl.style.display = v ? "" : "none";
+  }
+
+  setResolvedMode(v) {
+    this.#resolvedMode = v;
+    this.refreshRegions(this.#groups);
+  }
+
+  /** Pan and zoom to fit a region's bounds in the viewport. */
+  focusRegion(node) {
+    if (!this.#toSvg) return;
+
+    let min_x, max_x, min_z, max_z;
+    if (node.bounds) {
+      ({ min_x, max_x, min_z, max_z } = node.bounds);
+    } else if (node.polygon_2d?.exterior?.length) {
+      const pts = node.polygon_2d.polygons
+        ? node.polygon_2d.polygons.flatMap(p => p.exterior)
+        : node.polygon_2d.exterior;
+      const xs = pts.map(([x]) => x);
+      const zs = pts.map(([, z]) => z);
+      min_x = Math.min(...xs); max_x = Math.max(...xs);
+      min_z = Math.min(...zs); max_z = Math.max(...zs);
+    } else {
+      return;
+    }
+
+    const w = this.#wrap.clientWidth  - 24;
+    const h = this.#wrap.clientHeight - 24;
+    const p1 = this.#toSvg(min_x, min_z);
+    const p2 = this.#toSvg(max_x, max_z);
+    const sx1 = Math.min(p1.x, p2.x), sx2 = Math.max(p1.x, p2.x);
+    const sy1 = Math.min(p1.y, p2.y), sy2 = Math.max(p1.y, p2.y);
+    const bw  = sx2 - sx1, bh = sy2 - sy1;
+
+    const newScale = (bw > 0 || bh > 0)
+      ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX,
+          Math.min(bw > 0 ? w / bw : Infinity, bh > 0 ? h / bh : Infinity) * 0.75))
+      : this.#scale;
+
+    this.#scale = newScale;
+    this.#panX  = w / 2 - ((sx1 + sx2) / 2) * newScale;
+    this.#panY  = h / 2 - ((sy1 + sy2) / 2) * newScale;
+    this.#applyViewportTransform();
+    this.#callbacks.onZoom?.(this.#scale);
   }
 
   setBlocksVisible(v) {
@@ -906,9 +951,9 @@ export class MapCanvas {
     title.textContent = `${id} (${type})`;
     g.appendChild(title);
 
-    if (region.is_negative) {
-      g.appendChild(this.#negativeShape(region, color));
-      g.appendChild(this.#label(id, this.#mapCenter(), color, "0.75"));
+    if (region.polygon_2d) {
+      const shape = this.#polygonShape(region, color);
+      if (shape) { g.appendChild(shape); this.#shapeMap.set(id, { shape, type }); }
     } else if (type === "cylinder" || type === "circle" || type === "sphere") {
       const shape = svgEl("ellipse", {
         cx, cy, rx: rw / 2, ry: rh / 2,
@@ -931,18 +976,21 @@ export class MapCanvas {
     return g;
   }
 
-  #negativeShape(region, color) {
-    const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
-    let d = boundsToRingPath({ min_x: minX, min_z: minZ, max_x: maxX, max_z: maxZ }, this.#toSvg);
-    for (const child of (region.children || [])) {
-      if (child.bounds) d += " " + boundsToRingPath(child.bounds, this.#toSvg);
-    }
-    return svgEl("path", {
-      d, fill: color, "fill-opacity": "0.12",
-      stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "6,3",
-      "fill-rule": "evenodd", "vector-effect": "non-scaling-stroke",
-    });
+  #polyAttrs(color) {
+    return {
+      fill: color, "fill-opacity": "0.20",
+      stroke: color, "stroke-opacity": "0.55", "stroke-width": "1.5", "stroke-dasharray": "4,2",
+      "vector-effect": "non-scaling-stroke", "fill-rule": "evenodd",
+    };
   }
+
+  /** Render a server-computed polygon_2d field as an SVG path. */
+  #polygonShape(region, color) {
+    const poly = region.polygon_2d;
+    if (!poly?.exterior?.length) return null;
+    return svgEl("path", { d: polyToPath(poly, this.#toSvg), ...this.#polyAttrs(color) });
+  }
+
 
   #mapCenter() {
     const [minX, maxX, minZ, maxZ] = this.#ctx.bounding_box;
@@ -1220,11 +1268,22 @@ export class MapCanvas {
 
   #flattenNamed(groupsOrNodes, out = []) {
     for (const item of groupsOrNodes) {
-      if (item.regions) { this.#flattenNamed(item.regions, out); }
-      else {
-        if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) out.push(item);
-        this.#flattenNamed(item.children || [], out);
+      if (item.regions) { this.#flattenNamed(item.regions, out); continue; }
+
+      // Resolved mode: render as server-computed polygon_2d, but only when visible.
+      // Hidden items fall through so their children can still be individually rendered.
+      if (this.#resolvedMode && item.id && item.polygon_2d
+          && this.#visibilityMap.get(item.id) !== false) {
+        out.push(item);
+        continue;
       }
+
+      if (item.id && !COMPOSITE_TYPES.has(item.type) && item.bounds) {
+        out.push(item);
+      }
+      this.#flattenNamed(item.children || [], out);
+      // Recurse into anonymous sources (named sources are already top-level nodes)
+      if (item.source && !item.source.id) this.#flattenNamed([item.source], out);
     }
     return out;
   }

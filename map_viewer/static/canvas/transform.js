@@ -56,11 +56,47 @@ export function ringToPath(ring, toSvg) {
   }).join(" ") + " Z";
 }
 
-/** Convert a polygon {exterior, holes} to a compound SVG path string. */
+/** Convert a polygon {exterior, holes} or multi-polygon {polygons} to a compound SVG path string. */
 export function polyToPath(poly, toSvg) {
+  if (poly.polygons) {
+    return poly.polygons
+      .map(p => ringToPath(p.exterior, toSvg) + (p.holes || []).map(h => " " + ringToPath(h, toSvg)).join(""))
+      .join(" ");
+  }
   let d = ringToPath(poly.exterior, toSvg);
   for (const hole of (poly.holes || [])) d += " " + ringToPath(hole, toSvg);
   return d;
+}
+
+/**
+ * Clip a convex polygon against a half-plane using Sutherland-Hodgman.
+ * Keeps vertices where: nx*(x - ox) + nz*(z - oz) >= 0
+ *
+ * @param {Array<[number,number]>} poly  Input vertices [[x,z],...]
+ * @param {number} ox  Plane origin x
+ * @param {number} oz  Plane origin z
+ * @param {number} nx  Plane normal x component
+ * @param {number} nz  Plane normal z component
+ * @returns {Array<[number,number]>}  Clipped vertices (may be empty)
+ */
+export function clipHalfPlane(poly, ox, oz, nx, nz) {
+  if (poly.length === 0) return [];
+  const dist  = ([x, z]) => nx * (x - ox) + nz * (z - oz);
+  const cross = ([x1, z1], [x2, z2]) => {
+    const d1 = nx * (x1 - ox) + nz * (z1 - oz);
+    const d2 = nx * (x2 - ox) + nz * (z2 - oz);
+    const t  = d1 / (d1 - d2);
+    return [x1 + t * (x2 - x1), z1 + t * (z2 - z1)];
+  };
+  const out = [];
+  const n   = poly.length;
+  for (let i = 0; i < n; i++) {
+    const curr = poly[i], prev = poly[(i - 1 + n) % n];
+    const cIn  = dist(curr) >= 0, pIn = dist(prev) >= 0;
+    if (cIn) { if (!pIn) out.push(cross(prev, curr)); out.push(curr); }
+    else if (pIn) out.push(cross(prev, curr));
+  }
+  return out;
 }
 
 /** Convert a bounds {min_x, min_z, max_x, max_z} to an SVG path ring. */
