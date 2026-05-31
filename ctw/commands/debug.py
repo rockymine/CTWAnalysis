@@ -14,34 +14,6 @@ def register(subparsers):
         dest='debug_action', metavar='<action>',
     )
 
-    # debug layout-blocks
-    p = debug_sub.add_parser(
-        'layout-blocks',
-        help='List unique block IDs found in a layout parquet across all maps',
-        description=(
-            'Reads the specified layout parquet for every map under --dir and prints '
-            'the unique block IDs present. With --water, analyzes water blocks (IDs 8/9) '
-            'and cross-checks their footprint against the XML build region stored in '
-            'map_context.json. Use --csv to export results instead of printing.'
-        ),
-        formatter_class=_RAW,
-        epilog="""\
-Examples:
-  python ctw.py debug layout-blocks --parquet layout_y0
-  python ctw.py debug layout-blocks --parquet layout_y0 --water
-  python ctw.py debug layout-blocks --parquet layout_y0 --csv blocks.csv
-""",
-    )
-    p.add_argument('--parquet', required=True,
-                   help='Parquet filename without extension (e.g. layout_y0)')
-    p.add_argument('--dir', default='output',
-                   help='Root directory containing per-map folders (default: output)')
-    p.add_argument('--csv', default=None, dest='csv_path',
-                   help='Write results to CSV file (default: print to stdout)')
-    p.add_argument('--water', action='store_true',
-                   help='Analyze water blocks (8/9) and check overlap with XML build regions')
-    p.set_defaults(func=handle_layout)
-
     # debug data
     p = debug_sub.add_parser(
         'data',
@@ -63,34 +35,6 @@ Examples:
     p.add_argument('--dir', default='output',
                    help='Root directory containing per-map folders (default: output)')
     p.set_defaults(func=handle_data)
-
-    # debug symmetry
-    p = debug_sub.add_parser(
-        'symmetry',
-        help='Analyze map symmetry from preprocessed geometry (map_context.json)',
-        description=(
-            'With --map: runs full symmetry analysis and prints a detailed text report, '
-            'then saves a two-panel debug image (decided layout layer + island polygon '
-            'outlines with block-count annotations) to output/<map>/images/symmetry_debug.png. '
-            'Without --map: prints a compact one-line-per-map summary table. '
-            'Use --threshold to filter the table to only maps below a given confidence level.'
-        ),
-        formatter_class=_RAW,
-        epilog="""\
-Examples:
-  python ctw.py debug symmetry --map tumbleweed
-  python ctw.py debug symmetry
-  python ctw.py debug symmetry --threshold 90
-""",
-    )
-    p.add_argument('--map', default=None,
-                   help='Map name (e.g. tumbleweed). Omit to scan all maps.')
-    p.add_argument('--dir', default='output',
-                   help='Root output directory (default: output)')
-    p.add_argument('--threshold', type=float, default=None, metavar='PCT',
-                   help='All-maps only: hide maps at or above this symmetry confidence '
-                        '(e.g. 90 shows only maps below 90%%). Cannot be used with --map.')
-    p.set_defaults(func=handle_symmetry)
 
     # debug prepare-demo
     p = debug_sub.add_parser(
@@ -385,16 +329,6 @@ def handle_prepare_demo(args: object) -> None:
 def handle_audit(args: object) -> None:
     from layout_analysis.audit import run
     run(args)
-
-
-def handle_symmetry(args: object) -> None:
-    from symmetry_analysis.report import run
-    run(args)
-
-
-def handle_layout(args: object) -> None:
-    from layout_analysis.layout_scan import run_layout
-    run_layout(args)
 
 
 def handle_data(args: object) -> None:

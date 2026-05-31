@@ -1,7 +1,6 @@
 """Layout and output-data scanning diagnostics.
 
 Public entry points:
-- run_layout(args): scan layout parquet files for block IDs or water analysis
 - run_data(args):   scan output JSON files and report empty/missing fields
 """
 
@@ -10,25 +9,6 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional
-
-
-def run_layout(args: object) -> None:
-    """Dispatch to water analysis or block ID scan based on args.water."""
-    root = Path(args.dir)
-    if not root.is_dir():
-        print(f"Error: directory not found: {root}", file=sys.stderr)
-        sys.exit(1)
-
-    filename = args.parquet
-    if not filename.endswith('.parquet'):
-        filename += '.parquet'
-
-    if args.water:
-        _handle_water(root, filename)
-    else:
-        _handle_block_scan(root, filename, args.csv_path)
-
-
 def run_data(args: object) -> None:
     """Scan output JSON files across all maps and report empty/missing fields."""
     root = Path(args.dir)
