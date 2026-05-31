@@ -97,13 +97,11 @@ def _generate_skeleton_visuals(
         - island_detail.png
         - unique_islands.png
         - island_{id}_debug.png (per canonical shape)
-        - skeleton_report.txt (at output root)
     """
     from island_analysis.visualization import plot_island_detail
     from skeleton_analysis.visualization import (
         plot_island_debug,
         plot_unique_islands,
-        generate_skeleton_report,
     )
 
     if not plots:
@@ -131,12 +129,6 @@ def _generate_skeleton_visuals(
     plot_unique_islands(
         skeletons, canonical_groups,
         str(images_dir / 'unique_islands.png'),
-    )
-
-    generate_skeleton_report(
-        skeletons, canonical_groups,
-        str(island_output_dir / 'skeleton_report.txt'),
-        map_name=map_name,
     )
 
 
