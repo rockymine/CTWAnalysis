@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import io
 import json
 import queue
+import shutil
 import threading
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from flask import Blueprint, Response, abort, jsonify, request, send_file, stream_with_context
 
@@ -50,6 +56,80 @@ def _parse_bounds_args() -> tuple[float, float, float, float]:
     )
 
 
+@bp.route("/import-from-url", methods=["POST"])
+def import_from_url():
+    data = request.get_json(force=True) or {}
+    url = data.get("url", "").strip()
+    name_override = data.get("name", "").strip()
+
+    if not url:
+        return jsonify({"error": "url is required"}), 400
+
+    config = load_config()
+    maps_folder_str = config.get("maps_folder", "").strip()
+    if not maps_folder_str:
+        return jsonify({"error": "maps_folder not configured"}), 400
+    maps_folder = Path(maps_folder_str)
+    if not maps_folder.exists():
+        return jsonify({"error": "maps_folder does not exist"}), 400
+
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        return jsonify({"error": f"Download failed: HTTP {exc.code}"}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Download failed: {exc}"}), 400
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "Downloaded file is not a valid zip archive"}), 400
+
+    # Detect single top-level folder inside the zip (standard map package layout)
+    top_dirs: set[str] = set()
+    for entry in zf.namelist():
+        part = entry.split("/")[0]
+        if part:
+            top_dirs.add(part)
+    zip_top = next(iter(top_dirs)) if len(top_dirs) == 1 else None
+
+    def _normalize(n: str) -> str:
+        return n.strip().lower().replace(" ", "_")
+
+    if name_override:
+        final_name = _normalize(name_override)
+    elif zip_top:
+        final_name = _normalize(zip_top)
+    else:
+        final_name = _normalize(Path(urlparse(url).path).name) or "imported_map"
+
+    dest = maps_folder / final_name
+    dest.mkdir(parents=True, exist_ok=True)
+
+    for member in zf.infolist():
+        rel = member.filename
+        if zip_top:
+            prefix = zip_top + "/"
+            if not rel.startswith(prefix):
+                continue
+            rel = rel[len(prefix):]
+            if not rel:
+                continue
+        target = dest / rel
+        if member.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+    if not (dest / "region").exists():
+        return jsonify({"error": "Zip does not contain a 'region' folder — not a valid Minecraft world"}), 400
+
+    return jsonify({"name": final_name})
+
+
 @bp.route("/source-maps")
 def list_source_maps():
     config = load_config()
@@ -86,13 +166,14 @@ def validate_source_map(name: str):
     if not map_path.exists():
         return jsonify({"valid": False, "issues": ["Map folder does not exist"]})
 
-    issues = []
-    if not (map_path / "map.xml").exists():
-        issues.append("Missing map.xml")
+    blocking = []
+    warnings = []
     if not (map_path / "region").exists():
-        issues.append("Missing 'region' folder (Anvil world data required for layout extraction)")
+        blocking.append("Missing 'region' folder (Anvil world data required for layout extraction)")
+    if not (map_path / "map.xml").exists():
+        warnings.append("No map.xml — pipeline will run without XML data")
 
-    return jsonify({"valid": len(issues) == 0, "issues": issues})
+    return jsonify({"valid": len(blocking) == 0, "issues": blocking, "warnings": warnings})
 
 
 @bp.route("/source-map/<name>/thumbnail")

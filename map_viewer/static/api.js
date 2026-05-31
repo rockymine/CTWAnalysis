@@ -18,6 +18,19 @@ export async function saveConfig(config) {
   return r.json();
 }
 
+export async function importFromUrl(url, name = "") {
+  const r = await fetch("/api/import-from-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, name }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Import failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function fetchSourceMaps() {
   const r = await fetch("/api/source-maps");
   if (!r.ok) {

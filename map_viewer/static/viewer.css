@@ -509,6 +509,18 @@ body {
   padding: 2px 7px; font-size: 12px; font-family: inherit; outline: none;
 }
 .map-filter-input:focus { border-color: var(--text-muted); }
+#url-import-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.url-import-input { flex: 1; min-width: 0; }
+.url-import-status {
+  padding: 3px 14px; font-size: 11px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.url-import-status--ok    { color: var(--color-success); }
+.url-import-status--error { color: var(--color-error); }
+.url-import-status--loading { color: var(--text-muted); }
 #map-list { flex: 1; overflow-y: auto; }
 .list-placeholder { padding: 16px 14px; font-size: 12px; color: var(--text-muted); }
 .list-placeholder--error { color: var(--color-error); }
@@ -571,6 +583,7 @@ body {
 .tag--warn    { color: var(--color-warning); background: #78350f44; }
 .tag--loading { color: var(--text-dim);      background: var(--bg-panel); }
 .issue-list { margin: 6px 0 0 16px; font-size: 12px; color: var(--color-error-light); list-style: disc; }
+.issue-list--warn { color: var(--color-warn, #d97706); }
 .issue-list li { padding: 2px 0; }
 
 /* ── Pipeline steps ── */

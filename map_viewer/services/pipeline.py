@@ -1,9 +1,49 @@
 from __future__ import annotations
 
+import json
 import logging
 import traceback
 from pathlib import Path
 from typing import Callable
+
+
+def _write_stub_map_data(map_name: str, output_dir: Path) -> None:
+    """Write a minimal map_data.json when no map.xml exists so pipeline status can complete."""
+    stub = {
+        "name": map_name.replace("_", " ").title(),
+        "version": "1.0.0",
+        "gamemode": "ctw",
+        "objective": "",
+        "max_build_height": None,
+        "authors": [],
+        "kits": [],
+        "teams": [],
+        "spawns": [],
+        "observer_spawn": None,
+        "wools": [],
+        "spawners": [],
+        "renewables": [],
+        "block_drop_rules": [],
+        "regions": {},
+        "apply_rules": [],
+        "region_categories": {},
+    }
+    dest = output_dir / "map_data.json"
+    if not dest.exists():
+        dest.write_text(json.dumps(stub, indent=2), encoding="utf-8")
+
+
+def _patch_context_from_stub(map_name: str, output_dir: Path) -> None:
+    """Copy name/version from stub map_data.json into map_context.json."""
+    stub_path = output_dir / "map_data.json"
+    ctx_path  = output_dir / "map_context.json"
+    if not stub_path.exists() or not ctx_path.exists():
+        return
+    stub = json.loads(stub_path.read_text(encoding="utf-8"))
+    ctx  = json.loads(ctx_path.read_text(encoding="utf-8"))
+    ctx["map_name"]    = stub.get("name", map_name)
+    ctx["map_version"] = stub.get("version", "")
+    ctx_path.write_text(json.dumps(ctx, indent=2), encoding="utf-8")
 
 
 class _QueueLogHandler(logging.Handler):
@@ -65,6 +105,7 @@ def run_pipeline_steps(
                 detail_txt = f"{len(md.teams)} team(s), {len(md.wools)} wool(s)"
             else:
                 detail_txt = "no map.xml found"
+                _write_stub_map_data(map_folder.name, map_output_dir)
             send("step", {"step": "xml", "status": "done", "label": "XML", "detail": detail_txt})
         except Exception as exc:
             send("step", {"step": "xml", "status": "error", "label": "XML", "detail": str(exc)})
@@ -125,6 +166,10 @@ def run_pipeline_steps(
                 symmetry=symmetry, xml_context=xml_context,
                 exclude_observer_island=False, exclude_islands=exclude_isl, playable_bbox=bbox,
             )
+            # When no map.xml exists, assembly leaves map_name/map_version blank.
+            # Patch them from the stub so the editor top bar can display them.
+            if xml_context is None:
+                _patch_context_from_stub(map_folder.name, map_output_dir)
             send("step", {"step": "assembly", "status": "done", "label": "Assembly"})
         except Exception as exc:
             send("step", {"step": "assembly", "status": "error", "label": "Assembly", "detail": str(exc)})

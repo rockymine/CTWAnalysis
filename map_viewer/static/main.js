@@ -95,7 +95,7 @@ async function loadMap(name) {
   setStatus("Loading…");
   try {
     const ctx = await api.fetchContext(name);
-    setBreadcrumb(ctx.map_name, ctx.map_version);
+    setBreadcrumb(ctx.map_name || name.replace(/_/g, " "), ctx.map_version);
     exportBtn.disabled    = false;
     overviewBtn.disabled  = false;
     teamsBtn.disabled     = false;

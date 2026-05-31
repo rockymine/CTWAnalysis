@@ -29,6 +29,9 @@ const saveConfigBtn     = document.getElementById("save-config-btn");
 const configSaveStatus  = document.getElementById("config-save-status");
 const mapListEl         = document.getElementById("map-list");
 const mapFilterEl       = document.getElementById("map-filter");
+const urlImportInput    = document.getElementById("url-import-input");
+const urlImportBtn      = document.getElementById("url-import-btn");
+const urlImportStatus   = document.getElementById("url-import-status");
 const mapDetailEmpty    = document.getElementById("map-detail-empty");
 const mapDetailContent  = document.getElementById("map-detail-content");
 const detailMapThumbnail    = document.getElementById("detail-map-thumbnail");
@@ -129,6 +132,37 @@ function renderMapList() {
 
 mapFilterEl.addEventListener("input", renderMapList);
 
+// ── URL import ─────────────────────────────────────────────────────────────
+
+function setImportStatus(msg, type = "") {
+  urlImportStatus.textContent = msg;
+  urlImportStatus.className = "url-import-status" + (type ? ` url-import-status--${type}` : "");
+  urlImportStatus.hidden = !msg;
+}
+
+async function handleImport() {
+  const url = urlImportInput.value.trim();
+  if (!url) return;
+
+  urlImportBtn.disabled = true;
+  setImportStatus("Downloading…", "loading");
+
+  try {
+    const result = await api.importFromUrl(url);
+    setImportStatus(`Imported "${result.name}"`, "ok");
+    urlImportInput.value = "";
+    await loadSourceMaps();
+    selectMap(result.name);
+  } catch (err) {
+    setImportStatus(err.message, "error");
+  } finally {
+    urlImportBtn.disabled = false;
+  }
+}
+
+urlImportBtn.addEventListener("click", handleImport);
+urlImportInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleImport(); });
+
 // ── Map selection & detail ─────────────────────────────────────────────────
 
 async function selectMap(name) {
@@ -200,14 +234,18 @@ function renderValidation() {
   const v = state.validation;
   if (!v) { detailValidation.innerHTML = ""; return; }
 
+  let html = "";
   if (v.valid) {
-    detailValidation.innerHTML = '<span class="tag tag--ok">&#10003; Valid map folder</span>';
+    html += '<span class="tag tag--ok">&#10003; Valid map folder</span>';
   } else {
-    const issues = v.issues.map(i => `<li>${i}</li>`).join("");
-    detailValidation.innerHTML =
-      `<span class="tag tag--error">&#10005; Invalid</span>` +
-      `<ul class="issue-list">${issues}</ul>`;
+    const issues = (v.issues || []).map(i => `<li>${i}</li>`).join("");
+    html += `<span class="tag tag--error">&#10005; Invalid</span><ul class="issue-list">${issues}</ul>`;
   }
+  if (v.warnings && v.warnings.length) {
+    const warns = v.warnings.map(w => `<li>${w}</li>`).join("");
+    html += `<ul class="issue-list issue-list--warn">${warns}</ul>`;
+  }
+  detailValidation.innerHTML = html;
 }
 
 function renderSteps() {
