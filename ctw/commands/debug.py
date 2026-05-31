@@ -268,38 +268,6 @@ Examples:
     )
     p.set_defaults(func=handle_match_coverage)
 
-    # debug compare
-    p = debug_sub.add_parser(
-        'compare',
-        help='Compare layout layers side-by-side (y0 vs bedrock vs difference)',
-        description=(
-            'For each map, reads layout_y0 and layout_bedrock parquets and produces a '
-            '3-panel figure: y0 blocks colored by block ID, bedrock blocks colored by '
-            'y-level, and an overlap diff panel (shared / y0-only / bedrock-only). '
-            'Use --summary for a text-only table without generating images.'
-        ),
-        formatter_class=_RAW,
-        epilog="""\
-Examples:
-  python ctw.py debug compare --map acapulco
-  python ctw.py debug compare --all --summary
-  python ctw.py debug compare --all
-  python ctw.py debug compare --all --output-dir /tmp/compare/
-""",
-    )
-    group = p.add_mutually_exclusive_group(required=True)
-    group.add_argument('--map', default=None,
-                       help='Single map name (e.g. acapulco)')
-    group.add_argument('--all', action='store_true', dest='all_maps',
-                       help='Process all maps in output/')
-    p.add_argument('--dir', default='output',
-                   help='Root output directory (default: output)')
-    p.add_argument('--summary', action='store_true',
-                   help='Text-only summary table (no plots, use with --all)')
-    p.add_argument('--output-dir', default=None, dest='output_dir',
-                   help='Where to save PNGs (default: output/diagnostics/)')
-    p.set_defaults(func=handle_compare)
-
     # debug layout-grid
     p = debug_sub.add_parser(
         'layout-grid',
@@ -445,11 +413,6 @@ def handle_prepare_demo(args: object) -> None:
 
 def handle_audit(args: object) -> None:
     from layout_analysis.audit import run
-    run(args)
-
-
-def handle_compare(args: object) -> None:
-    from layout_analysis.layout_compare import run
     run(args)
 
 
