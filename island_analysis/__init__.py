@@ -21,9 +21,6 @@ from .visualization import (
     plot_islands,
     plot_island_polygons,
     plot_island_detail,
-    plot_island_comparison,
-    plot_island_statistics,
-    create_island_report,
 )
 
 __all__ = [
@@ -54,7 +51,4 @@ __all__ = [
     "plot_islands",
     "plot_island_polygons",
     "plot_island_detail",
-    "plot_island_comparison",
-    "plot_island_statistics",
-    "create_island_report",
 ]
