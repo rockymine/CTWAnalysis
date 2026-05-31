@@ -174,9 +174,9 @@ def handle_profile(args) -> None:
     """Re-run island profiling on cached map_context.json + map_graph.json."""
     import json
     from island_analysis.profile import (
-        profile_islands, save_profiles, plot_island_profiles, load_profiles,
-        load_overrides,
+        profile_islands, save_profiles, load_profiles, load_overrides,
     )
+    from island_analysis.visualization import plot_island_profiles
     from map_analysis.grid_base import _adaptive_grid_size
 
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT

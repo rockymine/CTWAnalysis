@@ -609,7 +609,7 @@ def handle_profile_summary(args: object) -> None:
 def handle_profile_landscape(args: object) -> None:
     """Generate cross-map scatter landscape plot."""
     from pathlib import Path
-    from island_analysis.profile import plot_profile_landscape
+    from island_analysis.visualization import plot_profile_landscape
     from ctw.common import DEFAULT_OUTPUT_ROOT
 
     all_pairs = _load_all_profiles(args)
@@ -632,7 +632,7 @@ def handle_profile_mosaic(args: object) -> None:
     """Generate island shape mosaic or per-type example images."""
     import json as _json
     from pathlib import Path
-    from island_analysis.profile import plot_profile_mosaic, save_profile_examples
+    from island_analysis.visualization import plot_profile_mosaic, save_profile_examples
     from ctw.common import DEFAULT_OUTPUT_ROOT
 
     entries = _load_profile_entries(args)
@@ -678,7 +678,7 @@ def handle_profile_mosaic(args: object) -> None:
 def handle_profile_distributions(args: object) -> None:
     """Generate feature distribution histogram plot."""
     from pathlib import Path
-    from island_analysis.profile import plot_feature_distributions
+    from island_analysis.visualization import plot_feature_distributions
     from ctw.common import DEFAULT_OUTPUT_ROOT
 
     all_pairs = _load_all_profiles(args)

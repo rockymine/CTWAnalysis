@@ -59,8 +59,8 @@ def plot_island_debug(
     ax.imshow(mask, cmap='Greys', interpolation='nearest', origin='upper',
               extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Island mask ({mask.sum()} blocks)")
-    ax.set_xlabel("c (x)")
-    ax.set_ylabel("r (z)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
 
     # Panel 2: Skeleton overlay
     ax = axes[0, 1]
@@ -71,8 +71,8 @@ def plot_island_debug(
     ax.imshow(skel_display, interpolation='nearest', origin='upper',
               extent=raster_imshow_extent(mask.shape))
     ax.set_title(f"Skeleton ({skel_mask.sum()} pixels)")
-    ax.set_xlabel("c (x)")
-    ax.set_ylabel("r (z)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
 
     # Panel 3: Nodes on skeleton
     ax = axes[0 + 1, 0]
@@ -96,8 +96,8 @@ def plot_island_debug(
 
     ax.legend(fontsize=8, loc='upper right')
     ax.set_title(f"Nodes ({len(result.graph.nodes)} total)")
-    ax.set_xlabel("c (x)")
-    ax.set_ylabel("r (z)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
 
     # Panel 4: Edges
     ax = axes[1, 1]
@@ -122,8 +122,8 @@ def plot_island_debug(
                    edgecolors='black', linewidths=0.5)
 
     ax.set_title(f"Edges ({len(result.graph.edges)} total)")
-    ax.set_xlabel("c (x)")
-    ax.set_ylabel("r (z)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
@@ -276,8 +276,8 @@ def plot_map_overview(
                        zorder=5, marker=marker, edgecolors='black', linewidths=0.3)
 
     ax.set_aspect('equal')
-    ax.set_xlabel("X (world)")
-    ax.set_ylabel("Z (world)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
     ax.set_title(f"Map Overview - {n_islands} islands")
     ax.invert_yaxis()
 
@@ -502,8 +502,8 @@ def plot_island_poi_debug(
         f"({len(skeleton.graph.nodes)} nodes, {n_poi} POIs)",
         fontsize=13
     )
-    ax.set_xlabel("c (x)")
-    ax.set_ylabel("r (z)")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Z")
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)

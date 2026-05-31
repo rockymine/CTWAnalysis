@@ -104,11 +104,11 @@ def run(args: object) -> None:
         print(f"No position events found for '{map_name}' — nothing to plot.")
         return
 
-    _plot_terrain_height_figure(map_name, map_context, all_cells_df, hat_df, loc_df, save_path)
+    plot_terrain_height(map_name, map_context, all_cells_df, hat_df, loc_df, save_path)
     print(f"Saved: {save_path}")
 
 
-def _plot_terrain_height_figure(
+def plot_terrain_height(
     map_name: str,
     map_context: dict,
     all_cells_df: 'pd.DataFrame',

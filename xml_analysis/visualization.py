@@ -64,12 +64,11 @@ class MapVisualizer:
         self._plot_named_regions(ax)
 
         # Set labels and title
-        ax.set_xlabel('World X', fontsize=12)
-        ax.set_ylabel('World Z', fontsize=12)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Z')
         ax.set_title(f'{self.data.name} - Map Layout\n{self.data.objective}',
                      fontsize=14, fontweight='bold')
         ax.set_aspect('equal')
-        ax.grid(True, alpha=0.3, linestyle='--')
 
         if show_legend:
             ax.legend(loc='upper right', fontsize=10)
@@ -107,12 +106,11 @@ class MapVisualizer:
             self._plot_spawns(ax, alpha=0.2)
             self._plot_wools(ax, alpha=0.2)
 
-            ax.set_xlabel('World X', fontsize=12)
-            ax.set_ylabel('World Z', fontsize=12)
+            ax.set_xlabel('X')
+            ax.set_ylabel('Z')
             ax.set_title(f'{self.data.name} - {category.title()} Regions',
                          fontsize=14, fontweight='bold')
             ax.set_aspect('equal')
-            ax.grid(True, alpha=0.3, linestyle='--')
             ax.legend(loc='upper right', fontsize=10)
 
             plot_path = output_path / f'{category}_regions.png'

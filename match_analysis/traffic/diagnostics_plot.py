@@ -43,18 +43,18 @@ except ImportError as exc:
     raise ImportError("networkx is required for traffic_diagnostics_plot") from exc
 
 from common.visualization import (
-    DARK_THEME_BG as _BG_COLOR,
-    style_dark_ax as _style_ax,
-    draw_dark_island_polygons,
-    draw_dark_graph_background as _draw_graph_background,
+    style_map_ax as _style_ax,
+    draw_island_fills,
+    draw_graph_background as _draw_graph_background,
 )
 
+
 # ---------------------------------------------------------------------------
-# Colour / style constants (match existing dark-theme traffic_graph.py style)
+# Colour / style constants
 # ---------------------------------------------------------------------------
 
-_EDGE_ALPHA    = 0.14       # faint background graph edges
-_NODE_ALPHA    = 0.14       # faint background graph nodes
+_EDGE_ALPHA    = 0.35       # faint background graph edges
+_NODE_ALPHA    = 0.25       # faint background graph nodes
 _OBS_CMAP      = cm.get_cmap("plasma")   # temporal colouring for observed data
 _INFER_COLOR   = "#44ccff"               # colour for inferred intermediate nodes
 _ANCHOR_COLOR  = "#ffdd44"              # colour for snapped anchor nodes (observed)
@@ -143,15 +143,15 @@ def _draw_position_trace(ax, xs, zs, size: float = 55) -> None:
         return
     colors = _temporal_colors(n)
     # Connecting line — brighter and thicker for visibility
-    ax.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+    ax.plot(xs, zs, color="#999999", lw=1.0, alpha=0.55, zorder=3)
     # Scatter with temporal colours and white stroke for contrast
     ax.scatter(xs, zs, c=colors, s=size, linewidths=0.6,
-               edgecolors="white", zorder=4)
+               edgecolors="#333333", zorder=4)
     # Start / end markers — larger
     ax.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
-               marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+               marker="*", zorder=6, edgecolors="#333333", linewidths=1.0)
     ax.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
-               marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+               marker="X", zorder=6, edgecolors="#333333", linewidths=1.2)
 
 
 def _draw_node_sequence(
@@ -191,32 +191,32 @@ def _draw_node_sequence(
 
     if draw_line:
         ax.plot(coords_arr[:, 0], coords_arr[:, 1],
-                color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+                color="#999999", lw=1.0, alpha=0.55, zorder=3)
 
     if is_anchor is None:
         ax.scatter(coords_arr[:, 0], coords_arr[:, 1],
                    c=colors, s=50, marker="s",
-                   linewidths=0.6, edgecolors="white", zorder=4)
+                   linewidths=0.4, edgecolors="#333333", zorder=4)
     else:
         # Draw anchors (squares) and intermediates (diamonds) separately
         anchor_mask = np.array(is_anchor[:len(coords_arr)], dtype=bool)
         if anchor_mask.any():
             ax.scatter(coords_arr[anchor_mask, 0], coords_arr[anchor_mask, 1],
                        c=colors[anchor_mask], s=55, marker="s",
-                       linewidths=0.6, edgecolors="white", zorder=5,
+                       linewidths=0.4, edgecolors="#333333", zorder=5,
                        label="snapped anchor (observed)")
         infer_mask = ~anchor_mask
         if infer_mask.any():
             ax.scatter(coords_arr[infer_mask, 0], coords_arr[infer_mask, 1],
                        s=22, marker="D", color=_INFER_COLOR,
-                       alpha=0.75, linewidths=0.4, edgecolors="white",
+                       alpha=0.75, linewidths=0.4, edgecolors="#333333",
                        zorder=4, label="inferred intermediate")
 
     # Start / end markers (use first and last valid node in sequence)
     ax.scatter([coords_arr[0, 0]], [coords_arr[0, 1]], s=180, color=_START_COLOR,
-               marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+               marker="*", zorder=6, edgecolors="#333333", linewidths=1.0)
     ax.scatter([coords_arr[-1, 0]], [coords_arr[-1, 1]], s=130, color=_END_COLOR,
-               marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+               marker="X", zorder=6, edgecolors="#333333", linewidths=1.2)
 
 
 def _legend_handles() -> list[Line2D]:
@@ -308,7 +308,7 @@ def plot_life_segment_diagnostic(
     path_nodes, is_anchor = reconstructed_path
 
     # ── Figure ──────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=_FIGSIZE, facecolor=_BG_COLOR)
+    fig = plt.figure(figsize=_FIGSIZE)
     gs  = fig.add_gridspec(2, 3, hspace=0.15, wspace=0.06)
 
     ax_a = fig.add_subplot(gs[0, 0])
@@ -326,31 +326,31 @@ def plot_life_segment_diagnostic(
     _style_ax(ax_a, xmin, xmax, zmin, zmax,
               "A — Raw positions\n(observed, ground truth)")
     if map_context:
-        draw_dark_island_polygons(ax_a, map_context, alpha=0.10)
+        draw_island_fills(ax_a, map_context, alpha=0.12)
     if held_item_series is not None and len(held_item_series) == len(xs):
         # Held-item category colouring — Panel A title update
         _style_ax(ax_a, xmin, xmax, zmin, zmax,
                   "A — Raw positions coloured by held item\n(observed, ground truth)")
         item_colors = _item_category_colors(held_item_series)
-        ax_a.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+        ax_a.plot(xs, zs, color="#999999", lw=1.0, alpha=0.55, zorder=3)
         ax_a.scatter(xs, zs, c=item_colors, s=55, linewidths=0.6,
-                     edgecolors="white", zorder=4)
+                     edgecolors="#333333", zorder=4)
         ax_a.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
-                     marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+                     marker="*", zorder=6, edgecolors="#333333", linewidths=1.0)
         ax_a.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
-                     marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+                     marker="X", zorder=6, edgecolors="#333333", linewidths=1.2)
         # Item category legend
         from matplotlib.patches import Patch as _Patch
         seen_cats = {_categorise_item(i) for i in held_item_series}
         legend_handles_a = [
-            _Patch(facecolor=_ITEM_CAT_COLORS[c], edgecolor="white",
+            _Patch(facecolor=_ITEM_CAT_COLORS[c], edgecolor="#cccccc",
                    linewidth=0.5, label=_ITEM_CAT_LABELS[c])
             for c in ("bow", "melee", "block", "tool", "other")
             if c in seen_cats
         ]
         if legend_handles_a:
             ax_a.legend(handles=legend_handles_a, loc="lower left", fontsize=5.5,
-                        facecolor="#0e0e1a", labelcolor="white", framealpha=0.85)
+                        facecolor="#f8f8f6", labelcolor="#222222", framealpha=0.85)
     elif positions_y is not None and len(positions_y) == len(xs):
         # Elevation colouring — Panel A title update
         _style_ax(ax_a, xmin, xmax, zmin, zmax,
@@ -359,20 +359,20 @@ def plot_life_segment_diagnostic(
         y_norm = (y_arr - y_arr.min()) / max(y_arr.max() - y_arr.min(), 1.0)
         elev_cmap = cm.get_cmap("RdYlGn")
         elev_colors = elev_cmap(y_norm)
-        ax_a.plot(xs, zs, color="#cccccc", lw=1.4, alpha=0.55, zorder=3)
+        ax_a.plot(xs, zs, color="#999999", lw=1.0, alpha=0.55, zorder=3)
         sc = ax_a.scatter(xs, zs, c=y_norm, cmap="RdYlGn", s=55,
-                          linewidths=0.6, edgecolors="white", zorder=4,
+                          linewidths=0.4, edgecolors="#333333", zorder=4,
                           vmin=0, vmax=1)
         ax_a.scatter([xs[0]], [zs[0]], s=180, color=_START_COLOR,
-                     marker="*", zorder=6, edgecolors="white", linewidths=1.0)
+                     marker="*", zorder=6, edgecolors="#333333", linewidths=1.0)
         ax_a.scatter([xs[-1]], [zs[-1]], s=130, color=_END_COLOR,
-                     marker="X", zorder=6, edgecolors="white", linewidths=1.2)
+                     marker="X", zorder=6, edgecolors="#333333", linewidths=1.2)
         # Mini colourbar: low y → high y
         cb = plt.colorbar(sc, ax=ax_a, orientation="horizontal",
                           fraction=0.04, pad=0.04, aspect=25)
         cb.set_label(f"y level  [{int(y_arr.min())}–{int(y_arr.max())}]",
-                     color="#cccccc", fontsize=6)
-        cb.ax.tick_params(colors="#cccccc", labelsize=5)
+                     color="#444444", fontsize=6)
+        cb.ax.tick_params(colors="#666666", labelsize=5)
     else:
         _draw_position_trace(ax_a, xs, zs)
 
@@ -398,7 +398,7 @@ def plot_life_segment_diagnostic(
     _draw_node_sequence(ax_d, path_nodes, node_info, is_anchor=is_anchor)
     legend_d = ax_d.legend(
         handles=_legend_handles(), loc="lower left", fontsize=6,
-        facecolor="#0e0e1a", labelcolor="white", framealpha=0.85,
+        facecolor="#f8f8f6", labelcolor="#222222", framealpha=0.85,
     )
     ax_d.add_artist(legend_d)
 
@@ -413,7 +413,7 @@ def plot_life_segment_diagnostic(
     _draw_node_sequence(ax_e, simplified_sequence, node_info, is_anchor=all_anchor)
 
     # ── Panel F — metadata / summary text ────────────────────────────────
-    ax_f.set_facecolor(_BG_COLOR)
+    
     ax_f.axis("off")
 
     n_unique_snapped = len(set(snapped_sequence))
@@ -470,7 +470,7 @@ def plot_life_segment_diagnostic(
         lines.append(("  frac ≥22 (sky)", f"{np.mean(y_np >= 22):.0%}"))
 
     y = 0.97
-    ax_f.set_title("F — Metadata", color="#cccccc", fontsize=8, pad=4)
+    ax_f.set_title("F — Metadata", color="#222222", fontsize=8, pad=4)
     for key, val in lines:
         if not key and not val:
             y -= 0.022
@@ -494,21 +494,21 @@ def plot_life_segment_diagnostic(
         from collections import Counter as _CounterCB
         cat_counts2 = _CounterCB(_categorise_item(i) for i in held_item_series)
         swatch_handles = [
-            _PatchCB(facecolor=_ITEM_CAT_COLORS[c], edgecolor="white",
+            _PatchCB(facecolor=_ITEM_CAT_COLORS[c], edgecolor="#cccccc",
                      linewidth=0.5, label=_ITEM_CAT_LABELS[c])
             for c in ("bow", "melee", "block", "tool", "other")
             if cat_counts2.get(c, 0) > 0
         ]
         ax_f.legend(handles=swatch_handles, loc="lower center",
-                    fontsize=6, facecolor="#0e0e1a", labelcolor="white",
+                    fontsize=6, facecolor="#f8f8f6", labelcolor="#222222",
                     framealpha=0.85, ncol=2)
     else:
         sm = ScalarMappable(cmap=_OBS_CMAP, norm=Normalize(vmin=0, vmax=1))
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax_f, fraction=0.06, pad=0.04, orientation="horizontal")
-        cbar.set_label("time (start → end)", color="#aaaaaa", fontsize=7)
-        cbar.ax.xaxis.set_tick_params(color="#aaaaaa", labelsize=6)
-        plt.setp(cbar.ax.xaxis.get_ticklabels(), color="#aaaaaa")
+        cbar.set_label("time (start → end)", color="#444444", fontsize=7)
+        cbar.ax.xaxis.set_tick_params(color="#666666", labelsize=6)
+        plt.setp(cbar.ax.xaxis.get_ticklabels(), color="#666666")
         cbar.set_ticks([0, 1])
         cbar.set_ticklabels(["start", "end"])
 
@@ -519,11 +519,11 @@ def plot_life_segment_diagnostic(
     )
     if label:
         title_str += f"  [{label}]"
-    fig.suptitle(title_str, color="white", fontsize=10, y=1.005)
+    fig.suptitle(title_str, color="#222222", fontsize=10, y=1.005)
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, dpi=130, bbox_inches="tight", facecolor=_BG_COLOR)
+        fig.savefig(output_path, dpi=130, bbox_inches="tight")
         plt.close(fig)
 
     return fig

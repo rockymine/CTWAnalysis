@@ -1,7 +1,6 @@
-"""Player trace visualization on map base layer.
+"""Match analysis visualizations.
 
-Renders life segments (position traces) for one or more players on top
-of a simplified map showing build region, island outlines, and POI markers.
+Includes player trace maps, kill-death pair maps, and terrain height diagnostics.
 """
 
 import os
@@ -37,10 +36,7 @@ _SEGMENT_COLORS = [
 
 # Match trace uses slightly lighter/thinner styles than connectivity viz
 _BUILD_STYLE = BuildRegionStyle(fill_alpha=0.10)
-_ISLAND_STYLE = IslandOutlineStyle(
-    exterior_linewidth=1.5, exterior_alpha=0.7,
-    hole_linewidth=1.0, hole_alpha=0.5,
-)
+_ISLAND_STYLE = IslandOutlineStyle()
 _POI_STYLE = POIStyle(wool_marker='D', wool_size=80, zorder=2)
 
 # Location type colors for --color-mode location
@@ -434,10 +430,12 @@ def plot_player_traces(
 
     ax.set_aspect('equal')
     ax.invert_yaxis()
+    ax.tick_params(colors='#666666')
+    for spine in ax.spines.values():
+        spine.set_edgecolor('#cccccc')
     if show_title:
-        ax.set_xlabel('X (blocks)')
-        ax.set_ylabel('Z (blocks)')
-        ax.grid(True, alpha=0.2)
+        ax.set_xlabel('X', color='#444444')
+        ax.set_ylabel('Z', color='#444444')
     else:
         ax.axis('off')
 
@@ -631,10 +629,17 @@ def plot_kill_death_pairs(
 
     ax.set_aspect('equal')
     ax.invert_yaxis()
-    ax.set_xlabel('X (blocks)')
-    ax.set_ylabel('Z (blocks)')
-    ax.grid(True, alpha=0.2)
+    ax.tick_params(colors='#666666')
+    for spine in ax.spines.values():
+        spine.set_edgecolor('#cccccc')
+    ax.set_xlabel('X', color='#444444')
+    ax.set_ylabel('Z', color='#444444')
 
     fig.savefig(str(output_path), dpi=200, bbox_inches='tight')
     plt.close(fig)
     print(f"Kill-death pairs plot saved to: {output_path}")
+
+
+# Re-export from terrain_height_plot so the package's visualization module
+# is the canonical entry point for all match analysis visualizations.
+from match_analysis.terrain_height_plot import plot_terrain_height

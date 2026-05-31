@@ -1,8 +1,5 @@
 """Shared color constants for CTW visualizations."""
 
-# Background color used by dark-theme traffic/graph visualizations
-DARK_THEME_BG = "#0d0d18"
-
 
 def mc_color_key(name: str) -> str:
     """Normalize a Minecraft color name to canonical underscore_lowercase form.

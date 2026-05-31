@@ -2,7 +2,7 @@
 
 from .colors import (
     NEUTRAL_COLOR,
-    DARK_THEME_BG, MINECRAFT_COLORS,
+    MINECRAFT_COLORS,
     mc_color, mc_color_key,
     distance_to_rgba,
 )
@@ -19,7 +19,8 @@ from .map_primitives import (
     draw_pois,
     draw_map_base,
     map_base_legend_handles,
-    style_dark_ax,
-    draw_dark_island_polygons,
-    draw_dark_graph_background,
+    island_path,
+    draw_island_fills,
+    draw_graph_background,
+    style_map_ax,
 )

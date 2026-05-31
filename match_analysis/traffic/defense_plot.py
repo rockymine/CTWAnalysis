@@ -33,11 +33,11 @@ except ImportError as exc:
     raise ImportError("networkx required for defense_plot") from exc
 
 from common.visualization import (
-    DARK_THEME_BG as _BG_COLOR,
-    style_dark_ax,
-    draw_dark_island_polygons,
-    draw_dark_graph_background,
+    style_map_ax,
+    draw_island_fills,
+    draw_graph_background,
 )
+
 
 # ---------------------------------------------------------------------------
 # Activity category IDs (0-indexed, from materials.txt)
@@ -160,7 +160,7 @@ def plot_defense_overview(
     wx, wz = wool_node["coords"]
 
     # ── Figure setup ─────────────────────────────────────────────────────
-    fig = plt.figure(figsize=_FIGSIZE, facecolor=_BG_COLOR)
+    fig = plt.figure(figsize=_FIGSIZE)
     gs  = gridspec.GridSpec(
         2, 2,
         figure=fig,
@@ -185,14 +185,14 @@ def plot_defense_overview(
     ax_map.set_xlim(xmin, xmax)
     ax_map.set_ylim(zmin, zmax)
     ax_map.invert_yaxis()
-    style_dark_ax(ax_map,
+    style_map_ax(ax_map,
                   title=f"Spatial map — segment 0 near wool {wool_node_id} ({team} team)",
                   xlabel="x", ylabel="z")
 
     if map_context:
-        draw_dark_island_polygons(ax_map, map_context, alpha=0.10)
+        draw_island_fills(ax_map, map_context, alpha=0.12)
 
-    draw_dark_graph_background(ax_map, node_info, G_full,
+    draw_graph_background(ax_map, node_info, G_full,
                                node_alpha=0.12, edge_alpha=0.08,
                                xlim=(xmin, xmax), zlim=(zmin, zmax))
 
@@ -223,7 +223,7 @@ def plot_defense_overview(
     leg = ax_map.legend(
         handles=_legend_swatches(seen_acts),
         loc="lower right", fontsize=5.5,
-        facecolor="#0e0e1a", labelcolor="white", framealpha=0.85,
+        facecolor="#f8f8f6", labelcolor="#222222", framealpha=0.85,
     )
     ax_map.add_artist(leg)
 
@@ -236,7 +236,7 @@ def plot_defense_overview(
 
     ax_section.set_xlim(-1, 52)
     ax_section.set_ylim(y_min_plot, y_max_plot)
-    style_dark_ax(ax_section,
+    style_map_ax(ax_section,
                   title="Lane section view  (distance from wool × elevation)",
                   xlabel="Dijkstra distance from wool node (blocks)",
                   ylabel="Elevation (y)")
@@ -274,7 +274,7 @@ def plot_defense_overview(
         )
 
     # ── Panel ax_stats — Summary text ────────────────────────────────────
-    ax_stats.set_facecolor(_BG_COLOR)
+    
     ax_stats.axis("off")
 
     n_players  = df["player_id"].nunique()
@@ -313,9 +313,9 @@ def plot_defense_overview(
         xi  = 0.02 + col * 0.20
         yi  = 0.75 - row * 0.40
         ax_stats.text(xi, yi, key + ":", transform=ax_stats.transAxes,
-                      color="#888888", fontsize=7, va="top")
+                      color="#444444", fontsize=7, va="top")
         ax_stats.text(xi, yi - 0.28, val, transform=ax_stats.transAxes,
-                      color="#ffffff", fontsize=8.5, fontweight="bold", va="top")
+                      color="#111111", fontsize=8.5, fontweight="bold", va="top")
 
     # ── Overall title ─────────────────────────────────────────────────────
     fig.suptitle(
@@ -326,7 +326,7 @@ def plot_defense_overview(
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, dpi=130, bbox_inches="tight", facecolor=_BG_COLOR)
+        fig.savefig(output_path, dpi=130, bbox_inches="tight")
         plt.close(fig)
 
     return fig

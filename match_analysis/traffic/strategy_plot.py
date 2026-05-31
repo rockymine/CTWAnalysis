@@ -42,10 +42,10 @@ except ImportError:
 
 from match_analysis.traffic.snapping import bresenham_cells
 from common.visualization import (
-    DARK_THEME_BG as _BG_COLOR,
-    style_dark_ax as _style_ax,
-    draw_dark_island_polygons,
+    style_map_ax as _style_ax,
+    draw_island_fills,
 )
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -380,13 +380,13 @@ def _draw_graph_panel(
     _style_ax(ax, xmin, xmax, zmin, zmax, title)
 
     if map_context:
-        draw_dark_island_polygons(ax, map_context)
+        draw_island_fills(ax, map_context)
 
     if not nodes:
         ax.text(
             0.5, 0.5, "No nodes",
             transform=ax.transAxes, ha="center", va="center",
-            color="#888888", fontsize=10,
+            color="#555555", fontsize=10,
         )
         return
 
@@ -520,7 +520,7 @@ def plot_traffic_strategy_comparison(
         xmin, xmax, zmin, zmax = -100.0, 100.0, -100.0, 100.0
 
     # ── 4. Figure ─────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(22, 14), facecolor=_BG_COLOR)
+    fig = plt.figure(figsize=(22, 14))
     gs  = fig.add_gridspec(2, 3, hspace=0.18, wspace=0.08)
 
     ax_a = fig.add_subplot(gs[0, 0])
@@ -536,7 +536,7 @@ def plot_traffic_strategy_comparison(
         f"A — Raw positions\n(all 2s-logged matches, n={n_pos:,})",
     )
     if map_context:
-        draw_dark_island_polygons(ax_a, map_context)
+        draw_island_fills(ax_a, map_context)
 
     if n_pos > 0:
         xs_all = pos_df["x"].values.astype(float)
@@ -608,7 +608,7 @@ def plot_traffic_strategy_comparison(
         _style_ax(ax_e, xmin, xmax, zmin, zmax,
                   "E — Voronoi (k-means)\nscikit-learn not available")
         if map_context:
-            draw_dark_island_polygons(ax_e, map_context)
+            draw_island_fills(ax_e, map_context)
         ax_e.text(
             0.5, 0.5,
             "scikit-learn not available\n(pip install scikit-learn)",
@@ -628,9 +628,9 @@ def plot_traffic_strategy_comparison(
         )
 
     # ── Panel F — Stats table ─────────────────────────────────────────────
-    ax_f.set_facecolor(_BG_COLOR)
+    
     ax_f.axis("off")
-    ax_f.set_title("F — Strategy stats", color="#cccccc", fontsize=8, pad=4)
+    ax_f.set_title("F — Strategy stats", color="#222222", fontsize=8, pad=4)
 
     n_valid_cells = len(valid_cell_set)
 
@@ -689,7 +689,7 @@ def plot_traffic_strategy_comparison(
     headers = ["Strategy", "Grid/k", "Nodes", "Edges", "Avg deg", "Cov %"]
     y = 0.90
     kw_hdr = dict(transform=ax_f.transAxes, va="top", fontsize=7,
-                  color="#ffffff", fontweight="bold")
+                  color="#111111", fontweight="bold")
     for cx, hdr in zip(col_x, headers):
         ax_f.text(cx, y, hdr, **kw_hdr)
 
@@ -701,7 +701,7 @@ def plot_traffic_strategy_comparison(
     )
     y -= 0.02
 
-    kw_cell = dict(transform=ax_f.transAxes, va="top", fontsize=7, color="#cccccc")
+    kw_cell = dict(transform=ax_f.transAxes, va="top", fontsize=7, color="#333333")
     for strat_name, grid_k, nodes, edges, cov in strategies:
         avg_deg = _avg_degree(nodes, edges)
         row_vals = [
@@ -730,7 +730,7 @@ def plot_traffic_strategy_comparison(
     ]
     kw_info_k = dict(transform=ax_f.transAxes, va="top", fontsize=7,
                      color="#aaaaaa", fontweight="bold")
-    kw_info_v = dict(transform=ax_f.transAxes, va="top", fontsize=7, color="#cccccc")
+    kw_info_v = dict(transform=ax_f.transAxes, va="top", fontsize=7, color="#333333")
     for key, val in info_lines:
         ax_f.text(0.02, y, f"{key}:", **kw_info_k)
         ax_f.text(0.50, y, val, **kw_info_v)
@@ -740,12 +740,12 @@ def plot_traffic_strategy_comparison(
     fig.suptitle(
         f"Traffic graph strategy comparison — {map_slug}"
         f"  ({n_pos:,} positions, {n_matches} matches)",
-        color="white", fontsize=11, y=1.002,
+        color="#111111", fontsize=11, y=1.002,
     )
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, dpi=130, bbox_inches="tight", facecolor=_BG_COLOR)
+        fig.savefig(output_path, dpi=130, bbox_inches="tight")
         plt.close(fig)
         logger.info("Saved strategy comparison plot → %s", output_path)
 

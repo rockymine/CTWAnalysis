@@ -1235,7 +1235,7 @@ def handle_geometry_graph(args: object) -> None:
         build_contour_geometry_graph,
         save_geometry_graph,
     )
-    from match_analysis.traffic.graph import plot_traffic_graph
+    from match_analysis.traffic.visualization import plot_traffic_graph
 
     map_dirs = _resolve_map_dirs(args)
     if map_dirs is None:

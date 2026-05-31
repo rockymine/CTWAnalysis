@@ -104,58 +104,13 @@ def _legend_patches(df) -> list:
     return patches
 
 
-def _plot_map(
-    map_slug: str,
-    map_label: str,
-    out_dir: Path,
-    output_root: Path,
-) -> None:
-    """Render the 2×2 layer grid and save to out_dir/images/layout_case_study.png."""
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    from common.visualization.map_primitives import draw_layout_image
-
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
-    fig.suptitle(f'Layout layers — {map_label}', fontsize=14, fontweight='bold', y=0.98)
-
-    for ax, (layer_key, layer_label) in zip(axes.flat, _LAYERS):
-        df = _load_layer(output_root, map_slug, layer_key)
-        ax.set_title(layer_label, fontsize=10)
-        ax.set_xlabel('X')
-        ax.set_ylabel('Z')
-
-        if df is None:
-            ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
-                    ha='center', va='center', color='gray')
-            continue
-
-        default_id = 7 if layer_key == 'layout_bedrock' else 0
-        draw_layout_image(ax, df, default_block_id=default_id)
-
-        patches = _legend_patches(df)
-        if patches:
-            ax.legend(handles=patches, loc='upper left',
-                      bbox_to_anchor=(1.02, 1), borderaxespad=0,
-                      fontsize=5, framealpha=0.85,
-                      title='block id (count)', title_fontsize=5)
-
-        if 'y' in df.columns:
-            y_min, y_max = int(df['y'].min()), int(df['y'].max())
-            ax.set_xlabel(f'X   (y range {y_min}–{y_max})')
-
-    images_dir = out_dir / 'images'
-    images_dir.mkdir(exist_ok=True)
-    out_path = images_dir / 'layout_case_study.png'
-    fig.savefig(out_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    print(f'  Saved: {out_path}')
-
-
 def _plot_one(map_slug: str, map_label: str, output_root: Path) -> str:
     """Worker-safe wrapper for parallel execution. Returns a status string."""
+    import matplotlib
+    matplotlib.use('Agg')
     out_dir = output_root / map_slug
     if not out_dir.is_dir():
         return f'SKIP {map_slug} (no output dir)'
-    _plot_map(map_slug, map_label, out_dir, output_root)
+    from layout_analysis.visualization import plot_layout_grid
+    plot_layout_grid(map_slug, map_label, out_dir, output_root)
     return f'OK   {map_slug}'

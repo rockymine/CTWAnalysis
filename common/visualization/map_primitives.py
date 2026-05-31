@@ -16,10 +16,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.collections import PolyCollection
+from matplotlib.patches import PathPatch
+from matplotlib.path import Path as MplPath
 
 from .colors import (
     NEUTRAL_COLOR,
-    DARK_THEME_BG, MINECRAFT_COLORS, mc_color,
+    MINECRAFT_COLORS, mc_color,
 )
 from .block_colors import block_color
 from common.geometry import blocks_to_unit_squares
@@ -398,10 +400,10 @@ def map_base_legend_handles(
     return handles
 
 
-# ── Dark-theme helpers (used by traffic / graph visualizations) ──────────────
+# ── Map overlay helpers (traffic / graph / analysis visualizations) ─────────
 
 
-def style_dark_ax(
+def style_map_ax(
     ax,
     xmin: Optional[float] = None,
     xmax: Optional[float] = None,
@@ -411,75 +413,98 @@ def style_dark_ax(
     xlabel: str = "",
     ylabel: str = "",
 ) -> None:
-    """Apply shared dark-theme styling to an axis.
+    """Apply standard light-theme map axis styling.
 
     When xmin/xmax/zmin/zmax are provided, sets axis limits with Z inverted
     (north-up convention) and enforces equal aspect ratio.
     """
-    ax.set_facecolor(DARK_THEME_BG)
     if xmin is not None:
         ax.set_xlim(xmin, xmax)
         ax.set_ylim(zmax, zmin)
         ax.set_aspect("equal")
-    ax.tick_params(colors="#555555", labelsize=6)
+    ax.tick_params(colors="#666666", labelsize=6)
     for spine in ax.spines.values():
-        spine.set_edgecolor("#333333")
+        spine.set_edgecolor("#cccccc")
     if title:
-        ax.set_title(title, color="#cccccc", fontsize=8, pad=4)
+        ax.set_title(title, color="#222222", fontsize=8, pad=4)
     if xlabel:
-        ax.set_xlabel(xlabel, color="#aaaaaa", fontsize=7)
+        ax.set_xlabel(xlabel, color="#444444", fontsize=7)
     if ylabel:
-        ax.set_ylabel(ylabel, color="#aaaaaa", fontsize=7)
+        ax.set_ylabel(ylabel, color="#444444", fontsize=7)
 
 
-def draw_dark_island_polygons(
+def island_path(exterior: list, holes: list) -> Optional[MplPath]:
+    """Build an MplPath for an island polygon with interior holes punched out.
+
+    Uses MOVETO/LINETO/CLOSEPOLY codes so the resulting path correctly
+    masks holes when used with PathPatch (unlike simple Polygon patches).
+    Returns None if exterior has fewer than 3 vertices.
+    """
+    if len(exterior) < 3:
+        return None
+    verts: list = []
+    codes: list = []
+    ext = np.array(exterior)
+    verts.extend(ext.tolist())
+    verts.append(ext[0].tolist())
+    codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(ext) - 1) + [MplPath.CLOSEPOLY]
+    for hole in holes:
+        if len(hole) < 3:
+            continue
+        h = np.array(hole)
+        verts.extend(h.tolist())
+        verts.append(h[0].tolist())
+        codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(h) - 1) + [MplPath.CLOSEPOLY]
+    return MplPath(verts, codes)
+
+
+def draw_island_fills(
     ax,
     map_context: dict,
-    alpha: float = 0.12,
-    fallback_color: str = "#3a3a5a",
+    alpha: float = 0.20,
+    edge_width: float = 0.4,
 ) -> None:
-    """Draw island polygon fills using Minecraft team colors on a dark background."""
-    import matplotlib.patches as _mpatches
+    """Fill island polygons with team colors, interior holes correctly punched out.
 
-    team_hex: Dict[str, str] = {}
-    for team in map_context.get("teams", []):
-        tid = team.get("id", "")
-        raw = team.get("color", "")
-        team_hex[tid] = mc_color(raw, fallback_color)
-
-    for isl in map_context.get("islands", []):
-        pts = (isl.get("simplified_polygon") or {}).get("exterior", [])
-        if not pts:
+    Team colors come from map_context.teams via mc_color(team.color).
+    Neutral (un-teamed) islands are filled at half alpha.
+    """
+    team_hex: Dict[str, str] = {
+        t['id']: mc_color(t.get('color', ''), NEUTRAL_COLOR)
+        for t in map_context.get('teams', [])
+    }
+    for isl in map_context.get('islands', []):
+        poly = isl.get('simplified_polygon') or {}
+        path = island_path(poly.get('exterior', []), poly.get('holes', []))
+        if path is None:
             continue
-        isl_t = isl.get("team")
-        fc = team_hex.get(isl_t, fallback_color)
+        isl_t = isl.get('team')
+        fc = team_hex.get(isl_t, NEUTRAL_COLOR)
         a = alpha if isl_t else alpha * 0.5
-        patch = _mpatches.Polygon(
-            np.array(pts), closed=True,
-            facecolor=fc, edgecolor=fc,
-            linewidth=0.3, alpha=a, zorder=0,
-        )
-        ax.add_patch(patch)
+        ax.add_patch(PathPatch(
+            path, facecolor=fc, edgecolor=fc,
+            linewidth=edge_width, alpha=a, zorder=0,
+        ))
 
 
-def draw_dark_graph_background(
+def draw_graph_background(
     ax,
     node_info: dict,
     G_full,
     map_context: Optional[dict] = None,
-    node_alpha: float = 0.14,
-    edge_alpha: float = 0.14,
+    node_alpha: float = 0.25,
+    edge_alpha: float = 0.35,
     xlim: Optional[tuple] = None,
     zlim: Optional[tuple] = None,
 ) -> None:
-    """Draw a traffic graph as a faint background context layer (dark theme).
+    """Draw a traffic graph as a faint background context layer (light theme).
 
-    Island polygon fills are drawn first if map_context is provided.
+    Island fills are drawn first when map_context is provided.
     When xlim/zlim are given, only nodes/edges whose source falls within the
     bounding box are rendered — useful for zoomed-in panels.
     """
     if map_context:
-        draw_dark_island_polygons(ax, map_context)
+        draw_island_fills(ax, map_context, alpha=0.15)
 
     xlo, xhi = xlim if xlim else (None, None)
     zlo, zhi = zlim if zlim else (None, None)
@@ -493,7 +518,7 @@ def draw_dark_graph_background(
         if xlo is not None and not (xlo <= sc[0] <= xhi and zlo <= sc[1] <= zhi):
             continue
         ax.plot([sc[0], dc[0]], [sc[1], dc[1]],
-                color="#445566", lw=0.5, alpha=edge_alpha, zorder=1)
+                color="#aaaaaa", lw=0.5, alpha=edge_alpha, zorder=1)
 
     if xlo is not None:
         vis_coords = [
@@ -506,5 +531,5 @@ def draw_dark_graph_background(
     if vis_coords:
         arr = np.array(vis_coords)
         ax.scatter(arr[:, 0], arr[:, 1],
-                   s=4, color="#5577aa", alpha=node_alpha,
+                   s=4, color="#4477cc", alpha=node_alpha,
                    linewidths=0, zorder=2)
