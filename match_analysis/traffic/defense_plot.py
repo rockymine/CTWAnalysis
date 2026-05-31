@@ -32,6 +32,13 @@ try:
 except ImportError as exc:
     raise ImportError("networkx required for defense_plot") from exc
 
+from common.visualization import (
+    DARK_THEME_BG as _BG_COLOR,
+    style_dark_ax,
+    draw_dark_island_polygons,
+    draw_dark_graph_background,
+)
+
 # ---------------------------------------------------------------------------
 # Activity category IDs (0-indexed, from materials.txt)
 # ---------------------------------------------------------------------------
@@ -76,8 +83,7 @@ _ACT_LABELS: dict[str, str] = {
     "other": "Other / empty",
 }
 
-_BG_COLOR = "#0d0d18"
-_FIGSIZE  = (18, 11)
+_FIGSIZE = (18, 11)
 
 
 def classify_defense_activity(item_id: int) -> str:
@@ -100,52 +106,6 @@ def classify_defense_activity(item_id: int) -> str:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
-
-def _style_ax(ax, title: str = "", xlabel: str = "", ylabel: str = "") -> None:
-    ax.set_facecolor(_BG_COLOR)
-    ax.tick_params(colors="#888888", labelsize=7)
-    for spine in ax.spines.values():
-        spine.set_edgecolor("#333344")
-    if title:
-        ax.set_title(title, color="#cccccc", fontsize=8, pad=5)
-    if xlabel:
-        ax.set_xlabel(xlabel, color="#aaaaaa", fontsize=7)
-    if ylabel:
-        ax.set_ylabel(ylabel, color="#aaaaaa", fontsize=7)
-
-
-def _draw_graph_background(
-    ax,
-    node_info: dict,
-    G_full: "nx.Graph",
-    xlim: tuple[float, float],
-    zlim: tuple[float, float],
-    node_alpha: float = 0.12,
-    edge_alpha: float = 0.08,
-) -> None:
-    """Draw faint traffic graph within the given bounds."""
-    xlo, xhi = xlim
-    zlo, zhi = zlim
-    for u, v in G_full.edges():
-        sn = node_info.get(u)
-        dn = node_info.get(v)
-        if sn is None or dn is None:
-            continue
-        sc, dc = sn["coords"], dn["coords"]
-        if not (xlo <= sc[0] <= xhi and zlo <= sc[1] <= zhi):
-            continue
-        ax.plot([sc[0], dc[0]], [sc[1], dc[1]],
-                color="#445566", lw=0.5, alpha=edge_alpha, zorder=1)
-    # Nodes
-    vis_coords = [
-        n["coords"] for n in node_info.values()
-        if xlo <= n["coords"][0] <= xhi and zlo <= n["coords"][1] <= zhi
-    ]
-    if vis_coords:
-        arr = np.array(vis_coords)
-        ax.scatter(arr[:, 0], arr[:, 1], s=3, color="#5577aa",
-                   alpha=node_alpha, linewidths=0, zorder=2)
-
 
 def _legend_swatches(categories: list[str]) -> list[Patch]:
     return [
@@ -225,36 +185,16 @@ def plot_defense_overview(
     ax_map.set_xlim(xmin, xmax)
     ax_map.set_ylim(zmin, zmax)
     ax_map.invert_yaxis()
-    _style_ax(ax_map,
-              title=f"Spatial map — segment 0 near wool {wool_node_id} ({team} team)",
-              xlabel="x", ylabel="z")
+    style_dark_ax(ax_map,
+                  title=f"Spatial map — segment 0 near wool {wool_node_id} ({team} team)",
+                  xlabel="x", ylabel="z")
 
-    # Island backgrounds
     if map_context:
-        _MC_COLORS = {
-            "dark_red": "#AA0000", "red": "#FF5555", "gold": "#FFAA00",
-            "yellow": "#DDDD00", "dark_green": "#00AA00", "green": "#55FF55",
-            "aqua": "#55FFFF", "dark_aqua": "#00AAAA", "blue": "#5555FF",
-            "light_purple": "#FF55FF", "white": "#FFFFFF", "gray": "#AAAAAA",
-        }
-        team_hex: dict[str, str] = {}
-        for t in map_context.get("teams", []):
-            team_hex[t.get("id", "")] = _MC_COLORS.get(t.get("color", ""), "#3a3a5a")
-        from matplotlib.patches import Polygon as MplPolygon
-        for isl in map_context.get("islands", []):
-            pts = isl.get("simplified_polygon", {}).get("exterior", [])
-            if not pts:
-                continue
-            isl_t = isl.get("team")
-            fc    = team_hex.get(isl_t, "#2a2a4a")
-            alpha = 0.10 if isl_t else 0.05
-            patch = MplPolygon(np.array(pts), closed=True,
-                               facecolor=fc, edgecolor="#555555",
-                               linewidth=0.3, alpha=alpha, zorder=0)
-            ax_map.add_patch(patch)
+        draw_dark_island_polygons(ax_map, map_context, alpha=0.10)
 
-    _draw_graph_background(ax_map, node_info, G_full,
-                           (xmin, xmax), (zmin, zmax))
+    draw_dark_graph_background(ax_map, node_info, G_full,
+                               node_alpha=0.12, edge_alpha=0.08,
+                               xlim=(xmin, xmax), zlim=(zmin, zmax))
 
     # Dijkstra distance rings (approximate as circles; valid at short range)
     for ring_d, ring_lw in [(10, 0.7), (20, 0.7), (30, 1.0), (50, 0.5)]:
@@ -296,10 +236,10 @@ def plot_defense_overview(
 
     ax_section.set_xlim(-1, 52)
     ax_section.set_ylim(y_min_plot, y_max_plot)
-    _style_ax(ax_section,
-              title="Lane section view  (distance from wool × elevation)",
-              xlabel="Dijkstra distance from wool node (blocks)",
-              ylabel="Elevation (y)")
+    style_dark_ax(ax_section,
+                  title="Lane section view  (distance from wool × elevation)",
+                  xlabel="Dijkstra distance from wool node (blocks)",
+                  ylabel="Elevation (y)")
 
     # Reference lines
     for ref_y, ref_label, ref_col in [

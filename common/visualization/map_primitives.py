@@ -17,7 +17,10 @@ import numpy as np
 import pandas as pd
 from matplotlib.collections import PolyCollection
 
-from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
+from .colors import (
+    NEUTRAL_COLOR,
+    DARK_THEME_BG, MINECRAFT_COLORS, mc_color,
+)
 from .block_colors import block_color
 from common.geometry import blocks_to_unit_squares
 
@@ -54,7 +57,6 @@ class POIStyle:
     spawn_edge_width: float = 0.6
     wool_marker: str = '*'
     wool_size: float = 150
-    wool_color: str = WOOL_COLOR
     wool_edge_color: str = 'black'
     wool_edge_width: float = 0.6
     zorder: int = 8
@@ -68,13 +70,6 @@ class BlockBaseStyle:
     edgecolor: str = '#9ca3af'
     linewidth: float = 0.3
     zorder: int = 0
-
-
-# Island-id → color mapping for block base layer.
-# Matches the team colors used elsewhere; neutral islands get gray tones.
-_ISLAND_BLOCK_COLORS = {
-    0: '#d1d5db',    # unassigned / background
-}
 
 
 # ── Drawing functions ────────────────────────────────────────────────
@@ -144,12 +139,17 @@ def draw_block_base(
 
     df = pd.read_parquet(parquet_path, columns=['world_x', 'world_z', 'island_id'])
 
-    # Build island_id → color mapping from map_context team data
-    color_map = dict(_ISLAND_BLOCK_COLORS)
+    # Build team_id → hex from map_context.teams (reliable source for any team naming)
+    team_hex = {
+        t['id']: mc_color(t.get('color', ''), NEUTRAL_COLOR)
+        for t in map_context.get('teams', [])
+    }
+
+    # Build island_id → color mapping
+    color_map: Dict[int, str] = {0: '#d1d5db'}  # island_id 0 = unassigned/background
     for island in map_context.get('islands', []):
         iid = island['id']
-        team = island.get('team')
-        color_map[iid] = TEAM_COLORS.get(team, NEUTRAL_COLOR)
+        color_map[iid] = team_hex.get(island.get('team'), NEUTRAL_COLOR)
 
     # Build 1×1 unit square vertices for each block
     xs = df['world_x'].values
@@ -173,24 +173,22 @@ def draw_island_outlines(
     ax,
     map_context: dict,
     style: Optional[IslandOutlineStyle] = None,
-    team_colors: Optional[Dict[str, str]] = None,
-    neutral_color: Optional[str] = None,
 ) -> None:
-    """Draw island polygon outlines (exterior + holes) with team colors."""
+    """Draw island polygon outlines (exterior + holes) colored by team."""
     if style is None:
         style = IslandOutlineStyle()
-    if team_colors is None:
-        team_colors = TEAM_COLORS
-    if neutral_color is None:
-        neutral_color = NEUTRAL_COLOR
+
+    team_hex = {
+        t['id']: mc_color(t.get('color', ''), NEUTRAL_COLOR)
+        for t in map_context.get('teams', [])
+    }
 
     for island in map_context.get('islands', []):
         poly = island.get('simplified_polygon')
         if poly is None:
             continue
 
-        team = island.get('team')
-        color = team_colors.get(team, neutral_color)
+        color = team_hex.get(island.get('team'), NEUTRAL_COLOR)
 
         exterior = np.array(poly['exterior'])
         if len(exterior) < 3:
@@ -228,7 +226,7 @@ def draw_pois(
 
     for spawn in poi_assignments.get('spawns', []):
         team_color = spawn.get('team_color', '')
-        color = SPAWN_COLORS.get(team_color, SPAWN_COLORS.get('red'))
+        color = mc_color(team_color, mc_color('red'))
         ax.scatter(
             spawn['x'], spawn['z'],
             marker=style.spawn_marker,
@@ -244,7 +242,7 @@ def draw_pois(
             wool['x'], wool['z'],
             marker=style.wool_marker,
             s=style.wool_size,
-            c=style.wool_color,
+            c=mc_color(wool.get('wool_color', ''), NEUTRAL_COLOR),
             edgecolors=style.wool_edge_color,
             linewidths=style.wool_edge_width,
             zorder=style.zorder,
@@ -333,10 +331,13 @@ def map_base_legend_handles(
     has_build_region: bool = True,
     island_style: Optional[IslandOutlineStyle] = None,
     poi_style: Optional[POIStyle] = None,
+    map_context: Optional[dict] = None,
 ) -> list:
-    """Return standard legend handles for the map base layers.
+    """Return legend handles for the map base layers.
 
-    Consumers can extend this list with their own domain-specific handles.
+    When map_context is provided, team island and spawn entries are generated
+    from the actual map data. Consumers can extend the returned list with their
+    own domain-specific handles.
     """
     if island_style is None:
         island_style = IslandOutlineStyle()
@@ -345,25 +346,165 @@ def map_base_legend_handles(
 
     handles = []
     if has_build_region:
+        _br = BuildRegionStyle()
         handles.append(
-            mpatches.Patch(facecolor='#22c55e', alpha=0.15, label='Buildable void')
+            mpatches.Patch(facecolor=_br.facecolor, alpha=_br.fill_alpha, label='Buildable void')
         )
-    handles += [
-        plt.Line2D([0], [0], color=TEAM_COLORS['blue'],
-                   linewidth=island_style.exterior_linewidth, label='Blue team island'),
-        plt.Line2D([0], [0], color=TEAM_COLORS['red'],
-                   linewidth=island_style.exterior_linewidth, label='Red team island'),
-        plt.Line2D([0], [0], color=NEUTRAL_COLOR,
-                   linewidth=island_style.exterior_linewidth, label='Neutral island'),
-        plt.Line2D([0], [0], marker=poi_style.spawn_marker, color='w',
-                   markerfacecolor=SPAWN_COLORS['blue'],
-                   markersize=12, label='Spawn (blue)'),
-        plt.Line2D([0], [0], marker=poi_style.spawn_marker, color='w',
-                   markerfacecolor=SPAWN_COLORS['red'],
-                   markersize=12, label='Spawn (red)'),
-        plt.Line2D([0], [0], marker=poi_style.wool_marker, color='w',
-                   markerfacecolor=WOOL_COLOR,
-                   markeredgecolor='black',
-                   markersize=8, label='Wool'),
-    ]
+
+    if map_context:
+        # Island outline entry per team
+        for team in map_context.get('teams', []):
+            color = mc_color(team.get('color', ''), NEUTRAL_COLOR)
+            label = (team.get('name') or team.get('id', 'Unknown')).title()
+            handles.append(plt.Line2D(
+                [0], [0], color=color,
+                linewidth=island_style.exterior_linewidth,
+                label=f'{label} island',
+            ))
+        handles.append(plt.Line2D(
+            [0], [0], color=NEUTRAL_COLOR,
+            linewidth=island_style.exterior_linewidth, label='Neutral island',
+        ))
+
+        # One spawn entry per distinct team_color in the data
+        seen: Dict[str, str] = {}  # team_color → team name
+        for spawn in map_context.get('poi_assignments', {}).get('spawns', []):
+            tc = spawn.get('team_color', '')
+            if tc and tc not in seen:
+                team_name = (spawn.get('team') or tc).replace('-team', '').replace('_team', '').title()
+                seen[tc] = team_name
+        for tc, team_name in seen.items():
+            handles.append(plt.Line2D(
+                [0], [0], marker=poi_style.spawn_marker, color='w',
+                markerfacecolor=mc_color(tc), markersize=12,
+                label=f'Spawn ({team_name})',
+            ))
+    else:
+        handles += [
+            plt.Line2D([0], [0], color=mc_color('blue'),
+                       linewidth=island_style.exterior_linewidth, label='Blue island'),
+            plt.Line2D([0], [0], color=mc_color('red'),
+                       linewidth=island_style.exterior_linewidth, label='Red island'),
+            plt.Line2D([0], [0], color=NEUTRAL_COLOR,
+                       linewidth=island_style.exterior_linewidth, label='Neutral island'),
+        ]
+
+    # Wool objectives — one generic entry; actual markers are colored per wool_color
+    handles.append(plt.Line2D(
+        [0], [0], marker=poi_style.wool_marker, color='w',
+        markerfacecolor=mc_color('yellow'), markeredgecolor='black',
+        markersize=8, label='Wool objective',
+    ))
     return handles
+
+
+# ── Dark-theme helpers (used by traffic / graph visualizations) ──────────────
+
+
+def style_dark_ax(
+    ax,
+    xmin: Optional[float] = None,
+    xmax: Optional[float] = None,
+    zmin: Optional[float] = None,
+    zmax: Optional[float] = None,
+    title: str = "",
+    xlabel: str = "",
+    ylabel: str = "",
+) -> None:
+    """Apply shared dark-theme styling to an axis.
+
+    When xmin/xmax/zmin/zmax are provided, sets axis limits with Z inverted
+    (north-up convention) and enforces equal aspect ratio.
+    """
+    ax.set_facecolor(DARK_THEME_BG)
+    if xmin is not None:
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(zmax, zmin)
+        ax.set_aspect("equal")
+    ax.tick_params(colors="#555555", labelsize=6)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#333333")
+    if title:
+        ax.set_title(title, color="#cccccc", fontsize=8, pad=4)
+    if xlabel:
+        ax.set_xlabel(xlabel, color="#aaaaaa", fontsize=7)
+    if ylabel:
+        ax.set_ylabel(ylabel, color="#aaaaaa", fontsize=7)
+
+
+def draw_dark_island_polygons(
+    ax,
+    map_context: dict,
+    alpha: float = 0.12,
+    fallback_color: str = "#3a3a5a",
+) -> None:
+    """Draw island polygon fills using Minecraft team colors on a dark background."""
+    import matplotlib.patches as _mpatches
+
+    team_hex: Dict[str, str] = {}
+    for team in map_context.get("teams", []):
+        tid = team.get("id", "")
+        raw = team.get("color", "")
+        team_hex[tid] = mc_color(raw, fallback_color)
+
+    for isl in map_context.get("islands", []):
+        pts = (isl.get("simplified_polygon") or {}).get("exterior", [])
+        if not pts:
+            continue
+        isl_t = isl.get("team")
+        fc = team_hex.get(isl_t, fallback_color)
+        a = alpha if isl_t else alpha * 0.5
+        patch = _mpatches.Polygon(
+            np.array(pts), closed=True,
+            facecolor=fc, edgecolor=fc,
+            linewidth=0.3, alpha=a, zorder=0,
+        )
+        ax.add_patch(patch)
+
+
+def draw_dark_graph_background(
+    ax,
+    node_info: dict,
+    G_full,
+    map_context: Optional[dict] = None,
+    node_alpha: float = 0.14,
+    edge_alpha: float = 0.14,
+    xlim: Optional[tuple] = None,
+    zlim: Optional[tuple] = None,
+) -> None:
+    """Draw a traffic graph as a faint background context layer (dark theme).
+
+    Island polygon fills are drawn first if map_context is provided.
+    When xlim/zlim are given, only nodes/edges whose source falls within the
+    bounding box are rendered — useful for zoomed-in panels.
+    """
+    if map_context:
+        draw_dark_island_polygons(ax, map_context)
+
+    xlo, xhi = xlim if xlim else (None, None)
+    zlo, zhi = zlim if zlim else (None, None)
+
+    for u, v in G_full.edges():
+        sn = node_info.get(u)
+        dn = node_info.get(v)
+        if sn is None or dn is None:
+            continue
+        sc, dc = sn["coords"], dn["coords"]
+        if xlo is not None and not (xlo <= sc[0] <= xhi and zlo <= sc[1] <= zhi):
+            continue
+        ax.plot([sc[0], dc[0]], [sc[1], dc[1]],
+                color="#445566", lw=0.5, alpha=edge_alpha, zorder=1)
+
+    if xlo is not None:
+        vis_coords = [
+            n["coords"] for n in node_info.values()
+            if xlo <= n["coords"][0] <= xhi and zlo <= n["coords"][1] <= zhi
+        ]
+    else:
+        vis_coords = [n["coords"] for n in node_info.values()]
+
+    if vis_coords:
+        arr = np.array(vis_coords)
+        ax.scatter(arr[:, 0], arr[:, 1],
+                   s=4, color="#5577aa", alpha=node_alpha,
+                   linewidths=0, zorder=2)

@@ -12,12 +12,7 @@ from pathlib import Path
 import json
 import pandas as pd
 
-WOOL_COLORS: dict[int, str] = {
-    0: 'white',      1: 'orange',     2: 'magenta',    3: 'light_blue',
-    4: 'yellow',     5: 'lime',       6: 'pink',        7: 'gray',
-    8: 'light_gray', 9: 'cyan',       10: 'purple',    11: 'blue',
-    12: 'brown',     13: 'green',     14: 'red',        15: 'black',
-}
+from common.wool import WOOL_DAMAGE_TO_COLOR as WOOL_COLORS
 
 
 def query_wool_in_region(

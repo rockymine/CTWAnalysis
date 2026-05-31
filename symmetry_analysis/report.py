@@ -348,7 +348,7 @@ def _generate_symmetry_plot(map_name: str, root: Path, save_path: Path) -> None:
                 )
 
         ax_r.set_title(f'Islands ({n_islands}){symmetry_desc}', fontsize=8)
-        ax_r.legend(handles=map_base_legend_handles(has_build_region=has_build),
+        ax_r.legend(handles=map_base_legend_handles(has_build_region=has_build, map_context=ctx),
                     loc='upper right', fontsize=5.5, framealpha=0.8, ncol=2)
     else:
         ax_r.text(0.5, 0.5, 'No map_context.json', transform=ax_r.transAxes,

@@ -19,6 +19,7 @@ from typing import Optional
 logger = logging.getLogger('ctw')
 
 from common.visualization.map_primitives import draw_build_region, draw_island_outlines, draw_pois
+from common.visualization.colors import mc_color, NEUTRAL_COLOR
 from .datatypes import IslandSkeleton, NodeAnnotation
 from common.geometry import (
     raster_to_world_path, raster_to_world_point,
@@ -391,26 +392,11 @@ def generate_skeleton_report(
     logger.debug(f"  Skeleton report: {output_path}")
 
 
-# Minecraft color name -> matplotlib color mapping
-_MC_COLORS = {
-    'dark red': '#AA0000', 'red': '#FF5555',
-    'dark blue': '#0000AA', 'blue': '#5555FF',
-    'dark green': '#00AA00', 'green': '#55FF55',
-    'dark aqua': '#00AAAA', 'aqua': '#55FFFF',
-    'gold': '#FFAA00', 'yellow': '#FFFF55',
-    'dark purple': '#AA00AA', 'light purple': '#FF55FF',
-    'white': '#FFFFFF', 'gray': '#AAAAAA',
-    'dark gray': '#555555', 'black': '#000000',
-    'pink': '#FF69B4', 'magenta': '#FF00FF',
-    'lime': '#00FF00', 'orange': '#FFA500',
-}
-
-
-def _mc_color(color_name: str, fallback: str = 'gray') -> str:
+def _mc_color(color_name: str, fallback: str = NEUTRAL_COLOR) -> str:
     """Convert a Minecraft color name to a matplotlib color string."""
     if not color_name:
         return fallback
-    return _MC_COLORS.get(color_name.lower(), fallback)
+    return mc_color(color_name, fallback)
 
 
 def plot_island_poi_debug(

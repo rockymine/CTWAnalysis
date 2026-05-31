@@ -27,6 +27,8 @@ from typing import Any, Optional
 from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
+from common.wool import WOOL_DAMAGE_TO_COLOR, WOOL_COLOR_TO_DAMAGE, normalize_wool_color
+
 logger = logging.getLogger('ctw')
 
 # Zone labels (ordered by classification priority)
@@ -49,36 +51,6 @@ _SPAWN_EXCLUDE = re.compile(r'wool.spawn|spawn.point|spawn.kit', re.IGNORECASE)
 # than named regions (last-resort fallback for maps with no usable regions).
 _LOCATION_FALLBACK_RADIUS = 20.0
 
-# Minecraft 1.8.9 wool damage value → wool color name (normalised to lower-case with spaces).
-# Used to match <spawner> item damage values to wool objective colors.
-_WOOL_DAMAGE_TO_COLOR: dict[int, str] = {
-    0:  'white',
-    1:  'orange',
-    2:  'magenta',
-    3:  'light blue',
-    4:  'yellow',
-    5:  'lime',
-    6:  'pink',
-    7:  'gray',
-    8:  'silver',      # "light gray" in modern naming; stored as "silver" in older PGM maps
-    9:  'cyan',
-    10: 'purple',
-    11: 'blue',
-    12: 'brown',
-    13: 'green',
-    14: 'red',
-    15: 'black',
-}
-
-# Reverse mapping: normalised color name → damage value.
-# Handles both "light blue" (space) and "light_blue" (underscore) variants.
-_WOOL_COLOR_TO_DAMAGE: dict[str, int] = {}
-for _dmg, _name in _WOOL_DAMAGE_TO_COLOR.items():
-    _WOOL_COLOR_TO_DAMAGE[_name] = _dmg
-    _WOOL_COLOR_TO_DAMAGE[_name.replace(' ', '_')] = _dmg
-# Extra aliases seen in the wild
-_WOOL_COLOR_TO_DAMAGE['light gray'] = 8
-_WOOL_COLOR_TO_DAMAGE['light_gray'] = 8
 
 
 def _nbt_or_val(v: Any) -> Any:
@@ -296,11 +268,9 @@ def assign_wool_room_regions(
             if material not in wool_materials:
                 continue
             damage = int(item.get('damage', 0))
-            color_name = _WOOL_DAMAGE_TO_COLOR.get(damage)
+            color_name = WOOL_DAMAGE_TO_COLOR.get(damage)
             if color_name and color_name not in spawner_color_to_region:
                 spawner_color_to_region[color_name] = player_region
-                # Also register underscore variant
-                spawner_color_to_region[color_name.replace(' ', '_')] = player_region
 
     # ── Pass 2: build colour → chest coordinates mapping ──────────────────────
     # Keyed by wool damage value; value is list of (x, z) chest positions.
@@ -347,7 +317,7 @@ def assign_wool_room_regions(
 
         # Pass 2: chest coordinates
         if region_id is None:
-            damage_val = _WOOL_COLOR_TO_DAMAGE.get(color_raw)
+            damage_val = WOOL_COLOR_TO_DAMAGE.get(normalize_wool_color(color_raw))
             if damage_val is not None:
                 chest_coords = chest_coords_by_damage.get(damage_val, [])
                 for chest_x, chest_z in chest_coords:

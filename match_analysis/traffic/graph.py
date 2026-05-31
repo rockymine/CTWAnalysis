@@ -25,6 +25,7 @@ import pandas as pd
 
 from map_analysis.grid_base import GridBase, _cell_origin
 from match_analysis.traffic.snapping import bresenham_cells
+from common.visualization import mc_color as _mc_color, NEUTRAL_COLOR as _NEUTRAL_COLOR
 
 logger = logging.getLogger("ctw")
 
@@ -758,7 +759,7 @@ def plot_traffic_graph(
         for team in map_context.get("teams", []):
             tid = team.get("id", "")
             raw = team.get("color", "")
-            team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#8899aa")
+            team_hex[tid] = _mc_color(raw, _NEUTRAL_COLOR)
 
         def _poly_path(exterior: list, holes: list) -> Optional[MplPath]:
             """Build a matplotlib Path for a polygon with optional holes."""
@@ -788,7 +789,7 @@ def plot_traffic_graph(
             if path is None:
                 continue
             isl_t = isl.get("team")
-            fc    = team_hex.get(isl_t, "#8899aa")
+            fc    = team_hex.get(isl_t, _NEUTRAL_COLOR)
             alpha = 0.30 if isl_t else 0.15
             ax.add_patch(PathPatch(path, facecolor=fc, edgecolor=fc,
                                    linewidth=0.3, alpha=alpha, zorder=0))
@@ -823,7 +824,7 @@ def plot_traffic_graph(
         occ    = n["occupation"]
         s      = 8 + 100 * occ / max_occ
         if n.get("poi_type") == "wool":
-            wc = _WOOL_COLORS.get(n.get("poi_color", ""), "#555555")
+            wc = _mc_color(n.get("poi_color", ""), "#555555")
             ax.scatter(coords[0], coords[1], s=s * 1.5, color=wc,
                        marker="D", edgecolors="#333333", linewidths=0.8, zorder=5)
             ax.annotate(n.get("poi_color", "?"), (coords[0], coords[1]),
@@ -879,33 +880,4 @@ def plot_traffic_graph(
     logger.info("Saved traffic graph plot → %s", output_path)
 
 
-# ---------------------------------------------------------------------------
-# Colour palettes
-# ---------------------------------------------------------------------------
 
-_WOOL_COLORS: dict[str, str] = {
-    "cyan": "#00BBCC", "lime": "#44CC44", "orange": "#FFA500",
-    "yellow": "#DDDD00", "red": "#FF5555", "blue": "#5555FF",
-    "white": "#CCCCCC", "purple": "#AA00AA", "green": "#55FF55",
-    "magenta": "#FF55FF", "pink": "#FF99CC", "gray": "#888888",
-    "light_gray": "#BBBBBB", "brown": "#AA7733", "black": "#333333",
-}
-
-_MINECRAFT_COLORS: dict[str, str] = {
-    "dark_red":    "#AA0000", "dark red":    "#AA0000",
-    "red":         "#FF5555",
-    "gold":        "#FFAA00",
-    "yellow":      "#DDDD00",
-    "dark_green":  "#00AA00", "dark green":  "#00AA00",
-    "green":       "#55FF55",
-    "aqua":        "#55FFFF",
-    "dark_aqua":   "#00AAAA", "dark aqua":   "#00AAAA",
-    "dark_blue":   "#0000AA", "dark blue":   "#0000AA",
-    "blue":        "#5555FF",
-    "light_purple":"#FF55FF", "light purple":"#FF55FF",
-    "dark_purple": "#AA00AA", "dark purple": "#AA00AA",
-    "white":       "#FFFFFF",
-    "gray":        "#AAAAAA",
-    "dark_gray":   "#555555", "dark gray":   "#555555",
-    "black":       "#000000",
-}

@@ -41,35 +41,16 @@ except ImportError:
     _SKLEARN_AVAILABLE = False
 
 from match_analysis.traffic.snapping import bresenham_cells
-
-# ---------------------------------------------------------------------------
-# Colour palettes (copied from traffic_graph.py — module-private there)
-# ---------------------------------------------------------------------------
-
-_MINECRAFT_COLORS: dict[str, str] = {
-    "dark_red":    "#AA0000", "dark red":    "#AA0000",
-    "red":         "#FF5555",
-    "gold":        "#FFAA00",
-    "yellow":      "#DDDD00",
-    "dark_green":  "#00AA00", "dark green":  "#00AA00",
-    "green":       "#55FF55",
-    "aqua":        "#55FFFF",
-    "dark_aqua":   "#00AAAA", "dark aqua":   "#00AAAA",
-    "dark_blue":   "#0000AA", "dark blue":   "#0000AA",
-    "blue":        "#5555FF",
-    "light_purple":"#FF55FF", "light purple":"#FF55FF",
-    "dark_purple": "#AA00AA", "dark purple": "#AA00AA",
-    "white":       "#FFFFFF",
-    "gray":        "#AAAAAA",
-    "dark_gray":   "#555555", "dark gray":   "#555555",
-    "black":       "#000000",
-}
+from common.visualization import (
+    DARK_THEME_BG as _BG_COLOR,
+    style_dark_ax as _style_ax,
+    draw_dark_island_polygons,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_BG_COLOR   = "#0d0d18"
 _GRID_COLOR = "#222233"
 
 logger = logging.getLogger("ctw")
@@ -384,53 +365,6 @@ from map_analysis.grid_base import _adaptive_grid_size  # noqa: F401, E402
 # ---------------------------------------------------------------------------
 
 
-def _style_ax(
-    ax: plt.Axes,
-    xmin: float,
-    xmax: float,
-    zmin: float,
-    zmax: float,
-    title: str = "",
-) -> None:
-    """Apply shared dark-theme axis styling."""
-    ax.set_facecolor(_BG_COLOR)
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(zmax, zmin)  # Z inverted: north-up
-    ax.set_aspect("equal")
-    ax.set_xlabel("World X", color="#aaaaaa", fontsize=7)
-    ax.set_ylabel("World Z", color="#aaaaaa", fontsize=7)
-    ax.tick_params(colors="#555555", labelsize=6)
-    for spine in ax.spines.values():
-        spine.set_edgecolor("#333333")
-    if title:
-        ax.set_title(title, color="#cccccc", fontsize=8, pad=4)
-
-
-def _draw_island_polygons(ax: plt.Axes, map_context: dict, alpha: float = 0.15) -> None:
-    """Draw island polygon fills using team colours."""
-    from matplotlib.patches import Polygon as MplPolygon
-
-    team_hex: dict[str, str] = {}
-    for team in map_context.get("teams", []):
-        tid = team.get("id", "")
-        raw = team.get("color", "")
-        team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
-
-    for isl in map_context.get("islands", []):
-        pts = (isl.get("simplified_polygon") or {}).get("exterior", [])
-        if not pts:
-            continue
-        isl_t = isl.get("team")
-        fc    = team_hex.get(isl_t, "#3a3a5a")
-        a     = alpha if isl_t else alpha * 0.5
-        patch = MplPolygon(
-            np.array(pts), closed=True,
-            facecolor=fc, edgecolor=fc,
-            linewidth=0.3, alpha=a, zorder=0,
-        )
-        ax.add_patch(patch)
-
-
 def _draw_graph_panel(
     ax: plt.Axes,
     nodes: list[dict],
@@ -446,7 +380,7 @@ def _draw_graph_panel(
     _style_ax(ax, xmin, xmax, zmin, zmax, title)
 
     if map_context:
-        _draw_island_polygons(ax, map_context)
+        draw_dark_island_polygons(ax, map_context)
 
     if not nodes:
         ax.text(
@@ -602,7 +536,7 @@ def plot_traffic_strategy_comparison(
         f"A — Raw positions\n(all 2s-logged matches, n={n_pos:,})",
     )
     if map_context:
-        _draw_island_polygons(ax_a, map_context)
+        draw_dark_island_polygons(ax_a, map_context)
 
     if n_pos > 0:
         xs_all = pos_df["x"].values.astype(float)
@@ -674,7 +608,7 @@ def plot_traffic_strategy_comparison(
         _style_ax(ax_e, xmin, xmax, zmin, zmax,
                   "E — Voronoi (k-means)\nscikit-learn not available")
         if map_context:
-            _draw_island_polygons(ax_e, map_context)
+            draw_dark_island_polygons(ax_e, map_context)
         ax_e.text(
             0.5, 0.5,
             "scikit-learn not available\n(pip install scikit-learn)",

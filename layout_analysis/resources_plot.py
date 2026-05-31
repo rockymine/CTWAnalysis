@@ -156,7 +156,7 @@ def _plot_resources_figure(
                 mpatches.Patch(facecolor=color, edgecolor='black', label=label)
             )
 
-    base_handles = map_base_legend_handles(has_build_region=has_build)
+    base_handles = map_base_legend_handles(has_build_region=has_build, map_context=map_context)
     all_handles = base_handles + zone_handles + res_handles + chest_handles
     if all_handles:
         ax.legend(handles=all_handles, loc='upper right', fontsize=7,

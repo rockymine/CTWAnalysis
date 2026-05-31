@@ -1,6 +1,11 @@
 """Shared visualization primitives for CTW map analysis."""
 
-from .colors import TEAM_COLORS, NEUTRAL_COLOR, WOOL_COLOR, SPAWN_COLORS
+from .colors import (
+    NEUTRAL_COLOR,
+    DARK_THEME_BG, MINECRAFT_COLORS,
+    mc_color, mc_color_key,
+    distance_to_rgba,
+)
 from .block_colors import block_color
 from .map_primitives import (
     BlockBaseStyle,
@@ -14,4 +19,7 @@ from .map_primitives import (
     draw_pois,
     draw_map_base,
     map_base_legend_handles,
+    style_dark_ax,
+    draw_dark_island_polygons,
+    draw_dark_graph_background,
 )

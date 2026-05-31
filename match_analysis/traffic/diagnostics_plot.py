@@ -42,11 +42,17 @@ try:
 except ImportError as exc:
     raise ImportError("networkx is required for traffic_diagnostics_plot") from exc
 
+from common.visualization import (
+    DARK_THEME_BG as _BG_COLOR,
+    style_dark_ax as _style_ax,
+    draw_dark_island_polygons,
+    draw_dark_graph_background as _draw_graph_background,
+)
+
 # ---------------------------------------------------------------------------
 # Colour / style constants (match existing dark-theme traffic_graph.py style)
 # ---------------------------------------------------------------------------
 
-_BG_COLOR      = "#0d0d18"
 _EDGE_ALPHA    = 0.14       # faint background graph edges
 _NODE_ALPHA    = 0.14       # faint background graph nodes
 _OBS_CMAP      = cm.get_cmap("plasma")   # temporal colouring for observed data
@@ -109,26 +115,6 @@ def _item_category_colors(held_item_series: list[int]) -> list[str]:
     return [_ITEM_CAT_COLORS[_categorise_item(i)] for i in held_item_series]
 
 
-_MINECRAFT_COLORS: dict[str, str] = {
-    "dark_red":    "#AA0000", "dark red":    "#AA0000",
-    "red":         "#FF5555",
-    "gold":        "#FFAA00",
-    "yellow":      "#DDDD00",
-    "dark_green":  "#00AA00", "dark green":  "#00AA00",
-    "green":       "#55FF55",
-    "aqua":        "#55FFFF",
-    "dark_aqua":   "#00AAAA", "dark aqua":   "#00AAAA",
-    "dark_blue":   "#0000AA", "dark blue":   "#0000AA",
-    "blue":        "#5555FF",
-    "light_purple":"#FF55FF", "light purple":"#FF55FF",
-    "dark_purple": "#AA00AA", "dark purple": "#AA00AA",
-    "white":       "#FFFFFF",
-    "gray":        "#AAAAAA",
-    "dark_gray":   "#555555", "dark gray":   "#555555",
-    "black":       "#000000",
-}
-
-
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -138,69 +124,6 @@ def _map_bounds(node_info: dict[int, dict], pad: int = _MAP_PAD) -> tuple[float,
     xs = [n["coords"][0] for n in node_info.values()]
     zs = [n["coords"][1] for n in node_info.values()]
     return min(xs) - pad, max(xs) + pad, min(zs) - pad, max(zs) + pad
-
-
-def _style_ax(ax, xmin: float, xmax: float, zmin: float, zmax: float, title: str = "") -> None:
-    """Apply shared dark-theme axis styling and set map bounds."""
-    ax.set_facecolor(_BG_COLOR)
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(zmax, zmin)   # Z inverted: north-up
-    ax.set_aspect("equal")
-    ax.tick_params(colors="#444444", labelsize=6)
-    for spine in ax.spines.values():
-        spine.set_edgecolor("#333333")
-    if title:
-        ax.set_title(title, color="#cccccc", fontsize=8, pad=4)
-
-
-def _draw_graph_background(
-    ax,
-    node_info: dict[int, dict],
-    G_full: nx.Graph,
-    map_context: Optional[dict] = None,
-    node_alpha: float = _NODE_ALPHA,
-    edge_alpha: float = _EDGE_ALPHA,
-) -> None:
-    """Draw the full traffic graph as a faint background context layer.
-
-    Edges are drawn first (thinner lines), then nodes on top.
-    Island polygons are drawn if map_context is provided.
-    """
-    # Island polygon backgrounds
-    if map_context:
-        team_hex: dict[str, str] = {}
-        for team in map_context.get("teams", []):
-            tid = team.get("id", "")
-            raw = team.get("color", "")
-            team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
-        for isl in map_context.get("islands", []):
-            pts = isl.get("simplified_polygon", {}).get("exterior", [])
-            if not pts:
-                continue
-            isl_t = isl.get("team")
-            fc = team_hex.get(isl_t, "#2a2a4a")
-            alpha = 0.12 if isl_t else 0.06
-            from matplotlib.patches import Polygon as MplPolygon
-            patch = MplPolygon(np.array(pts), closed=True,
-                               facecolor=fc, edgecolor=fc,
-                               linewidth=0.2, alpha=alpha, zorder=0)
-            ax.add_patch(patch)
-
-    # Edges
-    for u, v, data in G_full.edges(data=True):
-        sn = node_info.get(u)
-        dn = node_info.get(v)
-        if sn is None or dn is None:
-            continue
-        sc, dc = sn["coords"], dn["coords"]
-        ax.plot([sc[0], dc[0]], [sc[1], dc[1]],
-                color="#445566", lw=0.5, alpha=edge_alpha, zorder=1)
-
-    # Nodes (tiny dots)
-    coords = np.array([n["coords"] for n in node_info.values()])
-    ax.scatter(coords[:, 0], coords[:, 1],
-               s=4, color="#5577aa", alpha=node_alpha,
-               linewidths=0, zorder=2)
 
 
 def _temporal_colors(n: int) -> np.ndarray:
@@ -402,25 +325,8 @@ def plot_life_segment_diagnostic(
     # ── Panel A — raw positions only (observed, ground truth) ────────────
     _style_ax(ax_a, xmin, xmax, zmin, zmax,
               "A — Raw positions\n(observed, ground truth)")
-    ax_a.set_facecolor(_BG_COLOR)
     if map_context:
-        team_hex: dict[str, str] = {}
-        for team in map_context.get("teams", []):
-            tid = team.get("id", "")
-            raw = team.get("color", "")
-            team_hex[tid] = _MINECRAFT_COLORS.get(raw, "#3a3a5a")
-        for isl in map_context.get("islands", []):
-            pts = isl.get("simplified_polygon", {}).get("exterior", [])
-            if not pts:
-                continue
-            isl_t = isl.get("team")
-            fc    = team_hex.get(isl_t, "#2a2a4a")
-            alpha = 0.10 if isl_t else 0.05
-            from matplotlib.patches import Polygon as MplPolygon
-            patch = MplPolygon(np.array(pts), closed=True,
-                               facecolor=fc, edgecolor="#555555",
-                               linewidth=0.3, alpha=alpha, zorder=0)
-            ax_a.add_patch(patch)
+        draw_dark_island_polygons(ax_a, map_context, alpha=0.10)
     if held_item_series is not None and len(held_item_series) == len(xs):
         # Held-item category colouring — Panel A title update
         _style_ax(ax_a, xmin, xmax, zmin, zmax,

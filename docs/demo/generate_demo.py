@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ctw.common import resolve_map_folder, resolve_output_dir, ensure_match_db
+from common.visualization.colors import mc_color, NEUTRAL_COLOR
 from common.visualization.map_primitives import (
     draw_block_base,
     draw_build_region,
@@ -210,24 +211,7 @@ def gen_trace_team(map_context, match_id, player_ids, map_graph, map_folder,
 
 # ── Match processing helpers ────────────────────────────────────────────
 
-_MINECRAFT_COLORS = {
-    "dark_red": "#AA0000", "dark red": "#AA0000",
-    "red": "#FF5555",
-    "gold": "#FFAA00",
-    "yellow": "#DDDD00",
-    "dark_green": "#00AA00", "dark green": "#00AA00",
-    "green": "#55FF55",
-    "aqua": "#55FFFF",
-    "dark_aqua": "#00AAAA", "dark aqua": "#00AAAA",
-    "dark_blue": "#0000AA", "dark blue": "#0000AA",
-    "blue": "#5555FF",
-    "light_purple": "#FF55FF", "light purple": "#FF55FF",
-    "dark_purple": "#AA00AA", "dark purple": "#AA00AA",
-    "white": "#FFFFFF",
-    "gray": "#AAAAAA",
-    "dark_gray": "#555555", "dark gray": "#555555",
-    "black": "#000000",
-}
+from common.visualization.colors import mc_color
 
 
 def _get_team_colors(conn, map_id):
@@ -240,7 +224,7 @@ def _get_team_colors(conn, map_id):
     tab10_idx = 0
     for team_raw, color_raw in rows:
         team = team_raw.removesuffix("-team")
-        hex_color = _MINECRAFT_COLORS.get(color_raw)
+        hex_color = mc_color(color_raw, '') or None
         if hex_color is None:
             try:
                 hex_color = matplotlib.colors.to_hex(color_raw)
@@ -362,7 +346,7 @@ def gen_timeseries(match_id, output_path, bucket_size_s=60):
         row, col = divmod(ax_idx, ncols)
         ax = axes[row][col]
         ax2 = ax.twinx()
-        color = team_colors.get(team, "#888888")
+        color = team_colors.get(team, NEUTRAL_COLOR)
         tm = metrics[metrics["team"] == team].sort_values("bucket_mid_s")
 
         if not tm.empty:
@@ -452,13 +436,7 @@ def gen_archetype_distribution(map_slug, output_path):
         [a for a in archetype_order if a in pivot.index]
     )
 
-    team_colors_map = {
-        'red': '#FF5555', 'blue': '#5555FF', 'green': '#55FF55',
-        'yellow': '#DDDD00', 'purple': '#AA00AA', 'aqua': '#55FFFF',
-    }
-    bar_colors = [
-        team_colors_map.get(t, '#AAAAAA') for t in pivot.columns
-    ]
+    bar_colors = [mc_color(t, NEUTRAL_COLOR) for t in pivot.columns]
 
     fig, ax = plt.subplots(figsize=(10, 5))
     pivot.plot(kind='bar', ax=ax, color=bar_colors, edgecolor='white',

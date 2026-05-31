@@ -19,6 +19,9 @@ from common.visualization import (
     BuildRegionStyle,
     IslandOutlineStyle,
     POIStyle,
+    NEUTRAL_COLOR,
+    mc_color,
+    distance_to_rgba,
 )
 
 from match_analysis.database.queries import extract_player_life_segments, get_match_player_ids
@@ -40,25 +43,12 @@ _ISLAND_STYLE = IslandOutlineStyle(
 )
 _POI_STYLE = POIStyle(wool_marker='D', wool_size=80, zorder=2)
 
-# Team color mapping for --color-mode team
-_TEAM_TRACE_COLORS = {
-    'red': '#e74c3c',
-    'blue': '#3498db',
-    'green': '#2ecc71',
-    'yellow': '#f39c12',
-    'purple': '#9b59b6',
-    'gray': '#95a5a6',
-}
-
 # Location type colors for --color-mode location
 _LOCATION_COLORS = {
     'island': '#2ecc71',
     'build_region': '#f39c12',
     'void': '#e74c3c',
 }
-
-# Zone color mode: color each position by nearest skeleton node (all types)
-_ZONE_UNCLASSIFIED = '#95a5a6'  # gray for positions with no nearest_graph_node
 
 
 def _build_zone_color_map(n_nodes: int) -> dict[int, str]:
@@ -110,18 +100,19 @@ def _resolve_team_color(
     classifier: 'PositionClassifier', map_context: dict,
 ) -> str:
     """Classify spawn position to determine team, return hex color."""
+    team_hex = {t['id']: mc_color(t.get('color', ''), NEUTRAL_COLOR)
+                for t in map_context.get('teams', [])}
+
     result = classifier.classify_position(spawn_x, spawn_z)
     island_id = result['island_id']
     if island_id is None:
-        return _TEAM_TRACE_COLORS['gray']
+        return NEUTRAL_COLOR
 
     for island in map_context.get('islands', []):
         if island['id'] == island_id:
-            team_str = island.get('team') or ''
-            team_key = team_str.replace('-team', '') if team_str else ''
-            return _TEAM_TRACE_COLORS.get(team_key, _TEAM_TRACE_COLORS['gray'])
+            return team_hex.get(island.get('team'), NEUTRAL_COLOR)
 
-    return _TEAM_TRACE_COLORS['gray']
+    return NEUTRAL_COLOR
 
 
 def plot_player_traces(
@@ -271,9 +262,9 @@ def plot_player_traces(
                 color = _resolve_team_color(
                     seg['spawn_x'], seg['spawn_z'], classifier, map_context)
             else:
-                color = _TEAM_TRACE_COLORS['gray']
+                color = NEUTRAL_COLOR
         else:  # location — segment color used only for markers
-            color = _LOCATION_COLORS.get('island', '#95a5a6')
+            color = _LOCATION_COLORS.get('island', NEUTRAL_COLOR)
 
         # Classify trace events for location coloring
         trace = seg['trace_events']
@@ -287,9 +278,9 @@ def plot_player_traces(
             positions = seg['positions']
             if 'nearest_graph_node' in positions.columns:
                 zone_pos_colors = [
-                    zone_color_map.get(int(n), _ZONE_UNCLASSIFIED)
+                    zone_color_map.get(int(n), NEUTRAL_COLOR)
                     if n is not None and not (isinstance(n, float) and np.isnan(n))
-                    else _ZONE_UNCLASSIFIED
+                    else NEUTRAL_COLOR
                     for n in positions['nearest_graph_node']
                 ]
         trace_xs = trace['x'].values
@@ -371,6 +362,7 @@ def plot_player_traces(
             has_build_region=True,
             island_style=_ISLAND_STYLE,
             poi_style=_POI_STYLE,
+            map_context=map_context,
         )
         legend_handles.append(
             plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='gray',
@@ -391,11 +383,12 @@ def plot_player_traces(
                            markeredgecolor='gray', markersize=8, label='Wool event'))
 
         if color_mode == 'team':
-            for team_name, team_hex in _TEAM_TRACE_COLORS.items():
-                if team_name != 'gray':
-                    legend_handles.append(
-                        plt.Line2D([0], [0], color=team_hex, linewidth=2,
-                                   label=f'{team_name.capitalize()} team'))
+            for team in map_context.get('teams', []):
+                color = mc_color(team.get('color', ''), NEUTRAL_COLOR)
+                name = (team.get('name') or team.get('id', '')).replace('-team', '').capitalize()
+                legend_handles.append(
+                    plt.Line2D([0], [0], color=color, linewidth=2,
+                               label=f'{name} team'))
         elif color_mode == 'location':
             for loc_name, loc_hex in _LOCATION_COLORS.items():
                 legend_handles.append(
@@ -403,7 +396,7 @@ def plot_player_traces(
                                label=loc_name.replace('_', ' ').capitalize()))
         elif color_mode == 'zone':
             legend_handles.append(
-                plt.Line2D([0], [0], color=_ZONE_UNCLASSIFIED, linewidth=2,
+                plt.Line2D([0], [0], color=NEUTRAL_COLOR, linewidth=2,
                            label='Color = nearest skeleton node'))
 
         ax.legend(handles=legend_handles, loc='upper right',
@@ -454,25 +447,9 @@ def plot_player_traces(
 
 
 def _team_to_color(team: str) -> str:
-    """Map a team name to a display color."""
-    # Normalize: strip common prefixes
+    """Map a team name or ID to a display color via the shared Minecraft color system."""
     key = team.replace('-team', '').replace('team-', '').replace('team_', '')
-    return _TEAM_TRACE_COLORS.get(key, _TEAM_TRACE_COLORS['gray'])
-
-
-def _distance_to_color(dist: float, max_dist: float) -> tuple[float, float, float, float]:
-    """Map distance to a green→yellow→red gradient."""
-    if max_dist <= 0:
-        return (0.2, 0.8, 0.2, 1.0)
-    t = min(dist / max_dist, 1.0)
-    # Green (0) → Yellow (0.5) → Red (1)
-    if t < 0.5:
-        r = t * 2
-        g = 1.0
-    else:
-        r = 1.0
-        g = 1.0 - (t - 0.5) * 2
-    return (r, g, 0.15, 1.0)
+    return mc_color(key, NEUTRAL_COLOR)
 
 
 def plot_kill_death_pairs(
@@ -524,16 +501,16 @@ def plot_kill_death_pairs(
     # Resolve colors per pair — team mode uses separate killer/victim colors
     if color_mode == 'team':
         killer_colors = [
-            _team_to_color(t) if pd.notna(t) else _TEAM_TRACE_COLORS['gray']
+            _team_to_color(t) if pd.notna(t) else NEUTRAL_COLOR
             for t in pairs_df['killer_team']
         ]
         victim_colors = [
-            _team_to_color(t) if pd.notna(t) else _TEAM_TRACE_COLORS['gray']
+            _team_to_color(t) if pd.notna(t) else NEUTRAL_COLOR
             for t in pairs_df['victim_team']
         ]
         line_colors = killer_colors  # lines colored by killer team
     else:  # distance
-        dist_colors = [_distance_to_color(d, max_dist) for d in distances]
+        dist_colors = [distance_to_rgba(d, max_dist) for d in distances]
         killer_colors = dist_colors
         victim_colors = dist_colors
         line_colors = dist_colors
@@ -603,6 +580,7 @@ def plot_kill_death_pairs(
             has_build_region=True,
             island_style=_ISLAND_STYLE,
             poi_style=_POI_STYLE,
+            map_context=map_context,
         )
         legend_handles.append(
             plt.Line2D([0], [0], marker=_SWORD, color='w',
@@ -617,11 +595,12 @@ def plot_kill_death_pairs(
                        alpha=0.5, label='Kill→Death line'))
 
         if color_mode == 'team':
-            for team_name, team_hex in _TEAM_TRACE_COLORS.items():
-                if team_name != 'gray':
-                    legend_handles.append(
-                        plt.Line2D([0], [0], color=team_hex, linewidth=2,
-                                   label=f'{team_name.capitalize()} team'))
+            for team in map_context.get('teams', []):
+                color = mc_color(team.get('color', ''), NEUTRAL_COLOR)
+                name = (team.get('name') or team.get('id', '')).replace('-team', '').capitalize()
+                legend_handles.append(
+                    plt.Line2D([0], [0], color=color, linewidth=2,
+                               label=f'{name} team'))
         else:  # distance
             legend_handles.append(
                 plt.Line2D([0], [0], color='green', linewidth=2, label='Short range'))

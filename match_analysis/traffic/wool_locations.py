@@ -17,40 +17,21 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("ctw")
+from common.wool import WOOL_DAMAGE_TO_COLOR as WOOL_ID_TO_COLOR, WOOL_COLOR_TO_DAMAGE, normalize_wool_color
 
-WOOL_ID_TO_COLOR: dict[int, str] = {
-    0: "white",      1: "orange",    2: "magenta",   3: "light_blue",
-    4: "yellow",     5: "lime",      6: "pink",      7: "gray",
-    8: "light_gray", 9: "cyan",     10: "purple",   11: "blue",
-   12: "brown",     13: "green",    14: "red",       15: "black",
-}
+logger = logging.getLogger("ctw")
 
 # Maximum Manhattan distance (blocks) between a first-touch and the cluster
 # median for that first-touch to count as a confirmation of the wool location.
 FIRST_TOUCH_CLUSTER_RADIUS = 2
 
 
-_WOOL_COLOR_ALIASES: dict[str, str] = {
-    # Old Minecraft names → current canonical names (as in WOOL_ID_TO_COLOR)
-    "light blue":  "light_blue",
-    "light gray":  "light_gray",
-    "silver":      "light_gray",
-}
-
-
-def _normalize_wool_color(color: str) -> str:
-    """Normalize a wool color string to the canonical underscore form."""
-    normalized = color.strip().lower().replace(" ", "_")
-    return _WOOL_COLOR_ALIASES.get(color.strip().lower(), normalized)
-
-
 def _team_for_color(wool_color: str, map_context: dict) -> Optional[str]:
     """Return the owning team for *wool_color* from *map_context*, or None."""
-    canonical = _normalize_wool_color(wool_color)
+    canonical = normalize_wool_color(wool_color)
     for w in map_context.get("poi_assignments", {}).get("wools", []):
         stored = w.get("wool_color", "")
-        if _normalize_wool_color(stored) == canonical:
+        if normalize_wool_color(stored) == canonical:
             team = w.get("team")
             return team if team else None
     return None
@@ -159,10 +140,7 @@ def compute_wool_locations(
         color = w.get("wool_color")
         if not color or color in covered_colors:
             continue
-        # Find wool_id by reverse-looking up WOOL_ID_TO_COLOR
-        wool_id = next(
-            (k for k, v in WOOL_ID_TO_COLOR.items() if v == color), None
-        )
+        wool_id = WOOL_COLOR_TO_DAMAGE.get(normalize_wool_color(color))
         if wool_id is None:
             continue
         covered_colors.add(color)
@@ -250,9 +228,7 @@ def compute_wool_monuments(
             seen_mc: set[tuple[int, float, float]] = set()
             for w in mc.get("poi_assignments", {}).get("wools", []):
                 color = w.get("wool_color")
-                wool_id = next(
-                    (k for k, v in WOOL_ID_TO_COLOR.items() if v == color), None
-                )
+                wool_id = WOOL_COLOR_TO_DAMAGE.get(normalize_wool_color(color))
                 if wool_id is None:
                     continue
                 mx = float(w.get("monument_x", w["x"]))
@@ -356,9 +332,7 @@ def compute_wool_objectives(
             team = w.get("team", "").removesuffix('-team') or None
             if not color or not team:
                 continue
-            wool_id = next(
-                (k for k, v in WOOL_ID_TO_COLOR.items() if v == color), None
-            )
+            wool_id = WOOL_COLOR_TO_DAMAGE.get(normalize_wool_color(color))
             if wool_id is None:
                 continue
             key = (wool_id, team)
