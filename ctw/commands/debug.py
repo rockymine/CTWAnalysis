@@ -268,35 +268,6 @@ Examples:
     )
     p.set_defaults(func=handle_match_coverage)
 
-    # debug layout-grid
-    p = debug_sub.add_parser(
-        'layout-grid',
-        help='2×2 grid of all four layout layers for one or all maps',
-        description=(
-            'Renders a 2×2 figure showing layout_y0, layout_bedrock, layout_top_surface, '
-            'and layout_lowest_solid for a map, using the canonical Minecraft block color '
-            'palette. Each panel includes a legend of the most common block IDs. '
-            'Saves to output/<map>/images/layout_case_study.png.'
-        ),
-        formatter_class=_RAW,
-        epilog="""\
-Examples:
-  python ctw.py debug layout-grid --map arabia
-  python ctw.py debug layout-grid --all-matches
-  python ctw.py debug layout-grid --all-matches --workers 8
-""",
-    )
-    lg_group = p.add_mutually_exclusive_group(required=True)
-    lg_group.add_argument('--map', default=None,
-                          help='Map name (e.g. arabia)')
-    lg_group.add_argument('--all-matches', action='store_true', dest='all_matches',
-                          help='Plot every map that has matches in the database')
-    p.add_argument('--output', default='output',
-                   help='Root output directory (default: output)')
-    p.add_argument('--workers', type=int, default=4,
-                   help='Parallel workers for --all-matches (default: 4)')
-    p.set_defaults(func=handle_layout_grid)
-
     # debug fork-layout
     p = debug_sub.add_parser(
         'fork-layout',
@@ -413,11 +384,6 @@ def handle_prepare_demo(args: object) -> None:
 
 def handle_audit(args: object) -> None:
     from layout_analysis.audit import run
-    run(args)
-
-
-def handle_layout_grid(args: object) -> None:
-    from layout_analysis.layout_grid import run
     run(args)
 
 

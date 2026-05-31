@@ -274,55 +274,6 @@ def plot_fork_analysis(results: list, save_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Layout layer grid (moved from layout_analysis/layout_grid.py)
-# ---------------------------------------------------------------------------
-
-
-def plot_layout_grid(
-    map_slug: str,
-    map_label: str,
-    out_dir: Path,
-    output_root: Path,
-) -> None:
-    """Render a 2×2 layout layer grid and save to out_dir/images/layout_case_study.png."""
-    from layout_analysis.layout_grid import _LAYERS, _load_layer, _legend_patches
-
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14), layout='constrained')
-    fig.suptitle(f'Layout layers — {map_label}', fontsize=14, fontweight='bold', y=0.98)
-
-    for ax, (layer_key, layer_label) in zip(axes.flat, _LAYERS):
-        df = _load_layer(output_root, map_slug, layer_key)
-        ax.set_title(layer_label, fontsize=10)
-        ax.set_xlabel('X'); ax.set_ylabel('Z')
-
-        if df is None:
-            ax.text(0.5, 0.5, 'No data', transform=ax.transAxes,
-                    ha='center', va='center', color='gray')
-            continue
-
-        default_id = 7 if layer_key == 'layout_bedrock' else 0
-        draw_layout_image(ax, df, default_block_id=default_id)
-
-        patches = _legend_patches(df)
-        if patches:
-            ax.legend(handles=patches, loc='upper left',
-                      bbox_to_anchor=(1.02, 1), borderaxespad=0,
-                      fontsize=5, framealpha=0.85,
-                      title='block id (count)', title_fontsize=5)
-
-        if 'y' in df.columns:
-            y_min, y_max = int(df['y'].min()), int(df['y'].max())
-            ax.set_xlabel(f'X  (y {y_min}–{y_max})')
-
-    images_dir = out_dir / 'images'
-    images_dir.mkdir(exist_ok=True)
-    out_path = images_dir / 'layout_case_study.png'
-    fig.savefig(out_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    logger.info("Saved layout grid: %s", out_path)
-
-
-# ---------------------------------------------------------------------------
 # Resource and chest overlay (moved from layout_analysis/resources_plot.py)
 # ---------------------------------------------------------------------------
 
