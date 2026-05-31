@@ -41,9 +41,12 @@ Operations are **purely geometry-driven** — there is no notion of a "selected 
 
 ## Sidebar structure
 
-The left sidebar is a **2-level tree**:
+### Left sidebar — island tree
+
+The Islands header contains a **Primitives** toggle (off by default) that overlays the raw primitive shapes on the canvas for inspection. The tree below it is a **2-level hierarchy**:
 
 ```
+Islands                          [☐ Primitives]
 ▼ Island 1          ← computed island, user-renameable
     ▷ Rectangle     ← add primitive
     ▷ Circle        ← subtract primitive (shown with red tint / minus badge)
@@ -52,9 +55,13 @@ The left sidebar is a **2-level tree**:
 ```
 
 - Islands are auto-named ("Island 1", "Island 2", …) and user-renameable.
-- Clicking an island selects it and highlights its computed polygon on the canvas.
+- Clicking a primitive in the tree selects it and populates the right-panel inspector.
 - Individual primitives can be **deleted** from the sidebar; the island recomputes immediately.
-- Primitives are not directly re-editable (handles, vertex drag) in this version — delete and redraw if a primitive needs to change.
+- Rectangle and polygon shapes support direct canvas editing (resize handles, vertex drag).
+
+### Right sidebar — shape inspector
+
+Displays geometry and metadata for the selected primitive. See **Shape inspector** section below.
 
 ---
 
@@ -156,10 +163,43 @@ This maps directly onto what the pipeline detects: global symmetry present, intr
 
 ---
 
+## Shape inspector (right panel)
+
+The right panel is visible in Layout activity only. It shows detail for the currently selected primitive shape. When no shape is selected it displays a prompt to select one.
+
+### Header
+Type icon + shape ID + type badge (Rectangle / Circle / Polygon).
+
+### Operation section
+Displays the shape's current add/subtract mode as a coloured badge.
+
+### Geometry section
+Per-type coordinate display:
+
+| Type | Fields shown |
+|---|---|
+| Rectangle | Bounds table: X and Z each with MIN / MAX / SIZE |
+| Circle | CENTER (X, Z) and RADIUS (blocks) |
+| Polygon | Scrollable vertex table: index, X, Z — one row per vertex |
+
+The inspector updates live as the user resizes a rectangle or drags a polygon vertex on the canvas.
+
+### Simplify section (lasso shapes only)
+
+Lasso-drawn shapes are tagged `source: "lasso"` and expose an additional section:
+
+- **Area** — total polygon area in blocks² (shoelace formula), read-only.
+- **Tolerance** — minimum effective triangle area in blocks². Any vertex whose triangle (formed with its two neighbours) has area below this threshold is a candidate for removal.
+- **Generalize button** — runs Visvalingam–Whyatt simplification and immediately updates the shape on the canvas and in the island computation.
+
+**How VW works:** the algorithm iteratively removes the vertex with the smallest triangle area (prev → vertex → next), recomputes its neighbours' areas after each removal, and stops when no vertex's area falls below the tolerance or when only 3 vertices remain. A tolerance of 50 blocks² is the default; raise it to remove more vertices, lower it to preserve more detail. Repeated presses reduce the shape further; the tolerance field persists across presses.
+
+---
+
 ## Shape-specific notes
 
 - **Circle primitives**: The drawn circle outline snaps to block boundaries (integer coordinates). Stored as a polygon approximation at block resolution.
-- **Lasso shapes**: May produce non-simple polygons; the boolean library must handle self-intersecting inputs gracefully (auto-simplify or reject).
+- **Lasso shapes**: May produce non-simple polygons; the boolean library must handle self-intersecting inputs gracefully (auto-simplify or reject). Lasso shapes carry a `source: "lasso"` tag enabling the Simplify section in the inspector.
 
 ---
 
@@ -179,4 +219,3 @@ All of these are removed. The new model is geometry-driven, fully automatic, and
 ## Out of scope (this version)
 
 - Undo/redo
-- Re-editing primitive geometry (handles, vertex drag) — deletion only
