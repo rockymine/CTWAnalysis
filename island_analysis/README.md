@@ -256,7 +256,7 @@ Island objects are built up in layers as the pipeline progresses:
 ## Testing
 
 ```bash
-python -m unittest island_analysis/test_profile_classify.py -v
+python -m unittest island_analysis/tests/test_profile_classify.py -v
 ```
 
 Tests cover the full classification cascade with known inputs, including shapes that
