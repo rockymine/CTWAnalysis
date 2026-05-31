@@ -39,7 +39,6 @@ Sub-actions (default: detect):
 Examples:
   python ctw.py islands --map tumbleweed
   python ctw.py islands profile --map tumbleweed
-  python ctw.py islands profile --map tumbleweed --plot
   python ctw.py islands profile                          # all maps
   python ctw.py islands profile-inspect --map tumbleweed
   python ctw.py islands profile-canonical --map tumbleweed
@@ -82,8 +81,6 @@ Examples:
                            help='Map slug (default: all maps with map_context.json)')
     p_profile.add_argument('--output', default=None,
                            help='Output root directory (default: output/)')
-    p_profile.add_argument('--plot', action='store_true',
-                           help='Also emit island_profiles.png visualization')
     p_profile.add_argument('--force', action='store_true',
                            help='Overwrite existing island_profiles.json')
     p_profile.set_defaults(func=handle_profile)
@@ -176,7 +173,6 @@ def handle_profile(args) -> None:
     from island_analysis.profile import (
         profile_islands, save_profiles, load_profiles, load_overrides,
     )
-    from island_analysis.visualization import plot_island_profiles
     from map_analysis.grid_base import _adaptive_grid_size
 
     output_root = Path(args.output) if args.output else DEFAULT_OUTPUT_ROOT
@@ -214,13 +210,6 @@ def handle_profile(args) -> None:
             save_profiles(profiles, profiles_path)
             print(f'  [OK] {map_dir.name}: {len(profiles)} canonical shapes')
 
-            if getattr(args, 'plot', False) and profiles:
-                images_dir = map_dir / 'images'
-                images_dir.mkdir(exist_ok=True)
-                plot_island_profiles(
-                    map_context, profiles,
-                    str(images_dir / 'island_profiles.png'),
-                )
             processed += 1
         except Exception as exc:
             print(f'  [ERR] {map_dir.name}: {exc}')

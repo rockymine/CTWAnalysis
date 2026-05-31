@@ -17,11 +17,7 @@ from .profile import (
     save_profiles,
     load_profiles,
 )
-from .visualization import (
-    plot_islands,
-    plot_island_polygons,
-    plot_island_detail,
-)
+from .visualization import plot_island_detail
 
 __all__ = [
     # Datatypes
@@ -48,7 +44,5 @@ __all__ = [
     "save_profiles",
     "load_profiles",
     # Visualization
-    "plot_islands",
-    "plot_island_polygons",
     "plot_island_detail",
 ]
