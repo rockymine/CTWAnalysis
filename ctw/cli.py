@@ -37,7 +37,7 @@ Examples:
   python ctw.py run --all --force --no-matches
   python ctw.py layout --map kanto
   python ctw.py islands --map segment --force
-  python ctw.py xml --map aether --visualize
+  python ctw.py xml --map aether
   python ctw.py info --map segment
   python ctw.py info --map segment --json
 """,
