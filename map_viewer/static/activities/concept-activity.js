@@ -9,6 +9,8 @@
 import { ConceptCanvas }                              from "../canvas/concept-canvas.js";
 import { ToolManager }                                from "../shared/tool-manager.js";
 import { computeIslands, assignShapesToIslands }      from "../concept-geometry.js";
+import { ConceptInspector }                           from "../panels/concept-inspector.js";
+import { visvalingamWhyatt }                          from "../simplify.js";
 import * as api                                       from "../api.js";
 
 export class ConceptActivity {
@@ -20,8 +22,9 @@ export class ConceptActivity {
   #prevIslandCount  = 0;    // used to detect newly disconnected islands
   #primitivesVisible = false;
 
-  #canvas = null;
-  #tools  = null;
+  #canvas    = null;
+  #tools     = null;
+  #inspector = null;
 
   #meta = {
     name:     "",
@@ -44,6 +47,10 @@ export class ConceptActivity {
     this.#initSidebars();
     this.#initMetaPanel();
     this.#initActivityRail();
+    this.#inspector = new ConceptInspector(
+      document.getElementById("concept-inspector-content"),
+      { onSimplify: (shape, tol) => this.#simplifyShape(shape, tol) },
+    );
     this.#switchActivity("overview");
     window.addEventListener("resize", () => this.#canvas.resize());
   }
@@ -83,16 +90,15 @@ export class ConceptActivity {
     document.getElementById("ct-activity-overview").classList.toggle("active", isOverview);
     document.getElementById("ct-activity-layout").classList.toggle("active", !isOverview);
 
-    document.getElementById("concept-overview-left").hidden = !isOverview;
-    document.getElementById("concept-layout-left").hidden   = isOverview;
-    document.getElementById("concept-right-area").hidden    = isOverview;
-    document.getElementById("concept-right-handle").hidden  = isOverview;
+    document.getElementById("concept-overview-left").hidden  = !isOverview;
+    document.getElementById("concept-layout-left").hidden    = isOverview;
+    document.getElementById("concept-right-area").hidden     = isOverview;
+    document.getElementById("concept-right-handle").hidden   = isOverview;
 
     if (isOverview) this.#selectShape(null);
     this.#setToolbarMode(isOverview ? "overview" : "layout");
 
-    // Resize after DOM layout changes (right panel appears/disappears),
-    // otherwise the SVG keeps stale dimensions and coordinate mapping drifts.
+    // Resize after DOM layout changes so the SVG keeps correct dimensions.
     requestAnimationFrame(() => this.#canvas.resize());
   }
 
@@ -467,6 +473,7 @@ export class ConceptActivity {
 
   #onShapeUpdated(shape) {
     this.#shapes.set(shape.id, shape);
+    this.#inspector.update(shape);
     this.#recompute();
   }
 
@@ -475,11 +482,24 @@ export class ConceptActivity {
     document.querySelectorAll(".concept-shape-child").forEach(r => {
       r.classList.toggle("list-row--selected", r.dataset.shapeId === id);
     });
+    const shape = id ? this.#shapes.get(id) : null;
+    if (shape) this.#inspector.show(shape);
+    else        this.#inspector.clear();
   }
 
   #deleteShape(id) {
     this.#shapes.delete(id);
     this.#canvas.removeShape(id);
+    this.#recompute();
+  }
+
+  #simplifyShape(shape, minArea) {
+    const simplified = visvalingamWhyatt(shape.vertices, minArea);
+    if (simplified.length === shape.vertices.length) return;
+    shape.vertices = simplified;
+    this.#shapes.set(shape.id, shape);
+    this.#canvas.updateShape(shape);
+    this.#inspector.show(shape);
     this.#recompute();
   }
 

@@ -619,7 +619,7 @@ export class ConceptCanvas {
     if (vertices.length < 3) return;
     this.#callbacks.onShapeCreated?.({
       type: "polygon", operation: this.#activeOperation,
-      vertices,
+      source: "lasso", vertices,
     });
   }
 

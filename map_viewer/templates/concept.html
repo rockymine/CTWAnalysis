@@ -119,6 +119,10 @@
     <div id="concept-layout-left" hidden>
       <div class="section-header section-header--list">
         <span class="section-title">Islands</span>
+        <label class="concept-primitives-label" title="Show individual shapes on canvas">
+          <input type="checkbox" id="ct-primitives-toggle"/>
+          <span>Primitives</span>
+        </label>
       </div>
       <div id="ct-shape-list" class="concept-shape-list">
         <div class="concept-empty">No shapes yet. Draw with the tools above.</div>
@@ -188,16 +192,10 @@
 
   <div class="sidebar-handle" id="concept-right-handle"></div>
 
-  <!-- ── Right panel: Display options (Layout activity only) ── -->
+  <!-- ── Right panel: Shape inspector (Layout activity only) ── -->
   <div id="concept-right-area" hidden>
     <div id="concept-inspector-scroll">
-      <div class="section-header section-header--ruled">
-        <span class="section-title">Display</span>
-        <label class="concept-primitives-label" title="Show individual shapes on canvas">
-          <input type="checkbox" id="ct-primitives-toggle"/>
-          <span>Primitives</span>
-        </label>
-      </div>
+      <div id="concept-inspector-content"></div>
     </div>
   </div>
 
