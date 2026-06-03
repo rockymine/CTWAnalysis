@@ -11,7 +11,7 @@ The concept-first workflow (drawing a map from scratch) and the existing-map wor
 ## User Workflow
 
 ```
-Upload / download URL
+Upload / download URL  (tool-external; user confirms)
         │
         ▼
    Auto-analyse
@@ -19,108 +19,135 @@ Upload / download URL
         │
         ▼
    ┌─ Configure ─┐   ← first mandatory stop
-   │ layer, symmetry confirmation, teams │
+   │ layer, symmetry confirmation │
    └─────────────┘
         │
         ▼
-   Edit XML  (multi-step activities)
+   Edit (multi-step activities — see below)
 ```
 
-1. The user provides a map folder, ZIP, or download URL.
+1. The user provides a map folder, ZIP, or download URL. Map acquisition is external to the tool; the user explicitly triggers import.
 2. The pipeline runs automatically (layout → symmetry → XML).
-3. The **Configure** step opens first — the pipeline cannot yet reliably auto-select the correct scan layer, so the user must confirm it before results are trusted.
-4. After configuration the user works through the editing activities.
+3. **Configure** opens first — the pipeline cannot reliably auto-select the correct scan layer, so the user must confirm it before results are trusted.
+4. The user then works through the editing activities in order.
 
 ---
 
-## Activity Structure (revised)
+## Activity Structure
 
-### Current problems
-- Symmetry sits inside Overview, which is wrong — it has no connection to map metadata.
-- The Regions activity is overwhelming for end users (designed for analysis, not authoring).
-- Build regions and filters have no dedicated home.
+### Order
 
-### Proposed activity order
-
-| # | Activity | Description |
+| # | Activity | Core purpose |
 |---|---|---|
-| 1 | **Configure** | Scan layer selection, island exclusions, symmetry axis confirmation, team definitions |
-| 2 | **Overview** | Map name, version, authors, game mode — read-only summary |
-| 3 | **Objectives** | Wool rooms, spawns, kits — the core CTW elements |
-| 4 | **Regions** | Full region hierarchy (simplified view for authoring; expert toggle for full tree) |
-| 5 | **Build Regions** | Define and adjust build region boundaries per team |
-| 6 | **Filters** | Apply rules, region groupings, access control, block editing rules |
-| 7 | **Export** | Preview and export `map.xml` |
+| 1 | **Configure** | Scan layer, island exclusions, symmetry axis confirmation |
+| 2 | **Overview** | Map name, version, authors, game mode |
+| 3 | **Teams** | Team definitions (name, color, min/max players) |
+| 4 | **Objectives** | Wool rooms, spawns, kits — requires teams |
+| 5 | **Build Regions** | Define traversable build areas per team |
+| 6 | **Filters** | Full filter overview — catch anything missed in earlier steps |
+| 7 | **Regions** | Complete region list with filter options; validation and overview |
 
-### Configure as Activity, not Page
+### Why Teams before Objectives
 
-Configuration does not justify a separate top-level page. It is an Activity — the user completes it once but can return at any time (e.g. to change the scan layer or re-run symmetry). It lives in the same activity navigation as the other steps.
+Objectives (wool rooms, spawns, kits) require team assignments. Teams must exist first.
 
----
+### Why Build Regions before Objectives (or directly after Teams)
 
-## Symmetry-Driven Region Suggestions
+Build Regions may belong immediately after Teams. The rationale: if no block exists at y=0, movement between islands is impossible. The editor can detect this and signal to the user at the earliest opportunity — "based on the current scan, players cannot move between islands" — before they place any objectives. Fixing traversability first ensures that the path from spawn A to spawn B, and onward to objectives, is possible. This is a natural prerequisite gate before Objectives.
 
-This is a key differentiator of the tool.
+This placement is still under consideration. Either directly after Teams or as step 5 (after Objectives) are both valid. Consensus needed.
 
-Once the user has:
-- Confirmed the symmetry axis (in Configure), and
-- Defined the teams (also in Configure),
+### Filters — inline during steps, overview at end
 
-the editor can automatically suggest mirrored/rotated counterparts for any region the user creates. For example:
+Filters are **not** a single step at the end. Relevant filter scenarios are surfaced inline during the step where they apply:
 
-- 2 teams + `rot_180` symmetry → placing one wool room automatically suggests the rotated position for the second.
-- 2 teams + `mirror_z` → build regions are reflected across the Z-axis centerline.
+- **Teams step** → spawn protection filters (deny enemy team entry to own spawn)
+- **Objectives step** → wool room access restrictions (deny own team entry to own wool room)
+- **Build Regions step** → block editing rules (wool room protection, full lockdowns), resource renewal
+- **Filters activity** → final overview of all applied rules; catch anything not covered; rare mechanics (jump pads, time-gated unlocks, anti-climb)
 
-The suggestion is **interactive**, not silent background inference: the editor shows the proposed counterpart and the user accepts or adjusts it. This keeps the user in control while eliminating repetitive manual placement.
-
-Implementation note: the symmetry axis and team count are already available in `symmetry.json` and `xml_data.json` respectively after the pipeline runs. The editor frontend can derive suggestions without additional backend calls.
+Region groupings (which regions belong together as a logical set) must be addressed in each step where regions are defined — not deferred to the end. Whether grouping is automatic (inferred from symmetry + team count) or guided (user assigns) requires deeper analysis of the 300+ map corpus. That analysis is out of scope here.
 
 ---
 
-## Regions Activity (simplified)
+## Symmetry-Driven Suggestions
 
-The full region hierarchy is essential for power users and map analysis, but it is the wrong first view for an author creating a new map.
+Symmetry suggestions are **configurable** — the user selects which region types the symmetry engine should propose counterparts for. Configuration is per-map and toggleable.
 
-Proposal:
-- **Default view**: flat list of named regions with their type and bounds — no tree.
-- **Expert mode toggle**: expands into the full reference-based hierarchy (composite → children by ID).
-- Region groupings (which regions belong to which team's wool room, build area, etc.) are managed in the Filters activity, not here.
+### Configurable region types
+
+| Region type | Example semantic | Suggestion behavior |
+|---|---|---|
+| Spawn points (`point` / `cylinder`) | Team A spawn → Team B spawn | Suggest rotated/mirrored counterpart |
+| Wool monuments | Monument A → Monument B | Suggest mirrored position |
+| Wool room regions | Wool room A → Wool room B | Suggest rotated boundary |
+| Build regions | Build area A → Build area B | Suggest reflected boundary |
+
+Each type can be switched on or off. The user may not want suggestions for certain region categories (e.g. a shared center region has no counterpart).
+
+### Symmetry as quality control
+
+For existing maps, symmetry detection doubles as a **validation tool**. Given a confirmed `rot_180` or `mirror_*` axis and exactly 2 teams, the editor can check:
+
+- Are exactly 2 team spawns present?
+- Do their positions satisfy the detected symmetry within tolerance?
+- Do wool room boundaries match their expected counterparts?
+
+Violations are surfaced as Panel Validation Warnings in the relevant step. This is useful both for newly authored maps and for auditing community maps imported for analysis.
 
 ---
 
-## Filters Activity
+## Regions Activity
 
-Filters is where region groupings become meaningful. The `filter-use-cases.md` analysis identified six recurring cluster patterns across 345 CTW maps:
+The Regions activity is a read-filtered overview of the complete region hierarchy — not an authoring surface. By the time the user reaches it, Teams, Objectives, Build Regions, and inline Filters have already structured the meaningful regions.
 
-1. Access control (wool room restrictions, spawn protection)
-2. Block editing (wool room protection, full lockdowns)
-3. Kit assignment
-4. Movement mechanics (jump pads)
-5. Resources (iron/gold renewal)
-6. Advanced (time-gated unlocks, anti-climb)
+Regions provides:
+- A flat list of all regions with their type, bounds, and assignments
+- Filter/sort options (by type, by team, by assignment status, unassigned regions highlighted)
+- No "expert mode" toggle — just practical list controls
 
-The Filters activity should present these as **authoring templates** the user can instantiate, rather than requiring them to construct apply rules from scratch. Each template pre-fills the relevant regions and filter references based on the current team and region configuration.
+The full hierarchy view remains available because it is still useful for map analysis and QA. It is not the primary authoring interface.
 
 ---
 
-## Notification System (confirmed)
+## Notification System
 
-Three canonical types replace the current six fragmented mechanisms:
+Four canonical types replace the current six fragmented mechanisms:
 
 | Type | Location | Trigger | Duration |
 |---|---|---|---|
-| **System Error** | Top bar | HTTP 4xx/5xx — shown as human-readable message, not status code | Until dismissed |
+| **System Error** | Top bar | HTTP 4xx/5xx — human-readable message, never raw status codes | Until dismissed |
 | **Operation Toast** | Bottom-right | Successful save, export, pipeline run | 4 s auto-dismiss |
-| **Canvas Drawing Hint** | MapCanvas overlay | User enters a draw/select mode | Until mode exits |
-| **Panel Validation Warning** | Inline in panel | Invalid field value, missing required input | Until resolved |
+| **Canvas Drawing Hint** | MapCanvas overlay | User enters draw/select mode | Until mode exits |
+| **Panel Validation Warning** | Inline in panel | Invalid field, missing required input, symmetry violation | Until resolved |
 
-Raw HTTP status codes (200, 400, 401, etc.) are never shown to the user.
+Exact trigger mapping per activity step requires further discussion.
+
+---
+
+## Entry Points
+
+### Existing-map workflow
+
+1. User provides folder, ZIP, or download URL (tool-external action).
+2. User explicitly confirms import — the editor does not silently fetch anything.
+3. Pipeline runs → Configure opens.
+4. User works through activities.
+
+### Sketch (concept-first) workflow
+
+Sketch is for **new maps only** — it is not a mode for editing existing maps.
+
+In Sketch, Configure is unnecessary. Sketch defines everything from scratch. To produce a symmetric map the user must specify the **center point** and **symmetry type** upfront — without this, building a symmetric layout by hand is impractical. These two inputs are the entry screen for Sketch.
+
+Once center and symmetry are set, the same region rules, filter templates, and suggestion engine apply as in the existing-map workflow.
 
 ---
 
 ## Open Questions
 
-1. **Configure activity placement**: Should Configure always be the landing activity for a freshly imported map, or should the editor remember the last-visited activity on re-open?
-2. **Symmetry suggestions — scope**: Are suggestions shown only during region placement, or also retroactively for existing regions that lack a counterpart?
-3. **Concept-first entry point**: In the scratch workflow, does Configure still come first (to set scan layer / teams before drawing), or does drawing come first and Configure follows?
-4. **Expert mode persistence**: Is the expert region tree toggle per-session or persisted to `map_config.json`?
+1. **Build Regions placement**: Directly after Teams (step 4) or after Objectives (step 5)?
+2. **Filter grouping strategy**: Automatic inference from symmetry + team count, or user-guided grouping? Requires corpus analysis.
+3. **Inline filter UI pattern**: Panel section within the step, or modal/sidebar triggered from a region selection?
+4. **Symmetry suggestion acceptance**: Per-suggestion confirm, or batch accept all with single override?
+5. **Notification trigger mapping**: Which specific events in each activity map to which notification type?
