@@ -456,6 +456,49 @@ Defined in `viewer.css :root`:
 
 ---
 
+## 10. Vision Gap Analysis
+
+Cross-referencing the current implementation against `docs/editor-vision.md` reveals gaps that go beyond component-level issues. These are structural absences — activities, flows, and mechanisms that the vision requires but that do not exist at all in the current codebase.
+
+### Missing activities
+
+**Build Regions activity** — completely absent. The vision places this as step 4 (between Teams and Objectives) to enforce the traversability gate: if no block exists at y=0, players cannot reach each other, and the editor should surface this before any objectives are placed. Currently, build region logic is referenced only in `map_context.json` from the old pipeline. There is no dedicated editor activity, no MapCanvas integration, and no connectivity check in the frontend.
+
+**Export activity** — the backend endpoint `/api/map/{name}/export/xml` exists, but there is no Export activity in the editor rail. The vision requires: an XML preview pane before download, the download button gated on Build Regions validity, and a round-trip safety block (export disabled if the XML contains elements the editor cannot re-serialize). None of these are implemented. Export is currently an invisible button action with no preview and no safety gate.
+
+### Missing flows
+
+**Inline filter prompts** — the vision calls for filter scenarios to be surfaced contextually within each step: spawn protection prompt after placing a spawn in Teams; wool room access rule prompt after assigning a defending team in Objectives; block-editing rules in Build Regions. Currently no guided prompts exist anywhere. The user must know to navigate to Rules & Filters manually and construct rules from scratch. The Teams and Objective activities do not ask any filter-related questions.
+
+**Cross-activity dependencies** — the vision defines clear prerequisites: Teams must exist before Objectives; Build Regions validity gates Export. The current editor enforces none of this. All activities are independently accessible with no dependency signaling. A user can define wools before any team exists, or attempt export with an invalid build region.
+
+**Configure → Editor handoff** — Configure is currently a standalone page separate from the editor. The vision makes Configure the mandatory first activity when opening a map (scan layer confirmation, symmetry axis). The current separation means a user can open the editor without having confirmed the scan layer at all. There is no formal handoff: no redirect, no status indicator on the editor rail that Configure is incomplete.
+
+### Framing shifts with architectural consequences
+
+**Regions is now an overview, not the primary authoring surface** — the vision places Regions last as a validation/QA view with filter and sort controls. Currently Regions is the most feature-complete activity and the primary place to create and edit geometry. Once Build Regions and the guided Objectives flow exist, most region creation will happen inline in those steps. The Regions activity will need to shift from "authoring surface" to "all regions in one filterable list." The draw tools currently in Regions would move to the steps where regions are created.
+
+**Symmetry as quality control** — the vision calls for symmetry to validate existing maps: given `rot_180` or `mirror_*` and exactly 2 teams, the editor should check whether 2 spawn regions exist at symmetric positions, whether wool room boundaries match their counterparts, etc. Currently symmetry is display-only (a confirmed/unconfirmed axis in Overview). There is no validation logic connecting symmetry data to the regions or spawns.
+
+**Activity status semantics undefined** — the rail `data-status` attribute (green/yellow/red) exists in the CSS and HTML, but the logic that sets it is not systematically defined per activity. What makes Teams yellow vs. green (is it "at least one team defined" or "all teams have spawns"? is an empty kit acceptable?) is not specified anywhere in the codebase. The vision identifies this as requiring per-activity definition before implementation.
+
+**Sketch entry point** — the current Concept page is an exploratory shape tool with no guided workflow. The vision defines Sketch as a full entry point for new maps: center point and symmetry type are mandatory inputs before drawing begins, and the same region rules, filter prompts, and suggestion engine as the existing-map workflow apply. The current Concept page cannot serve this role without significant redesign.
+
+### Summary
+
+| Gap | Current state | Required by vision |
+|---|---|---|
+| Build Regions activity | Absent | Step 4 in editor rail |
+| Export activity | API endpoint only | Full activity with XML preview + safety gate |
+| Inline filter prompts | Absent | Contextual per step (Teams, Objectives, Build Regions) |
+| Cross-activity dependencies | Not enforced | Teams before Objectives; Build Regions gates Export |
+| Configure → Editor handoff | Separate page, no handoff | Configure is activity 1 in the same flow |
+| Symmetry as validator | Display only | Checks spawn/region positions against axis |
+| Activity status semantics | CSS exists; logic undefined | Specified per-activity during implementation |
+| Sketch as guided entry | Exploratory tool | Guided flow with mandatory center + symmetry inputs |
+
+---
+
 ## Appendix: File Size Reference
 
 | File | LOC | Notes |
