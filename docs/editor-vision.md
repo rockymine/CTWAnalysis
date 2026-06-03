@@ -41,21 +41,19 @@ Upload / download URL  (tool-external; user confirms)
 |---|---|---|
 | 1 | **Configure** | Scan layer, island exclusions, symmetry axis confirmation |
 | 2 | **Overview** | Map name, version, authors, game mode |
-| 3 | **Teams** | Team definitions (name, color, min/max players) |
-| 4 | **Objectives** | Wool rooms, spawns, kits — requires teams |
-| 5 | **Build Regions** | Define traversable build areas per team |
+| 3 | **Teams** | Team definitions (name, color, min/max players) + spawn placement |
+| 4 | **Build Regions** | Define traversable build areas per team |
+| 5 | **Objectives** | Wool rooms, kits — requires teams |
 | 6 | **Filters** | Full filter overview — catch anything missed in earlier steps |
 | 7 | **Regions** | Complete region list with filter options; validation and overview |
 
-### Why Teams before Objectives
+### Teams includes spawn placement
 
-Objectives (wool rooms, spawns, kits) require team assignments. Teams must exist first.
+Spawns are links from a region to a team (`{team, kit, yaw, region}`). They are logically inseparable from the team they belong to: deleting a team cascades to delete all its spawns. The Teams step therefore covers both team definition and assigning spawn regions per team.
 
-### Why Build Regions before Objectives (or directly after Teams)
+### Build Regions before Objectives
 
-Build Regions may belong immediately after Teams. The rationale: if no block exists at y=0, movement between islands is impossible. The editor can detect this and signal to the user at the earliest opportunity — "based on the current scan, players cannot move between islands" — before they place any objectives. Fixing traversability first ensures that the path from spawn A to spawn B, and onward to objectives, is possible. This is a natural prerequisite gate before Objectives.
-
-This placement is still under consideration. Either directly after Teams or as step 5 (after Objectives) are both valid. Consensus needed.
+If no block exists at y=0, movement between islands is impossible. Build Regions comes before Objectives so the editor can signal this at the earliest opportunity — "based on the current scan, players cannot move between islands" — before any objectives are placed. Fixing traversability first ensures the path from spawn A to spawn B, and onward to objectives, is valid. This is the natural prerequisite gate.
 
 ### Filters — inline during steps, overview at end
 
@@ -72,18 +70,11 @@ Region groupings (which regions belong together as a logical set) must be addres
 
 ## Symmetry-Driven Suggestions
 
-Symmetry suggestions are **configurable** — the user selects which region types the symmetry engine should propose counterparts for. Configuration is per-map and toggleable.
+Symmetry suggestions are **configurable** — the user selects which region types the symmetry engine should propose counterparts for. Configuration is per-map and toggleable per region type.
 
-### Configurable region types
+Examples of region types that can be toggled on or off: spawn points (`point` / `cylinder`), wool monuments, wool room regions, build regions. The list is not exhaustive — the exact set of toggleable types is determined during implementation based on what the parser produces and what the corpus analysis shows is meaningful.
 
-| Region type | Example semantic | Suggestion behavior |
-|---|---|---|
-| Spawn points (`point` / `cylinder`) | Team A spawn → Team B spawn | Suggest rotated/mirrored counterpart |
-| Wool monuments | Monument A → Monument B | Suggest mirrored position |
-| Wool room regions | Wool room A → Wool room B | Suggest rotated boundary |
-| Build regions | Build area A → Build area B | Suggest reflected boundary |
-
-Each type can be switched on or off. The user may not want suggestions for certain region categories (e.g. a shared center region has no counterpart).
+Each automatically generated suggestion requires **individual confirmation** by the user before it is applied. There is no batch-accept. This keeps the user in control and avoids silently creating incorrect counterparts.
 
 ### Symmetry as quality control
 
@@ -121,7 +112,7 @@ Four canonical types replace the current six fragmented mechanisms:
 | **Canvas Drawing Hint** | MapCanvas overlay | User enters draw/select mode | Until mode exits |
 | **Panel Validation Warning** | Inline in panel | Invalid field, missing required input, symmetry violation | Until resolved |
 
-Exact trigger mapping per activity step requires further discussion.
+Exact trigger mapping per activity step is to be defined during implementation.
 
 ---
 
@@ -146,8 +137,4 @@ Once center and symmetry are set, the same region rules, filter templates, and s
 
 ## Open Questions
 
-1. **Build Regions placement**: Directly after Teams (step 4) or after Objectives (step 5)?
-2. **Filter grouping strategy**: Automatic inference from symmetry + team count, or user-guided grouping? Requires corpus analysis.
-3. **Inline filter UI pattern**: Panel section within the step, or modal/sidebar triggered from a region selection?
-4. **Symmetry suggestion acceptance**: Per-suggestion confirm, or batch accept all with single override?
-5. **Notification trigger mapping**: Which specific events in each activity map to which notification type?
+1. **Filter grouping strategy**: Automatic inference from symmetry + team count, or user-guided grouping? Requires corpus analysis of the 300+ map dataset.
