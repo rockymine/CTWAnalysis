@@ -135,6 +135,39 @@ Once center and symmetry are set, the same region rules, filter templates, and s
 
 ---
 
+## Activity Status
+
+Every activity in the rail carries a **status indicator** with four states:
+
+| State | Meaning |
+|---|---|
+| None | Not yet visited, or no data present |
+| Yellow | Visited but required fields are incomplete |
+| Green | All required fields present and valid |
+| Red | Validation errors that must be resolved |
+
+Activities are freely navigable at any time once a map is loaded. Status indicators communicate progress without blocking navigation.
+
+The exact definition of what contributes to each state per activity — which fields are "required", what counts as a validation error — is to be specified per activity during implementation.
+
+---
+
+## Export
+
+Export is the final activity. It is reached after all other activities have been completed.
+
+**What the user does here:** Preview the generated `map.xml`, review any remaining warnings, and download the file.
+
+Key behaviours:
+- **XML preview** — the full generated `map.xml` is shown before download so the user can inspect it.
+- **Download gated on Build Regions** — the download button is disabled until the Build Regions activity is valid (connectivity check passes).
+- **Round-trip safety** — if the imported map contains XML elements the editor cannot parse and safely re-serialize, export is blocked entirely. Silently dropping original XML on save is not acceptable.
+- The original `map.xml` is never modified. Export always generates a new file from the current editor state.
+
+Panel layouts and the exact warning presentation are to be defined during implementation.
+
+---
+
 ## Open Questions
 
 1. **Filter grouping strategy**: Automatic inference from symmetry + team count, or user-guided grouping? Requires corpus analysis of the 300+ map dataset.
