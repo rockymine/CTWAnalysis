@@ -134,3 +134,7 @@ docs/api_index.json
 
 # Node
 node_modules/
+# Local exploratory artifacts (not part of the project)
+scratchpad/
+# Sparse clones of external map repos (e.g. OvercastCommunity/CommunityMaps)
+cm-sparse/
