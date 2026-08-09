@@ -43,7 +43,11 @@ is `IRON_SWORD` and not `BUCKET`. And player-to-team lookups must not key on
 | `excavation.py` | the pit dug in front of the defensive line, from height below the original terrain |
 | `bedrock.py` | bedrock walls standing in front of a wool room, read from the world files |
 | `woolorder.py` | which of a team's two wools falls first, and whether geometry predicts it |
+| `approaches.py` | approach-route variance: does an objective get reached more than one way |
+| `voidmap.py` | enclosed voids, labelled with `BoardDeriver`'s own classes |
+| `rotation.py` | whether a void is actually rotated around, or merely present |
 | `render_map.py` | top-down SVG of one match: structures, or the sky network |
+| `render_design.py` | top-down SVG of a map: build regions, classified voids, every successful approach |
 | `anvil18.py` | minimal Minecraft 1.8 region reader, used by `bedrock.py` |
 
 ## How wall and staircase are told apart
@@ -66,6 +70,30 @@ mid-height traffic is widespread enough to fuse into one field; `structures.py`
 fits a plane to the local height field instead, which is why it finds runs on
 maps the simpler approach reports nothing for.
 
+## Routes offered against routes taken
+
+Only lives that touched a wool at its spawner say anything about which route
+works, so `approaches.py` starts there. Resampling each approach by arc length
+and looking for the widest gap in the bundle finds where a route forks, and
+*where* the fork sits is the distinction that matters: inside 45 blocks it is a
+second way in to the objective, beyond that a choice of lane made far from the
+room. Over 490 bundles on 150 maps, 9% have the first, 35% the second, and **63%
+are a single corridor end to end**.
+
+A fixed gap threshold is blind to maps whose voids are narrower than it, which
+is why `rotation.py` exists. Rather than measuring separation in blocks it takes
+the sign of each approach's offset from the spawn-to-wool axis, so a six-block
+void and a sixty-block one are read the same way. That correction matters: the
+gap test calls `townside_mini` a single corridor, and the side test finds its
+ring rotated around in 23 of 59 approaches at one end.
+
+`voidmap.py` supplies the things routes fork around, labelled in the same
+vocabulary the generator uses. Class does not predict use on its own — pooled
+over four maps, encased voids see 22.7% rotation, gap 13.6%, frontline 11.9% and
+middle 10.8%, with more spread inside each class than between them. The clearest
+case is one class split down the middle: outback's corner gaps are rotated
+around in 5 of 97 approaches, sanctum_wasser's in 22 of 101.
+
 ## Running them
 
 ```bash
@@ -77,6 +105,11 @@ python scripts/match_flow/woolorder.py
 python scripts/match_flow/render_map.py --map sanctum_wasser --match 2174 --mode structures
 python scripts/match_flow/bedrock.py --cache     # slow, once
 python scripts/match_flow/bedrock.py --lines
+python scripts/match_flow/approaches.py --map kanto
+python scripts/match_flow/approaches.py --sweep
+python scripts/match_flow/voidmap.py --map outback_outback_edition
+python scripts/match_flow/rotation.py --map townside_mini
+python scripts/match_flow/render_design.py --map sanctum_wasser
 ```
 
 Paths to the parquet corpus and the map worlds come from `CTW_MATCH_LOGS` and
