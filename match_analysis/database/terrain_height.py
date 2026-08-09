@@ -157,12 +157,38 @@ def populate_terrain_height(map_id: int, output_dir: Path, conn) -> int:
         )
         df_lowest = None
 
-    # --- 4. Join to island footprint ---
+    # --- 4. Bedrock ceiling (optional; needs height column from the bedrock extractor) ---
+    bedrock_path = output_dir / 'layout_bedrock.parquet'
+    df_bedrock_ceiling: pd.DataFrame | None = None
+    if bedrock_path.exists():
+        df_bedrock_raw = pd.read_parquet(bedrock_path)
+        if 'height' in df_bedrock_raw.columns:
+            df_bedrock_ceiling = (
+                df_bedrock_raw[['world_x', 'world_z', 'y', 'height']]
+                .assign(bedrock_ceiling_y=lambda d: d['y'] + d['height'] - 1)
+                [['world_x', 'world_z', 'bedrock_ceiling_y']]
+            )
+        else:
+            logger.debug(
+                f"  [{map_slug}] layout_bedrock.parquet has no height column; "
+                "bedrock_ceiling_y will be NULL — re-run 'ctw run' to regenerate"
+            )
+    else:
+        logger.debug(
+            f"  [{map_slug}] layout_bedrock.parquet not found; "
+            "bedrock_ceiling_y will be NULL"
+        )
+
+    # --- 5. Join to island footprint ---
     df = island_cells.merge(df_surface, on=['world_x', 'world_z'], how='inner')
     if df_lowest is not None:
         df = df.merge(df_lowest, on=['world_x', 'world_z'], how='left')
     else:
         df['lowest_y'] = None
+    if df_bedrock_ceiling is not None:
+        df = df.merge(df_bedrock_ceiling, on=['world_x', 'world_z'], how='left')
+    else:
+        df['bedrock_ceiling_y'] = None
 
     if df.empty:
         logger.warning(
@@ -170,7 +196,7 @@ def populate_terrain_height(map_id: int, output_dir: Path, conn) -> int:
         )
         return 0
 
-    # --- 5. Insert into DB ---
+    # --- 6. Insert into DB ---
     conn.execute("DELETE FROM map_terrain_height WHERE map_id = ?", [map_id])
 
     rows = [
@@ -180,13 +206,14 @@ def populate_terrain_height(map_id: int, output_dir: Path, conn) -> int:
             int(row.world_z),
             int(row.surface_y),
             None if pd.isna(row.lowest_y) else int(row.lowest_y),
+            None if pd.isna(row.bedrock_ceiling_y) else int(row.bedrock_ceiling_y),
         )
         for row in df.itertuples()
     ]
     conn.executemany(
         "INSERT INTO map_terrain_height "
-        "(map_id, world_x, world_z, surface_y, lowest_y) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "(map_id, world_x, world_z, surface_y, lowest_y, bedrock_ceiling_y) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         rows,
     )
 

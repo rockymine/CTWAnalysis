@@ -46,6 +46,8 @@ is `IRON_SWORD` and not `BUCKET`. And player-to-team lookups must not key on
 | `approaches.py` | approach-route variance: does an objective get reached more than one way |
 | `voidmap.py` | enclosed voids, labelled with `BoardDeriver`'s own classes |
 | `rotation.py` | whether a void is actually rotated around, or merely present |
+| `firstcapture.py` | what decides the first capture: flank, reception, population, ground |
+| `backfill_bedrock_ceiling.py` | one-off: fill `bedrock_ceiling_y` from the bedrock parquets |
 | `render_map.py` | top-down SVG of one match: structures, or the sky network |
 | `render_design.py` | top-down SVG of a map: build regions, classified voids, every successful approach |
 | `anvil18.py` | minimal Minecraft 1.8 region reader, used by `bedrock.py` |
@@ -94,6 +96,35 @@ middle 10.8%, with more spread inside each class than between them. The clearest
 case is one class split down the middle: outback's corner gaps are rotated
 around in 5 of 97 approaches, sanctum_wasser's in 22 of 101.
 
+## Measuring excavation
+
+Three things have to be right or the pit measure inverts itself, and the method
+here follows `wool_excavation_plot.py` rather than inventing one.
+
+A position counts toward a cell's floor only if it sits **below that cell's own
+surface**. Without that filter the measure picks up where people stood on the
+ground and reads its one-block wobble as digging — 91% of outback's cells report
+as dug, against 17% with the filter. A cell is being dug only if its floor
+**varies between matches**; a floor identical every time is static map geometry,
+a room interior or a ravine, however deep it sits. And depth is counted per cell,
+not per sample, so it is not weighted by how much players milled about in the
+hole. Neither gate is a sample threshold; there is none.
+
+Depth also has to be normalised. Raw depth rises with distance from the objective
+purely because bedrock sits deeper out there; completeness — depth over the
+surface-to-bedrock-ceiling column — peaks at 10–19 blocks from the room face and
+falls away, which is the opposite conclusion. `bedrock_ceiling_y` is what makes
+that possible and was populated on two maps until
+`backfill_bedrock_ceiling.py` filled all 177 from the bedrock parquets. Note that
+`match_analysis/database/terrain_height.py` had stopped writing the column
+entirely, and its loader deletes a map's rows before reinserting — so running
+`ctw maps terrain-height` against the old code silently dropped it.
+
+One more denominator trap, in `firstcapture.py --ground`: completeness around a
+room must be averaged over **every** diggable cell near it, with untouched cells
+scoring zero. Averaging only over cells already dug scores a three-minute capture
+on whichever few cells someone dug deeply, and reverses the finding.
+
 ## Running them
 
 ```bash
@@ -110,6 +141,8 @@ python scripts/match_flow/approaches.py --sweep
 python scripts/match_flow/voidmap.py --map outback_outback_edition
 python scripts/match_flow/rotation.py --map townside_mini
 python scripts/match_flow/render_design.py --map sanctum_wasser
+python scripts/match_flow/firstcapture.py --flank --reception --population
+python scripts/match_flow/firstcapture.py --ground
 ```
 
 Paths to the parquet corpus and the map worlds come from `CTW_MATCH_LOGS` and
